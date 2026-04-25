@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cricket Input</title>
+  <style>
+    body { margin: 0; padding: 16px; background: #0d1b2a; color: #fff; font-family: system-ui, -apple-system, sans-serif; }
+    h1, h2 { text-align: center; }
+    input, select, button { width: 100%; min-height: 56px; margin: 6px 0; font-size: 18px; border-radius: 10px; border: 1px solid #355; }
+    button { background: #1a6b2f; color: #fff; font-weight: 700; }
+    .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .panel-btn.active { border: 2px solid #e8a020; }
+    .panel-btn:disabled { opacity: .5; background: #555; }
+    .hidden { display: none; }
+    .over-item { display: inline-block; padding: 6px 10px; margin: 2px; border-radius: 12px; background: #223; font-weight: 700; }
+    .dot { background: #6b7280; }
+    .b4 { color: #f0c040; }
+    .b6, .bw { color: #e05050; }
+    .bx { color: #8fc7ff; }
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none; align-items: center; justify-content: center; }
+    .modal-card { background: #162032; border-radius: 12px; padding: 24px; width: min(92vw, 480px); }
+  </style>
+</head>
+<body>
+  <div id="setupScreen">
+    <h1>MATCH SETUP</h1>
+    <input id="battingTeam" placeholder="Batting Team">
+    <input id="bowlingTeam" placeholder="Bowling Team">
+    <input id="totalOvers" type="number" value="20" placeholder="Total Overs">
+    <h2>BATTING SQUAD</h2><div id="battingInputs"></div>
+    <h2>BOWLING SQUAD</h2><div id="bowlingInputs"></div>
+    <button id="startMatch">START MATCH</button>
+  </div>
+
+  <div id="matchScreen" class="hidden">
+    <div id="scoreBar">-</div>
+    <label>Striker</label><select id="striker"></select>
+    <label>Non-Striker</label><select id="nonStriker"></select>
+    <label>Bowler</label><select id="bowler"></select>
+    <div class="grid4">
+      <button data-ball=".">·</button><button data-ball="1">1</button><button data-ball="2">2</button><button data-ball="3">3</button>
+      <button data-ball="4">4</button><button data-ball="6">6</button><button data-ball="W">W</button><button data-ball="Wd">Wd</button>
+    </div>
+    <div class="grid2"><div></div><button data-ball="Nb">Nb</button></div>
+    <h3>THIS OVER</h3>
+    <div id="thisOver"></div>
+    <div class="grid2"><button id="undoBtn">← UNDO</button><button id="endOverBtn">END OVER</button></div>
+    <h3>OVERLAY PANEL</h3>
+    <div class="grid2">
+      <button class="panel-btn" data-panel="score">Score</button>
+      <button class="panel-btn" data-panel="batting">Batting</button>
+      <button class="panel-btn" data-panel="bowling">Bowling</button>
+      <button class="panel-btn" data-panel="chase" id="chaseBtn">Chase</button>
+    </div>
+    <div class="grid2"><button id="editOpen">Edit Score</button><button id="secondOpen">2nd Innings</button></div>
+  </div>
+
+  <div id="editModal" class="modal"><div class="modal-card">
+    <h3>EDIT SCORE</h3>
+    <input id="eRuns" type="number" placeholder="Runs">
+    <input id="eWickets" type="number" placeholder="Wickets">
+    <input id="eOvers" type="number" placeholder="Overs">
+    <input id="eBalls" type="number" min="0" max="5" placeholder="Balls">
+    <input id="eExtras" type="number" placeholder="Extras">
+    <div class="grid2"><button onclick="closeModal('editModal')">CANCEL</button><button id="saveEdit">SAVE</button></div>
+  </div></div>
+
+    <div id="wicketModal" class="modal"><div class="modal-card">
+    <h3>WICKET</h3><p>Select new batter:</p><select id="newBatter"></select>
+    <p id="wicketInfo"></p>
+    <div class="grid2"><button onclick="closeModal('wicketModal')">CANCEL</button><button id="confirmWicket">CONFIRM</button></div>
+  </div></div>
+
+  <div id="secondModal" class="modal"><div class="modal-card">
+    <h3>START 2ND INNINGS</h3><p id="targetText">Target: -</p>
+    <input id="secondBattingTeam" placeholder="New batting team">
+    <div id="secondSquad"></div>
+    <div class="grid2"><button onclick="closeModal('secondModal')">CANCEL</button><button id="startSecond">START 2ND INNINGS</button></div>
+  </div></div>
+
+  <script>
+    let score = null;
+    const byId = (id) => document.getElementById(id);
+    const api = (url, method = "GET", body = null) =>
+      fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined }).then(r => r.json());
+    function closeModal(id) { byId(id).style.display = "none"; }
+    function openModal(id) { byId(id).style.display = "flex"; }
+
+    function buildInputs(container, prefix) {
+      const root = byId(container); root.innerHTML = "";
+      for (let i = 1; i <= 11; i++) { const el = document.createElement("input"); el.id = `${prefix}${i}`; el.placeholder = `Player ${i}`; root.appendChild(el); }
+    }
+    buildInputs("battingInputs", "bat");
+    buildInputs("bowlingInputs", "bowl");
+    buildInputs("secondSquad", "sec");
+
+    function names(prefix) { return Array.from({ length: 11 }, (_, i) => byId(`${prefix}${i+1}`).value.trim()).filter(Boolean); }
+    function setSelect(id, items, selected, allowOut) {
+      const placeholder = id === "striker" && !selected ? "Select new batter" : "Select";
+      const sel = byId(id); sel.innerHTML = `<option value="">${placeholder}</option>`;
+      items.forEach(p => {
+        if (!allowOut && p.status === "out") return;
+        const opt = document.createElement("option");
+        opt.value = p.name; opt.textContent = p.name;
+        if (p.status === "yet to bat") opt.style.opacity = "0.7";
+        if (selected === p.name) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+    function render() {
+      if (!score) return;
+      byId("setupScreen").classList.toggle("hidden", score.match_started);
+      byId("matchScreen").classList.toggle("hidden", !score.match_started);
+      if (!score.match_started) return;
+      byId("scoreBar").textContent = `${score.batting_team} ${score.runs}/${score.wickets} (${score.overs}.${score.balls})`;
+      setSelect("striker", score.batting_squad || [], score.striker, false);
+      setSelect("nonStriker", score.batting_squad || [], score.non_striker, false);
+      setSelect("bowler", score.bowling_squad || [], score.current_bowler, true);
+      const overClass = (v) => {
+        if (v === ".") return "dot";
+        if (v === "4") return "b4";
+        if (v === "6") return "b6";
+        if (v === "W") return "bw";
+        if (v === "Wd" || v === "Nb") return "bx";
+        return "";
+      };
+      byId("thisOver").innerHTML = (score.current_over || []).map(v => `<span class="over-item ${overClass(v)}">${v}</span>`).join("");
+      document.querySelectorAll(".panel-btn").forEach(b => b.classList.toggle("active", b.dataset.panel === score.active_panel));
+      byId("chaseBtn").disabled = score.innings === 1;
+      byId("targetText").textContent = `Target: ${(score.runs || 0) + 1} runs`;
+      byId("secondBattingTeam").value = score.bowling_team || "";
+    }
+
+    async function refresh() { score = await api("/score"); render(); }
+
+    byId("startMatch").onclick = async () => {
+      const batting_squad = names("bat"), bowling_squad = names("bowl");
+      if (batting_squad.length < 2 || bowling_squad.length < 2) return alert("Minimum 2 players per squad required");
+      score = await api("/setup", "POST", {
+        batting_team: byId("battingTeam").value.trim(),
+        bowling_team: byId("bowlingTeam").value.trim(),
+        total_overs: Number(byId("totalOvers").value || 20),
+        batting_squad, bowling_squad
+      });
+      render();
+    };
+
+    document.querySelectorAll("[data-ball]").forEach(btn => btn.onclick = async () => {
+      score = await api("/ball", "POST", { type: btn.dataset.ball }); render();
+      if (btn.dataset.ball === "W") {
+        const left = (score.batting_squad || []).filter(p => p.status === "yet to bat");
+        byId("newBatter").innerHTML = left.map(p => `<option value="${p.name}">${p.name}</option>`).join("");
+        byId("wicketInfo").textContent = left.length ? "" : "Last wicket — innings complete";
+        byId("confirmWicket").disabled = left.length === 0;
+        openModal("wicketModal");
+      }
+    });
+    byId("confirmWicket").onclick = async () => { await api("/set-players", "POST", { striker: byId("newBatter").value }); closeModal("wicketModal"); await refresh(); };
+    byId("undoBtn").onclick = async () => { await api("/undo", "POST"); await refresh(); };
+    byId("endOverBtn").onclick = async () => { await api("/end-over", "POST"); await refresh(); };
+    byId("striker").onchange = async () => { await api("/set-players", "POST", { striker: byId("striker").value }); await refresh(); };
+    byId("nonStriker").onchange = async () => { await api("/set-players", "POST", { non_striker: byId("nonStriker").value }); await refresh(); };
+    byId("bowler").onchange = async () => { await api("/set-players", "POST", { current_bowler: byId("bowler").value }); await refresh(); };
+    document.querySelectorAll("[data-panel]").forEach(btn => btn.onclick = async () => { await api("/set-panel", "POST", { panel: btn.dataset.panel }); await refresh(); });
+
+    byId("editOpen").onclick = () => { ["runs","wickets","overs","balls","extras"].forEach(k => byId(`e${k[0].toUpperCase()}${k.slice(1)}`).value = score[k]); openModal("editModal"); };
+    byId("saveEdit").onclick = async () => {
+      await api("/edit", "POST", { runs:+byId("eRuns").value, wickets:+byId("eWickets").value, overs:+byId("eOvers").value, balls:+byId("eBalls").value, extras:+byId("eExtras").value });
+      closeModal("editModal"); await refresh();
+    };
+
+    byId("secondOpen").onclick = () => openModal("secondModal");
+    byId("startSecond").onclick = async () => {
+      await api("/start-second-innings", "POST", {
+        batting_team: byId("secondBattingTeam").value.trim(),
+        batting_squad: names("sec"),
+        bowling_squad: (score.batting_squad || []).map(p => p.name)
+      });
+      closeModal("secondModal"); await refresh();
+    };
+
+    refresh();
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>

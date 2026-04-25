@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cricket Overlay</title>
+  <style>
+    body { margin: 0; padding: 0; background: transparent; font-family: "Courier New", Courier, monospace; }
+    #overlay { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,.82); color: #fff; padding: 12px 16px; }
+    .muted { color: #aaa; }
+    .title { font-weight: 800; }
+    .section-title { color: #aaa; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
+    #stale { position: absolute; right: 16px; top: 8px; color: #ff4040; display: none; }
+    .row { margin: 4px 0; white-space: pre; }
+  </style>
+</head>
+<body>
+  <div id="overlay">
+    <div id="stale">●</div>
+    <div id="content" class="row">Loading...</div>
+  </div>
+  <script>
+    let lastData = null;
+    let failCount = 0;
+
+    const text = (v) => (v === null || v === undefined || v === "" ? "—" : String(v));
+    const pad = (v) => text(v).padEnd(18, " ");
+
+    function renderOverlay(data) {
+      const panel = data.active_panel || "score";
+      const content = document.getElementById("content");
+      if (panel === "batting") {
+        const rows = (data.batting_squad || []).filter(p => p.status === "batting" || p.status === "out");
+        if (!rows.length) { content.innerHTML = '<div class="row section-title">BATTING</div><div class="row muted">— —</div>'; return; }
+        content.innerHTML = '<div class="row section-title">BATTING</div>' + rows.map(p =>
+          `<div class="row ${p.status === "out" ? "muted" : ""}">${pad(p.name)} ${p.runs} (${p.balls})</div>`
+        ).join("");
+        return;
+      }
+      if (panel === "bowling") {
+        const rows = (data.bowling_squad || []).filter(p => p.overs > 0 || p.balls > 0);
+        if (!rows.length) { content.innerHTML = '<div class="row section-title">BOWLING</div><div class="row muted">— —</div>'; return; }
+        content.innerHTML = '<div class="row section-title">BOWLING</div>' + rows.map(p =>
+          `<div class="row ${p.name === data.current_bowler ? "" : "muted"}">${pad(p.name)} ${p.overs}.${p.balls}-${p.maidens || 0}-${p.runs}-${p.wickets}</div>`
+        ).join("");
+        return;
+      }
+      if (panel === "chase") {
+        if (data.innings !== 2) { content.innerHTML = '<div class="row muted">— 2nd innings only —</div>'; return; }
+        content.innerHTML =
+          `<div class="row"><span class="title">${text(data.batting_team)}</span> need ${text(data.runs_needed)} runs</div>` +
+          `<div class="row">from ${text(data.balls_remaining)} balls  RRR: ${text(data.rrr)}</div>`;
+        return;
+      }
+      if (data.innings === 2) {
+        content.innerHTML =
+          `<div class="row"><span class="title">${text(data.batting_team)}</span> <span class="muted">vs ${text(data.bowling_team)}</span></div>` +
+          `<div class="row">${text(data.runs)}/${text(data.wickets)} (${text(data.overs_display)} ov) T:${text(data.target)} Need ${text(data.runs_needed)} off ${text(data.balls_remaining)}b</div>`;
+      } else {
+        content.innerHTML =
+          `<div class="row"><span class="title">${text(data.batting_team)}</span> <span class="muted">vs ${text(data.bowling_team)}</span></div>` +
+          `<div class="row">${text(data.runs)}/${text(data.wickets)} (${text(data.overs_display)} ov) CRR: ${text(data.crr)}</div>`;
+      }
+    }
+
+    async function fetchScore() {
+      try {
+        const res = await fetch("/score");
+        if (!res.ok) throw new Error("non-200");
+        lastData = await res.json();
+        failCount = 0;
+        document.getElementById("stale").style.display = "none";
+        renderOverlay(lastData);
+      } catch (e) {
+        failCount += 1;
+        if (failCount >= 3) document.getElementById("stale").style.display = "block";
+        if (lastData) renderOverlay(lastData);
+      }
+    }
+
+    fetchScore();
+    setInterval(fetchScore, 2000);
+  </script>
+</body>
+</html>
