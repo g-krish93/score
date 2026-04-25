@@ -6,6 +6,7 @@ yum install -y python3 python3-pip git
 git clone ${github_repo} /app
 cd /app
 pip3 install -r requirements.txt
+chown -R ec2-user:ec2-user /app
 
 cat > /etc/systemd/system/cricket.service << 'EOF'
 [Unit]

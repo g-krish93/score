@@ -3,7 +3,8 @@ variable "aws_region" {
 }
 
 variable "instance_type" {
-  default = "t2.micro"
+  description = "EC2 size. New AWS accounts often only allow free-tier-eligible types (e.g. t3.micro); t2.micro may be rejected."
+  default     = "t3.micro"
 }
 
 variable "key_name" {
