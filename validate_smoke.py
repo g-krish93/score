@@ -76,6 +76,24 @@ def main():
         )
     assert_ok(c.get("/health"))
 
+    # Over-only scoring mode validation
+    over_only_payload = {
+        "team1": "Team X",
+        "team2": "Team Y",
+        "toss_winner": "Team X",
+        "toss_decision": "bat",
+        "scoring_mode": "over_only",
+        "total_overs": 10,
+        "batting_squad": [f"X{i}" for i in range(1, 12)],
+        "bowling_squad": [f"Y{i}" for i in range(1, 12)],
+    }
+    assert_ok(c.post("/setup", json=over_only_payload))
+    blocked_ball = c.post("/ball", json={"type": "1"})
+    assert blocked_ball.status_code == 400
+    assert_ok(c.post("/over-update", json={"runs": 12, "wickets": 1}))
+    score = c.get("/score").get_json()
+    assert score["runs"] == 12 and score["wickets"] == 1 and score["overs_display"] == "1.0", score
+
     print("Smoke validation passed for all core endpoints.")
 
 

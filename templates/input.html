@@ -39,6 +39,11 @@
       <option value="bat">Bat first</option>
       <option value="bowl">Bowl first</option>
     </select>
+    <label>Scoring Type</label>
+    <select id="scoringType">
+      <option value="ball_by_ball">Ball by ball</option>
+      <option value="over_only">Over by over</option>
+    </select>
     <input id="totalOvers" type="number" value="20" placeholder="Total Overs">
     <h2>TEAM 1 SQUAD</h2><div id="team1Inputs"></div>
     <h2>TEAM 2 SQUAD</h2><div id="team2Inputs"></div>
@@ -47,6 +52,7 @@
 
   <div id="matchScreen" class="hidden">
     <div id="scoreBar">-</div>
+    <div id="ballByBallSection">
     <label>Striker</label><select id="striker"></select>
     <label>Non-Striker</label><select id="nonStriker"></select>
     <label>Bowler</label><select id="bowler"></select>
@@ -59,6 +65,14 @@
     <h3>THIS OVER</h3>
     <div id="thisOver"></div>
     <div class="grid2"><button id="undoBtn">← UNDO</button><button id="redoBtn">REDO →</button></div>
+    </div>
+    <div id="overOnlySection" class="hidden">
+      <h3>OVER UPDATE</h3>
+      <input id="overRunsInput" type="number" min="0" value="0" placeholder="Runs this over">
+      <input id="overWktsInput" type="number" min="0" max="10" value="0" placeholder="Wickets this over">
+      <button id="applyOverUpdateBtn">APPLY OVER UPDATE</button>
+      <div class="grid2"><button id="undoOverBtn">← UNDO</button><button id="redoOverBtn">REDO →</button></div>
+    </div>
     <div class="grid2"><button id="endOverBtn">END OVER</button><div id="scoringHint"></div></div>
     <h3>OVERLAY PANEL</h3>
     <div class="grid2">
@@ -130,9 +144,14 @@
       const placeholder = id === "striker" && !selected ? "Select new batter" : "Select";
       const sel = byId(id); sel.innerHTML = `<option value="">${placeholder}</option>`;
       items.forEach(p => {
-        if (!allowOut && p.status === "out") return;
         const opt = document.createElement("option");
         opt.value = p.name; opt.textContent = p.name;
+        if (!allowOut && p.status === "out") {
+          opt.textContent = `${p.name} (out)`;
+          opt.style.textDecoration = "line-through";
+          opt.style.opacity = "0.55";
+          opt.disabled = true;
+        }
         if (p.status === "yet to bat") opt.style.opacity = "0.7";
         if (selected === p.name) opt.selected = true;
         sel.appendChild(opt);
@@ -143,6 +162,9 @@
       byId("setupScreen").classList.toggle("hidden", score.match_started);
       byId("matchScreen").classList.toggle("hidden", !score.match_started);
       if (!score.match_started) return;
+      const overOnly = score.scoring_mode === "over_only";
+      byId("ballByBallSection").classList.toggle("hidden", overOnly);
+      byId("overOnlySection").classList.toggle("hidden", !overOnly);
       byId("scoreBar").textContent = `${score.batting_team} ${score.runs}/${score.wickets} (${score.overs}.${score.balls})`;
       setSelect("striker", score.batting_squad || [], score.striker, false);
       setSelect("nonStriker", score.batting_squad || [], score.non_striker, false);
@@ -193,6 +215,7 @@
       if (team1_squad.length < 2 || team2_squad.length < 2) return alert("Minimum 2 players per squad required");
       const team1 = byId("team1Name").value.trim();
       const team2 = byId("team2Name").value.trim();
+      const scoringMode = byId("scoringType").value;
       const tossWinner = byId("tossWinner").value === "team1" ? team1 : team2;
       const tossDecision = byId("tossDecision").value;
       const batting_squad = tossDecision === "bat"
@@ -206,6 +229,7 @@
         team2,
         toss_winner: tossWinner,
         toss_decision: tossDecision,
+        scoring_mode: scoringMode,
         total_overs: Number(byId("totalOvers").value || 20),
         batting_squad, bowling_squad
       });
@@ -226,7 +250,17 @@
     byId("confirmWicket").onclick = async () => { await api("/set-players", "POST", { striker: byId("newBatter").value }); closeModal("wicketModal"); await refresh(); };
     byId("undoBtn").onclick = async () => { await api("/undo", "POST"); await refresh(); };
     byId("redoBtn").onclick = async () => { await api("/redo", "POST"); await refresh(); };
+    byId("undoOverBtn").onclick = async () => { await api("/undo", "POST"); await refresh(); };
+    byId("redoOverBtn").onclick = async () => { await api("/redo", "POST"); await refresh(); };
     byId("endOverBtn").onclick = async () => { await api("/end-over", "POST"); await refresh(); };
+    byId("applyOverUpdateBtn").onclick = async () => {
+      const runs = Number(byId("overRunsInput").value || 0);
+      const wickets = Number(byId("overWktsInput").value || 0);
+      await api("/over-update", "POST", { runs, wickets });
+      byId("overRunsInput").value = "0";
+      byId("overWktsInput").value = "0";
+      await refresh();
+    };
     byId("striker").onchange = async () => { await api("/set-players", "POST", { striker: byId("striker").value }); await refresh(); };
     byId("nonStriker").onchange = async () => { await api("/set-players", "POST", { non_striker: byId("nonStriker").value }); await refresh(); };
     byId("bowler").onchange = async () => { await api("/set-players", "POST", { current_bowler: byId("bowler").value }); await refresh(); };
@@ -261,7 +295,6 @@
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
     };
-
     window.addEventListener("keydown", async (e) => {
       if (e.key === "1") return document.querySelector('[data-ball="1"]').click();
       if (e.key === "2") return document.querySelector('[data-ball="2"]').click();

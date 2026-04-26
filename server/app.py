@@ -31,6 +31,7 @@ def blank_state():
         "bowling_team": "",
         "total_overs": 20,
         "target": None,
+        "scoring_mode": "ball_by_ball",
         "runs": 0,
         "wickets": 0,
         "overs": 0,
@@ -184,6 +185,10 @@ def setup():
         state["team2"] = team2
         state["toss_winner"] = toss_winner
         state["toss_decision"] = toss_decision
+        scoring_mode = str(data.get("scoring_mode", "ball_by_ball")).strip()
+        if scoring_mode not in {"ball_by_ball", "over_only"}:
+            scoring_mode = "ball_by_ball"
+        state["scoring_mode"] = scoring_mode
         state["batting_team"] = batting_team
         state["bowling_team"] = bowling_team
         state["total_overs"] = safe_num(data.get("total_overs", 20), 20)
@@ -220,6 +225,8 @@ def ball():
         return jsonify({"error": "invalid ball type"}), 400
 
     with state_lock:
+        if state.get("scoring_mode") == "over_only":
+            return jsonify({"error": "ball-by-ball disabled in over-only mode"}), 400
         push_history()
         last_action = {"state_snapshot": copy.deepcopy(state)}
         striker = get_batter(state["striker"])
@@ -282,6 +289,24 @@ def ball():
             state["striker"], state["non_striker"] = state["non_striker"], state["striker"]
 
         end_over()
+        save_state()
+        return jsonify(with_calculated_values(state))
+
+
+@app.post("/over-update")
+def over_update():
+    data = request.get_json(silent=True) or {}
+    runs = max(0, safe_num(data.get("runs", 0), 0))
+    wickets = max(0, safe_num(data.get("wickets", 0), 0))
+    with state_lock:
+        if state.get("scoring_mode") != "over_only":
+            return jsonify({"error": "over-update only allowed in over-only mode"}), 400
+        push_history()
+        state["runs"] += runs
+        state["wickets"] = min(10, state["wickets"] + wickets)
+        state["overs"] += 1
+        state["balls"] = 0
+        state["current_over"] = []
         save_state()
         return jsonify(with_calculated_values(state))
 
