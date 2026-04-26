@@ -52,6 +52,26 @@
           `<div class="row">from ${text(data.balls_remaining)} balls  RRR: ${text(data.rrr)}</div>`;
         return;
       }
+      if (panel === "fullscore") {
+        const batters = (data.batting_squad || []).filter(p => p.status === "batting" || p.status === "out");
+        const bowlers = (data.bowling_squad || []).filter(p => p.overs > 0 || p.balls > 0 || p.name === data.current_bowler);
+        const batterRows = batters.length
+          ? batters.map(p => `<div class="row ${p.status === "out" ? "muted" : ""}">${pad(p.name)} ${p.runs} (${p.balls})</div>`).join("")
+          : '<div class="row muted">— —</div>';
+        const bowlerRows = bowlers.length
+          ? bowlers.map(p => `<div class="row ${p.name === data.current_bowler ? "" : "muted"}">${pad(p.name)} ${p.overs}.${p.balls}-${p.maidens || 0}-${p.runs}-${p.wickets}</div>`).join("")
+          : '<div class="row muted">— —</div>';
+        const chaseLine = data.innings === 2
+          ? `<div class="row">T:${text(data.target)} Need ${text(data.runs_needed)} off ${text(data.balls_remaining)}b RRR:${text(data.rrr)}</div>`
+          : `<div class="row">CRR: ${text(data.crr)}</div>`;
+        content.innerHTML =
+          `<div class="row"><span class="title">${text(data.batting_team)}</span> <span class="muted">vs ${text(data.bowling_team)}</span></div>` +
+          `<div class="row">${text(data.runs)}/${text(data.wickets)} (${text(data.overs_display)} ov)</div>` +
+          chaseLine +
+          `<div class="row section-title">Batting</div>` + batterRows +
+          `<div class="row section-title">Bowling</div>` + bowlerRows;
+        return;
+      }
       if (data.innings === 2) {
         content.innerHTML =
           `<div class="row"><span class="title">${text(data.batting_team)}</span> <span class="muted">vs ${text(data.bowling_team)}</span></div>` +

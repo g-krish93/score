@@ -341,7 +341,7 @@ def set_players():
 def set_panel():
     data = request.get_json(silent=True) or {}
     panel = str(data.get("panel", "")).strip()
-    if panel not in {"score", "batting", "bowling", "chase"}:
+    if panel not in {"score", "batting", "bowling", "chase", "fullscore"}:
         return jsonify({"error": "invalid panel"}), 400
     with state_lock:
         state["active_panel"] = panel
