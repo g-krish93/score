@@ -102,7 +102,6 @@
     </div>
     <div class="grid2">
       <button id="penaltyRunsBtn">+5 Penalty Runs</button>
-      <button id="deadBallBtn">Dead Ball (log)</button>
     </div>
     <h3>OVERLAY PANEL</h3>
     <div class="grid2">
@@ -158,7 +157,7 @@
       <option value="striker">Striker</option>
       <option value="non_striker">Non-Striker</option>
     </select>
-    <p>Select replacement batter (if available):</p><select id="newBatter"></select>
+    <p>Select new batsman (if available):</p><select id="newBatter"></select>
     <p id="wicketInfo"></p>
     <div class="grid2"><button onclick="closeModal('wicketModal')">CANCEL</button><button id="confirmWicket">CONFIRM</button></div>
   </div></div>
@@ -262,10 +261,9 @@
       byId("secondBattingTeam").value = score.bowling_team || "";
       if (score.match_complete) byId("scoringHint").textContent = score.match_result || "Innings complete";
       else if (score.innings === 2 && score.runs_needed === 0) byId("scoringHint").textContent = "Chase complete";
-      else if (score.balls === 0 && score.current_over.length === 0) byId("scoringHint").textContent = "Select bowler";
       else byId("scoringHint").textContent = "";
       const controls = document.querySelectorAll(
-        "[data-ball],#undoBtn,#redoBtn,#undoOverBtn,#redoOverBtn,#endOverBtn,#applyOverUpdateBtn,#striker,#nonStriker,#bowler,#penaltyRunsBtn,#deadBallBtn,#retireStrikerHurtBtn,#retireStrikerUnhurtBtn,#retireNonStrikerHurtBtn,#retireNonStrikerUnhurtBtn"
+        "[data-ball],#undoBtn,#redoBtn,#undoOverBtn,#redoOverBtn,#endOverBtn,#applyOverUpdateBtn,#striker,#nonStriker,#bowler,#penaltyRunsBtn,#retireStrikerHurtBtn,#retireStrikerUnhurtBtn,#retireNonStrikerHurtBtn,#retireNonStrikerUnhurtBtn"
       );
       controls.forEach((el) => { el.disabled = locked; });
     }
@@ -359,7 +357,7 @@
     document.querySelectorAll("[data-ball]").forEach(btn => btn.onclick = async () => {
       if (btn.dataset.ball === "W") {
         const left = (score.batting_squad || []).filter(p => p.status === "yet to bat");
-        byId("newBatter").innerHTML = ['<option value="">Select replacement</option>']
+        byId("newBatter").innerHTML = ['<option value="">Select new batsman</option>']
           .concat(left.map(p => `<option value="${p.name}">${p.name}</option>`)).join("");
         byId("wicketInfo").textContent = left.length ? "" : "Last wicket — innings complete";
         byId("confirmWicket").disabled = false;
@@ -425,7 +423,6 @@
     byId("retireNonStrikerHurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "non_striker", type: "hurt" }); await refresh(); };
     byId("retireNonStrikerUnhurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "non_striker", type: "unhurt" }); await refresh(); };
     byId("penaltyRunsBtn").onclick = async () => { await api("/penalty-runs", "POST", { runs: 5, side: "batting", reason: "law penalty" }); await refresh(); };
-    byId("deadBallBtn").onclick = async () => { await api("/dead-ball", "POST", { note: "umpire dead ball" }); await refresh(); };
     byId("striker").onchange = async () => { await api("/set-players", "POST", { striker: byId("striker").value }); await refresh(); };
     byId("nonStriker").onchange = async () => { await api("/set-players", "POST", { non_striker: byId("nonStriker").value }); await refresh(); };
     byId("bowler").onchange = async () => { await api("/set-players", "POST", { current_bowler: byId("bowler").value }); await refresh(); };
