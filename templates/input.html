@@ -14,6 +14,7 @@
     .panel-btn.active { border: 2px solid #e8a020; }
     .panel-btn:disabled { opacity: .5; background: #555; }
     .danger { background: #8b1f1f; }
+    .secondary { background: #334155; }
     .hidden { display: none; }
     .over-item { display: inline-block; padding: 6px 10px; margin: 2px; border-radius: 12px; background: #223; font-weight: 700; }
     .dot { background: #6b7280; }
@@ -55,6 +56,10 @@
       <option value="over_only">Over by over</option>
     </select>
     <input id="totalOvers" type="number" value="20" placeholder="Total Overs">
+    <div class="grid2">
+      <button id="saveTemplateBtn" class="secondary">Save Match Template</button>
+      <button id="loadTemplateBtn" class="secondary">Load Match Template</button>
+    </div>
     <h2>TEAM 1 SQUAD</h2><div id="team1Inputs"></div>
     <h2>TEAM 2 SQUAD</h2><div id="team2Inputs"></div>
     <button id="startMatch">START MATCH</button>
@@ -62,6 +67,10 @@
 
   <div id="matchScreen" class="hidden">
     <div id="scoreBar">-</div>
+    <div class="grid2">
+      <button id="guidedModeBtn" class="secondary">Guided Mode: ON</button>
+      <button id="umpireModeBtn" class="secondary hidden">Umpire Mode</button>
+    </div>
     <div id="ballByBallSection">
     <label>Striker</label><select id="striker"></select>
     <label>Non-Striker</label><select id="nonStriker"></select>
@@ -84,8 +93,8 @@
       <div class="grid2"><button id="undoOverBtn">← UNDO</button><button id="redoOverBtn">REDO →</button></div>
     </div>
     <div class="grid2"><button id="endOverBtn">END OVER</button><div id="scoringHint"></div></div>
-    <h3>LAWS / SPECIAL EVENTS</h3>
-    <div class="grid2">
+    <h3 id="lawsHeading">LAWS / SPECIAL EVENTS</h3>
+    <div class="grid2" id="lawsSection">
       <button id="retireStrikerHurtBtn">Retire Striker Hurt</button>
       <button id="retireStrikerUnhurtBtn">Retire Striker Unhurt</button>
       <button id="retireNonStrikerHurtBtn">Retire Non-Striker Hurt</button>
@@ -119,6 +128,15 @@
     <input id="eBalls" type="number" min="0" max="5" placeholder="Balls">
     <input id="eExtras" type="number" placeholder="Extras">
     <div class="grid2"><button onclick="closeModal('editModal')">CANCEL</button><button id="saveEdit">SAVE</button></div>
+  </div></div>
+
+  <div id="overWizardModal" class="modal"><div class="modal-card">
+    <h3>OVER COMPLETE</h3>
+    <p>Set next over players</p>
+    <label>Striker</label><select id="wizStriker"></select>
+    <label>Non-Striker</label><select id="wizNonStriker"></select>
+    <label>Bowler</label><select id="wizBowler"></select>
+    <div class="grid2"><button onclick="closeModal('overWizardModal')">SKIP</button><button id="confirmOverWizard">CONFIRM</button></div>
   </div></div>
 
     <div id="wicketModal" class="modal"><div class="modal-card">
@@ -155,6 +173,8 @@
 
   <script>
     let score = null;
+    let lastOverDisplay = "";
+    let guidedMode = true;
     const byId = (id) => document.getElementById(id);
     const pendingKey = "score_pending_actions";
     async function api(url, method = "GET", body = null) {
@@ -215,9 +235,14 @@
       byId("setupScreen").classList.toggle("hidden", score.match_started);
       byId("matchScreen").classList.toggle("hidden", !score.match_started);
       if (!score.match_started) return;
+      const locked = !!score.match_complete;
       const overOnly = score.scoring_mode === "over_only";
       byId("ballByBallSection").classList.toggle("hidden", overOnly);
       byId("overOnlySection").classList.toggle("hidden", !overOnly);
+      byId("lawsHeading").classList.toggle("hidden", guidedMode);
+      byId("lawsSection").classList.toggle("hidden", guidedMode);
+      byId("umpireModeBtn").classList.toggle("hidden", !guidedMode);
+      byId("guidedModeBtn").textContent = `Guided Mode: ${guidedMode ? "ON" : "OFF"}`;
       byId("scoreBar").textContent = `${score.batting_team} ${score.runs}/${score.wickets} (${score.overs}.${score.balls})`;
       setSelect("striker", score.batting_squad || [], score.striker, false);
       setSelect("nonStriker", score.batting_squad || [], score.non_striker, false);
@@ -235,9 +260,14 @@
       byId("chaseBtn").disabled = score.innings === 1;
       byId("targetText").textContent = `Target: ${(score.runs || 0) + 1} runs`;
       byId("secondBattingTeam").value = score.bowling_team || "";
-      if (score.innings === 2 && score.runs_needed === 0) byId("scoringHint").textContent = "Chase complete";
+      if (score.match_complete) byId("scoringHint").textContent = score.match_result || "Innings complete";
+      else if (score.innings === 2 && score.runs_needed === 0) byId("scoringHint").textContent = "Chase complete";
       else if (score.balls === 0 && score.current_over.length === 0) byId("scoringHint").textContent = "Select bowler";
       else byId("scoringHint").textContent = "";
+      const controls = document.querySelectorAll(
+        "[data-ball],#undoBtn,#redoBtn,#undoOverBtn,#redoOverBtn,#endOverBtn,#applyOverUpdateBtn,#striker,#nonStriker,#bowler,#penaltyRunsBtn,#deadBallBtn,#retireStrikerHurtBtn,#retireStrikerUnhurtBtn,#retireNonStrikerHurtBtn,#retireNonStrikerUnhurtBtn"
+      );
+      controls.forEach((el) => { el.disabled = locked; });
     }
 
     async function flushQueue() {
@@ -291,6 +321,40 @@
       });
       render();
     };
+    byId("saveTemplateBtn").onclick = () => {
+      const payload = {
+        team1: byId("team1Name").value.trim(),
+        team2: byId("team2Name").value.trim(),
+        tossWinner: byId("tossWinner").value,
+        tossDecision: byId("tossDecision").value,
+        theme: byId("themeSelect").value,
+        team1Color: byId("team1Color").value,
+        team2Color: byId("team2Color").value,
+        scoringType: byId("scoringType").value,
+        totalOvers: byId("totalOvers").value,
+        team1Squad: names("t1"),
+        team2Squad: names("t2"),
+      };
+      localStorage.setItem("score_match_template", JSON.stringify(payload));
+      alert("Match template saved.");
+    };
+    byId("loadTemplateBtn").onclick = () => {
+      const raw = localStorage.getItem("score_match_template");
+      if (!raw) return alert("No saved template.");
+      const t = JSON.parse(raw);
+      byId("team1Name").value = t.team1 || "";
+      byId("team2Name").value = t.team2 || "";
+      byId("tossWinner").value = t.tossWinner || "team1";
+      byId("tossDecision").value = t.tossDecision || "bat";
+      byId("themeSelect").value = t.theme || "classic";
+      byId("team1Color").value = t.team1Color || "#2dd4bf";
+      byId("team2Color").value = t.team2Color || "#f59e0b";
+      byId("scoringType").value = t.scoringType || "ball_by_ball";
+      byId("totalOvers").value = t.totalOvers || "20";
+      (t.team1Squad || []).forEach((v, i) => { if (i < 11) byId(`t1${i+1}`).value = v; });
+      (t.team2Squad || []).forEach((v, i) => { if (i < 11) byId(`t2${i+1}`).value = v; });
+      alert("Match template loaded.");
+    };
 
     document.querySelectorAll("[data-ball]").forEach(btn => btn.onclick = async () => {
       if (btn.dataset.ball === "W") {
@@ -306,6 +370,13 @@
       }
       const extraRuns = Number(byId("extraRuns").value || 0);
       score = await api("/ball", "POST", { type: btn.dataset.ball, runs: extraRuns }); render();
+      if (lastOverDisplay && score.overs_display !== lastOverDisplay && score.balls === 0) {
+        setSelect("wizStriker", score.batting_squad || [], score.striker, false);
+        setSelect("wizNonStriker", score.batting_squad || [], score.non_striker, false);
+        setSelect("wizBowler", score.bowling_squad || [], score.current_bowler, true);
+        openModal("overWizardModal");
+      }
+      lastOverDisplay = score.overs_display;
     });
     byId("confirmWicket").onclick = async () => {
       const kind = byId("wicketType").value;
@@ -342,6 +413,12 @@
       byId("overRunsInput").value = "0";
       byId("overWktsInput").value = "0";
       await refresh();
+      if (score && score.balls === 0) {
+        setSelect("wizStriker", score.batting_squad || [], score.striker, false);
+        setSelect("wizNonStriker", score.batting_squad || [], score.non_striker, false);
+        setSelect("wizBowler", score.bowling_squad || [], score.current_bowler, true);
+        openModal("overWizardModal");
+      }
     };
     byId("retireStrikerHurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "striker", type: "hurt" }); await refresh(); };
     byId("retireStrikerUnhurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "striker", type: "unhurt" }); await refresh(); };
@@ -384,6 +461,17 @@
       score = await api("/reset-match", "POST");
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    byId("guidedModeBtn").onclick = () => { guidedMode = !guidedMode; render(); };
+    byId("umpireModeBtn").onclick = () => { guidedMode = false; render(); };
+    byId("confirmOverWizard").onclick = async () => {
+      await api("/set-players", "POST", {
+        striker: byId("wizStriker").value,
+        non_striker: byId("wizNonStriker").value,
+        current_bowler: byId("wizBowler").value,
+      });
+      closeModal("overWizardModal");
+      await refresh();
     };
     window.addEventListener("keydown", async (e) => {
       if (e.key === "1") return document.querySelector('[data-ball="1"]').click();
