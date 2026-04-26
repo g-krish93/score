@@ -44,6 +44,27 @@ def main():
     score = c.get("/score").get_json()
     assert score["overs_display"] == "0.3", score
 
+    # Retired hurt/unhurt and law events
+    assert_ok(c.post("/set-players", json={"striker": "A1", "non_striker": "A2", "current_bowler": "B1"}))
+    assert_ok(c.post("/retire-batter", json={"batter": "striker", "type": "hurt"}))
+    score = c.get("/score").get_json()
+    assert score["striker"] == "", score
+    assert any(p["status"] == "retired hurt" for p in score["batting_squad"] if p["name"] == "A1")
+    assert_ok(c.post("/set-players", json={"striker": "A1"}))
+    score = c.get("/score").get_json()
+    assert any(p["status"] == "batting" for p in score["batting_squad"] if p["name"] == "A1")
+    assert_ok(c.post("/retire-batter", json={"batter": "non_striker", "type": "unhurt"}))
+    score = c.get("/score").get_json()
+    assert score["non_striker"] == "", score
+    assert any(p["status"] == "retired out" for p in score["batting_squad"] if p["name"] == "A2")
+    assert_ok(c.post("/record-dismissal", json={"kind": "run_out", "batter": "striker", "credited_to_bowler": False}))
+    score = c.get("/score").get_json()
+    assert score["wickets"] >= 2, score
+    assert_ok(c.post("/penalty-runs", json={"runs": 5, "side": "batting", "reason": "test"}))
+    score = c.get("/score").get_json()
+    assert score["runs"] >= 12 and score["extras"] >= 7, score
+    assert_ok(c.post("/dead-ball", json={"note": "test"}))
+
     assert_ok(c.post("/edit", json={"runs": 50, "wickets": 3, "overs": 9, "balls": 5, "extras": 6}))
     score = c.get("/score").get_json()
     assert score["runs"] == 50 and score["wickets"] == 3 and score["overs_display"] == "9.5", score

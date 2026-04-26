@@ -84,6 +84,23 @@
       <div class="grid2"><button id="undoOverBtn">← UNDO</button><button id="redoOverBtn">REDO →</button></div>
     </div>
     <div class="grid2"><button id="endOverBtn">END OVER</button><div id="scoringHint"></div></div>
+    <h3>LAWS / SPECIAL EVENTS</h3>
+    <div class="grid2">
+      <button id="retireStrikerHurtBtn">Retire Striker Hurt</button>
+      <button id="retireStrikerUnhurtBtn">Retire Striker Unhurt</button>
+      <button id="retireNonStrikerHurtBtn">Retire Non-Striker Hurt</button>
+      <button id="retireNonStrikerUnhurtBtn">Retire Non-Striker Unhurt</button>
+    </div>
+    <div class="grid2">
+      <button id="runOutStrikerBtn">Run-out Striker</button>
+      <button id="runOutNonStrikerBtn">Run-out Non-Striker</button>
+      <button id="stumpedBtn">Stumped (Striker)</button>
+      <button id="hitWicketBtn">Hit wicket (Striker)</button>
+    </div>
+    <div class="grid2">
+      <button id="penaltyRunsBtn">+5 Penalty Runs</button>
+      <button id="deadBallBtn">Dead Ball (log)</button>
+    </div>
     <h3>OVERLAY PANEL</h3>
     <div class="grid2">
       <button class="panel-btn" data-panel="score">Score</button>
@@ -165,6 +182,16 @@
           opt.style.textDecoration = "line-through";
           opt.style.opacity = "0.55";
           opt.disabled = true;
+        }
+        if (!allowOut && p.status === "retired out") {
+          opt.textContent = `${p.name} (retired out)`;
+          opt.style.textDecoration = "line-through";
+          opt.style.opacity = "0.5";
+          opt.disabled = true;
+        }
+        if (p.status === "retired hurt") {
+          opt.textContent = `${p.name} (retired hurt)`;
+          opt.style.opacity = "0.85";
         }
         if (p.status === "yet to bat") opt.style.opacity = "0.7";
         if (selected === p.name) opt.selected = true;
@@ -278,6 +305,16 @@
       byId("overWktsInput").value = "0";
       await refresh();
     };
+    byId("retireStrikerHurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "striker", type: "hurt" }); await refresh(); };
+    byId("retireStrikerUnhurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "striker", type: "unhurt" }); await refresh(); };
+    byId("retireNonStrikerHurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "non_striker", type: "hurt" }); await refresh(); };
+    byId("retireNonStrikerUnhurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "non_striker", type: "unhurt" }); await refresh(); };
+    byId("runOutStrikerBtn").onclick = async () => { await api("/record-dismissal", "POST", { kind: "run_out", batter: "striker", legal_delivery: true, add_ball: true, credited_to_bowler: false }); await refresh(); };
+    byId("runOutNonStrikerBtn").onclick = async () => { await api("/record-dismissal", "POST", { kind: "run_out", batter: "non_striker", legal_delivery: true, add_ball: true, credited_to_bowler: false }); await refresh(); };
+    byId("stumpedBtn").onclick = async () => { await api("/record-dismissal", "POST", { kind: "stumped", batter: "striker", legal_delivery: false, add_ball: false, credited_to_bowler: true }); await refresh(); };
+    byId("hitWicketBtn").onclick = async () => { await api("/record-dismissal", "POST", { kind: "hit_wicket", batter: "striker", legal_delivery: true, add_ball: true, credited_to_bowler: true }); await refresh(); };
+    byId("penaltyRunsBtn").onclick = async () => { await api("/penalty-runs", "POST", { runs: 5, side: "batting", reason: "law penalty" }); await refresh(); };
+    byId("deadBallBtn").onclick = async () => { await api("/dead-ball", "POST", { note: "umpire dead ball" }); await refresh(); };
     byId("striker").onchange = async () => { await api("/set-players", "POST", { striker: byId("striker").value }); await refresh(); };
     byId("nonStriker").onchange = async () => { await api("/set-players", "POST", { non_striker: byId("nonStriker").value }); await refresh(); };
     byId("bowler").onchange = async () => { await api("/set-players", "POST", { current_bowler: byId("bowler").value }); await refresh(); };
