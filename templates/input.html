@@ -128,7 +128,25 @@
   </div></div>
 
     <div id="wicketModal" class="modal"><div class="modal-card">
-    <h3>WICKET</h3><p>Select new batter:</p><select id="newBatter"></select>
+    <h3>WICKET</h3>
+    <label>Wicket type</label>
+    <select id="wicketType">
+      <option value="bowled">Bowled</option>
+      <option value="caught">Caught</option>
+      <option value="lbw">LBW</option>
+      <option value="run_out">Run Out</option>
+      <option value="stumped">Stumped</option>
+      <option value="hit_wicket">Hit Wicket</option>
+      <option value="obstructing_field">Obstructing Field</option>
+      <option value="timed_out">Timed Out</option>
+      <option value="handled_ball">Handled Ball</option>
+    </select>
+    <label>Batter out</label>
+    <select id="wicketOutBatter">
+      <option value="striker">Striker</option>
+      <option value="non_striker">Non-Striker</option>
+    </select>
+    <p>Select replacement batter (if available):</p><select id="newBatter"></select>
     <p id="wicketInfo"></p>
     <div class="grid2"><button onclick="closeModal('wicketModal')">CANCEL</button><button id="confirmWicket">CONFIRM</button></div>
   </div></div>
@@ -281,17 +299,43 @@
     };
 
     document.querySelectorAll("[data-ball]").forEach(btn => btn.onclick = async () => {
-      const extraRuns = Number(byId("extraRuns").value || 0);
-      score = await api("/ball", "POST", { type: btn.dataset.ball, runs: extraRuns }); render();
       if (btn.dataset.ball === "W") {
         const left = (score.batting_squad || []).filter(p => p.status === "yet to bat");
-        byId("newBatter").innerHTML = left.map(p => `<option value="${p.name}">${p.name}</option>`).join("");
+        byId("newBatter").innerHTML = ['<option value="">Select replacement</option>']
+          .concat(left.map(p => `<option value="${p.name}">${p.name}</option>`)).join("");
         byId("wicketInfo").textContent = left.length ? "" : "Last wicket — innings complete";
-        byId("confirmWicket").disabled = left.length === 0;
+        byId("confirmWicket").disabled = false;
+        byId("wicketType").value = "bowled";
+        byId("wicketOutBatter").value = "striker";
         openModal("wicketModal");
+        return;
       }
+      const extraRuns = Number(byId("extraRuns").value || 0);
+      score = await api("/ball", "POST", { type: btn.dataset.ball, runs: extraRuns }); render();
     });
-    byId("confirmWicket").onclick = async () => { await api("/set-players", "POST", { striker: byId("newBatter").value }); closeModal("wicketModal"); await refresh(); };
+    byId("confirmWicket").onclick = async () => {
+      const kind = byId("wicketType").value;
+      const outBatter = byId("wicketOutBatter").value;
+      if (["run_out", "stumped", "hit_wicket", "obstructing_field", "timed_out", "handled_ball"].includes(kind)) {
+        const cfg = {
+          kind,
+          batter: outBatter,
+          legal_delivery: kind !== "stumped",
+          add_ball: kind !== "stumped",
+          credited_to_bowler: ["stumped", "hit_wicket"].includes(kind),
+        };
+        await api("/record-dismissal", "POST", cfg);
+      } else {
+        await api("/ball", "POST", { type: "W", dismissal_kind: kind, out_batter: outBatter });
+      }
+      const replacement = byId("newBatter").value;
+      if (replacement) {
+        const payload = outBatter === "non_striker" ? { non_striker: replacement } : { striker: replacement };
+        await api("/set-players", "POST", payload);
+      }
+      closeModal("wicketModal");
+      await refresh();
+    };
     byId("undoBtn").onclick = async () => { await api("/undo", "POST"); await refresh(); };
     byId("redoBtn").onclick = async () => { await api("/redo", "POST"); await refresh(); };
     byId("undoOverBtn").onclick = async () => { await api("/undo", "POST"); await refresh(); };
