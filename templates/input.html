@@ -27,27 +27,39 @@
 <body>
   <div id="setupScreen">
     <h1>MATCH SETUP</h1>
-    <input id="battingTeam" placeholder="Batting Team">
-    <input id="bowlingTeam" placeholder="Bowling Team">
+    <input id="team1Name" placeholder="Team 1 Name">
+    <input id="team2Name" placeholder="Team 2 Name">
+    <label>Toss Winner</label>
+    <select id="tossWinner">
+      <option value="team1">Team 1</option>
+      <option value="team2">Team 2</option>
+    </select>
+    <label>Toss Decision</label>
+    <select id="tossDecision">
+      <option value="bat">Bat first</option>
+      <option value="bowl">Bowl first</option>
+    </select>
     <input id="totalOvers" type="number" value="20" placeholder="Total Overs">
-    <h2>BATTING SQUAD</h2><div id="battingInputs"></div>
-    <h2>BOWLING SQUAD</h2><div id="bowlingInputs"></div>
+    <h2>TEAM 1 SQUAD</h2><div id="team1Inputs"></div>
+    <h2>TEAM 2 SQUAD</h2><div id="team2Inputs"></div>
     <button id="startMatch">START MATCH</button>
   </div>
 
   <div id="matchScreen" class="hidden">
     <div id="scoreBar">-</div>
-    <label>Striker</label><select id="striker"></select>
-    <label>Non-Striker</label><select id="nonStriker"></select>
-    <label>Bowler</label><select id="bowler"></select>
+    <label>Striker</label><input id="strikerFilter" placeholder="Search striker"><select id="striker"></select>
+    <label>Non-Striker</label><input id="nonStrikerFilter" placeholder="Search non-striker"><select id="nonStriker"></select>
+    <label>Bowler</label><input id="bowlerFilter" placeholder="Search bowler"><select id="bowler"></select>
     <div class="grid4">
       <button data-ball=".">·</button><button data-ball="1">1</button><button data-ball="2">2</button><button data-ball="3">3</button>
       <button data-ball="4">4</button><button data-ball="6">6</button><button data-ball="W">W</button><button data-ball="Wd">Wd</button>
     </div>
-    <div class="grid2"><div></div><button data-ball="Nb">Nb</button></div>
+    <div class="grid2"><button data-ball="Bye">Bye</button><button data-ball="Lb">Lb</button></div>
+    <div class="grid2"><button data-ball="Nb">Nb</button><input id="extraRuns" type="number" min="0" max="6" value="0" placeholder="Extra runs"></div>
     <h3>THIS OVER</h3>
     <div id="thisOver"></div>
-    <div class="grid2"><button id="undoBtn">← UNDO</button><button id="endOverBtn">END OVER</button></div>
+    <div class="grid2"><button id="undoBtn">← UNDO</button><button id="redoBtn">REDO →</button></div>
+    <div class="grid2"><button id="endOverBtn">END OVER</button><div id="scoringHint"></div></div>
     <h3>OVERLAY PANEL</h3>
     <div class="grid2">
       <button class="panel-btn" data-panel="score">Score</button>
@@ -86,8 +98,21 @@
   <script>
     let score = null;
     const byId = (id) => document.getElementById(id);
-    const api = (url, method = "GET", body = null) =>
-      fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined }).then(r => r.json());
+    const pendingKey = "score_pending_actions";
+    async function api(url, method = "GET", body = null) {
+      try {
+        const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+        if (!res.ok) throw new Error("request failed");
+        return await res.json();
+      } catch (e) {
+        if (method !== "GET") {
+          const queue = JSON.parse(localStorage.getItem(pendingKey) || "[]");
+          queue.push({ url, method, body });
+          localStorage.setItem(pendingKey, JSON.stringify(queue));
+        }
+        throw e;
+      }
+    }
     function closeModal(id) { byId(id).style.display = "none"; }
     function openModal(id) { byId(id).style.display = "flex"; }
 
@@ -95,16 +120,18 @@
       const root = byId(container); root.innerHTML = "";
       for (let i = 1; i <= 11; i++) { const el = document.createElement("input"); el.id = `${prefix}${i}`; el.placeholder = `Player ${i}`; root.appendChild(el); }
     }
-    buildInputs("battingInputs", "bat");
-    buildInputs("bowlingInputs", "bowl");
+    buildInputs("team1Inputs", "t1");
+    buildInputs("team2Inputs", "t2");
     buildInputs("secondSquad", "sec");
 
     function names(prefix) { return Array.from({ length: 11 }, (_, i) => byId(`${prefix}${i+1}`).value.trim()).filter(Boolean); }
-    function setSelect(id, items, selected, allowOut) {
+    function setSelect(id, items, selected, allowOut, filterText = "") {
       const placeholder = id === "striker" && !selected ? "Select new batter" : "Select";
       const sel = byId(id); sel.innerHTML = `<option value="">${placeholder}</option>`;
+      const q = (filterText || "").toLowerCase().trim();
       items.forEach(p => {
         if (!allowOut && p.status === "out") return;
+        if (q && !(p.name || "").toLowerCase().includes(q)) return;
         const opt = document.createElement("option");
         opt.value = p.name; opt.textContent = p.name;
         if (p.status === "yet to bat") opt.style.opacity = "0.7";
@@ -118,9 +145,9 @@
       byId("matchScreen").classList.toggle("hidden", !score.match_started);
       if (!score.match_started) return;
       byId("scoreBar").textContent = `${score.batting_team} ${score.runs}/${score.wickets} (${score.overs}.${score.balls})`;
-      setSelect("striker", score.batting_squad || [], score.striker, false);
-      setSelect("nonStriker", score.batting_squad || [], score.non_striker, false);
-      setSelect("bowler", score.bowling_squad || [], score.current_bowler, true);
+      setSelect("striker", score.batting_squad || [], score.striker, false, byId("strikerFilter").value);
+      setSelect("nonStriker", score.batting_squad || [], score.non_striker, false, byId("nonStrikerFilter").value);
+      setSelect("bowler", score.bowling_squad || [], score.current_bowler, true, byId("bowlerFilter").value);
       const overClass = (v) => {
         if (v === ".") return "dot";
         if (v === "4") return "b4";
@@ -134,16 +161,52 @@
       byId("chaseBtn").disabled = score.innings === 1;
       byId("targetText").textContent = `Target: ${(score.runs || 0) + 1} runs`;
       byId("secondBattingTeam").value = score.bowling_team || "";
+      if (score.innings === 2 && score.runs_needed === 0) byId("scoringHint").textContent = "Chase complete";
+      else if (score.balls === 0 && score.current_over.length === 0) byId("scoringHint").textContent = "Select bowler";
+      else byId("scoringHint").textContent = "";
     }
 
-    async function refresh() { score = await api("/score"); render(); }
+    async function flushQueue() {
+      const queue = JSON.parse(localStorage.getItem(pendingKey) || "[]");
+      if (!queue.length) return;
+      const remaining = [];
+      for (const item of queue) {
+        try {
+          await api(item.url, item.method, item.body);
+        } catch (e) {
+          remaining.push(item);
+          break;
+        }
+      }
+      localStorage.setItem(pendingKey, JSON.stringify(remaining));
+    }
+
+    async function refresh() {
+      try {
+        await flushQueue();
+        score = await api("/score");
+        render();
+      } catch (e) {}
+    }
 
     byId("startMatch").onclick = async () => {
-      const batting_squad = names("bat"), bowling_squad = names("bowl");
-      if (batting_squad.length < 2 || bowling_squad.length < 2) return alert("Minimum 2 players per squad required");
+      const team1_squad = names("t1"), team2_squad = names("t2");
+      if (team1_squad.length < 2 || team2_squad.length < 2) return alert("Minimum 2 players per squad required");
+      const team1 = byId("team1Name").value.trim();
+      const team2 = byId("team2Name").value.trim();
+      const tossWinner = byId("tossWinner").value === "team1" ? team1 : team2;
+      const tossDecision = byId("tossDecision").value;
+      const batting_squad = tossDecision === "bat"
+        ? (byId("tossWinner").value === "team1" ? team1_squad : team2_squad)
+        : (byId("tossWinner").value === "team1" ? team2_squad : team1_squad);
+      const bowling_squad = tossDecision === "bat"
+        ? (byId("tossWinner").value === "team1" ? team2_squad : team1_squad)
+        : (byId("tossWinner").value === "team1" ? team1_squad : team2_squad);
       score = await api("/setup", "POST", {
-        batting_team: byId("battingTeam").value.trim(),
-        bowling_team: byId("bowlingTeam").value.trim(),
+        team1,
+        team2,
+        toss_winner: tossWinner,
+        toss_decision: tossDecision,
         total_overs: Number(byId("totalOvers").value || 20),
         batting_squad, bowling_squad
       });
@@ -151,7 +214,8 @@
     };
 
     document.querySelectorAll("[data-ball]").forEach(btn => btn.onclick = async () => {
-      score = await api("/ball", "POST", { type: btn.dataset.ball }); render();
+      const extraRuns = Number(byId("extraRuns").value || 0);
+      score = await api("/ball", "POST", { type: btn.dataset.ball, runs: extraRuns }); render();
       if (btn.dataset.ball === "W") {
         const left = (score.batting_squad || []).filter(p => p.status === "yet to bat");
         byId("newBatter").innerHTML = left.map(p => `<option value="${p.name}">${p.name}</option>`).join("");
@@ -162,6 +226,7 @@
     });
     byId("confirmWicket").onclick = async () => { await api("/set-players", "POST", { striker: byId("newBatter").value }); closeModal("wicketModal"); await refresh(); };
     byId("undoBtn").onclick = async () => { await api("/undo", "POST"); await refresh(); };
+    byId("redoBtn").onclick = async () => { await api("/redo", "POST"); await refresh(); };
     byId("endOverBtn").onclick = async () => { await api("/end-over", "POST"); await refresh(); };
     byId("striker").onchange = async () => { await api("/set-players", "POST", { striker: byId("striker").value }); await refresh(); };
     byId("nonStriker").onchange = async () => { await api("/set-players", "POST", { non_striker: byId("nonStriker").value }); await refresh(); };
@@ -197,6 +262,20 @@
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
     };
+
+    ["strikerFilter", "nonStrikerFilter", "bowlerFilter"].forEach((id) => {
+      byId(id).addEventListener("input", render);
+    });
+    window.addEventListener("keydown", async (e) => {
+      if (e.key === "1") return document.querySelector('[data-ball="1"]').click();
+      if (e.key === "2") return document.querySelector('[data-ball="2"]').click();
+      if (e.key === "3") return document.querySelector('[data-ball="3"]').click();
+      if (e.key === "4") return document.querySelector('[data-ball="4"]').click();
+      if (e.key === "6") return document.querySelector('[data-ball="6"]').click();
+      if (e.key.toLowerCase() === "w") return document.querySelector('[data-ball="W"]').click();
+      if (e.key.toLowerCase() === "z") { await api("/undo", "POST"); return refresh(); }
+      if (e.key.toLowerCase() === "y") { await api("/redo", "POST"); return refresh(); }
+    });
 
     refresh();
     setInterval(refresh, 3000);

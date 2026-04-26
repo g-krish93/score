@@ -16,10 +16,16 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 STATE_PATH = Path("/tmp/cricket_state.json")
 state_lock = threading.Lock()
 last_action = None
+action_history = []
+redo_history = []
 
 
 def blank_state():
     return {
+        "team1": "",
+        "team2": "",
+        "toss_winner": "",
+        "toss_decision": "bat",
         "innings": 1,
         "batting_team": "",
         "bowling_team": "",
@@ -43,6 +49,18 @@ def blank_state():
 
 
 state = blank_state()
+
+
+def snapshot_state():
+    return copy.deepcopy(state)
+
+
+def push_history():
+    global action_history, redo_history
+    action_history.append(snapshot_state())
+    if len(action_history) > 12:
+        action_history = action_history[-12:]
+    redo_history = []
 
 
 def build_batting_squad(players):
@@ -140,29 +158,53 @@ def score():
 
 @app.post("/setup")
 def setup():
-    global state, last_action
+    global state, last_action, action_history, redo_history
     data = request.get_json(silent=True) or {}
     batting_names = [p.strip() for p in data.get("batting_squad", []) if str(p).strip()]
     bowling_names = [p.strip() for p in data.get("bowling_squad", []) if str(p).strip()]
     with state_lock:
         state = blank_state()
-        state["batting_team"] = str(data.get("batting_team", "")).strip()
-        state["bowling_team"] = str(data.get("bowling_team", "")).strip()
+        team1 = str(data.get("team1", data.get("batting_team", ""))).strip()
+        team2 = str(data.get("team2", data.get("bowling_team", ""))).strip()
+        toss_winner = str(data.get("toss_winner", team1)).strip() or team1
+        toss_decision = str(data.get("toss_decision", "bat")).strip().lower()
+        if toss_decision not in {"bat", "bowl"}:
+            toss_decision = "bat"
+        if toss_winner == team1:
+            other_team = team2
+        else:
+            other_team = team1
+        if toss_decision == "bat":
+            batting_team = toss_winner
+            bowling_team = other_team
+        else:
+            batting_team = other_team
+            bowling_team = toss_winner
+        state["team1"] = team1
+        state["team2"] = team2
+        state["toss_winner"] = toss_winner
+        state["toss_decision"] = toss_decision
+        state["batting_team"] = batting_team
+        state["bowling_team"] = bowling_team
         state["total_overs"] = safe_num(data.get("total_overs", 20), 20)
         state["batting_squad"] = build_batting_squad(batting_names)
         state["bowling_squad"] = build_bowling_squad(bowling_names)
         state["match_started"] = True
         last_action = None
+        action_history = []
+        redo_history = []
         save_state()
         return jsonify(with_calculated_values(state))
 
 
 @app.post("/reset-match")
 def reset_match():
-    global state, last_action
+    global state, last_action, action_history, redo_history
     with state_lock:
         state = blank_state()
         last_action = None
+        action_history = []
+        redo_history = []
         save_state()
         return jsonify(with_calculated_values(state))
 
@@ -172,33 +214,55 @@ def ball():
     global last_action
     data = request.get_json(silent=True) or {}
     ball_type = str(data.get("type", "")).strip()
-    valid = {".", "1", "2", "3", "4", "6", "W", "Wd", "Nb"}
+    run_bonus = max(0, safe_num(data.get("runs", 0), 0))
+    valid = {".", "1", "2", "3", "4", "6", "W", "Wd", "Nb", "Bye", "Lb"}
     if ball_type not in valid:
         return jsonify({"error": "invalid ball type"}), 400
 
     with state_lock:
+        push_history()
         last_action = {"state_snapshot": copy.deepcopy(state)}
         striker = get_batter(state["striker"])
         bowler = get_bowler(state["current_bowler"])
 
-        if ball_type in {"Wd", "Nb"}:
-            state["runs"] += 1
-            state["extras"] += 1
-            state["current_over"].append(ball_type)
+        if ball_type == "Wd":
+            total = 1 + run_bonus
+            state["runs"] += total
+            state["extras"] += total
+            state["current_over"].append(f"Wd+{run_bonus}" if run_bonus else "Wd")
             if bowler:
-                bowler["runs"] += 1
+                bowler["runs"] += total
             save_state()
             return jsonify(with_calculated_values(state))
 
-        runs_map = {".": 0, "1": 1, "2": 2, "3": 3, "4": 4, "6": 6, "W": 0}
+        if ball_type == "Nb":
+            total = 1 + run_bonus
+            state["runs"] += total
+            state["extras"] += 1
+            state["current_over"].append(f"Nb+{run_bonus}" if run_bonus else "Nb")
+            if striker and run_bonus:
+                striker["runs"] += run_bonus
+            if bowler:
+                bowler["runs"] += total
+            save_state()
+            return jsonify(with_calculated_values(state))
+
+        runs_map = {".": 0, "1": 1, "2": 2, "3": 3, "4": 4, "6": 6, "W": 0, "Bye": run_bonus, "Lb": run_bonus}
         run = runs_map[ball_type]
         state["runs"] += run
+        if ball_type in {"Bye", "Lb"}:
+            state["extras"] += run
         state["balls"] += 1
-        state["current_over"].append(ball_type)
+        if ball_type in {"Bye", "Lb"}:
+            state["current_over"].append(f"{ball_type}+{run}")
+        else:
+            state["current_over"].append(ball_type)
 
-        if striker:
+        if striker and ball_type not in {"Bye", "Lb"}:
             striker["balls"] += 1
             striker["runs"] += run
+        elif striker and ball_type in {"Bye", "Lb"}:
+            striker["balls"] += 1
 
         if bowler:
             bowler["balls"] += 1
@@ -214,7 +278,7 @@ def ball():
             if striker:
                 striker["status"] = "out"
             state["striker"] = ""
-        elif ball_type in {"1", "2", "3"}:
+        elif ball_type in {"1", "2", "3"} or (ball_type in {"Bye", "Lb"} and run % 2 == 1):
             state["striker"], state["non_striker"] = state["non_striker"], state["striker"]
 
         end_over()
@@ -224,12 +288,25 @@ def ball():
 
 @app.post("/undo")
 def undo():
-    global state, last_action
+    global state, last_action, redo_history
     with state_lock:
-        if not last_action:
+        if not action_history:
             return jsonify({"error": "nothing to undo"}), 400
-        state = last_action["state_snapshot"]
+        redo_history.append(snapshot_state())
+        state = action_history.pop()
         last_action = None
+        save_state()
+        return jsonify(with_calculated_values(state))
+
+
+@app.post("/redo")
+def redo():
+    global state, action_history
+    with state_lock:
+        if not redo_history:
+            return jsonify({"error": "nothing to redo"}), 400
+        action_history.append(snapshot_state())
+        state = redo_history.pop()
         save_state()
         return jsonify(with_calculated_values(state))
 
@@ -298,6 +375,12 @@ def start_second_innings():
             bowling_names = [p["name"] for p in state["batting_squad"] if p.get("name")]
         previous_batting_team = state["batting_team"]
         first_innings_runs = state["runs"]
+        if state["team1"] == state["batting_team"]:
+            state["team1"] = state["bowling_team"]
+            state["team2"] = state["batting_team"]
+        else:
+            state["team1"] = state["batting_team"]
+            state["team2"] = state["bowling_team"]
         state["innings"] = 2
         state["target"] = first_innings_runs + 1
         state["runs"] = 0
