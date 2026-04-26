@@ -92,6 +92,10 @@
       <button class="panel-btn" data-panel="chase" id="chaseBtn">Chase</button>
       <button class="panel-btn" data-panel="fullscore" id="fullBtn">Full</button>
     </div>
+    <div class="grid2">
+      <button id="densityCompactBtn">Compact Overlay</button>
+      <button id="densityExpandedBtn">Expanded Overlay</button>
+    </div>
     <div class="grid2"><button id="editOpen">Edit Score</button><button id="secondOpen">2nd Innings</button></div>
     <button id="newMatchBtn" class="danger">NEW MATCH</button>
   </div>
@@ -278,6 +282,8 @@
     byId("nonStriker").onchange = async () => { await api("/set-players", "POST", { non_striker: byId("nonStriker").value }); await refresh(); };
     byId("bowler").onchange = async () => { await api("/set-players", "POST", { current_bowler: byId("bowler").value }); await refresh(); };
     document.querySelectorAll("[data-panel]").forEach(btn => btn.onclick = async () => { await api("/set-panel", "POST", { panel: btn.dataset.panel }); await refresh(); });
+    byId("densityCompactBtn").onclick = async () => { await api("/set-overlay-density", "POST", { density: "compact" }); await refresh(); };
+    byId("densityExpandedBtn").onclick = async () => { await api("/set-overlay-density", "POST", { density: "expanded" }); await refresh(); };
 
     byId("editOpen").onclick = () => { ["runs","wickets","overs","balls","extras"].forEach(k => byId(`e${k[0].toUpperCase()}${k.slice(1)}`).value = score[k]); openModal("editModal"); };
     byId("saveEdit").onclick = async () => {

@@ -27,6 +27,7 @@ def blank_state():
         "team1_color": "#2dd4bf",
         "team2_color": "#f59e0b",
         "theme": "classic",
+        "overlay_density": "expanded",
         "toss_winner": "",
         "toss_decision": "bat",
         "innings": 1,
@@ -380,6 +381,18 @@ def set_panel():
     with state_lock:
         state["active_panel"] = panel
         return jsonify({"active_panel": state["active_panel"]})
+
+
+@app.post("/set-overlay-density")
+def set_overlay_density():
+    data = request.get_json(silent=True) or {}
+    density = str(data.get("density", "")).strip().lower()
+    if density not in {"compact", "expanded"}:
+        return jsonify({"error": "invalid density"}), 400
+    with state_lock:
+        state["overlay_density"] = density
+        save_state()
+        return jsonify({"overlay_density": state["overlay_density"]})
 
 
 @app.post("/end-over")
