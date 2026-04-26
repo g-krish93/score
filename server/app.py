@@ -157,6 +157,16 @@ def setup():
         return jsonify(with_calculated_values(state))
 
 
+@app.post("/reset-match")
+def reset_match():
+    global state, last_action
+    with state_lock:
+        state = blank_state()
+        last_action = None
+        save_state()
+        return jsonify(with_calculated_values(state))
+
+
 @app.post("/ball")
 def ball():
     global last_action
@@ -282,6 +292,10 @@ def start_second_innings():
     batting_names = [p.strip() for p in data.get("batting_squad", []) if str(p).strip()]
     bowling_names = [p.strip() for p in data.get("bowling_squad", []) if str(p).strip()]
     with state_lock:
+        if not batting_names:
+            batting_names = [p["name"] for p in state["bowling_squad"] if p.get("name")]
+        if not bowling_names:
+            bowling_names = [p["name"] for p in state["batting_squad"] if p.get("name")]
         previous_batting_team = state["batting_team"]
         first_innings_runs = state["runs"]
         state["innings"] = 2

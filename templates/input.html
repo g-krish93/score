@@ -13,6 +13,7 @@
     .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
     .panel-btn.active { border: 2px solid #e8a020; }
     .panel-btn:disabled { opacity: .5; background: #555; }
+    .danger { background: #8b1f1f; }
     .hidden { display: none; }
     .over-item { display: inline-block; padding: 6px 10px; margin: 2px; border-radius: 12px; background: #223; font-weight: 700; }
     .dot { background: #6b7280; }
@@ -55,6 +56,7 @@
       <button class="panel-btn" data-panel="chase" id="chaseBtn">Chase</button>
     </div>
     <div class="grid2"><button id="editOpen">Edit Score</button><button id="secondOpen">2nd Innings</button></div>
+    <button id="newMatchBtn" class="danger">NEW MATCH</button>
   </div>
 
   <div id="editModal" class="modal"><div class="modal-card">
@@ -76,6 +78,7 @@
   <div id="secondModal" class="modal"><div class="modal-card">
     <h3>START 2ND INNINGS</h3><p id="targetText">Target: -</p>
     <input id="secondBattingTeam" placeholder="New batting team">
+    <p>Squad pre-filled from 1st innings (edit only if needed):</p>
     <div id="secondSquad"></div>
     <div class="grid2"><button onclick="closeModal('secondModal')">CANCEL</button><button id="startSecond">START 2ND INNINGS</button></div>
   </div></div>
@@ -171,7 +174,13 @@
       closeModal("editModal"); await refresh();
     };
 
-    byId("secondOpen").onclick = () => openModal("secondModal");
+    byId("secondOpen").onclick = () => {
+      const nextBatting = (score.bowling_squad || []).map(p => p.name).filter(Boolean);
+      for (let i = 1; i <= 11; i++) {
+        byId(`sec${i}`).value = nextBatting[i - 1] || "";
+      }
+      openModal("secondModal");
+    };
     byId("startSecond").onclick = async () => {
       await api("/start-second-innings", "POST", {
         batting_team: byId("secondBattingTeam").value.trim(),
@@ -179,6 +188,14 @@
         bowling_squad: (score.batting_squad || []).map(p => p.name)
       });
       closeModal("secondModal"); await refresh();
+    };
+
+    byId("newMatchBtn").onclick = async () => {
+      const ok = confirm("Close current match and return to setup?");
+      if (!ok) return;
+      score = await api("/reset-match", "POST");
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
     };
 
     refresh();
