@@ -121,6 +121,25 @@ def with_calculated_values(snapshot):
         data["rrr"] = None
         data["runs_needed"] = None
         data["balls_remaining"] = None
+    data["match_complete"] = False
+    data["match_result"] = None
+    if data["innings"] == 2 and data["target"] is not None:
+        innings_done = (
+            data["runs"] >= data["target"]
+            or data["wickets"] >= 10
+            or total_balls >= (data["total_overs"] * 6)
+        )
+        if innings_done:
+            data["match_complete"] = True
+            first_innings_total = max(data["target"] - 1, 0)
+            if data["runs"] >= data["target"]:
+                wickets_left = max(10 - data["wickets"], 0)
+                data["match_result"] = f"{data['batting_team']} won by {wickets_left} wicket(s)"
+            elif data["runs"] == first_innings_total:
+                data["match_result"] = "Match tied"
+            else:
+                margin_runs = max(first_innings_total - data["runs"], 0)
+                data["match_result"] = f"{data['bowling_team']} won by {margin_runs} run(s)"
     return data
 
 
