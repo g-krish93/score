@@ -5,13 +5,24 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Cricket Overlay</title>
   <style>
+    :root { --team1: #2dd4bf; --team2: #f59e0b; --bg: rgba(0,0,0,.82); --fg: #fff; --muted: #aaa; }
     body { margin: 0; padding: 0; background: transparent; font-family: "Courier New", Courier, monospace; }
-    #overlay { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,.82); color: #fff; padding: 12px 16px; }
+    #overlay { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg); color: var(--fg); padding: 12px 16px; border-top: 2px solid rgba(255,255,255,.08); }
     .muted { color: #aaa; }
     .title { font-weight: 800; }
     .section-title { color: #aaa; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
     #stale { position: absolute; right: 16px; top: 8px; color: #ff4040; display: none; }
     .row { margin: 4px 0; white-space: pre; }
+    .team1 { color: var(--team1); }
+    .team2 { color: var(--team2); }
+    #flash { position: absolute; left: 16px; top: 8px; font-weight: 900; display: none; }
+    .flash-4 { color: #f0c040; text-shadow: 0 0 8px rgba(240,192,64,.5); }
+    .flash-6 { color: #ff5d5d; text-shadow: 0 0 8px rgba(255,93,93,.6); }
+    .flash-w { color: #ff3d3d; text-shadow: 0 0 8px rgba(255,61,61,.6); }
+    .theme-neon { --bg: rgba(9, 11, 26, .92); --fg: #d6f6ff; --muted: #79a7b4; }
+    .theme-neon #overlay { border-top: 2px solid rgba(85, 245, 255, .5); box-shadow: 0 0 20px rgba(85,245,255,.2); }
+    .theme-minimal { --bg: rgba(0,0,0,.64); }
+    .theme-minimal #overlay { border-top: none; padding: 8px 12px; }
     @media (max-aspect-ratio: 10/16) {
       #overlay { padding: 8px 10px; }
       .row { font-size: 12px; margin: 2px 0; }
@@ -21,16 +32,40 @@
 <body>
   <div id="overlay">
     <div id="stale">●</div>
+    <div id="flash"></div>
     <div id="content" class="row">Loading...</div>
   </div>
   <script>
     let lastData = null;
     let failCount = 0;
+    let lastBallToken = "";
 
     const text = (v) => (v === null || v === undefined || v === "" ? "—" : String(v));
     const pad = (v) => text(v).padEnd(18, " ");
+    function setTheme(data) {
+      const body = document.body;
+      body.classList.remove("theme-classic", "theme-neon", "theme-minimal");
+      body.classList.add(`theme-${data.theme || "classic"}`);
+      document.documentElement.style.setProperty("--team1", data.team1_color || "#2dd4bf");
+      document.documentElement.style.setProperty("--team2", data.team2_color || "#f59e0b");
+    }
+    function maybeFlash(data) {
+      const token = (data.current_over || [])[data.current_over.length - 1] || "";
+      if (!token || token === lastBallToken) return;
+      lastBallToken = token;
+      const flash = document.getElementById("flash");
+      flash.className = "";
+      if (token.startsWith("4")) { flash.textContent = "FOUR!"; flash.classList.add("flash-4"); }
+      else if (token.startsWith("6")) { flash.textContent = "SIX!"; flash.classList.add("flash-6"); }
+      else if (token.startsWith("W")) { flash.textContent = "WICKET!"; flash.classList.add("flash-w"); }
+      else return;
+      flash.style.display = "block";
+      setTimeout(() => { flash.style.display = "none"; }, 1200);
+    }
 
     function renderOverlay(data) {
+      setTheme(data);
+      maybeFlash(data);
       const panel = data.active_panel || "score";
       const content = document.getElementById("content");
       if (panel === "batting") {
@@ -69,7 +104,7 @@
           ? `<div class="row">T:${text(data.target)} Need ${text(data.runs_needed)} off ${text(data.balls_remaining)}b RRR:${text(data.rrr)}</div>`
           : `<div class="row">CRR: ${text(data.crr)}</div>`;
         content.innerHTML =
-          `<div class="row"><span class="title">${text(data.batting_team)}</span> <span class="muted">vs ${text(data.bowling_team)}</span></div>` +
+          `<div class="row"><span class="title team1">${text(data.batting_team)}</span> <span class="muted">vs <span class="team2">${text(data.bowling_team)}</span></span></div>` +
           `<div class="row">${text(data.runs)}/${text(data.wickets)} (${text(data.overs_display)} ov)</div>` +
           chaseLine +
           `<div class="row section-title">Batting</div>` + batterRows +
@@ -78,11 +113,11 @@
       }
       if (data.innings === 2) {
         content.innerHTML =
-          `<div class="row"><span class="title">${text(data.batting_team)}</span> <span class="muted">vs ${text(data.bowling_team)}</span></div>` +
+          `<div class="row"><span class="title team1">${text(data.batting_team)}</span> <span class="muted">vs <span class="team2">${text(data.bowling_team)}</span></span></div>` +
           `<div class="row">${text(data.runs)}/${text(data.wickets)} (${text(data.overs_display)} ov) T:${text(data.target)} Need ${text(data.runs_needed)} off ${text(data.balls_remaining)}b</div>`;
       } else {
         content.innerHTML =
-          `<div class="row"><span class="title">${text(data.batting_team)}</span> <span class="muted">vs ${text(data.bowling_team)}</span></div>` +
+          `<div class="row"><span class="title team1">${text(data.batting_team)}</span> <span class="muted">vs <span class="team2">${text(data.bowling_team)}</span></span></div>` +
           `<div class="row">${text(data.runs)}/${text(data.wickets)} (${text(data.overs_display)} ov) CRR: ${text(data.crr)}</div>`;
       }
     }

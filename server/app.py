@@ -24,6 +24,9 @@ def blank_state():
     return {
         "team1": "",
         "team2": "",
+        "team1_color": "#2dd4bf",
+        "team2_color": "#f59e0b",
+        "theme": "classic",
         "toss_winner": "",
         "toss_decision": "bat",
         "innings": 1,
@@ -183,6 +186,12 @@ def setup():
             bowling_team = toss_winner
         state["team1"] = team1
         state["team2"] = team2
+        state["team1_color"] = str(data.get("team1_color", "#2dd4bf")).strip() or "#2dd4bf"
+        state["team2_color"] = str(data.get("team2_color", "#f59e0b")).strip() or "#f59e0b"
+        theme = str(data.get("theme", "classic")).strip().lower()
+        if theme not in {"classic", "neon", "minimal"}:
+            theme = "classic"
+        state["theme"] = theme
         state["toss_winner"] = toss_winner
         state["toss_decision"] = toss_decision
         scoring_mode = str(data.get("scoring_mode", "ball_by_ball")).strip()

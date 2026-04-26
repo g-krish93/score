@@ -39,6 +39,16 @@
       <option value="bat">Bat first</option>
       <option value="bowl">Bowl first</option>
     </select>
+    <label>Theme</label>
+    <select id="themeSelect">
+      <option value="classic">Classic</option>
+      <option value="neon">Neon</option>
+      <option value="minimal">Minimal</option>
+    </select>
+    <div class="grid2">
+      <div><label>Team 1 Color</label><input id="team1Color" type="color" value="#2dd4bf"></div>
+      <div><label>Team 2 Color</label><input id="team2Color" type="color" value="#f59e0b"></div>
+    </div>
     <label>Scoring Type</label>
     <select id="scoringType">
       <option value="ball_by_ball">Ball by ball</option>
@@ -227,6 +237,9 @@
       score = await api("/setup", "POST", {
         team1,
         team2,
+        team1_color: byId("team1Color").value,
+        team2_color: byId("team2Color").value,
+        theme: byId("themeSelect").value,
         toss_winner: tossWinner,
         toss_decision: tossDecision,
         scoring_mode: scoringMode,
