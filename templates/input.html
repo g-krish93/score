@@ -47,9 +47,9 @@
 
   <div id="matchScreen" class="hidden">
     <div id="scoreBar">-</div>
-    <label>Striker</label><input id="strikerFilter" placeholder="Search striker"><select id="striker"></select>
-    <label>Non-Striker</label><input id="nonStrikerFilter" placeholder="Search non-striker"><select id="nonStriker"></select>
-    <label>Bowler</label><input id="bowlerFilter" placeholder="Search bowler"><select id="bowler"></select>
+    <label>Striker</label><select id="striker"></select>
+    <label>Non-Striker</label><select id="nonStriker"></select>
+    <label>Bowler</label><select id="bowler"></select>
     <div class="grid4">
       <button data-ball=".">·</button><button data-ball="1">1</button><button data-ball="2">2</button><button data-ball="3">3</button>
       <button data-ball="4">4</button><button data-ball="6">6</button><button data-ball="W">W</button><button data-ball="Wd">Wd</button>
@@ -126,13 +126,11 @@
     buildInputs("secondSquad", "sec");
 
     function names(prefix) { return Array.from({ length: 11 }, (_, i) => byId(`${prefix}${i+1}`).value.trim()).filter(Boolean); }
-    function setSelect(id, items, selected, allowOut, filterText = "") {
+    function setSelect(id, items, selected, allowOut) {
       const placeholder = id === "striker" && !selected ? "Select new batter" : "Select";
       const sel = byId(id); sel.innerHTML = `<option value="">${placeholder}</option>`;
-      const q = (filterText || "").toLowerCase().trim();
       items.forEach(p => {
         if (!allowOut && p.status === "out") return;
-        if (q && !(p.name || "").toLowerCase().includes(q)) return;
         const opt = document.createElement("option");
         opt.value = p.name; opt.textContent = p.name;
         if (p.status === "yet to bat") opt.style.opacity = "0.7";
@@ -146,9 +144,9 @@
       byId("matchScreen").classList.toggle("hidden", !score.match_started);
       if (!score.match_started) return;
       byId("scoreBar").textContent = `${score.batting_team} ${score.runs}/${score.wickets} (${score.overs}.${score.balls})`;
-      setSelect("striker", score.batting_squad || [], score.striker, false, byId("strikerFilter").value);
-      setSelect("nonStriker", score.batting_squad || [], score.non_striker, false, byId("nonStrikerFilter").value);
-      setSelect("bowler", score.bowling_squad || [], score.current_bowler, true, byId("bowlerFilter").value);
+      setSelect("striker", score.batting_squad || [], score.striker, false);
+      setSelect("nonStriker", score.batting_squad || [], score.non_striker, false);
+      setSelect("bowler", score.bowling_squad || [], score.current_bowler, true);
       const overClass = (v) => {
         if (v === ".") return "dot";
         if (v === "4") return "b4";
@@ -264,9 +262,6 @@
       window.scrollTo({ top: 0, behavior: "smooth" });
     };
 
-    ["strikerFilter", "nonStrikerFilter", "bowlerFilter"].forEach((id) => {
-      byId(id).addEventListener("input", render);
-    });
     window.addEventListener("keydown", async (e) => {
       if (e.key === "1") return document.querySelector('[data-ball="1"]').click();
       if (e.key === "2") return document.querySelector('[data-ball="2"]').click();
