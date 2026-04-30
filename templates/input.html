@@ -23,11 +23,20 @@
     .bx { color: #8fc7ff; }
     .modal { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none; align-items: center; justify-content: center; }
     .modal-card { background: #162032; border-radius: 12px; padding: 24px; width: min(92vw, 480px); }
+    #scoreBar { position: sticky; top: 0; z-index: 5; background: rgba(13, 27, 42, 0.96); padding: 8px 6px; border-bottom: 1px solid #355; }
+    @media (max-width: 700px) {
+      body { padding: 10px; }
+      .grid4 { grid-template-columns: repeat(2, 1fr); }
+      .grid2 { grid-template-columns: 1fr; }
+      input, select, button { min-height: 52px; font-size: 17px; }
+      .modal-card { width: 94vw; max-height: 88vh; overflow: auto; padding: 16px; }
+    }
   </style>
 </head>
 <body>
   <div id="setupScreen">
     <h1>MATCH SETUP</h1>
+    <h2 id="matchLabel"></h2>
     <input id="team1Name" placeholder="Team 1 Name">
     <input id="team2Name" placeholder="Team 2 Name">
     <label>Toss Winner</label>
@@ -66,6 +75,7 @@
   </div>
 
   <div id="matchScreen" class="hidden">
+    <h2 id="liveMatchLabel"></h2>
     <div id="scoreBar">-</div>
     <div class="grid2">
       <button id="guidedModeBtn" class="secondary">Guided Mode: ON</button>
@@ -114,6 +124,11 @@
     <div class="grid2">
       <button id="densityCompactBtn">Compact Overlay</button>
       <button id="densityExpandedBtn">Expanded Overlay</button>
+    </div>
+    <div class="grid2">
+      <button id="fontSmallBtn">Overlay Font: Small</button>
+      <button id="fontNormalBtn">Overlay Font: Normal</button>
+      <button id="fontLargeBtn">Overlay Font: Large</button>
     </div>
     <div class="grid2"><button id="editOpen">Edit Score</button><button id="secondOpen">2nd Innings</button></div>
     <button id="newMatchBtn" class="danger">NEW MATCH</button>
@@ -174,20 +189,40 @@
     let score = null;
     let lastOverDisplay = "";
     let guidedMode = true;
+    let refreshInFlight = false;
+    let refreshPending = false;
+    const MATCH_ID = "{{ match_id|default('default') }}";
+    const MATCH_QUERY = `match=${encodeURIComponent(MATCH_ID)}`;
     const byId = (id) => document.getElementById(id);
-    const pendingKey = "score_pending_actions";
-    async function api(url, method = "GET", body = null) {
+    const pendingKey = `score_pending_actions_${MATCH_ID}`;
+    const templateKey = `score_match_template_${MATCH_ID}`;
+    function withMatch(url) {
+      const sep = url.includes("?") ? "&" : "?";
+      return `${url}${sep}${MATCH_QUERY}`;
+    }
+    async function api(url, method = "GET", body = null, options = {}) {
+      const queueOnFail = options.queueOnFail !== false;
+      const timeoutMs = Number(options.timeoutMs || 6500);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+        const res = await fetch(withMatch(url), {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: body ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        });
         if (!res.ok) throw new Error("request failed");
         return await res.json();
       } catch (e) {
-        if (method !== "GET") {
+        if (queueOnFail && method !== "GET") {
           const queue = JSON.parse(localStorage.getItem(pendingKey) || "[]");
           queue.push({ url, method, body });
           localStorage.setItem(pendingKey, JSON.stringify(queue));
         }
         throw e;
+      } finally {
+        clearTimeout(timeout);
       }
     }
     function closeModal(id) { byId(id).style.display = "none"; }
@@ -274,7 +309,7 @@
       const remaining = [];
       for (const item of queue) {
         try {
-          await api(item.url, item.method, item.body);
+          await api(item.url, item.method, item.body, { queueOnFail: false });
         } catch (e) {
           remaining.push(item);
           break;
@@ -284,11 +319,23 @@
     }
 
     async function refresh() {
+      if (refreshInFlight) {
+        refreshPending = true;
+        return;
+      }
+      refreshInFlight = true;
       try {
-        await flushQueue();
         score = await api("/score");
         render();
+        flushQueue();
       } catch (e) {}
+      finally {
+        refreshInFlight = false;
+        if (refreshPending) {
+          refreshPending = false;
+          refresh();
+        }
+      }
     }
 
     byId("startMatch").onclick = async () => {
@@ -333,11 +380,11 @@
         team1Squad: names("t1"),
         team2Squad: names("t2"),
       };
-      localStorage.setItem("score_match_template", JSON.stringify(payload));
+      localStorage.setItem(templateKey, JSON.stringify(payload));
       alert("Match template saved.");
     };
     byId("loadTemplateBtn").onclick = () => {
-      const raw = localStorage.getItem("score_match_template");
+      const raw = localStorage.getItem(templateKey);
       if (!raw) return alert("No saved template.");
       const t = JSON.parse(raw);
       byId("team1Name").value = t.team1 || "";
@@ -366,8 +413,28 @@
         openModal("wicketModal");
         return;
       }
+      if (btn.dataset.ball === "Bye" || btn.dataset.ball === "Lb") {
+        const prev = Number(byId("extraRuns").value || 0);
+        const raw = prompt(`${btn.dataset.ball} runs (0-6)`, String(prev || 1));
+        if (raw === null) return;
+        const byeRuns = Math.max(0, Math.min(6, Number(raw || 0)));
+        if (Number.isNaN(byeRuns)) return alert("Enter a valid number between 0 and 6");
+        byId("extraRuns").value = String(byeRuns);
+        score = await api("/ball", "POST", { type: btn.dataset.ball, runs: byeRuns });
+        byId("extraRuns").value = "0";
+        render();
+        if (lastOverDisplay && score.overs_display !== lastOverDisplay && score.balls === 0) {
+          setSelect("wizStriker", score.batting_squad || [], score.striker, false);
+          setSelect("wizNonStriker", score.batting_squad || [], score.non_striker, false);
+          setSelect("wizBowler", score.bowling_squad || [], score.current_bowler, true);
+          openModal("overWizardModal");
+        }
+        lastOverDisplay = score.overs_display;
+        return;
+      }
       const extraRuns = Number(byId("extraRuns").value || 0);
       score = await api("/ball", "POST", { type: btn.dataset.ball, runs: extraRuns }); render();
+      byId("extraRuns").value = "0";
       if (lastOverDisplay && score.overs_display !== lastOverDisplay && score.balls === 0) {
         setSelect("wizStriker", score.batting_squad || [], score.striker, false);
         setSelect("wizNonStriker", score.batting_squad || [], score.non_striker, false);
@@ -429,6 +496,9 @@
     document.querySelectorAll("[data-panel]").forEach(btn => btn.onclick = async () => { await api("/set-panel", "POST", { panel: btn.dataset.panel }); await refresh(); });
     byId("densityCompactBtn").onclick = async () => { await api("/set-overlay-density", "POST", { density: "compact" }); await refresh(); };
     byId("densityExpandedBtn").onclick = async () => { await api("/set-overlay-density", "POST", { density: "expanded" }); await refresh(); };
+    byId("fontSmallBtn").onclick = async () => { await api("/set-overlay-scale", "POST", { scale: 0.9 }); await refresh(); };
+    byId("fontNormalBtn").onclick = async () => { await api("/set-overlay-scale", "POST", { scale: 1.1 }); await refresh(); };
+    byId("fontLargeBtn").onclick = async () => { await api("/set-overlay-scale", "POST", { scale: 1.35 }); await refresh(); };
 
     byId("editOpen").onclick = () => { ["runs","wickets","overs","balls","extras"].forEach(k => byId(`e${k[0].toUpperCase()}${k.slice(1)}`).value = score[k]); openModal("editModal"); };
     byId("saveEdit").onclick = async () => {
@@ -481,6 +551,9 @@
       if (e.key.toLowerCase() === "y") { await api("/redo", "POST"); return refresh(); }
     });
 
+    const prettyMatch = MATCH_ID.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    byId("matchLabel").textContent = prettyMatch;
+    byId("liveMatchLabel").textContent = prettyMatch;
     refresh();
     setInterval(refresh, 3000);
   </script>

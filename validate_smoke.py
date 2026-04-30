@@ -71,6 +71,8 @@ def main():
 
     assert_ok(c.post("/set-panel", json={"panel": "batting"}))
     assert c.get("/score").get_json()["active_panel"] == "batting"
+    assert_ok(c.post("/set-overlay-scale", json={"scale": 1.35}))
+    assert c.get("/score").get_json()["overlay_scale"] == 1.35
 
     assert_ok(c.post("/end-over"))
     score = c.get("/score").get_json()

@@ -16,9 +16,9 @@ Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000`, Phone 3 updates s
 
 ## Match day
 
-1. Open input UI on Phone 3 at `/input`.
+1. Open input UI on Phone 3 at `/input` (or scoped match page like `/m/bmacc-team1/input`).
 2. Configure match and start.
-3. Load overlay `/` in Larix Browser Source on Phone 1.
+3. Load overlay `/` (or scoped overlay `/m/bmacc-team1`) in your stream Browser Source.
 4. Score ball-by-ball and switch overlay panels as needed.
 
 ## Save/restore
@@ -26,6 +26,17 @@ Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000`, Phone 3 updates s
 - Auto-save runs after every `/ball`.
 - Manual save: `POST /save`
 - Manual restore: `POST /restore`
+
+## Multiple parallel matches
+
+- Use dedicated URLs per match so states do not mix.
+- Example Team 1:
+  - Input: `/m/bmacc-team1/input`
+  - Overlay: `/m/bmacc-team1`
+- Example Team 2:
+  - Input: `/m/bmacc-team2/input`
+  - Overlay: `/m/bmacc-team2`
+- All API calls from those pages automatically include the match scope.
 
 ## SSH cheat sheet
 

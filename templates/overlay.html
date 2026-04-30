@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Cricket Overlay</title>
   <style>
-    :root { --team1: #2dd4bf; --team2: #f59e0b; --bg: rgba(0,0,0,.82); --fg: #fff; --muted: #aaa; }
+    :root { --team1: #2dd4bf; --team2: #f59e0b; --bg: rgba(0,0,0,.82); --fg: #fff; --muted: #aaa; --overlay-scale: 1; }
     body { margin: 0; padding: 0; background: transparent; font-family: "Courier New", Courier, monospace; }
-    #overlay { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg); color: var(--fg); padding: 12px 16px; border-top: 2px solid rgba(255,255,255,.08); }
+    #overlay { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg); color: var(--fg); padding: calc(12px * var(--overlay-scale)) calc(16px * var(--overlay-scale)); border-top: 2px solid rgba(255,255,255,.08); font-size: calc(16px * var(--overlay-scale)); }
     .muted { color: #aaa; }
     .title { font-weight: 800; }
-    .section-title { color: #aaa; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
+    .section-title { color: #aaa; font-size: calc(12px * var(--overlay-scale)); letter-spacing: 1px; text-transform: uppercase; }
     #stale { position: absolute; right: 16px; top: 8px; color: #ff4040; display: none; }
     .row { margin: 4px 0; white-space: pre; }
     .result { color: #22c55e; font-weight: 800; letter-spacing: .3px; }
@@ -18,7 +18,7 @@
     .team2 { color: var(--team2); }
     #flash { position: absolute; left: 16px; top: 8px; font-weight: 900; display: none; }
     #momentum { margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
-    .mom { font-size: 11px; border-radius: 999px; padding: 2px 6px; background: rgba(255,255,255,.08); }
+    .mom { font-size: calc(11px * var(--overlay-scale)); border-radius: 999px; padding: calc(2px * var(--overlay-scale)) calc(6px * var(--overlay-scale)); background: rgba(255,255,255,.08); }
     .mom.w { background: rgba(255,61,61,.25); }
     .mom.f { background: rgba(240,192,64,.28); }
     .mom.s { background: rgba(255,93,93,.28); }
@@ -49,6 +49,7 @@
   <div id="overlay">
     <div id="stale">●</div>
     <div id="flash"></div>
+    <div id="matchTag" class="row muted"></div>
     <div id="content" class="row">Loading...</div>
     <div id="pressureWrap"><div id="pressureFill"></div></div>
     <div id="momentum"></div>
@@ -58,6 +59,12 @@
     let failCount = 0;
     let lastBallToken = "";
     let lastScoreKey = "";
+    const MATCH_ID = "{{ match_id|default('default') }}";
+    const MATCH_QUERY = `match=${encodeURIComponent(MATCH_ID)}`;
+    function withMatch(url) {
+      const sep = url.includes("?") ? "&" : "?";
+      return `${url}${sep}${MATCH_QUERY}`;
+    }
 
     const text = (v) => (v === null || v === undefined || v === "" ? "—" : String(v));
     const pad = (v) => text(v).padEnd(18, " ");
@@ -68,6 +75,7 @@
       body.classList.toggle("density-compact", (data.overlay_density || "expanded") === "compact");
       document.documentElement.style.setProperty("--team1", data.team1_color || "#2dd4bf");
       document.documentElement.style.setProperty("--team2", data.team2_color || "#f59e0b");
+      document.documentElement.style.setProperty("--overlay-scale", String(data.overlay_scale || 1));
     }
     function renderMomentum(data) {
       const holder = document.getElementById("momentum");
@@ -180,7 +188,7 @@
 
     async function fetchScore() {
       try {
-        const res = await fetch("/score");
+        const res = await fetch(withMatch("/score"));
         if (!res.ok) throw new Error("non-200");
         lastData = await res.json();
         failCount = 0;
@@ -194,6 +202,7 @@
     }
 
     fetchScore();
+    document.getElementById("matchTag").textContent = `Stream: ${MATCH_ID}`;
     setInterval(fetchScore, 2000);
   </script>
 </body>

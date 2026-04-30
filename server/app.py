@@ -2,6 +2,8 @@ import copy
 import json
 import os
 import threading
+import re
+from contextlib import contextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -13,11 +15,14 @@ load_dotenv()
 app = Flask(__name__, template_folder="../templates", static_folder="../static")
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-STATE_PATH = Path("/tmp/cricket_state.json")
+STATE_DIR = Path("/tmp")
+DEFAULT_MATCH_ID = "default"
 state_lock = threading.Lock()
 last_action = None
 action_history = []
 redo_history = []
+current_match_id = DEFAULT_MATCH_ID
+match_contexts = {}
 
 
 def blank_state():
@@ -28,6 +33,7 @@ def blank_state():
         "team2_color": "#f59e0b",
         "theme": "classic",
         "overlay_density": "expanded",
+        "overlay_scale": 1.0,
         "toss_winner": "",
         "toss_decision": "bat",
         "innings": 1,
@@ -58,6 +64,72 @@ def blank_state():
 state = blank_state()
 
 
+def sanitize_match_id(raw):
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(raw or DEFAULT_MATCH_ID).strip().lower()).strip("-")
+    return slug or DEFAULT_MATCH_ID
+
+
+def state_path_for(match_id):
+    safe = sanitize_match_id(match_id)
+    if safe == DEFAULT_MATCH_ID:
+        return STATE_DIR / "cricket_state.json"
+    return STATE_DIR / f"cricket_state_{safe}.json"
+
+
+def get_request_match_id():
+    return sanitize_match_id(request.args.get("match", DEFAULT_MATCH_ID))
+
+
+def get_or_create_context(match_id):
+    safe = sanitize_match_id(match_id)
+    if safe in match_contexts:
+        return match_contexts[safe]
+    ctx = {
+        "state": blank_state(),
+        "last_action": None,
+        "action_history": [],
+        "redo_history": [],
+    }
+    path = state_path_for(safe)
+    if path.exists():
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                ctx["state"] = json.load(fh)
+        except Exception:
+            ctx["state"] = blank_state()
+    match_contexts[safe] = ctx
+    return ctx
+
+
+def activate_context(match_id):
+    global state, last_action, action_history, redo_history, current_match_id
+    safe = sanitize_match_id(match_id)
+    ctx = get_or_create_context(safe)
+    state = ctx["state"]
+    last_action = ctx["last_action"]
+    action_history = ctx["action_history"]
+    redo_history = ctx["redo_history"]
+    current_match_id = safe
+
+
+def persist_active_context():
+    ctx = get_or_create_context(current_match_id)
+    ctx["state"] = state
+    ctx["last_action"] = last_action
+    ctx["action_history"] = action_history
+    ctx["redo_history"] = redo_history
+
+
+@contextmanager
+def match_context(match_id=None):
+    with state_lock:
+        activate_context(match_id or get_request_match_id())
+        try:
+            yield
+        finally:
+            persist_active_context()
+
+
 def snapshot_state():
     return copy.deepcopy(state)
 
@@ -83,17 +155,18 @@ def build_bowling_squad(players):
 
 def save_state():
     try:
-        with STATE_PATH.open("w", encoding="utf-8") as fh:
+        with state_path_for(current_match_id).open("w", encoding="utf-8") as fh:
             json.dump(state, fh)
     except Exception:
         pass
 
 
-def restore_state():
+def restore_state(match_id=None):
     global state
-    if not STATE_PATH.exists():
+    path = state_path_for(match_id or current_match_id)
+    if not path.exists():
         return False
-    with STATE_PATH.open("r", encoding="utf-8") as fh:
+    with path.open("r", encoding="utf-8") as fh:
         loaded = json.load(fh)
     state = loaded
     return True
@@ -213,17 +286,27 @@ def finalize_bowler_over(bowler):
 
 @app.get("/")
 def overlay():
-    return render_template("overlay.html")
+    return render_template("overlay.html", match_id=DEFAULT_MATCH_ID)
+
+
+@app.get("/m/<match_id>")
+def overlay_scoped(match_id):
+    return render_template("overlay.html", match_id=sanitize_match_id(match_id))
 
 
 @app.get("/input")
 def input_page():
-    return render_template("input.html")
+    return render_template("input.html", match_id=DEFAULT_MATCH_ID)
+
+
+@app.get("/m/<match_id>/input")
+def input_page_scoped(match_id):
+    return render_template("input.html", match_id=sanitize_match_id(match_id))
 
 
 @app.get("/score")
 def score():
-    with state_lock:
+    with match_context():
         return jsonify(with_calculated_values(state))
 
 
@@ -233,7 +316,7 @@ def setup():
     data = request.get_json(silent=True) or {}
     batting_names = [p.strip() for p in data.get("batting_squad", []) if str(p).strip()]
     bowling_names = [p.strip() for p in data.get("bowling_squad", []) if str(p).strip()]
-    with state_lock:
+    with match_context():
         state = blank_state()
         team1 = str(data.get("team1", data.get("batting_team", ""))).strip()
         team2 = str(data.get("team2", data.get("bowling_team", ""))).strip()
@@ -281,7 +364,7 @@ def setup():
 @app.post("/reset-match")
 def reset_match():
     global state, last_action, action_history, redo_history
-    with state_lock:
+    with match_context():
         state = blank_state()
         last_action = None
         action_history = []
@@ -304,7 +387,7 @@ def ball():
     if out_batter not in {"striker", "non_striker"}:
         return jsonify({"error": "out_batter must be striker or non_striker"}), 400
 
-    with state_lock:
+    with match_context():
         if state.get("scoring_mode") == "over_only":
             return jsonify({"error": "ball-by-ball disabled in over-only mode"}), 400
         if innings_done():
@@ -417,7 +500,7 @@ def over_update():
     data = request.get_json(silent=True) or {}
     runs = max(0, safe_num(data.get("runs", 0), 0))
     wickets = max(0, safe_num(data.get("wickets", 0), 0))
-    with state_lock:
+    with match_context():
         if state.get("scoring_mode") != "over_only":
             return jsonify({"error": "over-update only allowed in over-only mode"}), 400
         if innings_done():
@@ -439,7 +522,7 @@ def retire_batter():
     retire_type = str(data.get("type", "hurt")).strip().lower()
     if retire_type not in {"hurt", "unhurt"}:
         return jsonify({"error": "type must be hurt or unhurt"}), 400
-    with state_lock:
+    with match_context():
         batter = get_batter_by_selector(selector)
         if not batter:
             return jsonify({"error": "batter not found"}), 400
@@ -468,7 +551,7 @@ def record_dismissal():
     }
     if kind not in valid_kinds:
         return jsonify({"error": "invalid dismissal kind"}), 400
-    with state_lock:
+    with match_context():
         if innings_done():
             return jsonify({"error": "innings already complete"}), 400
         batter = get_batter_by_selector(selector)
@@ -504,7 +587,7 @@ def penalty_runs():
     reason = str(data.get("reason", "penalty")).strip()
     if side not in {"batting", "fielding"}:
         return jsonify({"error": "side must be batting or fielding"}), 400
-    with state_lock:
+    with match_context():
         push_history()
         if side == "batting":
             state["runs"] += runs
@@ -520,7 +603,7 @@ def penalty_runs():
 def dead_ball():
     data = request.get_json(silent=True) or {}
     note = str(data.get("note", "dead ball")).strip()
-    with state_lock:
+    with match_context():
         log_event(f"Dead ball: {note}")
         save_state()
         return jsonify(with_calculated_values(state))
@@ -529,7 +612,7 @@ def dead_ball():
 @app.post("/undo")
 def undo():
     global state, last_action, redo_history
-    with state_lock:
+    with match_context():
         if not action_history:
             return jsonify({"error": "nothing to undo"}), 400
         redo_history.append(snapshot_state())
@@ -542,7 +625,7 @@ def undo():
 @app.post("/redo")
 def redo():
     global state, action_history
-    with state_lock:
+    with match_context():
         if not redo_history:
             return jsonify({"error": "nothing to redo"}), 400
         action_history.append(snapshot_state())
@@ -554,7 +637,7 @@ def redo():
 @app.post("/edit")
 def edit():
     data = request.get_json(silent=True) or {}
-    with state_lock:
+    with match_context():
         for key in ("runs", "wickets", "overs", "balls", "extras"):
             if key in data:
                 state[key] = safe_num(data[key], state[key])
@@ -565,7 +648,7 @@ def edit():
 @app.post("/set-players")
 def set_players():
     data = request.get_json(silent=True) or {}
-    with state_lock:
+    with match_context():
         for key in ("striker", "non_striker", "current_bowler"):
             if key in data:
                 state[key] = str(data[key] or "").strip()
@@ -583,7 +666,7 @@ def set_panel():
     panel = str(data.get("panel", "")).strip()
     if panel not in {"score", "batting", "bowling", "chase", "fullscore"}:
         return jsonify({"error": "invalid panel"}), 400
-    with state_lock:
+    with match_context():
         state["active_panel"] = panel
         return jsonify({"active_panel": state["active_panel"]})
 
@@ -594,15 +677,29 @@ def set_overlay_density():
     density = str(data.get("density", "")).strip().lower()
     if density not in {"compact", "expanded"}:
         return jsonify({"error": "invalid density"}), 400
-    with state_lock:
+    with match_context():
         state["overlay_density"] = density
         save_state()
         return jsonify({"overlay_density": state["overlay_density"]})
 
 
+@app.post("/set-overlay-scale")
+def set_overlay_scale():
+    data = request.get_json(silent=True) or {}
+    try:
+        scale = float(data.get("scale", 1.0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid scale"}), 400
+    scale = max(0.8, min(1.8, scale))
+    with match_context():
+        state["overlay_scale"] = round(scale, 2)
+        save_state()
+        return jsonify({"overlay_scale": state["overlay_scale"]})
+
+
 @app.post("/end-over")
 def manual_end_over():
-    with state_lock:
+    with match_context():
         if innings_done():
             return jsonify({"error": "innings already complete"}), 400
         if state.get("scoring_mode") == "over_only":
@@ -626,7 +723,7 @@ def start_second_innings():
     data = request.get_json(silent=True) or {}
     batting_names = [p.strip() for p in data.get("batting_squad", []) if str(p).strip()]
     bowling_names = [p.strip() for p in data.get("bowling_squad", []) if str(p).strip()]
-    with state_lock:
+    with match_context():
         if not batting_names:
             batting_names = [p["name"] for p in state["bowling_squad"] if p.get("name")]
         if not bowling_names:
@@ -661,15 +758,15 @@ def start_second_innings():
 
 @app.post("/save")
 def save():
-    with state_lock:
+    with match_context():
         save_state()
     return jsonify({"saved": True})
 
 
 @app.post("/restore")
 def restore():
-    with state_lock:
-        if not STATE_PATH.exists():
+    with match_context():
+        if not state_path_for(current_match_id).exists():
             return jsonify({"error": "state file not found"}), 404
         restore_state()
         return jsonify(with_calculated_values(state))
@@ -677,7 +774,7 @@ def restore():
 
 @app.get("/health")
 def health():
-    with state_lock:
+    with match_context():
         return jsonify(
             {"status": "ok", "innings": state["innings"], "match_started": state["match_started"]}
         )
@@ -685,7 +782,9 @@ def health():
 
 with state_lock:
     try:
-        restore_state()
+        activate_context(DEFAULT_MATCH_ID)
+        restore_state(DEFAULT_MATCH_ID)
+        persist_active_context()
     except Exception:
         state = blank_state()
 
