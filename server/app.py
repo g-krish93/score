@@ -356,6 +356,8 @@ def setup():
             bowling_names = [f"{bowling_team} {i}" for i in range(1, 12)]
         state["batting_squad"] = build_batting_squad(batting_names)
         state["bowling_squad"] = build_bowling_squad(bowling_names)
+        if scoring_mode == "over_only":
+            state["active_panel"] = "score"
         state["match_started"] = True
         last_action = None
         action_history = []

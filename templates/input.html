@@ -3,228 +3,494 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Cricket Input</title>
+  <title>Cricket Scorer</title>
   <style>
-    body { margin: 0; padding: 16px; background: #0d1b2a; color: #fff; font-family: system-ui, -apple-system, sans-serif; }
-    h1, h2 { text-align: center; }
-    input, select, button { width: 100%; min-height: 56px; margin: 6px 0; font-size: 18px; border-radius: 10px; border: 1px solid #355; }
-    button { background: #1a6b2f; color: #fff; font-weight: 700; }
+    :root {
+      --bg: #0c1222;
+      --bg-elevated: #141b2e;
+      --surface: #1a2339;
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #22c55e;
+      --accent-dim: #166534;
+      --gold: #fbbf24;
+      --gold-ring: rgba(251, 191, 36, 0.45);
+      --danger: #dc2626;
+      --radius: 14px;
+      --font: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      background-image: radial-gradient(ellipse 120% 80% at 50% -20%, rgba(34, 197, 94, 0.08), transparent),
+        radial-gradient(ellipse 80% 50% at 100% 50%, rgba(59, 130, 246, 0.05), transparent);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 16px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+    .app-shell {
+      max-width: 520px;
+      margin: 0 auto;
+      padding: 16px 16px 32px;
+    }
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(12, 18, 34, 0.92);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    }
+    .app-header .eyebrow {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    #scoreBar {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.25;
+    }
+    .card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+    }
+    .card--primary {
+      border-color: rgba(34, 197, 94, 0.25);
+      box-shadow: 0 4px 28px rgba(34, 197, 94, 0.06);
+    }
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      margin: 10px 0 6px;
+    }
+    input, select, button {
+      width: 100%;
+      min-height: 50px;
+      margin: 0 0 4px;
+      font-size: 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+    }
+    input:focus, select:focus, button:focus-visible {
+      outline: 2px solid var(--gold-ring);
+      outline-offset: 2px;
+    }
+    button {
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.15s, border-color 0.15s, transform 0.05s;
+    }
+    button:active { transform: scale(0.98); }
+    button.primary, #startMatch, #startMatchOverOnly {
+      background: linear-gradient(180deg, #2ea043 0%, var(--accent-dim) 100%);
+      border-color: rgba(34, 197, 94, 0.35);
+      color: #fff;
+    }
+    button.secondary {
+      background: var(--surface);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    button.danger, .danger {
+      background: linear-gradient(180deg, #b91c1c 0%, #7f1d1d 100%);
+      border-color: rgba(220, 38, 38, 0.4);
+      color: #fff;
+    }
     .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
     .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-    .panel-btn.active { border: 2px solid #e8a020; }
-    .panel-btn:disabled { opacity: .5; background: #555; }
-    .danger { background: #8b1f1f; }
-    .secondary { background: #334155; }
-    .hidden { display: none; }
-    .over-item { display: inline-block; padding: 6px 10px; margin: 2px; border-radius: 12px; background: #223; font-weight: 700; }
-    .dot { background: #6b7280; }
-    .b4 { color: #f0c040; }
-    .b6, .bw { color: #e05050; }
-    .bx { color: #8fc7ff; }
-    .modal { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none; align-items: center; justify-content: center; }
-    .modal-card { background: #162032; border-radius: 12px; padding: 24px; width: min(92vw, 480px); }
-    #scoreBar { position: sticky; top: 0; z-index: 5; background: rgba(13, 27, 42, 0.96); padding: 8px 6px; border-bottom: 1px solid #355; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    [data-ball] {
+      min-height: 56px;
+      font-size: 1.15rem;
+      font-weight: 700;
+    }
+    .over-item { display: inline-block; padding: 6px 10px; margin: 3px 3px 0 0; border-radius: 10px; background: var(--surface); font-weight: 700; border: 1px solid var(--border); }
+    .dot { background: #334155; }
+    .b4 { color: #fbbf24; }
+    .b6, .bw { color: #f87171; }
+    .bx { color: #7dd3fc; }
+    .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.88); display: none; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
+    .modal-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+      width: min(92vw, 440px);
+      max-height: 88vh;
+      overflow: auto;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+    }
+    .hidden { display: none !important; }
+    .setup-intro { text-align: center; padding: 8px 0 24px; }
+    .setup-intro h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.03em; margin: 0 0 8px; }
+    .setup-intro p { color: var(--muted); margin: 0 16px 16px; font-size: 15px; line-height: 1.5; }
+    .setup-intro .big-choice { min-height: 64px; font-size: 17px; margin: 8px 0; border-radius: 12px; }
+    h1.setup-title { font-size: 1.35rem; font-weight: 800; text-align: center; margin: 0 0 6px; letter-spacing: -0.02em; }
+    h2.setup-sub { font-size: 13px; font-weight: 600; color: var(--muted); text-align: center; margin: 0 0 16px; }
+
+    /* Stream / overlay collapsible menu */
+    .stream-menu-toggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      text-align: left;
+    }
+    .stream-menu-toggle .chevron { font-size: 12px; color: var(--gold); transition: transform 0.2s; }
+    .stream-menu-toggle[aria-expanded="true"] .chevron { transform: rotate(180deg); }
+    .stream-menu-body {
+      margin-top: 12px;
+      padding-top: 4px;
+      border-top: 1px solid var(--border);
+    }
+    .stream-menu-body .hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; line-height: 1.4; }
+
+    /* Selected toggle: gold ring + check */
+    .toggle-btn {
+      position: relative;
+      padding-right: 28px;
+      border: 2px solid var(--border);
+      background: var(--surface);
+    }
+    .toggle-btn.toggle-selected {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 1px var(--gold-ring), inset 0 0 0 1px rgba(251, 191, 36, 0.12);
+      background: rgba(251, 191, 36, 0.08);
+    }
+    .toggle-btn.toggle-selected::after {
+      content: "✓";
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--gold);
+      font-weight: 800;
+      font-size: 14px;
+    }
+    .panel-btn.active {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 1px var(--gold-ring);
+      background: rgba(251, 191, 36, 0.1);
+    }
+    .panel-btn.active::after {
+      content: "✓";
+      float: right;
+      color: var(--gold);
+      font-size: 13px;
+    }
+    #scoringHint { font-size: 13px; color: var(--muted); padding: 8px 0; min-height: 36px; display: flex; align-items: center; }
+    .row-actions { margin-top: 12px; }
     @media (max-width: 700px) {
-      body { padding: 10px; }
+      .app-shell { padding: 12px 12px 28px; }
       .grid4 { grid-template-columns: repeat(2, 1fr); }
       .grid2 { grid-template-columns: 1fr; }
-      input, select, button { min-height: 52px; font-size: 17px; }
-      .modal-card { width: 94vw; max-height: 88vh; overflow: auto; padding: 16px; }
+      .grid3 { grid-template-columns: 1fr; }
+      [data-ball] { min-height: 52px; font-size: 1.05rem; }
     }
-    .setup-intro p { text-align: center; color: #94a3b8; margin: 8px 16px 20px; font-size: 16px; }
-    .setup-intro .big-choice { min-height: 72px; font-size: 20px; margin: 10px 0; }
   </style>
 </head>
 <body>
-  <div id="setupChooseScreen" class="setup-intro">
-    <h1>SCORING TYPE</h1>
+  <div id="setupChooseScreen" class="setup-intro app-shell">
+    <h1>Scoring type</h1>
     <h2 id="matchLabelChoose"></h2>
-    <p>Pick how this match will be scored. You can change path before starting.</p>
-    <button type="button" id="pickBallByBall" class="big-choice">Ball by ball</button>
-    <p class="muted" style="font-size:14px;margin:4px 12px;">Full squads, player picks, extras, laws.</p>
+    <p>Choose how this match is scored. You can go back before you start.</p>
+    <button type="button" id="pickBallByBall" class="big-choice primary">Ball by ball</button>
+    <p style="font-size:13px;color:var(--muted);margin:4px 20px 12px;">Squads, players, extras, and full laws.</p>
     <button type="button" id="pickOverOnly" class="big-choice secondary">Over by over</button>
-    <p class="muted" style="font-size:14px;margin:4px 12px;">Teams, toss, and overs only — enter runs and wickets each over.</p>
+    <p style="font-size:13px;color:var(--muted);margin:4px 20px;">Teams, toss, and overs — update runs and wickets each over.</p>
   </div>
 
-  <div id="setupBallScreen" class="hidden">
-    <h1>MATCH SETUP</h1>
-    <h2 id="matchLabelBall"></h2>
-    <button type="button" id="backFromBall" class="secondary">← Change scoring type</button>
-    <input id="team1Name" placeholder="Team 1 Name">
-    <input id="team2Name" placeholder="Team 2 Name">
-    <label>Toss Winner</label>
-    <select id="tossWinner">
-      <option value="team1">Team 1</option>
-      <option value="team2">Team 2</option>
-    </select>
-    <label>Toss Decision</label>
-    <select id="tossDecision">
-      <option value="bat">Bat first</option>
-      <option value="bowl">Bowl first</option>
-    </select>
-    <label>Theme</label>
-    <select id="themeSelect">
-      <option value="classic">Classic</option>
-      <option value="neon">Neon</option>
-      <option value="minimal">Minimal</option>
-    </select>
-    <div class="grid2">
-      <div><label>Team 1 Color</label><input id="team1Color" type="color" value="#2dd4bf"></div>
-      <div><label>Team 2 Color</label><input id="team2Color" type="color" value="#f59e0b"></div>
+  <div id="setupBallScreen" class="hidden app-shell">
+    <h1 class="setup-title">Match setup</h1>
+    <h2 id="matchLabelBall" class="setup-sub"></h2>
+    <div class="card">
+      <button type="button" id="backFromBall" class="secondary">← Change scoring type</button>
+      <label>Team 1</label><input id="team1Name" placeholder="Team 1 name">
+      <label>Team 2</label><input id="team2Name" placeholder="Team 2 name">
+      <label>Toss winner</label>
+      <select id="tossWinner">
+        <option value="team1">Team 1</option>
+        <option value="team2">Team 2</option>
+      </select>
+      <label>Toss decision</label>
+      <select id="tossDecision">
+        <option value="bat">Bat first</option>
+        <option value="bowl">Bowl first</option>
+      </select>
+      <label>Overlay theme</label>
+      <select id="themeSelect">
+        <option value="classic">Classic</option>
+        <option value="neon">Neon</option>
+        <option value="minimal">Minimal</option>
+      </select>
+      <div class="grid2">
+        <div><label>Team 1 colour</label><input id="team1Color" type="color" value="#2dd4bf"></div>
+        <div><label>Team 2 colour</label><input id="team2Color" type="color" value="#f59e0b"></div>
+      </div>
+      <label>Total overs</label>
+      <input id="totalOvers" type="number" value="20" placeholder="Total overs">
+      <div class="grid2" style="margin-top:12px;">
+        <button type="button" id="saveTemplateBtn" class="secondary">Save template</button>
+        <button type="button" id="loadTemplateBtn" class="secondary">Load template</button>
+      </div>
     </div>
-    <input id="totalOvers" type="number" value="20" placeholder="Total Overs">
-    <div class="grid2">
-      <button id="saveTemplateBtn" class="secondary">Save Match Template</button>
-      <button id="loadTemplateBtn" class="secondary">Load Match Template</button>
+    <div class="card">
+      <div class="card-head" style="border:none;padding:0;margin:0 0 8px;"><span class="card-title">Squads</span></div>
+      <label style="margin-top:0;">Team 1 squad</label><div id="team1Inputs"></div>
+      <label>Team 2 squad</label><div id="team2Inputs"></div>
     </div>
-    <h2>TEAM 1 SQUAD</h2><div id="team1Inputs"></div>
-    <h2>TEAM 2 SQUAD</h2><div id="team2Inputs"></div>
-    <button id="startMatch">START MATCH</button>
+    <button type="button" id="startMatch" class="primary">Start match</button>
   </div>
 
-  <div id="setupOverScreen" class="hidden">
-    <h1>OVER-BY-OVER SETUP</h1>
-    <h2 id="matchLabelOver"></h2>
-    <button type="button" id="backFromOver" class="secondary">← Change scoring type</button>
-    <input id="overTeam1Name" placeholder="Team 1 Name">
-    <input id="overTeam2Name" placeholder="Team 2 Name">
-    <label>Toss Winner</label>
-    <select id="overTossWinner">
-      <option value="team1">Team 1</option>
-      <option value="team2">Team 2</option>
-    </select>
-    <label>Toss Decision</label>
-    <select id="overTossDecision">
-      <option value="bat">Bat first</option>
-      <option value="bowl">Bowl first</option>
-    </select>
-    <input id="overTotalOvers" type="number" value="20" placeholder="Total Overs">
-    <label>Theme</label>
-    <select id="overThemeSelect">
-      <option value="classic">Classic</option>
-      <option value="neon">Neon</option>
-      <option value="minimal">Minimal</option>
-    </select>
-    <div class="grid2">
-      <div><label>Team 1 Color</label><input id="overTeam1Color" type="color" value="#2dd4bf"></div>
-      <div><label>Team 2 Color</label><input id="overTeam2Color" type="color" value="#f59e0b"></div>
+  <div id="setupOverScreen" class="hidden app-shell">
+    <h1 class="setup-title">Over-by-over</h1>
+    <h2 id="matchLabelOver" class="setup-sub"></h2>
+    <div class="card">
+      <button type="button" id="backFromOver" class="secondary">← Change scoring type</button>
+      <label>Team 1</label><input id="overTeam1Name" placeholder="Team 1 name">
+      <label>Team 2</label><input id="overTeam2Name" placeholder="Team 2 name">
+      <label>Toss winner</label>
+      <select id="overTossWinner">
+        <option value="team1">Team 1</option>
+        <option value="team2">Team 2</option>
+      </select>
+      <label>Toss decision</label>
+      <select id="overTossDecision">
+        <option value="bat">Bat first</option>
+        <option value="bowl">Bowl first</option>
+      </select>
+      <label>Total overs</label>
+      <input id="overTotalOvers" type="number" value="20" placeholder="Total overs">
+      <label>Overlay theme</label>
+      <select id="overThemeSelect">
+        <option value="classic">Classic</option>
+        <option value="neon">Neon</option>
+        <option value="minimal">Minimal</option>
+      </select>
+      <div class="grid2">
+        <div><label>Team 1 colour</label><input id="overTeam1Color" type="color" value="#2dd4bf"></div>
+        <div><label>Team 2 colour</label><input id="overTeam2Color" type="color" value="#f59e0b"></div>
+      </div>
+      <div class="grid2" style="margin-top:12px;">
+        <button type="button" id="saveOverTemplateBtn" class="secondary">Save template</button>
+        <button type="button" id="loadOverTemplateBtn" class="secondary">Load template</button>
+      </div>
     </div>
-    <div class="grid2">
-      <button id="saveOverTemplateBtn" class="secondary">Save template</button>
-      <button id="loadOverTemplateBtn" class="secondary">Load template</button>
-    </div>
-    <button id="startMatchOverOnly">START MATCH</button>
+    <button type="button" id="startMatchOverOnly" class="primary">Start match</button>
   </div>
 
-  <div id="matchScreen" class="hidden">
-    <h2 id="liveMatchLabel"></h2>
-    <div id="scoreBar">-</div>
-    <div class="grid2">
-      <button id="guidedModeBtn" class="secondary">Guided Mode: ON</button>
-      <button id="umpireModeBtn" class="secondary hidden">Umpire Mode</button>
-    </div>
-    <div id="ballByBallSection">
-    <label>Striker</label><select id="striker"></select>
-    <label>Non-Striker</label><select id="nonStriker"></select>
-    <label>Bowler</label><select id="bowler"></select>
-    <div class="grid4">
-      <button data-ball=".">·</button><button data-ball="1">1</button><button data-ball="2">2</button><button data-ball="3">3</button>
-      <button data-ball="4">4</button><button data-ball="6">6</button><button data-ball="W">W</button><button data-ball="Wd">Wd</button>
-    </div>
-    <div class="grid2"><button data-ball="Bye">Bye</button><button data-ball="Lb">Lb</button></div>
-    <div class="grid2"><button data-ball="Nb">Nb</button><input id="extraRuns" type="number" min="0" max="6" value="0" placeholder="Extra runs"></div>
-    <h3>THIS OVER</h3>
-    <div id="thisOver"></div>
-    <div class="grid2"><button id="undoBtn">← UNDO</button><button id="redoBtn">REDO →</button></div>
-    </div>
-    <div id="overOnlySection" class="hidden">
-      <h3>OVER UPDATE</h3>
-      <input id="overRunsInput" type="number" min="0" value="0" placeholder="Runs this over">
-      <input id="overWktsInput" type="number" min="0" max="10" value="0" placeholder="Wickets this over">
-      <button id="applyOverUpdateBtn">APPLY OVER UPDATE</button>
-      <div class="grid2"><button id="undoOverBtn">← UNDO</button><button id="redoOverBtn">REDO →</button></div>
-    </div>
-    <div class="grid2"><button id="endOverBtn">END OVER</button><div id="scoringHint"></div></div>
-    <h3 id="lawsHeading">LAWS / SPECIAL EVENTS</h3>
-    <div class="grid2" id="lawsSection">
-      <button id="retireStrikerHurtBtn">Retire Striker Hurt</button>
-      <button id="retireStrikerUnhurtBtn">Retire Striker Unhurt</button>
-      <button id="retireNonStrikerHurtBtn">Retire Non-Striker Hurt</button>
-      <button id="retireNonStrikerUnhurtBtn">Retire Non-Striker Unhurt</button>
-    </div>
-    <div class="grid2">
-      <button id="penaltyRunsBtn">+5 Penalty Runs</button>
-    </div>
-    <h3>OVERLAY PANEL</h3>
-    <div class="grid2">
-      <button class="panel-btn" data-panel="score">Score</button>
-      <button class="panel-btn" data-panel="batting">Batting</button>
-      <button class="panel-btn" data-panel="bowling">Bowling</button>
-      <button class="panel-btn" data-panel="chase" id="chaseBtn">Chase</button>
-      <button class="panel-btn" data-panel="fullscore" id="fullBtn">Full</button>
-    </div>
-    <div class="grid2">
-      <button id="densityCompactBtn">Compact Overlay</button>
-      <button id="densityExpandedBtn">Expanded Overlay</button>
-    </div>
-    <div class="grid2">
-      <button id="fontSmallBtn">Overlay Font: Small</button>
-      <button id="fontNormalBtn">Overlay Font: Normal</button>
-      <button id="fontLargeBtn">Overlay Font: Large</button>
-    </div>
-    <div class="grid2"><button id="editOpen">Edit Score</button><button id="secondOpen">2nd Innings</button></div>
-    <button id="newMatchBtn" class="danger">NEW MATCH</button>
+  <div id="matchScreen" class="hidden app-shell">
+    <header class="app-header">
+      <div class="eyebrow" id="liveMatchLabel"></div>
+      <div id="scoreBar">—</div>
+    </header>
+
+    <section class="card card--primary" id="scoringCard">
+      <div class="card-head" id="scoringCardHead">
+        <span class="card-title">Scoring</span>
+        <button type="button" id="guidedModeBtn" class="secondary" style="width:auto;min-height:40px;padding:0 14px;font-size:13px;">Guided: ON</button>
+      </div>
+      <button type="button" id="umpireModeBtn" class="secondary hidden" style="margin-bottom:10px;">Umpire mode (show laws)</button>
+
+      <div id="ballByBallSection">
+        <label>Striker</label><select id="striker"></select>
+        <label>Non-striker</label><select id="nonStriker"></select>
+        <label>Bowler</label><select id="bowler"></select>
+        <div class="grid4" style="margin-top:8px;">
+          <button type="button" data-ball=".">·</button><button type="button" data-ball="1">1</button><button type="button" data-ball="2">2</button><button type="button" data-ball="3">3</button>
+          <button type="button" data-ball="4">4</button><button type="button" data-ball="6">6</button><button type="button" data-ball="W">W</button><button type="button" data-ball="Wd">Wd</button>
+        </div>
+        <div class="grid2"><button type="button" data-ball="Bye">Bye</button><button type="button" data-ball="Lb">Lb</button></div>
+        <div class="grid2">
+          <button type="button" data-ball="Nb">Nb</button>
+          <div>
+            <label style="margin-top:0;">Extra runs (Wd / Nb)</label>
+            <input id="extraRuns" type="number" min="0" max="6" value="0" placeholder="0">
+          </div>
+        </div>
+        <p class="hint" style="font-size:12px;color:var(--muted);margin:8px 0 0;">This over</p>
+        <div id="thisOver" style="min-height:36px;"></div>
+        <div class="grid2 row-actions">
+          <button type="button" id="undoBtn" class="secondary">Undo</button>
+          <button type="button" id="redoBtn" class="secondary">Redo</button>
+        </div>
+      </div>
+
+      <div id="overOnlySection" class="hidden">
+        <p class="hint" style="margin-top:0;">Add this over’s runs and wickets, then apply.</p>
+        <label>Runs this over</label>
+        <input id="overRunsInput" type="number" min="0" value="0" placeholder="Runs">
+        <label>Wickets this over</label>
+        <input id="overWktsInput" type="number" min="0" max="10" value="0" placeholder="Wickets">
+        <button type="button" id="applyOverUpdateBtn" class="primary" style="margin-top:10px;">Apply over</button>
+        <div class="grid2 row-actions">
+          <button type="button" id="undoOverBtn" class="secondary">Undo</button>
+          <button type="button" id="redoOverBtn" class="secondary">Redo</button>
+        </div>
+      </div>
+
+      <div class="grid2 row-actions" id="endOverRow" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
+        <button type="button" id="endOverBtn" class="secondary">End over</button>
+        <div id="scoringHint"></div>
+      </div>
+    </section>
+
+    <section class="card" id="lawsCard">
+      <div class="card-head">
+        <span class="card-title">Laws & special</span>
+      </div>
+      <h3 id="lawsHeading" style="margin:0 0 10px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);font-weight:700;">Laws &amp; special</h3>
+      <div class="grid2" id="lawsSection">
+        <button type="button" id="retireStrikerHurtBtn" class="secondary">Retire striker (hurt)</button>
+        <button type="button" id="retireStrikerUnhurtBtn" class="secondary">Retire striker (out)</button>
+        <button type="button" id="retireNonStrikerHurtBtn" class="secondary">Retire non-striker (hurt)</button>
+        <button type="button" id="retireNonStrikerUnhurtBtn" class="secondary">Retire non-striker (out)</button>
+      </div>
+      <button type="button" id="penaltyRunsBtn" class="secondary" style="margin-top:8px;">+5 Penalty runs</button>
+    </section>
+
+    <section class="card" id="streamOverlayCard">
+      <div class="card-head" style="margin-bottom:8px;padding-bottom:8px;">
+        <span class="card-title">Stream & overlay</span>
+      </div>
+      <button type="button" class="stream-menu-toggle" id="overlayMenuToggle" aria-expanded="false" aria-controls="overlayMenuBody">
+        <span>Overlay menu</span>
+        <span class="chevron" aria-hidden="true">▼</span>
+      </button>
+      <div id="overlayMenuBody" class="stream-menu-body hidden">
+        <p class="hint">What viewers see on stream. Scoring above stays your main focus — open this when you need to change the overlay.</p>
+
+        <div id="bbbPanelBlock">
+          <label style="margin-top:0;">Overlay view (ball-by-ball)</label>
+          <div class="grid2">
+            <button type="button" class="panel-btn secondary" data-panel="score">Score</button>
+            <button type="button" class="panel-btn secondary" data-panel="batting">Batting</button>
+            <button type="button" class="panel-btn secondary" data-panel="bowling">Bowling</button>
+            <button type="button" class="panel-btn secondary" data-panel="chase" id="chaseBtn">Chase</button>
+            <button type="button" class="panel-btn secondary" data-panel="fullscore" id="fullBtn" style="grid-column:1/-1;">Full scoreboard</button>
+          </div>
+        </div>
+
+        <label style="margin-top:16px;">Overlay height</label>
+        <div class="grid2">
+          <button type="button" id="densityCompactBtn" class="secondary toggle-btn">Compact</button>
+          <button type="button" id="densityExpandedBtn" class="secondary toggle-btn">Expanded</button>
+        </div>
+
+        <label style="margin-top:14px;">Overlay text size</label>
+        <div class="grid3">
+          <button type="button" id="fontSmallBtn" class="secondary toggle-btn">Small</button>
+          <button type="button" id="fontNormalBtn" class="secondary toggle-btn">Normal</button>
+          <button type="button" id="fontLargeBtn" class="secondary toggle-btn">Large</button>
+        </div>
+
+        <div class="grid2" style="margin-top:16px;">
+          <button type="button" id="editOpen" class="secondary">Edit score</button>
+          <button type="button" id="secondOpen" class="secondary">2nd innings</button>
+        </div>
+      </div>
+    </section>
+
+    <button type="button" id="newMatchBtn" class="danger" style="margin-top:4px;">New match</button>
   </div>
 
   <div id="editModal" class="modal"><div class="modal-card">
-    <h3>EDIT SCORE</h3>
+    <h3 style="margin-top:0;">Edit score</h3>
     <input id="eRuns" type="number" placeholder="Runs">
     <input id="eWickets" type="number" placeholder="Wickets">
     <input id="eOvers" type="number" placeholder="Overs">
-    <input id="eBalls" type="number" min="0" max="5" placeholder="Balls">
+    <input id="eBalls" type="number" min="0" max="5" placeholder="Balls (0–5)">
     <input id="eExtras" type="number" placeholder="Extras">
-    <div class="grid2"><button onclick="closeModal('editModal')">CANCEL</button><button id="saveEdit">SAVE</button></div>
+    <div class="grid2" style="margin-top:12px;"><button type="button" onclick="closeModal('editModal')" class="secondary">Cancel</button><button type="button" id="saveEdit" class="primary">Save</button></div>
   </div></div>
 
   <div id="overWizardModal" class="modal"><div class="modal-card">
-    <h3>OVER COMPLETE</h3>
-    <p>Set next over players</p>
+    <h3 style="margin-top:0;">Over complete</h3>
+    <p style="color:var(--muted);font-size:14px;">Set players for the next over (optional).</p>
     <label>Striker</label><select id="wizStriker"></select>
-    <label>Non-Striker</label><select id="wizNonStriker"></select>
+    <label>Non-striker</label><select id="wizNonStriker"></select>
     <label>Bowler</label><select id="wizBowler"></select>
-    <div class="grid2"><button onclick="closeModal('overWizardModal')">SKIP</button><button id="confirmOverWizard">CONFIRM</button></div>
+    <div class="grid2" style="margin-top:12px;"><button type="button" onclick="closeModal('overWizardModal')" class="secondary">Skip</button><button type="button" id="confirmOverWizard" class="primary">Confirm</button></div>
   </div></div>
 
-    <div id="wicketModal" class="modal"><div class="modal-card">
-    <h3>WICKET</h3>
-    <label>Wicket type</label>
+  <div id="wicketModal" class="modal"><div class="modal-card">
+    <h3 style="margin-top:0;">Wicket</h3>
+    <label>Type</label>
     <select id="wicketType">
       <option value="bowled">Bowled</option>
       <option value="caught">Caught</option>
       <option value="lbw">LBW</option>
-      <option value="run_out">Run Out</option>
+      <option value="run_out">Run out</option>
       <option value="stumped">Stumped</option>
-      <option value="hit_wicket">Hit Wicket</option>
-      <option value="obstructing_field">Obstructing Field</option>
-      <option value="timed_out">Timed Out</option>
-      <option value="handled_ball">Handled Ball</option>
+      <option value="hit_wicket">Hit wicket</option>
+      <option value="obstructing_field">Obstructing field</option>
+      <option value="timed_out">Timed out</option>
+      <option value="handled_ball">Handled ball</option>
     </select>
     <label>Batter out</label>
     <select id="wicketOutBatter">
       <option value="striker">Striker</option>
-      <option value="non_striker">Non-Striker</option>
+      <option value="non_striker">Non-striker</option>
     </select>
-    <p>Select new batsman (if available):</p><select id="newBatter"></select>
-    <p id="wicketInfo"></p>
-    <div class="grid2"><button onclick="closeModal('wicketModal')">CANCEL</button><button id="confirmWicket">CONFIRM</button></div>
+    <p style="font-size:13px;color:var(--muted);margin:12px 0 6px;">New batsman (if available)</p>
+    <select id="newBatter"></select>
+    <p id="wicketInfo" style="font-size:13px;color:var(--muted);"></p>
+    <div class="grid2" style="margin-top:12px;"><button type="button" onclick="closeModal('wicketModal')" class="secondary">Cancel</button><button type="button" id="confirmWicket" class="primary">Confirm</button></div>
   </div></div>
 
   <div id="secondModal" class="modal"><div class="modal-card">
-    <h3>START 2ND INNINGS</h3><p id="targetText">Target: -</p>
-    <input id="secondBattingTeam" placeholder="New batting team">
-    <p>Squad pre-filled from 1st innings (edit only if needed):</p>
+    <h3 style="margin-top:0;">Start 2nd innings</h3>
+    <p id="targetText" style="color:var(--muted);">Target: —</p>
+    <label>Batting team</label>
+    <input id="secondBattingTeam" placeholder="Batting team name">
+    <p style="font-size:13px;color:var(--muted);">Squad (pre-filled from 1st innings bowling)</p>
     <div id="secondSquad"></div>
-    <div class="grid2"><button onclick="closeModal('secondModal')">CANCEL</button><button id="startSecond">START 2ND INNINGS</button></div>
+    <div class="grid2" style="margin-top:12px;"><button type="button" onclick="closeModal('secondModal')" class="secondary">Cancel</button><button type="button" id="startSecond" class="primary">Start</button></div>
   </div></div>
 
   <script>
@@ -233,6 +499,8 @@
     let guidedMode = true;
     let refreshInFlight = false;
     let refreshPending = false;
+    let overlayMenuOpen = false;
+    const OVERLAY_MENU_KEY = "score_overlay_menu_open";
     const MATCH_ID = "{{ match_id|default('default') }}";
     const MATCH_QUERY = `match=${encodeURIComponent(MATCH_ID)}`;
     const byId = (id) => document.getElementById(id);
@@ -240,6 +508,7 @@
     const templateKey = `score_match_template_${MATCH_ID}`;
     const overTemplateKey = `score_over_template_${MATCH_ID}`;
     let setupWizardStep = "choose";
+
     function withMatch(url) {
       const sep = url.includes("?") ? "&" : "?";
       return `${url}${sep}${MATCH_QUERY}`;
@@ -274,19 +543,28 @@
 
     function buildInputs(container, prefix) {
       const root = byId(container); root.innerHTML = "";
-      for (let i = 1; i <= 11; i++) { const el = document.createElement("input"); el.id = `${prefix}${i}`; el.placeholder = `Player ${i}`; root.appendChild(el); }
+      for (let i = 1; i <= 11; i++) {
+        const el = document.createElement("input");
+        el.id = `${prefix}${i}`;
+        el.placeholder = `Player ${i}`;
+        root.appendChild(el);
+      }
     }
     buildInputs("team1Inputs", "t1");
     buildInputs("team2Inputs", "t2");
     buildInputs("secondSquad", "sec");
 
-    function names(prefix) { return Array.from({ length: 11 }, (_, i) => byId(`${prefix}${i+1}`).value.trim()).filter(Boolean); }
+    function names(prefix) {
+      return Array.from({ length: 11 }, (_, i) => byId(`${prefix}${i + 1}`).value.trim()).filter(Boolean);
+    }
     function setSelect(id, items, selected, allowOut) {
       const placeholder = id === "striker" && !selected ? "Select new batter" : "Select";
-      const sel = byId(id); sel.innerHTML = `<option value="">${placeholder}</option>`;
+      const sel = byId(id);
+      sel.innerHTML = `<option value="">${placeholder}</option>`;
       items.forEach(p => {
         const opt = document.createElement("option");
-        opt.value = p.name; opt.textContent = p.name;
+        opt.value = p.name;
+        opt.textContent = p.name;
         if (!allowOut && p.status === "out") {
           opt.textContent = `${p.name} (out)`;
           opt.style.textDecoration = "line-through";
@@ -324,6 +602,34 @@
       byId("setupOverScreen").classList.toggle("hidden", setupWizardStep !== "over");
     }
 
+    function setOverlayMenuOpen(open) {
+      overlayMenuOpen = open;
+      try { localStorage.setItem(`${OVERLAY_MENU_KEY}_${MATCH_ID}`, open ? "1" : "0"); } catch (e) {}
+      const body = byId("overlayMenuBody");
+      const btn = byId("overlayMenuToggle");
+      body.classList.toggle("hidden", !open);
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    function loadOverlayMenuPreference() {
+      try {
+        overlayMenuOpen = localStorage.getItem(`${OVERLAY_MENU_KEY}_${MATCH_ID}`) === "1";
+      } catch (e) {
+        overlayMenuOpen = false;
+      }
+    }
+
+    function updateToggleVisuals() {
+      if (!score) return;
+      const d = score.overlay_density || "expanded";
+      byId("densityCompactBtn").classList.toggle("toggle-selected", d === "compact");
+      byId("densityExpandedBtn").classList.toggle("toggle-selected", d === "expanded");
+      const s = Number(score.overlay_scale) || 1;
+      byId("fontSmallBtn").classList.toggle("toggle-selected", s < 1.0);
+      byId("fontNormalBtn").classList.toggle("toggle-selected", s >= 1.0 && s < 1.25);
+      byId("fontLargeBtn").classList.toggle("toggle-selected", s >= 1.25);
+    }
+
     function render() {
       if (!score) return;
       if (!score.match_started) {
@@ -340,10 +646,13 @@
       const overOnly = score.scoring_mode === "over_only";
       byId("ballByBallSection").classList.toggle("hidden", overOnly);
       byId("overOnlySection").classList.toggle("hidden", !overOnly);
-      byId("lawsHeading").classList.toggle("hidden", guidedMode);
-      byId("lawsSection").classList.toggle("hidden", guidedMode);
-      byId("umpireModeBtn").classList.toggle("hidden", !guidedMode);
-      byId("guidedModeBtn").textContent = `Guided Mode: ${guidedMode ? "ON" : "OFF"}`;
+      byId("lawsCard").classList.toggle("hidden", overOnly);
+      byId("lawsHeading").classList.toggle("hidden", guidedMode || overOnly);
+      byId("lawsSection").classList.toggle("hidden", guidedMode || overOnly);
+      byId("guidedModeBtn").classList.toggle("hidden", overOnly);
+      byId("umpireModeBtn").classList.toggle("hidden", overOnly || !guidedMode);
+      byId("guidedModeBtn").textContent = guidedMode ? "Guided: ON" : "Guided: OFF";
+      byId("bbbPanelBlock").classList.toggle("hidden", overOnly);
       byId("scoreBar").textContent = `${score.batting_team} ${score.runs}/${score.wickets} (${score.overs}.${score.balls})`;
       setSelect("striker", score.batting_squad || [], score.striker, false);
       setSelect("nonStriker", score.batting_squad || [], score.non_striker, false);
@@ -364,10 +673,13 @@
       if (score.match_complete) byId("scoringHint").textContent = score.match_result || "Innings complete";
       else if (score.innings === 2 && score.runs_needed === 0) byId("scoringHint").textContent = "Chase complete";
       else byId("scoringHint").textContent = "";
+      byId("endOverRow").classList.toggle("hidden", overOnly);
       const controls = document.querySelectorAll(
         "[data-ball],#undoBtn,#redoBtn,#undoOverBtn,#redoOverBtn,#endOverBtn,#applyOverUpdateBtn,#striker,#nonStriker,#bowler,#penaltyRunsBtn,#retireStrikerHurtBtn,#retireStrikerUnhurtBtn,#retireNonStrikerHurtBtn,#retireNonStrikerUnhurtBtn"
       );
       controls.forEach((el) => { el.disabled = locked; });
+      updateToggleVisuals();
+      setOverlayMenuOpen(overlayMenuOpen);
     }
 
     async function flushQueue() {
@@ -405,6 +717,8 @@
       }
     }
 
+    byId("overlayMenuToggle").onclick = () => setOverlayMenuOpen(!overlayMenuOpen);
+
     byId("pickBallByBall").onclick = () => { setupWizardStep = "ball"; showSetupWizard(); };
     byId("pickOverOnly").onclick = () => { setupWizardStep = "over"; showSetupWizard(); };
     byId("backFromBall").onclick = () => { setupWizardStep = "choose"; showSetupWizard(); };
@@ -415,7 +729,6 @@
       if (team1_squad.length < 2 || team2_squad.length < 2) return alert("Minimum 2 players per squad required");
       const team1 = byId("team1Name").value.trim();
       const team2 = byId("team2Name").value.trim();
-      const scoringMode = "ball_by_ball";
       const tossWinner = byId("tossWinner").value === "team1" ? team1 : team2;
       const tossDecision = byId("tossDecision").value;
       const batting_squad = tossDecision === "bat"
@@ -432,10 +745,11 @@
         theme: byId("themeSelect").value,
         toss_winner: tossWinner,
         toss_decision: tossDecision,
-        scoring_mode: scoringMode,
+        scoring_mode: "ball_by_ball",
         total_overs: Number(byId("totalOvers").value || 20),
         batting_squad, bowling_squad
       });
+      loadOverlayMenuPreference();
       render();
     };
 
@@ -458,6 +772,7 @@
         batting_squad: [],
         bowling_squad: [],
       });
+      loadOverlayMenuPreference();
       render();
     };
     byId("saveTemplateBtn").onclick = () => {
@@ -489,8 +804,8 @@
       byId("team1Color").value = t.team1Color || "#2dd4bf";
       byId("team2Color").value = t.team2Color || "#f59e0b";
       byId("totalOvers").value = t.totalOvers || "20";
-      (t.team1Squad || []).forEach((v, i) => { if (i < 11) byId(`t1${i+1}`).value = v; });
-      (t.team2Squad || []).forEach((v, i) => { if (i < 11) byId(`t2${i+1}`).value = v; });
+      (t.team1Squad || []).forEach((v, i) => { if (i < 11) byId(`t1${i + 1}`).value = v; });
+      (t.team2Squad || []).forEach((v, i) => { if (i < 11) byId(`t2${i + 1}`).value = v; });
       alert("Match template loaded.");
     };
 
@@ -555,7 +870,8 @@
         return;
       }
       const extraRuns = Number(byId("extraRuns").value || 0);
-      score = await api("/ball", "POST", { type: btn.dataset.ball, runs: extraRuns }); render();
+      score = await api("/ball", "POST", { type: btn.dataset.ball, runs: extraRuns });
+      render();
       byId("extraRuns").value = "0";
       if (lastOverDisplay && score.overs_display !== lastOverDisplay && score.balls === 0) {
         setSelect("wizStriker", score.batting_squad || [], score.striker, false);
@@ -622,10 +938,14 @@
     byId("fontNormalBtn").onclick = async () => { await api("/set-overlay-scale", "POST", { scale: 1.1 }); await refresh(); };
     byId("fontLargeBtn").onclick = async () => { await api("/set-overlay-scale", "POST", { scale: 1.35 }); await refresh(); };
 
-    byId("editOpen").onclick = () => { ["runs","wickets","overs","balls","extras"].forEach(k => byId(`e${k[0].toUpperCase()}${k.slice(1)}`).value = score[k]); openModal("editModal"); };
+    byId("editOpen").onclick = () => {
+      ["runs", "wickets", "overs", "balls", "extras"].forEach(k => byId(`e${k[0].toUpperCase()}${k.slice(1)}`).value = score[k]);
+      openModal("editModal");
+    };
     byId("saveEdit").onclick = async () => {
-      await api("/edit", "POST", { runs:+byId("eRuns").value, wickets:+byId("eWickets").value, overs:+byId("eOvers").value, balls:+byId("eBalls").value, extras:+byId("eExtras").value });
-      closeModal("editModal"); await refresh();
+      await api("/edit", "POST", { runs: +byId("eRuns").value, wickets: +byId("eWickets").value, overs: +byId("eOvers").value, balls: +byId("eBalls").value, extras: +byId("eExtras").value });
+      closeModal("editModal");
+      await refresh();
     };
 
     byId("secondOpen").onclick = () => {
@@ -641,7 +961,8 @@
         batting_squad: names("sec"),
         bowling_squad: (score.batting_squad || []).map(p => p.name)
       });
-      closeModal("secondModal"); await refresh();
+      closeModal("secondModal");
+      await refresh();
     };
 
     byId("newMatchBtn").onclick = async () => {
@@ -664,16 +985,17 @@
       await refresh();
     };
     window.addEventListener("keydown", async (e) => {
-      if (e.key === "1") return document.querySelector('[data-ball="1"]').click();
-      if (e.key === "2") return document.querySelector('[data-ball="2"]').click();
-      if (e.key === "3") return document.querySelector('[data-ball="3"]').click();
-      if (e.key === "4") return document.querySelector('[data-ball="4"]').click();
-      if (e.key === "6") return document.querySelector('[data-ball="6"]').click();
-      if (e.key.toLowerCase() === "w") return document.querySelector('[data-ball="W"]').click();
+      if (e.key === "1") return document.querySelector('[data-ball="1"]')?.click();
+      if (e.key === "2") return document.querySelector('[data-ball="2"]')?.click();
+      if (e.key === "3") return document.querySelector('[data-ball="3"]')?.click();
+      if (e.key === "4") return document.querySelector('[data-ball="4"]')?.click();
+      if (e.key === "6") return document.querySelector('[data-ball="6"]')?.click();
+      if (e.key.toLowerCase() === "w") return document.querySelector('[data-ball="W"]')?.click();
       if (e.key.toLowerCase() === "z") { await api("/undo", "POST"); return refresh(); }
       if (e.key.toLowerCase() === "y") { await api("/redo", "POST"); return refresh(); }
     });
 
+    loadOverlayMenuPreference();
     syncMatchLabels();
     byId("liveMatchLabel").textContent = prettyMatchTitle();
     refresh();
