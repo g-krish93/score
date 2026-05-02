@@ -351,6 +351,9 @@ def setup():
         state["batting_team"] = batting_team
         state["bowling_team"] = bowling_team
         state["total_overs"] = safe_num(data.get("total_overs", 20), 20)
+        if scoring_mode == "over_only" and (len(batting_names) < 2 or len(bowling_names) < 2):
+            batting_names = [f"{batting_team} {i}" for i in range(1, 12)]
+            bowling_names = [f"{bowling_team} {i}" for i in range(1, 12)]
         state["batting_squad"] = build_batting_squad(batting_names)
         state["bowling_squad"] = build_bowling_squad(bowling_names)
         state["match_started"] = True

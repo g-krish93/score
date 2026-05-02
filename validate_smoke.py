@@ -99,6 +99,24 @@ def main():
         )
     assert_ok(c.get("/health"))
 
+    # Over-only setup with no squads: server fills placeholder lineups
+    r = c.post(
+        "/setup",
+        json={
+            "team1": "OA",
+            "team2": "OB",
+            "toss_winner": "OA",
+            "toss_decision": "bat",
+            "scoring_mode": "over_only",
+            "total_overs": 6,
+            "batting_squad": [],
+            "bowling_squad": [],
+        },
+    )
+    assert_ok(r)
+    data = r.get_json()
+    assert len(data["batting_squad"]) == 11 and len(data["bowling_squad"]) == 11, data
+
     # Over-only scoring mode validation
     over_only_payload = {
         "team1": "Team X",

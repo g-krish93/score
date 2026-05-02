@@ -31,12 +31,25 @@
       input, select, button { min-height: 52px; font-size: 17px; }
       .modal-card { width: 94vw; max-height: 88vh; overflow: auto; padding: 16px; }
     }
+    .setup-intro p { text-align: center; color: #94a3b8; margin: 8px 16px 20px; font-size: 16px; }
+    .setup-intro .big-choice { min-height: 72px; font-size: 20px; margin: 10px 0; }
   </style>
 </head>
 <body>
-  <div id="setupScreen">
+  <div id="setupChooseScreen" class="setup-intro">
+    <h1>SCORING TYPE</h1>
+    <h2 id="matchLabelChoose"></h2>
+    <p>Pick how this match will be scored. You can change path before starting.</p>
+    <button type="button" id="pickBallByBall" class="big-choice">Ball by ball</button>
+    <p class="muted" style="font-size:14px;margin:4px 12px;">Full squads, player picks, extras, laws.</p>
+    <button type="button" id="pickOverOnly" class="big-choice secondary">Over by over</button>
+    <p class="muted" style="font-size:14px;margin:4px 12px;">Teams, toss, and overs only — enter runs and wickets each over.</p>
+  </div>
+
+  <div id="setupBallScreen" class="hidden">
     <h1>MATCH SETUP</h1>
-    <h2 id="matchLabel"></h2>
+    <h2 id="matchLabelBall"></h2>
+    <button type="button" id="backFromBall" class="secondary">← Change scoring type</button>
     <input id="team1Name" placeholder="Team 1 Name">
     <input id="team2Name" placeholder="Team 2 Name">
     <label>Toss Winner</label>
@@ -59,11 +72,6 @@
       <div><label>Team 1 Color</label><input id="team1Color" type="color" value="#2dd4bf"></div>
       <div><label>Team 2 Color</label><input id="team2Color" type="color" value="#f59e0b"></div>
     </div>
-    <label>Scoring Type</label>
-    <select id="scoringType">
-      <option value="ball_by_ball">Ball by ball</option>
-      <option value="over_only">Over by over</option>
-    </select>
     <input id="totalOvers" type="number" value="20" placeholder="Total Overs">
     <div class="grid2">
       <button id="saveTemplateBtn" class="secondary">Save Match Template</button>
@@ -72,6 +80,40 @@
     <h2>TEAM 1 SQUAD</h2><div id="team1Inputs"></div>
     <h2>TEAM 2 SQUAD</h2><div id="team2Inputs"></div>
     <button id="startMatch">START MATCH</button>
+  </div>
+
+  <div id="setupOverScreen" class="hidden">
+    <h1>OVER-BY-OVER SETUP</h1>
+    <h2 id="matchLabelOver"></h2>
+    <button type="button" id="backFromOver" class="secondary">← Change scoring type</button>
+    <input id="overTeam1Name" placeholder="Team 1 Name">
+    <input id="overTeam2Name" placeholder="Team 2 Name">
+    <label>Toss Winner</label>
+    <select id="overTossWinner">
+      <option value="team1">Team 1</option>
+      <option value="team2">Team 2</option>
+    </select>
+    <label>Toss Decision</label>
+    <select id="overTossDecision">
+      <option value="bat">Bat first</option>
+      <option value="bowl">Bowl first</option>
+    </select>
+    <input id="overTotalOvers" type="number" value="20" placeholder="Total Overs">
+    <label>Theme</label>
+    <select id="overThemeSelect">
+      <option value="classic">Classic</option>
+      <option value="neon">Neon</option>
+      <option value="minimal">Minimal</option>
+    </select>
+    <div class="grid2">
+      <div><label>Team 1 Color</label><input id="overTeam1Color" type="color" value="#2dd4bf"></div>
+      <div><label>Team 2 Color</label><input id="overTeam2Color" type="color" value="#f59e0b"></div>
+    </div>
+    <div class="grid2">
+      <button id="saveOverTemplateBtn" class="secondary">Save template</button>
+      <button id="loadOverTemplateBtn" class="secondary">Load template</button>
+    </div>
+    <button id="startMatchOverOnly">START MATCH</button>
   </div>
 
   <div id="matchScreen" class="hidden">
@@ -196,6 +238,8 @@
     const byId = (id) => document.getElementById(id);
     const pendingKey = `score_pending_actions_${MATCH_ID}`;
     const templateKey = `score_match_template_${MATCH_ID}`;
+    const overTemplateKey = `score_over_template_${MATCH_ID}`;
+    let setupWizardStep = "choose";
     function withMatch(url) {
       const sep = url.includes("?") ? "&" : "?";
       return `${url}${sep}${MATCH_QUERY}`;
@@ -264,11 +308,34 @@
         sel.appendChild(opt);
       });
     }
+    function prettyMatchTitle() {
+      return MATCH_ID.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+    function syncMatchLabels() {
+      const t = prettyMatchTitle();
+      byId("matchLabelChoose").textContent = t;
+      byId("matchLabelBall").textContent = t;
+      byId("matchLabelOver").textContent = t;
+    }
+    function showSetupWizard() {
+      byId("matchScreen").classList.add("hidden");
+      byId("setupChooseScreen").classList.toggle("hidden", setupWizardStep !== "choose");
+      byId("setupBallScreen").classList.toggle("hidden", setupWizardStep !== "ball");
+      byId("setupOverScreen").classList.toggle("hidden", setupWizardStep !== "over");
+    }
+
     function render() {
       if (!score) return;
-      byId("setupScreen").classList.toggle("hidden", score.match_started);
-      byId("matchScreen").classList.toggle("hidden", !score.match_started);
-      if (!score.match_started) return;
+      if (!score.match_started) {
+        byId("matchScreen").classList.add("hidden");
+        showSetupWizard();
+        return;
+      }
+      byId("setupChooseScreen").classList.add("hidden");
+      byId("setupBallScreen").classList.add("hidden");
+      byId("setupOverScreen").classList.add("hidden");
+      byId("matchScreen").classList.remove("hidden");
+      byId("liveMatchLabel").textContent = prettyMatchTitle();
       const locked = !!score.match_complete;
       const overOnly = score.scoring_mode === "over_only";
       byId("ballByBallSection").classList.toggle("hidden", overOnly);
@@ -338,12 +405,17 @@
       }
     }
 
+    byId("pickBallByBall").onclick = () => { setupWizardStep = "ball"; showSetupWizard(); };
+    byId("pickOverOnly").onclick = () => { setupWizardStep = "over"; showSetupWizard(); };
+    byId("backFromBall").onclick = () => { setupWizardStep = "choose"; showSetupWizard(); };
+    byId("backFromOver").onclick = () => { setupWizardStep = "choose"; showSetupWizard(); };
+
     byId("startMatch").onclick = async () => {
       const team1_squad = names("t1"), team2_squad = names("t2");
       if (team1_squad.length < 2 || team2_squad.length < 2) return alert("Minimum 2 players per squad required");
       const team1 = byId("team1Name").value.trim();
       const team2 = byId("team2Name").value.trim();
-      const scoringMode = byId("scoringType").value;
+      const scoringMode = "ball_by_ball";
       const tossWinner = byId("tossWinner").value === "team1" ? team1 : team2;
       const tossDecision = byId("tossDecision").value;
       const batting_squad = tossDecision === "bat"
@@ -366,6 +438,28 @@
       });
       render();
     };
+
+    byId("startMatchOverOnly").onclick = async () => {
+      const team1 = byId("overTeam1Name").value.trim();
+      const team2 = byId("overTeam2Name").value.trim();
+      if (!team1 || !team2) return alert("Enter both team names");
+      const tossWinner = byId("overTossWinner").value === "team1" ? team1 : team2;
+      const tossDecision = byId("overTossDecision").value;
+      score = await api("/setup", "POST", {
+        team1,
+        team2,
+        team1_color: byId("overTeam1Color").value,
+        team2_color: byId("overTeam2Color").value,
+        theme: byId("overThemeSelect").value,
+        toss_winner: tossWinner,
+        toss_decision: tossDecision,
+        scoring_mode: "over_only",
+        total_overs: Number(byId("overTotalOvers").value || 20),
+        batting_squad: [],
+        bowling_squad: [],
+      });
+      render();
+    };
     byId("saveTemplateBtn").onclick = () => {
       const payload = {
         team1: byId("team1Name").value.trim(),
@@ -375,7 +469,7 @@
         theme: byId("themeSelect").value,
         team1Color: byId("team1Color").value,
         team2Color: byId("team2Color").value,
-        scoringType: byId("scoringType").value,
+        scoringType: "ball_by_ball",
         totalOvers: byId("totalOvers").value,
         team1Squad: names("t1"),
         team2Squad: names("t2"),
@@ -394,11 +488,39 @@
       byId("themeSelect").value = t.theme || "classic";
       byId("team1Color").value = t.team1Color || "#2dd4bf";
       byId("team2Color").value = t.team2Color || "#f59e0b";
-      byId("scoringType").value = t.scoringType || "ball_by_ball";
       byId("totalOvers").value = t.totalOvers || "20";
       (t.team1Squad || []).forEach((v, i) => { if (i < 11) byId(`t1${i+1}`).value = v; });
       (t.team2Squad || []).forEach((v, i) => { if (i < 11) byId(`t2${i+1}`).value = v; });
       alert("Match template loaded.");
+    };
+
+    byId("saveOverTemplateBtn").onclick = () => {
+      const payload = {
+        team1: byId("overTeam1Name").value.trim(),
+        team2: byId("overTeam2Name").value.trim(),
+        tossWinner: byId("overTossWinner").value,
+        tossDecision: byId("overTossDecision").value,
+        theme: byId("overThemeSelect").value,
+        team1Color: byId("overTeam1Color").value,
+        team2Color: byId("overTeam2Color").value,
+        totalOvers: byId("overTotalOvers").value,
+      };
+      localStorage.setItem(overTemplateKey, JSON.stringify(payload));
+      alert("Over-by-over template saved.");
+    };
+    byId("loadOverTemplateBtn").onclick = () => {
+      const raw = localStorage.getItem(overTemplateKey);
+      if (!raw) return alert("No saved over-by-over template.");
+      const t = JSON.parse(raw);
+      byId("overTeam1Name").value = t.team1 || "";
+      byId("overTeam2Name").value = t.team2 || "";
+      byId("overTossWinner").value = t.tossWinner || "team1";
+      byId("overTossDecision").value = t.tossDecision || "bat";
+      byId("overThemeSelect").value = t.theme || "classic";
+      byId("overTeam1Color").value = t.team1Color || "#2dd4bf";
+      byId("overTeam2Color").value = t.team2Color || "#f59e0b";
+      byId("overTotalOvers").value = t.totalOvers || "20";
+      alert("Template loaded.");
     };
 
     document.querySelectorAll("[data-ball]").forEach(btn => btn.onclick = async () => {
@@ -526,6 +648,7 @@
       const ok = confirm("Close current match and return to setup?");
       if (!ok) return;
       score = await api("/reset-match", "POST");
+      setupWizardStep = "choose";
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
     };
@@ -551,9 +674,8 @@
       if (e.key.toLowerCase() === "y") { await api("/redo", "POST"); return refresh(); }
     });
 
-    const prettyMatch = MATCH_ID.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-    byId("matchLabel").textContent = prettyMatch;
-    byId("liveMatchLabel").textContent = prettyMatch;
+    syncMatchLabels();
+    byId("liveMatchLabel").textContent = prettyMatchTitle();
     refresh();
     setInterval(refresh, 3000);
   </script>

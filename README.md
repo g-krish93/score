@@ -17,7 +17,7 @@ Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000`, Phone 3 updates s
 ## Match day
 
 1. Open input UI on Phone 3 at `/input` (or scoped match page like `/m/bmacc-team1/input`).
-2. Configure match and start.
+2. Pick **Ball by ball** (full squads and player controls) or **Over by over** (teams, toss, overs only), then complete that screen and start.
 3. Load overlay `/` (or scoped overlay `/m/bmacc-team1`) in your stream Browser Source.
 4. Score ball-by-ball and switch overlay panels as needed.
 
