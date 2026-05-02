@@ -519,14 +519,6 @@
     </div>
   </div></div>
 
-  <div id="overConfirmModal" class="modal"><div class="modal-card">
-    <h3 style="margin-top:0;">Over recorded</h3>
-    <p style="color:var(--muted);font-size:14px;margin:0 0 12px;">Current match score:</p>
-    <p id="overConfirmSummary" style="font-size:1.25rem;font-weight:700;margin:0 0 8px;line-height:1.35;"></p>
-    <p id="overConfirmExtra" style="color:var(--muted);font-size:14px;margin:0;"></p>
-    <button type="button" id="overConfirmOk" class="primary" style="margin-top:18px;">OK</button>
-  </div></div>
-
   <div id="wicketModal" class="modal"><div class="modal-card">
     <h3 style="margin-top:0;">Wicket</h3>
     <label>Type</label>
@@ -609,21 +601,12 @@
     }
     function closeModal(id) { byId(id).style.display = "none"; }
     function openModal(id) { byId(id).style.display = "flex"; }
-    function openOverOnlyConfirm() {
-      if (!score) return;
-      const line = `${score.batting_team} ${score.runs}/${score.wickets} (${score.overs_display} ov)`;
-      byId("overConfirmSummary").textContent = line;
-      const extra = score.innings === 2 && score.target != null
-        ? `Target ${score.target} · Need ${score.runs_needed ?? "—"} from ${score.balls_remaining ?? "—"} balls`
-        : `${score.batting_team} vs ${score.bowling_team}`;
-      byId("overConfirmExtra").textContent = extra;
-      openModal("overConfirmModal");
-    }
-
     let pendingOverApply = { after_over: 1, innings_runs: 0, innings_wickets: 0 };
     let lastOverApplyTs = 0;
     let lastOverApplyKey = "";
     let lastOverOnlySyncKey = "";
+    /** After a successful checkpoint save, advance the "after over" dropdown to the next over once. */
+    let preferOverDropdownNext = false;
 
     async function postOverUpdateDirect(payload) {
       const res = await fetch(withMatch("/over-update"), {
@@ -715,8 +698,8 @@
         byId("overLastApplied").classList.remove("hidden");
         byId("overLastApplied").textContent =
           `Last recorded: after over ${after_over} → innings ${innings_runs}/${innings_wickets}.`;
+        preferOverDropdownNext = true;
         await refresh();
-        if (score && score.scoring_mode === "over_only") openOverOnlyConfirm();
       } catch (err) {
         alert(String(err.message || err));
         await refresh();
@@ -875,9 +858,15 @@
           opt.textContent = `After over ${o} (innings total at stumps of that over)`;
           sel.appendChild(opt);
         }
-        let want = Number(prevSel) || 0;
-        if (!want || want > maxAllowed) {
-          want = sl ? Math.max(1, score.overs) : Math.min(score.overs + 1, totalOvers);
+        let want;
+        if (preferOverDropdownNext) {
+          preferOverDropdownNext = false;
+          want = sl ? Math.max(1, score.overs) : Math.min(score.overs + 1, maxAllowed);
+        } else {
+          want = Number(prevSel) || 0;
+          if (!want || want > maxAllowed) {
+            want = sl ? Math.max(1, score.overs) : Math.min(score.overs + 1, totalOvers);
+          }
         }
         sel.value = String(Math.max(1, Math.min(want, maxAllowed)));
         byId("overBoundaryHint").textContent =
@@ -1167,7 +1156,6 @@
     byId("overAfterOverSelect").onchange = () => syncOverOnlyInputsFromServer();
     byId("overApplyPreviewCancel").onclick = () => closeModal("overApplyPreviewModal");
     byId("overApplyPreviewConfirm").onclick = () => executePendingOverApply();
-    byId("overConfirmOk").onclick = () => closeModal("overConfirmModal");
     byId("retireStrikerHurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "striker", type: "hurt" }); await refresh(); };
     byId("retireStrikerUnhurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "striker", type: "unhurt" }); await refresh(); };
     byId("retireNonStrikerHurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "non_striker", type: "hurt" }); await refresh(); };
