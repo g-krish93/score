@@ -458,6 +458,14 @@
     <div class="grid2" style="margin-top:12px;"><button type="button" onclick="closeModal('overWizardModal')" class="secondary">Skip</button><button type="button" id="confirmOverWizard" class="primary">Confirm</button></div>
   </div></div>
 
+  <div id="overConfirmModal" class="modal"><div class="modal-card">
+    <h3 style="margin-top:0;">Over recorded</h3>
+    <p style="color:var(--muted);font-size:14px;margin:0 0 12px;">Current match score:</p>
+    <p id="overConfirmSummary" style="font-size:1.25rem;font-weight:700;margin:0 0 8px;line-height:1.35;"></p>
+    <p id="overConfirmExtra" style="color:var(--muted);font-size:14px;margin:0;"></p>
+    <button type="button" id="overConfirmOk" class="primary" style="margin-top:18px;">OK</button>
+  </div></div>
+
   <div id="wicketModal" class="modal"><div class="modal-card">
     <h3 style="margin-top:0;">Wicket</h3>
     <label>Type</label>
@@ -540,6 +548,16 @@
     }
     function closeModal(id) { byId(id).style.display = "none"; }
     function openModal(id) { byId(id).style.display = "flex"; }
+    function openOverOnlyConfirm() {
+      if (!score) return;
+      const line = `${score.batting_team} ${score.runs}/${score.wickets} (${score.overs_display} ov)`;
+      byId("overConfirmSummary").textContent = line;
+      const extra = score.innings === 2 && score.target != null
+        ? `Target ${score.target} · Need ${score.runs_needed ?? "—"} from ${score.balls_remaining ?? "—"} balls`
+        : `${score.batting_team} vs ${score.bowling_team}`;
+      byId("overConfirmExtra").textContent = extra;
+      openModal("overConfirmModal");
+    }
 
     function buildInputs(container, prefix) {
       const root = byId(container); root.innerHTML = "";
@@ -860,7 +878,7 @@
         score = await api("/ball", "POST", { type: btn.dataset.ball, runs: byeRuns });
         byId("extraRuns").value = "0";
         render();
-        if (lastOverDisplay && score.overs_display !== lastOverDisplay && score.balls === 0) {
+        if (score.scoring_mode !== "over_only" && lastOverDisplay && score.overs_display !== lastOverDisplay && score.balls === 0) {
           setSelect("wizStriker", score.batting_squad || [], score.striker, false);
           setSelect("wizNonStriker", score.batting_squad || [], score.non_striker, false);
           setSelect("wizBowler", score.bowling_squad || [], score.current_bowler, true);
@@ -873,7 +891,7 @@
       score = await api("/ball", "POST", { type: btn.dataset.ball, runs: extraRuns });
       render();
       byId("extraRuns").value = "0";
-      if (lastOverDisplay && score.overs_display !== lastOverDisplay && score.balls === 0) {
+      if (score.scoring_mode !== "over_only" && lastOverDisplay && score.overs_display !== lastOverDisplay && score.balls === 0) {
         setSelect("wizStriker", score.batting_squad || [], score.striker, false);
         setSelect("wizNonStriker", score.batting_squad || [], score.non_striker, false);
         setSelect("wizBowler", score.bowling_squad || [], score.current_bowler, true);
@@ -916,13 +934,16 @@
       byId("overRunsInput").value = "0";
       byId("overWktsInput").value = "0";
       await refresh();
-      if (score && score.balls === 0) {
+      if (score && score.scoring_mode === "over_only") {
+        openOverOnlyConfirm();
+      } else if (score && score.balls === 0) {
         setSelect("wizStriker", score.batting_squad || [], score.striker, false);
         setSelect("wizNonStriker", score.batting_squad || [], score.non_striker, false);
         setSelect("wizBowler", score.bowling_squad || [], score.current_bowler, true);
         openModal("overWizardModal");
       }
     };
+    byId("overConfirmOk").onclick = () => closeModal("overConfirmModal");
     byId("retireStrikerHurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "striker", type: "hurt" }); await refresh(); };
     byId("retireStrikerUnhurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "striker", type: "unhurt" }); await refresh(); };
     byId("retireNonStrikerHurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "non_striker", type: "hurt" }); await refresh(); };
