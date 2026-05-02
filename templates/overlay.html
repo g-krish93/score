@@ -167,6 +167,36 @@
           `<div class="row section-title">Bowling</div>` + bowlerRows;
         return;
       }
+      if (panel === "chart") {
+        const rows = data.over_only_per_over || [];
+        if (data.scoring_mode !== "over_only" || !rows.length) {
+          content.innerHTML =
+            resultRow +
+            `<div class="row muted">Run chart — available when over-by-over checkpoints exist.</div>`;
+          return;
+        }
+        const w = 420;
+        const h = 88;
+        const pad = 10;
+        const maxO = Math.max(1, rows[rows.length - 1].over);
+        const maxR = Math.max(1, rows[rows.length - 1].innings_runs);
+        const pts = rows
+          .map((r) => {
+            const x = pad + (r.over / maxO) * (w - pad * 2);
+            const y = h - pad - (r.innings_runs / maxR) * (h - pad * 2);
+            return `${x},${y}`;
+          })
+          .join(" ");
+        content.innerHTML =
+          resultRow +
+          `<div class="row section-title">Run worm (${text(data.batting_team)})</div>` +
+          `<svg width="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;max-width:100%;height:auto;">` +
+          `<rect x="0" y="0" width="${w}" height="${h}" fill="rgba(255,255,255,.04)" rx="6"/>` +
+          `<polyline fill="none" stroke="#22c55e" stroke-width="2.5" points="${pts}"/>` +
+          `</svg>` +
+          `<div class="row muted" style="font-size:calc(11px * var(--overlay-scale));">Cumulative runs after each logged over · RR ${text(data.over_only_run_rate)}</div>`;
+        return;
+      }
       if (data.innings === 2) {
         const scoreKey = `${data.runs}-${data.wickets}`;
         const popClass = scoreKey !== lastScoreKey ? "score-pop" : "";

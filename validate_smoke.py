@@ -132,9 +132,15 @@ def main():
     assert_ok(c.post("/setup", json=over_only_payload))
     blocked_ball = c.post("/ball", json={"type": "1"})
     assert blocked_ball.status_code == 400
-    assert_ok(c.post("/over-update", json={"runs": 12, "wickets": 1}))
+    assert_ok(
+        c.post("/over-update", json={"after_over": 1, "innings_runs": 12, "innings_wickets": 1})
+    )
     score = c.get("/score").get_json()
     assert score["runs"] == 12 and score["wickets"] == 1 and score["overs_display"] == "1.0", score
+    pop = score.get("over_only_per_over") or []
+    assert len(pop) == 1 and pop[0]["runs_in_over"] == 12 and pop[0]["wkts_in_over"] == 1, score
+    skip = c.post("/over-update", json={"after_over": 3, "innings_runs": 30, "innings_wickets": 2})
+    assert skip.status_code == 400, skip.get_data(as_text=True)
 
     # Over-only: innings completes when scheduled overs are filled; further over-update rejected
     assert_ok(
@@ -152,7 +158,9 @@ def main():
             },
         )
     )
-    assert_ok(c.post("/over-update", json={"runs": 3, "wickets": 0}))
+    assert_ok(
+        c.post("/over-update", json={"after_over": 1, "innings_runs": 3, "innings_wickets": 0})
+    )
     locked = c.get("/score").get_json()
     assert locked["scoring_locked"] is True, locked
     blocked_over = c.post("/over-update", json={"runs": 1, "wickets": 0})

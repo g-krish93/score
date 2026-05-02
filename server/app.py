@@ -58,6 +58,7 @@ def blank_state():
         "match_started": False,
         "match_ended": False,
         "event_log": [],
+        "over_only_checkpoints": [],
     }
 
 
@@ -227,7 +228,51 @@ def with_calculated_values(snapshot):
             and data["runs"] >= data["target"]
         )
     )
+    cps = data.get("over_only_checkpoints")
+    if not isinstance(cps, list):
+        cps = []
+    data["over_only_checkpoints"] = cps
+    if data.get("scoring_mode") == "over_only":
+        pop = compute_over_only_per_over(cps)
+        data["over_only_per_over"] = pop
+        if pop:
+            last = pop[-1]
+            o = max(1, safe_num(last.get("over"), 1))
+            data["over_only_overs_completed"] = o
+            data["over_only_run_rate"] = round(
+                max(0, safe_num(last.get("innings_runs"), 0)) / o, 2
+            )
+        else:
+            data["over_only_overs_completed"] = 0
+            data["over_only_run_rate"] = 0.0
+    else:
+        data["over_only_per_over"] = []
+        data["over_only_overs_completed"] = 0
+        data["over_only_run_rate"] = 0.0
     return data
+
+
+def compute_over_only_per_over(checkpoints):
+    if not checkpoints:
+        return []
+    sorted_cp = sorted(checkpoints, key=lambda x: x["after_over"])
+    out = []
+    prev_r, prev_w = 0, 0
+    for c in sorted_cp:
+        r = max(0, safe_num(c.get("runs"), 0))
+        w = max(0, min(10, safe_num(c.get("wickets"), 0)))
+        o = max(1, safe_num(c.get("after_over"), 1))
+        out.append(
+            {
+                "over": o,
+                "runs_in_over": r - prev_r,
+                "wkts_in_over": w - prev_w,
+                "innings_runs": r,
+                "innings_wickets": w,
+            }
+        )
+        prev_r, prev_w = r, w
+    return out
 
 
 def get_batter(name):
@@ -512,17 +557,43 @@ def ball():
 @app.post("/over-update")
 def over_update():
     data = request.get_json(silent=True) or {}
-    runs = max(0, safe_num(data.get("runs", 0), 0))
-    wickets = max(0, safe_num(data.get("wickets", 0), 0))
     with match_context():
         if state.get("scoring_mode") != "over_only":
             return jsonify({"error": "over-update only allowed in over-only mode"}), 400
         if innings_done():
             return jsonify({"error": "innings already complete"}), 400
+        after_over = safe_num(data.get("after_over"), 0)
+        inn_r = max(0, safe_num(data.get("innings_runs"), -1))
+        inn_w = max(0, min(10, safe_num(data.get("innings_wickets"), -1)))
+        if after_over < 1 or inn_r < 0 or inn_w < 0:
+            return jsonify({"error": "after_over (1+), innings_runs and innings_wickets required"}), 400
+        total_overs = max(1, safe_num(state.get("total_overs"), 20))
+        if after_over > total_overs:
+            return jsonify({"error": "after_over cannot exceed total_overs"}), 400
+        checkpoints = state.get("over_only_checkpoints") or []
+        if not isinstance(checkpoints, list):
+            checkpoints = []
+        prev_r, prev_w = 0, 0
+        if after_over > 1:
+            prev_cp = next((c for c in checkpoints if c.get("after_over") == after_over - 1), None)
+            if not prev_cp:
+                return jsonify(
+                    {"error": f"record score after over {after_over - 1} before after over {after_over}"}
+                ), 400
+            prev_r = max(0, safe_num(prev_cp.get("runs"), 0))
+            prev_w = max(0, min(10, safe_num(prev_cp.get("wickets"), 0)))
+        if inn_r < prev_r or inn_w < prev_w:
+            return jsonify(
+                {"error": f"innings total must be >= after over {after_over - 1} ({prev_r}/{prev_w})"}
+            ), 400
         push_history()
-        state["runs"] += runs
-        state["wickets"] = min(10, state["wickets"] + wickets)
-        state["overs"] = min(state["total_overs"], state["overs"] + 1)
+        new_cp = [c for c in checkpoints if safe_num(c.get("after_over"), 0) < after_over]
+        new_cp.append({"after_over": after_over, "runs": inn_r, "wickets": inn_w})
+        state["over_only_checkpoints"] = sorted(new_cp, key=lambda x: x["after_over"])
+        last = state["over_only_checkpoints"][-1]
+        state["overs"] = min(total_overs, safe_num(last.get("after_over"), 0))
+        state["runs"] = max(0, safe_num(last.get("runs"), 0))
+        state["wickets"] = max(0, min(10, safe_num(last.get("wickets"), 0)))
         state["balls"] = 0
         state["current_over"] = []
         save_state()
@@ -655,6 +726,8 @@ def edit():
         for key in ("runs", "wickets", "overs", "balls", "extras"):
             if key in data:
                 state[key] = safe_num(data[key], state[key])
+        if state.get("scoring_mode") == "over_only":
+            state["over_only_checkpoints"] = []
         save_state()
         return jsonify(with_calculated_values(state))
 
@@ -678,7 +751,7 @@ def set_players():
 def set_panel():
     data = request.get_json(silent=True) or {}
     panel = str(data.get("panel", "")).strip()
-    if panel not in {"score", "batting", "bowling", "chase", "fullscore"}:
+    if panel not in {"score", "batting", "bowling", "chase", "fullscore", "chart"}:
         return jsonify({"error": "invalid panel"}), 400
     with match_context():
         state["active_panel"] = panel
@@ -766,6 +839,7 @@ def start_second_innings():
         state["non_striker"] = ""
         state["current_bowler"] = ""
         state["active_panel"] = "score"
+        state["over_only_checkpoints"] = []
         save_state()
         return jsonify(with_calculated_values(state))
 
