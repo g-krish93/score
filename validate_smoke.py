@@ -10,8 +10,9 @@ def main():
     c = app.test_client()
 
     assert_ok(c.get("/health"))
-    assert_ok(c.get("/score"))
+    score0 = c.get("/score").get_json()
     assert_ok(c.get("/"))
+    assert "scoring_locked" in score0
     assert_ok(c.get("/input"))
 
     setup_payload = {
@@ -134,6 +135,28 @@ def main():
     assert_ok(c.post("/over-update", json={"runs": 12, "wickets": 1}))
     score = c.get("/score").get_json()
     assert score["runs"] == 12 and score["wickets"] == 1 and score["overs_display"] == "1.0", score
+
+    # Over-only: innings completes when scheduled overs are filled; further over-update rejected
+    assert_ok(
+        c.post(
+            "/setup",
+            json={
+                "team1": "P1",
+                "team2": "P2",
+                "toss_winner": "P1",
+                "toss_decision": "bat",
+                "scoring_mode": "over_only",
+                "total_overs": 1,
+                "batting_squad": [],
+                "bowling_squad": [],
+            },
+        )
+    )
+    assert_ok(c.post("/over-update", json={"runs": 3, "wickets": 0}))
+    locked = c.get("/score").get_json()
+    assert locked["scoring_locked"] is True, locked
+    blocked_over = c.post("/over-update", json={"runs": 1, "wickets": 0})
+    assert blocked_over.status_code == 400, blocked_over.get_data(as_text=True)
 
     print("Smoke validation passed for all core endpoints.")
 

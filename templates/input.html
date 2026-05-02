@@ -225,6 +225,32 @@
     }
     #scoringHint { font-size: 13px; color: var(--muted); padding: 8px 0; min-height: 36px; display: flex; align-items: center; }
     .row-actions { margin-top: 12px; }
+    .over-innings-banner {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #fef3c7;
+      background: rgba(251, 191, 36, 0.12);
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      line-height: 1.4;
+    }
+    .over-locked-banner {
+      color: #fecaca;
+      background: rgba(220, 38, 38, 0.15);
+      border: 1px solid rgba(248, 113, 113, 0.4);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 12px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .over-hint { font-size: 12px; color: var(--muted); margin: 0 0 10px; line-height: 1.45; }
+    .over-warn { font-size: 13px; color: #fecaca; margin: 10px 0 0; padding: 10px; background: rgba(127, 29, 29, 0.35); border-radius: 8px; border: 1px solid rgba(248, 113, 113, 0.25); }
+    .over-last { font-size: 13px; color: #a7f3d0; margin: 12px 0 0; padding: 10px; background: rgba(16, 185, 129, 0.1); border-radius: 8px; border: 1px solid rgba(52, 211, 153, 0.25); }
     @media (max-width: 700px) {
       .app-shell { padding: 12px 12px 28px; }
       .grid4 { grid-template-columns: repeat(2, 1fr); }
@@ -362,16 +388,22 @@
       </div>
 
       <div id="overOnlySection" class="hidden">
-        <p class="hint" style="margin-top:0;">Add this over’s runs and wickets, then apply.</p>
-        <label>Runs this over</label>
-        <input id="overRunsInput" type="number" min="0" value="0" placeholder="Runs">
-        <label>Wickets this over</label>
-        <input id="overWktsInput" type="number" min="0" max="10" value="0" placeholder="Wickets">
-        <button type="button" id="applyOverUpdateBtn" class="primary" style="margin-top:10px;">Apply over</button>
+        <div id="overInningsBanner" class="over-innings-banner" role="status"></div>
+        <div id="overLockedBanner" class="over-locked-banner hidden"></div>
+        <p class="hint" style="margin-top:0;">Enter only what happened in the <strong>next</strong> completed over — not the whole innings total.</p>
+        <p id="overProgressLabel" class="over-hint"></p>
+        <label>Runs in this over only</label>
+        <input id="overRunsInput" type="number" min="0" value="0" placeholder="e.g. 8">
+        <p class="over-hint">Match total is shown above after you apply. If you type the innings total here by mistake, the score will be wrong.</p>
+        <label>Wickets in this over only (not match wickets)</label>
+        <input id="overWktsInput" type="number" min="0" max="10" value="0" placeholder="0">
+        <p id="overWktsCapHint" class="over-hint"></p>
+        <button type="button" id="applyOverUpdateBtn" class="primary" style="margin-top:10px;">Review &amp; apply over</button>
         <div class="grid2 row-actions">
           <button type="button" id="undoOverBtn" class="secondary">Undo</button>
           <button type="button" id="redoOverBtn" class="secondary">Redo</button>
         </div>
+        <p id="overLastApplied" class="over-last hidden" role="status"></p>
       </div>
 
       <div class="grid2 row-actions" id="endOverRow" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
@@ -456,6 +488,17 @@
     <label>Non-striker</label><select id="wizNonStriker"></select>
     <label>Bowler</label><select id="wizBowler"></select>
     <div class="grid2" style="margin-top:12px;"><button type="button" onclick="closeModal('overWizardModal')" class="secondary">Skip</button><button type="button" id="confirmOverWizard" class="primary">Confirm</button></div>
+  </div></div>
+
+  <div id="overApplyPreviewModal" class="modal"><div class="modal-card">
+    <h3 style="margin-top:0;">Record this over?</h3>
+    <p id="overApplyPreviewLead" style="color:var(--muted);font-size:14px;margin:0 0 12px;line-height:1.45;"></p>
+    <p id="overApplyPreviewDelta" style="font-size:1.1rem;font-weight:700;margin:0 0 8px;"></p>
+    <div id="overApplyPreviewWarnings"></div>
+    <div class="grid2" style="margin-top:16px;">
+      <button type="button" class="secondary" id="overApplyPreviewCancel">Cancel</button>
+      <button type="button" class="primary" id="overApplyPreviewConfirm">Confirm &amp; apply</button>
+    </div>
   </div></div>
 
   <div id="overConfirmModal" class="modal"><div class="modal-card">
@@ -559,6 +602,71 @@
       openModal("overConfirmModal");
     }
 
+    let pendingOverApply = { runs: 0, wickets: 0, nextOver: 0 };
+    let lastOverApplyTs = 0;
+    let lastOverApplyRuns = -1;
+    let lastOverApplyWkts = -1;
+
+    async function postOverUpdateDirect(runs, wickets) {
+      const res = await fetch(withMatch("/over-update"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runs, wickets }),
+      });
+      let data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      return data;
+    }
+
+    function openOverApplyPreview() {
+      if (!score || score.scoring_mode !== "over_only" || score.scoring_locked) return;
+      let runs = Math.max(0, Math.floor(Number(byId("overRunsInput").value || 0)));
+      const rawWkts = Math.max(0, Math.floor(Number(byId("overWktsInput").value || 0)));
+      const maxW = Math.max(0, 10 - score.wickets);
+      let wickets = Math.min(rawWkts, maxW);
+      const totalOvers = score.total_overs || 20;
+      const nextOver = Math.min(score.overs + 1, totalOvers);
+      pendingOverApply = { runs, wickets, nextOver };
+      if (rawWkts !== wickets) byId("overWktsInput").value = String(wickets);
+      const inn = score.innings === 1 ? "1st innings" : "2nd innings";
+      byId("overApplyPreviewLead").innerHTML =
+        `<strong>${inn}</strong> · <strong>${score.batting_team}</strong> is batting vs ${score.bowling_team}.<br><br>` +
+        `You are adding <strong>over ${nextOver} of ${totalOvers}</strong> to the scorecard (one row = one completed fielding over).`;
+      byId("overApplyPreviewDelta").textContent = `+${runs} run(s), +${wickets} wicket(s) for this over only — not the match total.`;
+      const warns = [];
+      if (rawWkts > maxW) warns.push(`Only ${maxW} wicket(s) can still fall in the innings; using ${wickets} wicket(s) for this over.`);
+      if (runs > 36) warns.push("That is an unusually high number for a single over. Confirm you did not enter the whole innings runs.");
+      if (runs > 80) warns.push("This looks like a full-innings total, not one over. Cancel and re-enter only this over’s runs.");
+      const quick = Date.now() - lastOverApplyTs < 5000 && runs === lastOverApplyRuns && wickets === lastOverApplyWkts && lastOverApplyTs > 0;
+      if (quick) warns.push("Same numbers as your last apply, within a few seconds — only continue if this is the next over (not a double-tap).");
+      const warnEl = byId("overApplyPreviewWarnings");
+      warnEl.innerHTML = warns.length ? warns.map((w) => `<div class="over-warn">${w}</div>`).join("") : "";
+      byId("overApplyPreviewConfirm").disabled = runs > 200;
+      openModal("overApplyPreviewModal");
+    }
+
+    async function executePendingOverApply() {
+      const { runs, wickets, nextOver } = pendingOverApply;
+      closeModal("overApplyPreviewModal");
+      try {
+        await postOverUpdateDirect(runs, wickets);
+        lastOverApplyTs = Date.now();
+        lastOverApplyRuns = runs;
+        lastOverApplyWkts = wickets;
+        byId("overRunsInput").value = "0";
+        byId("overWktsInput").value = "0";
+        byId("overLastApplied").classList.remove("hidden");
+        byId("overLastApplied").textContent =
+          `Last recorded: over ${nextOver} → +${runs} runs, ${wickets} wicket(s). Check the header before the next over.`;
+        await refresh();
+        if (score && score.scoring_mode === "over_only") openOverOnlyConfirm();
+      } catch (err) {
+        alert(String(err.message || err));
+        await refresh();
+      }
+    }
+
     function buildInputs(container, prefix) {
       const root = byId(container); root.innerHTML = "";
       for (let i = 1; i <= 11; i++) {
@@ -660,7 +768,7 @@
       byId("setupOverScreen").classList.add("hidden");
       byId("matchScreen").classList.remove("hidden");
       byId("liveMatchLabel").textContent = prettyMatchTitle();
-      const locked = !!score.match_complete;
+      const locked = !!(score.match_complete || score.scoring_locked);
       const overOnly = score.scoring_mode === "over_only";
       byId("ballByBallSection").classList.toggle("hidden", overOnly);
       byId("overOnlySection").classList.toggle("hidden", !overOnly);
@@ -690,7 +798,33 @@
       byId("secondBattingTeam").value = score.bowling_team || "";
       if (score.match_complete) byId("scoringHint").textContent = score.match_result || "Innings complete";
       else if (score.innings === 2 && score.runs_needed === 0) byId("scoringHint").textContent = "Chase complete";
+      else if (overOnly && score.scoring_locked) byId("scoringHint").textContent = "Innings complete — no more over updates.";
       else byId("scoringHint").textContent = "";
+      if (overOnly) {
+        const innLabel = score.innings === 1 ? "1st innings" : "2nd innings";
+        byId("overInningsBanner").textContent =
+          `${innLabel} · ${score.batting_team} batting vs ${score.bowling_team}`;
+        const totalOvers = score.total_overs || 20;
+        const nextOver = Math.min(score.overs + 1, totalOvers);
+        const maxW = Math.max(0, 10 - score.wickets);
+        byId("overWktsInput").max = String(maxW);
+        byId("overWktsCapHint").textContent = maxW < 10
+          ? `Wickets for this over only — at most ${maxW} more can fall (${score.wickets}/10 down).`
+          : "Wickets for this over only (not the team’s total dismissals in the match card until you apply).";
+        const sl = !!score.scoring_locked;
+        byId("overLockedBanner").classList.toggle("hidden", !sl);
+        byId("overLockedBanner").textContent = sl
+          ? (score.match_complete && score.match_result
+            ? `Match finished: ${score.match_result}`
+            : "Innings complete — no more over updates. Use Undo if that was wrong, or 2nd innings / New match.")
+          : "";
+        byId("overProgressLabel").textContent = sl
+          ? "Scoring is locked for this innings."
+          : `Next apply records over ${nextOver} of ${totalOvers} for ${score.batting_team}.`;
+        byId("overRunsInput").disabled = sl;
+        byId("overWktsInput").disabled = sl;
+        byId("applyOverUpdateBtn").disabled = sl;
+      }
       byId("endOverRow").classList.toggle("hidden", overOnly);
       const controls = document.querySelectorAll(
         "[data-ball],#undoBtn,#redoBtn,#undoOverBtn,#redoOverBtn,#endOverBtn,#applyOverUpdateBtn,#striker,#nonStriker,#bowler,#penaltyRunsBtn,#retireStrikerHurtBtn,#retireStrikerUnhurtBtn,#retireNonStrikerHurtBtn,#retireNonStrikerUnhurtBtn"
@@ -927,22 +1061,9 @@
     byId("undoOverBtn").onclick = async () => { await api("/undo", "POST"); await refresh(); };
     byId("redoOverBtn").onclick = async () => { await api("/redo", "POST"); await refresh(); };
     byId("endOverBtn").onclick = async () => { await api("/end-over", "POST"); await refresh(); };
-    byId("applyOverUpdateBtn").onclick = async () => {
-      const runs = Number(byId("overRunsInput").value || 0);
-      const wickets = Number(byId("overWktsInput").value || 0);
-      await api("/over-update", "POST", { runs, wickets });
-      byId("overRunsInput").value = "0";
-      byId("overWktsInput").value = "0";
-      await refresh();
-      if (score && score.scoring_mode === "over_only") {
-        openOverOnlyConfirm();
-      } else if (score && score.balls === 0) {
-        setSelect("wizStriker", score.batting_squad || [], score.striker, false);
-        setSelect("wizNonStriker", score.batting_squad || [], score.non_striker, false);
-        setSelect("wizBowler", score.bowling_squad || [], score.current_bowler, true);
-        openModal("overWizardModal");
-      }
-    };
+    byId("applyOverUpdateBtn").onclick = () => openOverApplyPreview();
+    byId("overApplyPreviewCancel").onclick = () => closeModal("overApplyPreviewModal");
+    byId("overApplyPreviewConfirm").onclick = () => executePendingOverApply();
     byId("overConfirmOk").onclick = () => closeModal("overConfirmModal");
     byId("retireStrikerHurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "striker", type: "hurt" }); await refresh(); };
     byId("retireStrikerUnhurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "striker", type: "unhurt" }); await refresh(); };
@@ -991,6 +1112,11 @@
       if (!ok) return;
       score = await api("/reset-match", "POST");
       setupWizardStep = "choose";
+      byId("overLastApplied").classList.add("hidden");
+      byId("overLastApplied").textContent = "";
+      lastOverApplyTs = 0;
+      lastOverApplyRuns = -1;
+      lastOverApplyWkts = -1;
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
     };

@@ -218,6 +218,15 @@ def with_calculated_values(snapshot):
             else:
                 margin_runs = max(first_innings_total - data["runs"], 0)
                 data["match_result"] = f"{data['bowling_team']} won by {margin_runs} run(s)"
+    data["scoring_locked"] = (
+        total_balls >= (data["total_overs"] * 6)
+        or data["wickets"] >= 10
+        or (
+            data["innings"] == 2
+            and data["target"] is not None
+            and data["runs"] >= data["target"]
+        )
+    )
     return data
 
 
