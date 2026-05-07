@@ -199,6 +199,7 @@
     let failCount = 0;
     let lastBallToken = "";
     let lastScoreKey = "";
+    let lastRelayKey = "";
     const MATCH_ID = "{{ match_id|default('default') }}";
     const MATCH_QUERY = `match=${encodeURIComponent(MATCH_ID)}`;
     function withMatch(url) {
@@ -279,6 +280,57 @@
       );
     }
 
+    function renderRelayScore(data, resultRow) {
+      const b = data.relay_bundle || {};
+      const snap = b.snapshot || {};
+      const i1 = snap.innings_1 || {};
+      const i2 = snap.innings_2 || {};
+      const scoreKey = `${i1.score || ""}|${i2.score || ""}|${snap.status || ""}|${b.stale}`;
+      const popClass = scoreKey !== lastRelayKey ? "score-pop" : "";
+      lastRelayKey = scoreKey;
+      const stalePill = b.stale
+        ? `<span class="pill" style="border-color:#f87171;color:#fecaca;">STALE</span>`
+        : `<span class="pill">Play-Cricket</span>`;
+      const statusPill = `<span class="pill">${text(snap.status || "Live")}</span>`;
+      const t1 = text(i1.team || data.batting_team);
+      const t2 = text(i2.team || data.bowling_team);
+      const s1 = text(i1.score);
+      const s2 = text(i2.score);
+      const o1 = text(i1.overs_display);
+      const o2 = text(i2.overs_display);
+      const big = (s1 && s2) ? `${s1}  |  ${s2}` : (s1 || s2 || "—");
+      const meta1 = (s1 && o1) ? `${s1} (${o1} ov)` : "Innings 1";
+      const meta2 = (s2 && o2) ? `${s2} (${o2} ov)` : "Innings 2";
+      const wait = (!s1 && !s2)
+        ? `<div class="row muted" style="margin-top:4px;">Waiting for ingest — POST JSON to <code>/relay/ingest</code> (see CricRelay page).</div>`
+        : "";
+      return (
+        resultRow +
+        `<div class="statline">${stalePill}${statusPill}</div>` +
+        wait +
+        `<div class="score-strip">` +
+          `<div class="team-box left">` +
+            `<div class="team-name team1">${t1}</div>` +
+            `<div class="team-sub">${meta1}</div>` +
+          `</div>` +
+          `<div class="main-score">` +
+            `<div class="score-big ${popClass}">${big}</div>` +
+            `<div class="score-meta">External scorecard</div>` +
+          `</div>` +
+          `<div class="team-box right">` +
+            `<div class="team-name team2">${t2}</div>` +
+            `<div class="team-sub">${meta2}</div>` +
+          `</div>` +
+        `</div>`
+      );
+    }
+
+    function renderMainScoreBlock(data, resultRow) {
+      const b = data.relay_bundle || {};
+      if (b.enabled) return renderRelayScore(data, resultRow);
+      return renderMainScore(data, resultRow);
+    }
+
     function renderOverlay(data) {
       setTheme(data);
       maybeFlash(data);
@@ -292,7 +344,7 @@
       if (panel === "batting") {
         const rows = (data.batting_squad || []).filter(p => p.status === "batting" || p.status === "out");
         if (!rows.length) { content.innerHTML = resultRow + '<div class="row section-title">BATTING</div><div class="row muted">— —</div>'; return; }
-        content.innerHTML = renderMainScore(data, resultRow) + '<div class="row section-title">BATTING CARD</div>' + rows.map(p =>
+        content.innerHTML = renderMainScoreBlock(data, resultRow) + '<div class="row section-title">BATTING CARD</div>' + rows.map(p =>
           `<div class="row ${p.status === "out" ? "muted" : ""}">${pad(p.name)} ${p.runs} (${p.balls})</div>`
         ).join("");
         return;
@@ -300,7 +352,7 @@
       if (panel === "bowling") {
         const rows = (data.bowling_squad || []).filter(p => p.overs > 0 || p.balls > 0);
         if (!rows.length) { content.innerHTML = resultRow + '<div class="row section-title">BOWLING</div><div class="row muted">— —</div>'; return; }
-        content.innerHTML = renderMainScore(data, resultRow) + '<div class="row section-title">BOWLING CARD</div>' + rows.map(p =>
+        content.innerHTML = renderMainScoreBlock(data, resultRow) + '<div class="row section-title">BOWLING CARD</div>' + rows.map(p =>
           `<div class="row ${p.name === data.current_bowler ? "" : "muted"}">${pad(p.name)} ${p.overs}.${p.balls}-${p.maidens || 0}-${p.runs}-${p.wickets}</div>`
         ).join("");
         return;
@@ -308,7 +360,7 @@
       if (panel === "chase") {
         if (data.innings !== 2) { content.innerHTML = resultRow + '<div class="row muted">— 2nd innings only —</div>'; return; }
         content.innerHTML =
-          renderMainScore(data, resultRow) +
+          renderMainScoreBlock(data, resultRow) +
           `<div class="statline"><span class="pill">${text(data.batting_team)} need ${text(data.runs_needed)} runs</span><span class="pill">from ${text(data.balls_remaining)} balls</span><span class="pill">RRR ${text(data.rrr)}</span></div>`;
         return;
       }
@@ -325,7 +377,7 @@
           ? `T:${text(data.target)} Need ${text(data.runs_needed)} off ${text(data.balls_remaining)}b RRR:${text(data.rrr)}`
           : `CRR: ${text(data.crr)}`;
         content.innerHTML =
-          renderMainScore(data, resultRow) +
+          renderMainScoreBlock(data, resultRow) +
           `<div class="row">${chaseLine}</div>` +
           `<div class="row section-title">Batting</div>` + batterRows +
           `<div class="row section-title">Bowling</div>` + bowlerRows;
@@ -352,7 +404,7 @@
           })
           .join(" ");
         content.innerHTML =
-          renderMainScore(data, resultRow) +
+          renderMainScoreBlock(data, resultRow) +
           `<div class="row section-title">Run worm (${text(data.batting_team)})</div>` +
           `<svg width="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;max-width:100%;height:auto;">` +
           `<rect x="0" y="0" width="${w}" height="${h}" fill="rgba(255,255,255,.04)" rx="6"/>` +
@@ -361,7 +413,7 @@
           `<div class="row muted" style="font-size:calc(11px * var(--overlay-scale));">Cumulative runs after each logged over · RR ${text(data.over_only_run_rate)}</div>`;
         return;
       }
-      content.innerHTML = renderMainScore(data, resultRow);
+      content.innerHTML = renderMainScoreBlock(data, resultRow);
     }
 
     async function fetchScore() {

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CricRelay — Play-Cricket → live overlay</title>
+  <style>
+    :root { --bg:#0c1222; --card:#141b2e; --border:rgba(255,255,255,.1); --text:#f1f5f9; --muted:#94a3b8; --accent:#22c55e; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font-family:"Segoe UI",system-ui,sans-serif; line-height:1.5; padding:24px 16px 48px; }
+    .wrap { max-width:640px; margin:0 auto; }
+    h1 { font-size:1.5rem; margin:0 0 8px; letter-spacing:-.02em; }
+    .sub { color:var(--muted); margin:0 0 24px; font-size:15px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:16px; }
+    label { display:block; font-size:12px; font-weight:600; color:var(--muted); margin:12px 0 6px; }
+    input, select, button { width:100%; min-height:48px; border-radius:10px; border:1px solid var(--border); background:#1a2339; color:var(--text); font-size:16px; padding:0 12px; }
+    button.primary { background:linear-gradient(180deg,#2ea043,#166534); border-color:rgba(34,197,94,.35); font-weight:700; cursor:pointer; margin-top:12px; }
+    a { color:#7dd3fc; }
+    .links { display:grid; gap:8px; margin-top:12px; }
+    .links a { word-break: break-all; }
+    #msg { font-size:14px; margin-top:10px; min-height:1.25em; }
+    .ok { color:var(--accent); }
+    .err { color:#f87171; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>CricRelay</h1>
+    <p class="sub">UK-friendly relay: paste a Play-Cricket match URL, save, then run your scraper worker to push JSON to this server. Prism keeps using the same overlay URL.</p>
+
+    <div class="card">
+      <label for="relayMode">Overlay score source</label>
+      <select id="relayMode">
+        <option value="manual">Manual (scorer app)</option>
+        <option value="play_cricket">Play-Cricket (URL + ingest)</option>
+      </select>
+      <label for="relayUrl">Play-Cricket match URL</label>
+      <input id="relayUrl" type="url" placeholder="https://bmacc.play-cricket.com/website/results/7681278">
+      <button type="button" class="primary" id="saveBtn">Save relay settings</button>
+      <p id="msg"></p>
+    </div>
+
+    <div class="card">
+      <strong>Match scope</strong>
+      <p class="sub" style="margin-bottom:8px;">This page is for match ID: <code>{{ match_id }}</code></p>
+      <div class="links">
+        <a href="/m/{{ match_id }}/input">Open scorer (input)</a>
+        <a href="/m/{{ match_id }}">Open stream overlay</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <strong>Ingest (for operators)</strong>
+      <p class="sub" style="margin-bottom:8px;">Configure your <code>play-cricket-score-scrapper</code> to POST the live JSON to:</p>
+      <code id="ingestUrl"></code>
+      <p class="sub" style="margin-top:12px;">If <code>RELAY_INGEST_TOKEN</code> is set on the server, send header <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+    </div>
+  </div>
+  <script>
+    const MATCH_ID = "{{ match_id|default('default') }}";
+    const MATCH_QUERY = `match=${encodeURIComponent(MATCH_ID)}`;
+    function withMatch(path) {
+      const sep = path.includes("?") ? "&" : "?";
+      return `${path}${sep}${MATCH_QUERY}`;
+    }
+    document.getElementById("ingestUrl").textContent =
+      `${location.origin}${withMatch("/relay/ingest")}`;
+
+    async function loadScore() {
+      const res = await fetch(withMatch("/score"));
+      if (!res.ok) return;
+      const s = await res.json();
+      document.getElementById("relayMode").value = s.relay_mode || "manual";
+      document.getElementById("relayUrl").value = s.relay_play_cricket_url || "";
+    }
+
+    document.getElementById("saveBtn").onclick = async () => {
+      const msg = document.getElementById("msg");
+      msg.textContent = "Saving…";
+      msg.className = "";
+      try {
+        const res = await fetch(withMatch("/relay/config"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            relay_mode: document.getElementById("relayMode").value,
+            relay_play_cricket_url: document.getElementById("relayUrl").value.trim(),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        msg.textContent = "Saved. Start your scraper push to this ingest URL.";
+        msg.className = "ok";
+      } catch (e) {
+        msg.textContent = String(e.message || e);
+        msg.className = "err";
+      }
+    };
+
+    loadScore();
+  </script>
+</body>
+</html>

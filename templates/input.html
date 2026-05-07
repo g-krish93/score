@@ -421,6 +421,23 @@
       </div>
     </section>
 
+    <section class="card" id="cricRelayCard">
+      <div class="card-head">
+        <span class="card-title">CricRelay (Play-Cricket)</span>
+      </div>
+      <p class="hint" style="margin-top:0;">Optional: send live score from a Play-Cricket match page into this server (worker or <code>play-cricket-score-scrapper</code> → <code>POST /relay/ingest</code>). Prism can keep using the same overlay URL. Manual scoring stays available when source is manual.</p>
+      <label>Overlay score source</label>
+      <select id="relayModeSelect">
+        <option value="manual">Manual (this app)</option>
+        <option value="play_cricket">Play-Cricket (URL + ingest)</option>
+      </select>
+      <label>Play-Cricket match URL</label>
+      <input id="relayUrlInput" type="url" placeholder="https://bmacc.play-cricket.com/website/results/7681278">
+      <p id="relayStatusLine" class="hint" style="min-height:1.25em;"></p>
+      <button type="button" id="saveRelayBtn" class="primary">Save relay settings</button>
+      <p class="hint" style="margin-top:10px;">Product landing (share with clubs): <a id="cricrelayLink" href="/m/{{ match_id|default('default') }}/cricrelay" target="_blank" rel="noopener">CricRelay setup</a> — point <strong>cricrelay.co.uk</strong> at this server when ready.</p>
+    </section>
+
     <section class="card" id="lawsCard">
       <div class="card-head">
         <span class="card-title">Laws & special</span>
@@ -842,6 +859,15 @@
       else if (score.innings === 2 && score.runs_needed === 0) byId("scoringHint").textContent = "Chase complete";
       else if (overOnly && score.scoring_locked) byId("scoringHint").textContent = "Innings complete — no more over updates.";
       else byId("scoringHint").textContent = "";
+      const rb = score.relay_bundle || {};
+      byId("relayModeSelect").value = score.relay_mode || "manual";
+      byId("relayUrlInput").value = score.relay_play_cricket_url || "";
+      let relayLine = "";
+      if (rb.last_error) relayLine = `Ingest: ${rb.last_error}`;
+      else if (rb.last_ok_at) relayLine = `Last ingest: ${rb.last_ok_at}`;
+      else if (rb.enabled) relayLine = "Play-Cricket mode — waiting for first ingest.";
+      else relayLine = "Overlay source: manual (in-app scoring).";
+      byId("relayStatusLine").textContent = relayLine;
       if (overOnly) {
         const sl = !!score.scoring_locked;
         const innLabel = score.innings === 1 ? "1st innings" : "2nd innings";
@@ -1154,6 +1180,18 @@
     byId("endOverBtn").onclick = async () => { await api("/end-over", "POST"); await refresh(); };
     byId("applyOverUpdateBtn").onclick = () => openOverApplyPreview();
     byId("overAfterOverSelect").onchange = () => syncOverOnlyInputsFromServer();
+    byId("saveRelayBtn").onclick = async () => {
+      try {
+        await api("/relay/config", "POST", {
+          relay_mode: byId("relayModeSelect").value,
+          relay_play_cricket_url: byId("relayUrlInput").value.trim(),
+        });
+        await refresh();
+      } catch (e) {
+        alert(String(e.message || e));
+        await refresh();
+      }
+    };
     byId("overApplyPreviewCancel").onclick = () => closeModal("overApplyPreviewModal");
     byId("overApplyPreviewConfirm").onclick = () => executePendingOverApply();
     byId("retireStrikerHurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "striker", type: "hurt" }); await refresh(); };

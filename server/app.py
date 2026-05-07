@@ -3,6 +3,7 @@ import json
 import os
 import threading
 import re
+from datetime import datetime, timezone
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -59,10 +60,23 @@ def blank_state():
         "match_ended": False,
         "event_log": [],
         "over_only_checkpoints": [],
+        "relay_mode": "manual",
+        "relay_play_cricket_url": "",
+        "relay_wrapper": None,
+        "relay_last_ok_at": None,
+        "relay_last_error": None,
     }
 
 
 state = blank_state()
+
+
+def merge_missing_state_keys(loaded):
+    defaults = blank_state()
+    for key, default in defaults.items():
+        if key not in loaded:
+            loaded[key] = copy.deepcopy(default)
+    return loaded
 
 
 def sanitize_match_id(raw):
@@ -95,7 +109,7 @@ def get_or_create_context(match_id):
     if path.exists():
         try:
             with path.open("r", encoding="utf-8") as fh:
-                ctx["state"] = json.load(fh)
+                ctx["state"] = merge_missing_state_keys(json.load(fh))
         except Exception:
             ctx["state"] = blank_state()
     match_contexts[safe] = ctx
@@ -249,6 +263,22 @@ def with_calculated_values(snapshot):
         data["over_only_per_over"] = []
         data["over_only_overs_completed"] = 0
         data["over_only_run_rate"] = 0.0
+    wrapper = data.get("relay_wrapper")
+    if not isinstance(wrapper, dict):
+        wrapper = {}
+    snap = wrapper.get("snapshot") if isinstance(wrapper.get("snapshot"), dict) else None
+    url = (data.get("relay_play_cricket_url") or "").strip()
+    mode = (data.get("relay_mode") or "manual").strip().lower()
+    enabled = mode == "play_cricket" and bool(url)
+    data["relay_bundle"] = {
+        "mode": mode,
+        "url": url,
+        "enabled": enabled,
+        "stale": bool(wrapper.get("stale")) if wrapper else False,
+        "snapshot": snap,
+        "last_ok_at": data.get("relay_last_ok_at"),
+        "last_error": data.get("relay_last_error"),
+    }
     return data
 
 
@@ -356,6 +386,94 @@ def input_page():
 @app.get("/m/<match_id>/input")
 def input_page_scoped(match_id):
     return render_template("input.html", match_id=sanitize_match_id(match_id))
+
+
+@app.get("/cricrelay")
+def cricrelay_landing():
+    mid = sanitize_match_id(request.args.get("match", DEFAULT_MATCH_ID))
+    return render_template("cricrelay.html", match_id=mid)
+
+
+@app.get("/m/<match_id>/cricrelay")
+def cricrelay_landing_scoped(match_id):
+    return render_template("cricrelay.html", match_id=sanitize_match_id(match_id))
+
+
+def _relay_ingest_authorized() -> bool:
+    expected = os.getenv("RELAY_INGEST_TOKEN", "").strip()
+    if not expected:
+        return True
+    auth = (request.headers.get("Authorization") or "").strip()
+    return auth == f"Bearer {expected}"
+
+
+@app.post("/relay/config")
+def relay_config():
+    data = request.get_json(silent=True) or {}
+    mode = str(data.get("relay_mode", "manual")).strip().lower()
+    if mode not in {"manual", "play_cricket"}:
+        return jsonify({"error": "relay_mode must be manual or play_cricket"}), 400
+    url = str(data.get("relay_play_cricket_url", "")).strip()
+    if mode == "play_cricket":
+        if not url:
+            return jsonify({"error": "relay_play_cricket_url required when relay_mode is play_cricket"}), 400
+        if "play-cricket.com" not in url.lower():
+            return jsonify({"error": "URL must be a play-cricket.com page"}), 400
+    with match_context():
+        state["relay_mode"] = mode
+        state["relay_play_cricket_url"] = url if mode == "play_cricket" else ""
+        if mode == "manual":
+            state["relay_wrapper"] = None
+            state["relay_last_error"] = None
+        save_state()
+        return jsonify(with_calculated_values(state))
+
+
+@app.post("/relay/ingest")
+def relay_ingest():
+    if not _relay_ingest_authorized():
+        return jsonify({"error": "unauthorized"}), 401
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "JSON body required"}), 400
+    with match_context():
+        if (state.get("relay_mode") or "manual") != "play_cricket":
+            return jsonify({"error": "relay_mode is not play_cricket for this match"}), 400
+        if isinstance(payload.get("snapshot"), dict):
+            wrapper = payload
+        elif (
+            isinstance(payload.get("innings_1"), dict)
+            or isinstance(payload.get("innings_2"), dict)
+            or payload.get("status") is not None
+            or payload.get("source_url")
+        ):
+            wrapper = {
+                "snapshot": payload,
+                "stale": bool(payload.get("stale", False)),
+                "source_url": payload.get("source_url") or state.get("relay_play_cricket_url", ""),
+            }
+        else:
+            wrapper = {
+                "snapshot": payload,
+                "stale": False,
+                "source_url": state.get("relay_play_cricket_url", ""),
+            }
+        snap = wrapper.get("snapshot")
+        if not isinstance(snap, dict):
+            return jsonify({"error": "payload must include snapshot object"}), 400
+        state["relay_wrapper"] = {
+            "source_url": wrapper.get("source_url") or state.get("relay_play_cricket_url", ""),
+            "stale": bool(wrapper.get("stale")),
+            "snapshot": snap,
+            "last_fetch_at": wrapper.get("last_fetch_at"),
+            "last_ok_at": wrapper.get("last_ok_at"),
+            "last_changed_at": wrapper.get("last_changed_at"),
+            "last_error": wrapper.get("last_error"),
+        }
+        state["relay_last_ok_at"] = datetime.now(timezone.utc).isoformat()
+        state["relay_last_error"] = None
+        save_state()
+        return jsonify({"ok": True, "relay_bundle": with_calculated_values(state)["relay_bundle"]})
 
 
 @app.get("/score")

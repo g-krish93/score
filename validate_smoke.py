@@ -166,6 +166,35 @@ def main():
     blocked_over = c.post("/over-update", json={"runs": 1, "wickets": 0})
     assert blocked_over.status_code == 400, blocked_over.get_data(as_text=True)
 
+    assert_ok(c.post("/reset-match"))
+    assert_ok(c.post("/setup", json=setup_payload))
+    assert_ok(c.post("/set-players", json={"striker": "A1", "non_striker": "A2", "current_bowler": "B1"}))
+    assert_ok(
+        c.post(
+            "/relay/config",
+            json={
+                "relay_mode": "play_cricket",
+                "relay_play_cricket_url": "https://bmacc.play-cricket.com/website/results/7681278",
+            },
+        )
+    )
+    pc_snap = {
+        "status": "Smoke relay",
+        "innings_1": {
+            "team": "Team A",
+            "runs": 7,
+            "wickets": 0,
+            "overs": "1.0",
+            "score": "7/0",
+            "overs_display": "1.0",
+        },
+    }
+    assert_ok(c.post("/relay/ingest", json={"snapshot": pc_snap, "stale": False}))
+    relay_score = c.get("/score").get_json()
+    assert relay_score["relay_bundle"]["enabled"] is True, relay_score
+    assert relay_score["relay_bundle"]["snapshot"]["innings_1"]["runs"] == 7, relay_score
+    assert_ok(c.post("/relay/config", json={"relay_mode": "manual"}))
+
     print("Smoke validation passed for all core endpoints.")
 
 

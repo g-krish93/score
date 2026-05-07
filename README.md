@@ -27,6 +27,16 @@ Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000`, Phone 3 updates s
 - Manual save: `POST /save`
 - Manual restore: `POST /restore`
 
+## CricRelay (Play-Cricket → same overlay URL)
+
+Clubs can keep **manual scoring** in the input UI, or switch the overlay to follow a **Play-Cricket** match page fed by your `play-cricket-score-scrapper` worker.
+
+- **Landing / setup page:** `/cricrelay` or `/m/<match_id>/cricrelay` (use with your **cricrelay.co.uk** domain once DNS points at EC2).
+- **Scorer controls:** Input page → **CricRelay (Play-Cricket)** card — choose *Manual* vs *Play-Cricket (URL + ingest)*, save the match URL.
+- **Ingest endpoint (for the scraper):** `POST /relay/ingest?match=<match_id>` with JSON body from the scraper (`snapshot` + optional `stale`, etc.).
+- **Optional auth:** set `RELAY_INGEST_TOKEN` on the server and send `Authorization: Bearer <token>` on ingest.
+- **Prism:** unchanged — still use `/` or `/m/<match_id>`; the overlay reads `/score` and switches layout when relay mode is active.
+
 ## Multiple parallel matches
 
 - Use dedicated URLs per match so states do not mix.
