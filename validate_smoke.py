@@ -11,7 +11,10 @@ def main():
 
     assert_ok(c.get("/health"))
     score0 = c.get("/score").get_json()
-    assert_ok(c.get("/"))
+    home = c.get("/")
+    assert_ok(home)
+    assert "CricRelay" in home.get_data(as_text=True)
+    assert_ok(c.get("/stream"))
     assert "scoring_locked" in score0
     assert_ok(c.get("/input"))
 

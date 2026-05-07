@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CricRelay — Play-Cricket scores into your live stream</title>
+  <style>
+    :root { --bg:#0b1020; --card:#121a2e; --border:rgba(255,255,255,.1); --text:#f1f5f9; --muted:#94a3b8; --accent:#22c55e; --link:#7dd3fc; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font-family:"Segoe UI",system-ui,sans-serif; line-height:1.55; }
+    header { border-bottom:1px solid var(--border); padding:16px 20px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; }
+    .brand { font-weight:800; font-size:1.15rem; letter-spacing:-.02em; }
+    nav { display:flex; gap:12px; flex-wrap:wrap; }
+    nav a { color:var(--link); text-decoration:none; font-size:15px; }
+    nav a:hover { text-decoration:underline; }
+    main { max-width:720px; margin:0 auto; padding:28px 18px 56px; }
+    h1 { font-size:clamp(1.6rem,4vw,2rem); margin:0 0 12px; letter-spacing:-.03em; }
+    .lead { color:var(--muted); font-size:1.05rem; margin:0 0 28px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:18px; }
+    .card h2 { margin:0 0 10px; font-size:1.1rem; }
+    .card p { margin:0 0 10px; color:var(--muted); font-size:15px; }
+    .card p:last-child { margin-bottom:0; }
+    ul { margin:8px 0 0; padding-left:1.2em; color:var(--muted); font-size:15px; }
+    li { margin:6px 0; }
+    code { background:#1a2339; padding:2px 8px; border-radius:6px; font-size:13px; }
+    .cta { display:inline-block; margin-top:10px; padding:12px 18px; border-radius:10px; background:linear-gradient(180deg,#2ea043,#166534); color:#fff; font-weight:700; text-decoration:none; border:1px solid rgba(34,197,94,.35); }
+    .cta.secondary { background:#1a2339; border-color:var(--border); color:var(--text); font-weight:600; }
+    footer { text-align:center; padding:24px; color:var(--muted); font-size:13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">CricRelay</div>
+    <nav>
+      {% if logged_in %}
+      <a href="{{ url_for('dashboard') }}">Dashboard</a>
+      <form action="{{ url_for('logout') }}" method="post" style="display:inline;"><button type="submit" style="background:none;border:none;color:var(--link);cursor:pointer;font:inherit;padding:0;">Log out</button></form>
+      {% else %}
+      <a href="{{ url_for('register_page') }}">Register club</a>
+      <a href="{{ url_for('login_page') }}">Log in</a>
+      {% endif %}
+      <a href="{{ url_for('cricrelay_landing') }}">Operator setup</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Live scores from Play-Cricket — without a heavy broadcast stack</h1>
+    <p class="lead">CricRelay is built for UK clubs who stream on YouTube or similar: your Play-Cricket fixture is scraped on a short interval, JSON lands in your relay, and the same browser overlay Prism already uses stays in sync — or you fall back to manual scoring from the pitch.</p>
+
+    <div class="card">
+      <h2>How it works</h2>
+      <p>Each club has its own Play-Cricket host (for example <code>https://bmacc.play-cricket.com</code>) and each fixture has a numeric <code>match_details?id=…</code>. CricRelay stores your club profile, squads (1st XI, 2nd XI, T20, and so on), and per-fixture relay rows.</p>
+      <p>When you start a relay, we give you a stable overlay URL for Prism and an ingest URL for your EC2 scraper (for example every 10 seconds). Manual operators can still use the scorer UI.</p>
+    </div>
+
+    <div class="card">
+      <h2>For broadcasters</h2>
+      <ul>
+        <li>Register your club once (Play-Cricket base URL + contact).</li>
+        <li>Add squads under your profile.</li>
+        <li>For each stream, add the match id (and optional base URL override); copy the Prism overlay link and scraper ingest URL from the dashboard.</li>
+      </ul>
+      {% if not logged_in %}
+      <a class="cta" href="{{ url_for('register_page') }}">Register your club</a>
+      <a class="cta secondary" href="{{ url_for('login_page') }}" style="margin-left:8px;">Log in</a>
+      {% else %}
+      <a class="cta" href="{{ url_for('dashboard') }}">Open dashboard</a>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Overlay URL change</h2>
+      <p>The marketing site lives at <code>/</code>. Browser overlays for streams use <code>/stream</code> or <code>/m/&lt;your-relay-slug&gt;/stream</code>. Old links to <code>/m/&lt;slug&gt;</code> redirect automatically.</p>
+    </div>
+  </main>
+  <footer>CricRelay — relay layer for Play-Cricket and live overlays.</footer>
+</body>
+</html>

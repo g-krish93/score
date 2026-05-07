@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dashboard — {{ org.name }}</title>
+  <style>
+    :root { --bg:#0b1020; --card:#121a2e; --border:rgba(255,255,255,.1); --text:#f1f5f9; --muted:#94a3b8; --link:#7dd3fc; --ok:rgba(34,197,94,.15); }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font-family:"Segoe UI",system-ui,sans-serif; line-height:1.5; padding:20px 16px 48px; }
+    .top { max-width:800px; margin:0 auto 20px; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; }
+    h1 { font-size:1.25rem; margin:0; }
+    .muted { color:var(--muted); font-size:14px; margin:4px 0 0; }
+    nav a, nav button { color:var(--link); font-size:14px; margin-right:14px; }
+    nav button { background:none; border:none; cursor:pointer; font:inherit; padding:0; text-decoration:underline; }
+    main { max-width:800px; margin:0 auto; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:18px; }
+    .card h2 { margin:0 0 12px; font-size:1.05rem; }
+    label { display:block; font-size:12px; font-weight:600; color:var(--muted); margin:10px 0 4px; }
+    input, select { width:100%; max-width:100%; min-height:44px; border-radius:10px; border:1px solid var(--border); background:#1a2339; color:var(--text); font-size:15px; padding:0 10px; }
+    button.primary { margin-top:12px; padding:10px 16px; border-radius:10px; border:1px solid rgba(34,197,94,.35); background:linear-gradient(180deg,#2ea043,#166534); color:#fff; font-weight:700; cursor:pointer; font-size:15px; }
+    .row { display:grid; gap:10px; }
+    @media (min-width:640px) {
+      .row.cols-2 { grid-template-columns:1fr 1fr; }
+    }
+    table { width:100%; border-collapse:collapse; font-size:14px; margin-top:8px; }
+    th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--border); vertical-align:top; }
+    th { color:var(--muted); font-weight:600; font-size:12px; }
+    code { word-break:break-all; font-size:12px; background:#1a2339; padding:2px 6px; border-radius:6px; }
+    .flash { background:var(--ok); border:1px solid rgba(34,197,94,.35); color:#bbf7d0; padding:10px 12px; border-radius:10px; margin-bottom:16px; font-size:14px; }
+    .flash.error { background:rgba(248,113,113,.12); border-color:rgba(248,113,113,.35); color:#fecaca; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h1>{{ org.name }}</h1>
+      <p class="muted">Default Play-Cricket base: <code>{{ org.play_cricket_base_url }}</code></p>
+    </div>
+    <nav>
+      <a href="{{ url_for('cricrelay_home') }}">Home</a>
+      <form action="{{ url_for('logout') }}" method="post" style="display:inline;"><button type="submit">Log out</button></form>
+    </nav>
+  </div>
+  <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, m in messages %}<div class="flash{% if cat == 'error' %} error{% endif %}">{{ m }}</div>{% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="card">
+      <h2>Squads</h2>
+      <p class="muted" style="margin:0 0 12px;">Examples: 1st XI, 2nd XI, Sunday XI, T20. Optional when creating a relay.</p>
+      {% if teams %}
+      <table>
+        <thead><tr><th>Name</th></tr></thead>
+        <tbody>
+          {% for t in teams %}<tr><td>{{ t.name }}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">No squads yet.</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('dashboard_add_team') }}" style="margin-top:14px;">
+        <label for="team_name">Add squad</label>
+        <div class="row cols-2" style="align-items:end;">
+          <input id="team_name" name="name" placeholder="e.g. 1st XI" required>
+          <button type="submit" class="primary" style="margin-top:0;">Add</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>New relay match</h2>
+      <p class="muted" style="margin:0 0 12px;">Use the numeric id from <code>match_details?id=…</code>. Override the base URL only if this fixture is on another Play-Cricket host.</p>
+      <form method="post" action="{{ url_for('dashboard_add_match') }}">
+        <div class="row cols-2">
+          <div>
+            <label for="play_cricket_match_id">Play-Cricket match id</label>
+            <input id="play_cricket_match_id" name="play_cricket_match_id" inputmode="numeric" pattern="[0-9]+" required placeholder="7344166">
+          </div>
+          <div>
+            <label for="club_team_id">Squad (optional)</label>
+            <select id="club_team_id" name="club_team_id">
+              <option value="">— None —</option>
+              {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <label for="play_cricket_base_url">Base URL override (optional)</label>
+        <input id="play_cricket_base_url" name="play_cricket_base_url" type="url" placeholder="{{ org.play_cricket_base_url }}">
+        <button type="submit" class="primary">Create relay &amp; enable Play-Cricket mode</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Active relays</h2>
+      {% if matches %}
+      <table>
+        <thead>
+          <tr>
+            <th>Match id</th>
+            <th>Scrape URL</th>
+            <th>Prism overlay</th>
+            <th>Ingest</th>
+            <th>Setup</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in matches %}
+          <tr>
+            <td>{{ m.play_cricket_match_id }}</td>
+            <td><code>{{ m.full_scrape_url }}</code></td>
+            <td><code>{{ request.url_root.rstrip('/') }}/m/{{ m.score_match_slug }}/stream</code></td>
+            <td><code>{{ request.url_root.rstrip('/') }}/relay/ingest?match={{ m.score_match_slug }}</code></td>
+            <td><a href="{{ url_for('cricrelay_landing_scoped', match_id=m.score_match_slug) }}">Operator</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">No relays yet. Add a match above.</p>
+      {% endif %}
+    </div>
+  </main>
+</body>
+</html>

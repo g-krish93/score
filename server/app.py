@@ -1,22 +1,47 @@
 import copy
 import json
 import os
-import threading
 import re
-from datetime import datetime, timezone
+import secrets
+import threading
 from contextlib import contextmanager
+from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_cors import CORS
+from sqlalchemy.exc import IntegrityError
+
+from .models_cricrelay import (
+    ClubTeam,
+    Organization,
+    RelayMatch,
+    build_match_details_url,
+    db,
+    slugify_org_name,
+)
 
 load_dotenv()
+
+STATE_DIR = Path(os.getenv("STATE_DIR", "/tmp")).expanduser()
+try:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass
 
 app = Flask(__name__, template_folder="../templates", static_folder="../static")
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-STATE_DIR = Path("/tmp")
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-insecure-change-me")
+_db_url = (os.getenv("DATABASE_URL") or "").strip()
+if not _db_url:
+    _db_path = (STATE_DIR / "cricrelay.db").resolve()
+    _db_url = f"sqlite:///{_db_path.as_posix()}"
+app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db.init_app(app)
 DEFAULT_MATCH_ID = "default"
 state_lock = threading.Lock()
 last_action = None
@@ -174,6 +199,17 @@ def save_state():
             json.dump(state, fh)
     except Exception:
         pass
+
+
+def apply_relay_to_score_match(match_slug: str, full_url: str):
+    url = (full_url or "").strip()
+    with match_context(match_slug):
+        merge_missing_state_keys(state)
+        state["relay_mode"] = "play_cricket"
+        state["relay_play_cricket_url"] = url
+        state["relay_wrapper"] = None
+        state["relay_last_error"] = None
+        save_state()
 
 
 def restore_state(match_id=None):
@@ -368,14 +404,189 @@ def finalize_bowler_over(bowler):
     bowler["over_runs"] = 0
 
 
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("org_id"):
+            return redirect(url_for("login_page"))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def _org_from_session():
+    oid = session.get("org_id")
+    if not oid:
+        return None
+    return db.session.get(Organization, oid)
+
+
 @app.get("/")
-def overlay():
+def cricrelay_home():
+    return render_template("cricrelay_home.html", logged_in=bool(session.get("org_id")))
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register_page():
+    if request.method == "GET":
+        return render_template("cricrelay_register.html")
+    name = (request.form.get("name") or "").strip()
+    email = (request.form.get("email") or "").strip().lower()
+    password = request.form.get("password") or ""
+    password2 = request.form.get("password2") or ""
+    base_url = (request.form.get("play_cricket_base_url") or "").strip().rstrip("/")
+    if not name or not email or not password:
+        flash("Please fill in club name, email, and password.", "error")
+        return render_template("cricrelay_register.html"), 400
+    if password != password2:
+        flash("Passwords do not match.", "error")
+        return render_template("cricrelay_register.html"), 400
+    if len(password) < 8:
+        flash("Use a password of at least 8 characters.", "error")
+        return render_template("cricrelay_register.html"), 400
+    if "play-cricket.com" not in base_url.lower():
+        flash("Play-Cricket site URL must include play-cricket.com (no trailing path).", "error")
+        return render_template("cricrelay_register.html"), 400
+    base_slug = slugify_org_name(name)
+    slug = base_slug
+    for _ in range(12):
+        if not Organization.query.filter_by(slug=slug).first():
+            break
+        slug = f"{base_slug}-{secrets.token_hex(2)}"
+    org = Organization(
+        slug=slug,
+        name=name,
+        email=email,
+        play_cricket_base_url=base_url,
+    )
+    org.set_password(password)
+    db.session.add(org)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("That email or club URL slug is already in use.", "error")
+        return render_template("cricrelay_register.html"), 400
+    session["org_id"] = org.id
+    flash("Welcome to CricRelay — add squads and a match below.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login_page():
+    if request.method == "GET":
+        return render_template("cricrelay_login.html")
+    email = (request.form.get("email") or "").strip().lower()
+    password = request.form.get("password") or ""
+    org = Organization.query.filter_by(email=email).first()
+    if not org or not org.check_password(password):
+        flash("Invalid email or password.", "error")
+        return render_template("cricrelay_login.html"), 401
+    session["org_id"] = org.id
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/logout")
+def logout():
+    session.pop("org_id", None)
+    return redirect(url_for("cricrelay_home"))
+
+
+@app.get("/dashboard")
+@login_required
+def dashboard():
+    org = _org_from_session()
+    teams = ClubTeam.query.filter_by(organization_id=org.id).order_by(ClubTeam.name).all()
+    matches = RelayMatch.query.filter_by(organization_id=org.id).order_by(RelayMatch.created_at.desc()).all()
+    return render_template(
+        "cricrelay_dashboard.html",
+        org=org,
+        teams=teams,
+        matches=matches,
+    )
+
+
+@app.post("/dashboard/teams")
+@login_required
+def dashboard_add_team():
+    org = _org_from_session()
+    team_name = (request.form.get("name") or "").strip()
+    if not team_name:
+        flash("Squad name is required.", "error")
+        return redirect(url_for("dashboard"))
+    row = ClubTeam(organization_id=org.id, name=team_name)
+    db.session.add(row)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("You already have a squad with that name.", "error")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/dashboard/matches")
+@login_required
+def dashboard_add_match():
+    org = _org_from_session()
+    mid = (request.form.get("play_cricket_match_id") or "").strip()
+    if not mid or not re.fullmatch(r"\d+", mid):
+        flash("Match ID must be the numeric id from your fixture URL (e.g. …match_details?id=7344166).", "error")
+        return redirect(url_for("dashboard"))
+    base_override = (request.form.get("play_cricket_base_url") or "").strip().rstrip("/")
+    base = base_override or org.play_cricket_base_url
+    if "play-cricket.com" not in base.lower():
+        flash("Play-Cricket base URL must include play-cricket.com.", "error")
+        return redirect(url_for("dashboard"))
+    full_url = build_match_details_url(base, mid)
+    existing = RelayMatch.query.filter_by(organization_id=org.id, play_cricket_match_id=mid).first()
+    if existing:
+        flash("This Play-Cricket match is already linked for your club.", "error")
+        return redirect(url_for("dashboard"))
+    club_team_id = (request.form.get("club_team_id") or "").strip() or None
+    if club_team_id:
+        team_ok = ClubTeam.query.filter_by(id=club_team_id, organization_id=org.id).first()
+        if not team_ok:
+            club_team_id = None
+    base_slug = sanitize_match_id(f"{org.slug}-{mid}")
+    score_slug = base_slug
+    for _ in range(16):
+        taken = RelayMatch.query.filter_by(score_match_slug=score_slug).first()
+        if not taken:
+            break
+        score_slug = sanitize_match_id(f"{org.slug}-{mid}-{secrets.token_hex(3)}")
+    row = RelayMatch(
+        organization_id=org.id,
+        club_team_id=club_team_id,
+        play_cricket_match_id=mid,
+        full_scrape_url=full_url,
+        score_match_slug=score_slug,
+    )
+    db.session.add(row)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Could not create that relay (duplicate or conflict).", "error")
+        return redirect(url_for("dashboard"))
+    apply_relay_to_score_match(score_slug, full_url)
+    flash("Relay match created — use the Prism overlay URL below.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.get("/stream")
+def stream_overlay_default():
     return render_template("overlay.html", match_id=DEFAULT_MATCH_ID)
 
 
-@app.get("/m/<match_id>")
-def overlay_scoped(match_id):
+@app.get("/m/<match_id>/stream")
+def stream_overlay_scoped(match_id):
     return render_template("overlay.html", match_id=sanitize_match_id(match_id))
+
+
+@app.get("/m/<match_id>")
+def legacy_overlay_redirect(match_id):
+    slug = sanitize_match_id(match_id)
+    return redirect(f"/m/{slug}/stream", code=301)
 
 
 @app.get("/input")
@@ -985,6 +1196,9 @@ def health():
             {"status": "ok", "innings": state["innings"], "match_started": state["match_started"]}
         )
 
+
+with app.app_context():
+    db.create_all()
 
 with state_lock:
     try:

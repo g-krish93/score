@@ -35,7 +35,7 @@
         <option value="play_cricket">Play-Cricket (URL + ingest)</option>
       </select>
       <label for="relayUrl">Play-Cricket match URL</label>
-      <input id="relayUrl" type="url" placeholder="https://bmacc.play-cricket.com/website/results/7681278">
+      <input id="relayUrl" type="url" placeholder="https://bmacc.play-cricket.com/match_details?id=7344166">
       <button type="button" class="primary" id="saveBtn">Save relay settings</button>
       <p id="msg"></p>
     </div>
@@ -45,7 +45,7 @@
       <p class="sub" style="margin-bottom:8px;">This page is for match ID: <code>{{ match_id }}</code></p>
       <div class="links">
         <a href="/m/{{ match_id }}/input">Open scorer (input)</a>
-        <a href="/m/{{ match_id }}">Open stream overlay</a>
+        <a href="/m/{{ match_id }}/stream">Open stream overlay (Prism)</a>
       </div>
     </div>
 

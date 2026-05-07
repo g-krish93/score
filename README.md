@@ -2,7 +2,7 @@
 
 ## Architecture
 
-Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000`, Phone 3 updates score on `http://EC2-IP:5000/input`, and the Flask app serves `/score` for overlay polling while persisting backup to `/tmp/cricket_state.json`.
+Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000/stream` (or a scoped relay URL), Phone 3 updates score on `http://EC2-IP:5000/input`, and the Flask app serves `/score` for overlay polling while persisting backup under `STATE_DIR` (default `/tmp`).
 
 ## First-time setup
 
@@ -18,7 +18,7 @@ Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000`, Phone 3 updates s
 
 1. Open input UI on Phone 3 at `/input` (or scoped match page like `/m/bmacc-team1/input`).
 2. Pick **Ball by ball** (full squads and player controls) or **Over by over** (teams, toss, overs only), then complete that screen and start.
-3. Load overlay `/` (or scoped overlay `/m/bmacc-team1`) in your stream Browser Source.
+3. Load overlay `/stream` (or scoped overlay `/m/<relay-slug>/stream`) in your stream Browser Source. Requests to `/m/<slug>` redirect to `/m/<slug>/stream`.
 4. Score ball-by-ball and switch overlay panels as needed.
 
 ## Save/restore
@@ -31,21 +31,22 @@ Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000`, Phone 3 updates s
 
 Clubs can keep **manual scoring** in the input UI, or switch the overlay to follow a **Play-Cricket** match page fed by your `play-cricket-score-scrapper` worker.
 
-- **Landing / setup page:** `/cricrelay` or `/m/<match_id>/cricrelay` (use with your **cricrelay.co.uk** domain once DNS points at EC2).
+- **Product / registration:** `/` — CricRelay marketing page, club registration, login, and dashboard (squads + relay rows with Prism overlay URL and ingest URL). Set `SECRET_KEY` in production; optional `DATABASE_URL` for Postgres (otherwise SQLite under `STATE_DIR`).
+- **Per-match operator UI:** `/cricrelay` or `/m/<match_id>/cricrelay` (paste full `match_details` URL, test relay).
 - **Scorer controls:** Input page → **CricRelay (Play-Cricket)** card — choose *Manual* vs *Play-Cricket (URL + ingest)*, save the match URL.
 - **Ingest endpoint (for the scraper):** `POST /relay/ingest?match=<match_id>` with JSON body from the scraper (`snapshot` + optional `stale`, etc.).
 - **Optional auth:** set `RELAY_INGEST_TOKEN` on the server and send `Authorization: Bearer <token>` on ingest.
-- **Prism:** unchanged — still use `/` or `/m/<match_id>`; the overlay reads `/score` and switches layout when relay mode is active.
+- **Prism / browser overlay:** use `/stream` or `/m/<match_id>/stream`. Legacy `/m/<match_id>` redirects with HTTP 301. The overlay reads `/score?match=…` and switches layout when relay mode is active.
 
 ## Multiple parallel matches
 
 - Use dedicated URLs per match so states do not mix.
 - Example Team 1:
   - Input: `/m/bmacc-team1/input`
-  - Overlay: `/m/bmacc-team1`
+  - Overlay: `/m/bmacc-team1/stream`
 - Example Team 2:
   - Input: `/m/bmacc-team2/input`
-  - Overlay: `/m/bmacc-team2`
+  - Overlay: `/m/bmacc-team2/stream`
 - All API calls from those pages automatically include the match scope.
 
 ## SSH cheat sheet
