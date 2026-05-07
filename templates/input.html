@@ -118,6 +118,7 @@
       transition: background 0.15s, border-color 0.15s, transform 0.05s;
     }
     button:active { transform: scale(0.98); }
+    .relay-locked { opacity: 0.5; pointer-events: none; }
     button.primary, #startMatch, #startMatchOverOnly {
       background: linear-gradient(180deg, #2ea043 0%, var(--accent-dim) 100%);
       border-color: rgba(34, 197, 94, 0.35);
@@ -356,6 +357,10 @@
       <div id="scoreBar">—</div>
     </header>
 
+    <div id="relayManualLockBanner" class="card hidden" style="margin-bottom:14px;padding:12px 14px;font-size:14px;border-color:rgba(251,191,36,.35);background:rgba(251,191,36,.08);">
+      Play-Cricket relay is driving this match — manual ball, over-by-over, and laws controls are turned off. Use <strong>Stream &amp; overlay</strong> for layout (or your club dashboard). To score by hand again, set the source below to <strong>Manual</strong>.
+    </div>
+
     <section class="card card--primary" id="scoringCard">
       <div class="card-head" id="scoringCardHead">
         <span class="card-title">Scoring</span>
@@ -425,7 +430,7 @@
       <div class="card-head">
         <span class="card-title">CricRelay (Play-Cricket)</span>
       </div>
-      <p class="hint" style="margin-top:0;">Optional: send live score from a Play-Cricket match page into this server (worker or <code>play-cricket-score-scrapper</code> → <code>POST /relay/ingest</code>). Prism can keep using the same overlay URL. Manual scoring stays available when source is manual.</p>
+      <p class="hint" style="margin-top:0;">Send live data from your Play-Cricket page (worker or <code>play-cricket-score-scrapper</code> → <code>POST /relay/ingest</code>). While source is <strong>Play-Cricket</strong>, manual scoring is disabled so the stream stays in sync with the scraper. Switch to <strong>Manual</strong> to use this app as the scorer again.</p>
       <label>Overlay score source</label>
       <select id="relayModeSelect">
         <option value="manual">Manual (this app)</option>
@@ -814,15 +819,38 @@
 
     function render() {
       if (!score) return;
-      if (!score.match_started) {
+      if (!score.match_started && score.relay_mode !== "play_cricket") {
         byId("matchScreen").classList.add("hidden");
         showSetupWizard();
+        return;
+      }
+      if (!score.match_started && score.relay_mode === "play_cricket") {
+        byId("setupChooseScreen").classList.add("hidden");
+        byId("setupBallScreen").classList.add("hidden");
+        byId("setupOverScreen").classList.add("hidden");
+        byId("matchScreen").classList.remove("hidden");
+        byId("liveMatchLabel").textContent = "Play-Cricket relay";
+        byId("scoreBar").textContent = "Scores appear after your scraper POSTs to /relay/ingest.";
+        byId("scoringCard").classList.add("hidden");
+        byId("lawsCard").classList.add("hidden");
+        byId("relayManualLockBanner").classList.add("hidden");
+        const rb = score.relay_bundle || {};
+        byId("relayModeSelect").value = score.relay_mode || "manual";
+        byId("relayUrlInput").value = score.relay_play_cricket_url || "";
+        let relayLine = "";
+        if (rb.last_error) relayLine = `Ingest: ${rb.last_error}`;
+        else if (rb.last_ok_at) relayLine = `Last ingest: ${rb.last_ok_at}`;
+        else if (rb.enabled) relayLine = "Play-Cricket mode — waiting for first ingest.";
+        else relayLine = "Overlay source: manual (in-app scoring).";
+        byId("relayStatusLine").textContent = relayLine;
+        updateToggleVisuals();
         return;
       }
       byId("setupChooseScreen").classList.add("hidden");
       byId("setupBallScreen").classList.add("hidden");
       byId("setupOverScreen").classList.add("hidden");
       byId("matchScreen").classList.remove("hidden");
+      byId("scoringCard").classList.remove("hidden");
       byId("liveMatchLabel").textContent = prettyMatchTitle();
       const locked = !!(score.match_complete || score.scoring_locked);
       const overOnly = score.scoring_mode === "over_only";
@@ -868,6 +896,11 @@
       else if (rb.enabled) relayLine = "Play-Cricket mode — waiting for first ingest.";
       else relayLine = "Overlay source: manual (in-app scoring).";
       byId("relayStatusLine").textContent = relayLine;
+      const relayManual = score.relay_mode === "play_cricket" && score.match_started;
+      const rlb = byId("relayManualLockBanner");
+      if (rlb) rlb.classList.toggle("hidden", !relayManual);
+      byId("scoringCard").classList.toggle("relay-locked", relayManual);
+      byId("lawsCard").classList.toggle("relay-locked", relayManual);
       if (overOnly) {
         const sl = !!score.scoring_locked;
         const innLabel = score.innings === 1 ? "1st innings" : "2nd innings";

@@ -31,7 +31,7 @@ Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000/stream` (or a scope
 
 Clubs can keep **manual scoring** in the input UI, or switch the overlay to follow a **Play-Cricket** match page fed by your `play-cricket-score-scrapper` worker.
 
-- **Product / registration:** `/` — CricRelay marketing page, club registration, login, and dashboard (squads + relay rows with Prism overlay URL and ingest URL). Set `SECRET_KEY` in production; optional `DATABASE_URL` for Postgres (otherwise SQLite under `STATE_DIR`).
+- **Product / registration:** `/` — marketing, register, login. **Club setup** at `/dashboard` (squads + default Play-Cricket base). **Live relays** at `/dashboard/relays` (match id → scrape URL, Prism overlay, ingest, overlay layout). If your saved base contains `…/website/results`, scrape URLs are `…/website/results/<id>`; otherwise `…/match_details?id=<id>`. Set `SECRET_KEY` in production; optional `DATABASE_URL` for Postgres (otherwise SQLite under `STATE_DIR`).
 - **Per-match operator UI:** `/cricrelay` or `/m/<match_id>/cricrelay` (paste full `match_details` URL, test relay).
 - **Scorer controls:** Input page → **CricRelay (Play-Cricket)** card — choose *Manual* vs *Play-Cricket (URL + ingest)*, save the match URL.
 - **Ingest endpoint (for the scraper):** `POST /relay/ingest?match=<match_id>` with JSON body from the scraper (`snapshot` + optional `stale`, etc.).

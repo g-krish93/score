@@ -18,7 +18,7 @@ from .models_cricrelay import (
     ClubTeam,
     Organization,
     RelayMatch,
-    build_match_details_url,
+    build_play_cricket_scrape_url,
     db,
     slugify_org_name,
 )
@@ -210,6 +210,23 @@ def apply_relay_to_score_match(match_slug: str, full_url: str):
         state["relay_wrapper"] = None
         state["relay_last_error"] = None
         save_state()
+
+
+def manual_scoring_blocked_response():
+    if (state.get("relay_mode") or "manual") == "play_cricket":
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "Manual scoring is disabled while Play-Cricket relay is active. "
+                        "Scores come from your scraper. Switch the relay to manual on the operator page "
+                        "or POST /relay/config if you need to score by hand again."
+                    )
+                }
+            ),
+            400,
+        )
+    return None
 
 
 def restore_state(match_id=None):
@@ -421,6 +438,23 @@ def _org_from_session():
     return db.session.get(Organization, oid)
 
 
+def read_relay_overlay_prefs(slug):
+    safe = sanitize_match_id(slug)
+    path = state_path_for(safe)
+    if not path.exists():
+        return {"active_panel": "score", "overlay_density": "expanded", "overlay_scale": 1.0}
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            s = json.load(fh)
+        return {
+            "active_panel": s.get("active_panel") or "score",
+            "overlay_density": s.get("overlay_density") or "expanded",
+            "overlay_scale": float(s.get("overlay_scale") or 1.0),
+        }
+    except Exception:
+        return {"active_panel": "score", "overlay_density": "expanded", "overlay_scale": 1.0}
+
+
 @app.get("/")
 def cricrelay_home():
     return render_template("cricrelay_home.html", logged_in=bool(session.get("org_id")))
@@ -445,7 +479,7 @@ def register_page():
         flash("Use a password of at least 8 characters.", "error")
         return render_template("cricrelay_register.html"), 400
     if "play-cricket.com" not in base_url.lower():
-        flash("Play-Cricket site URL must include play-cricket.com (no trailing path).", "error")
+        flash("Play-Cricket URL must include play-cricket.com.", "error")
         return render_template("cricrelay_register.html"), 400
     base_slug = slugify_org_name(name)
     slug = base_slug
@@ -468,7 +502,7 @@ def register_page():
         flash("That email or club URL slug is already in use.", "error")
         return render_template("cricrelay_register.html"), 400
     session["org_id"] = org.id
-    flash("Welcome to CricRelay — add squads and a match below.", "success")
+    flash("Welcome to CricRelay — add squads under Club setup, then open Live relays when you stream.", "success")
     return redirect(url_for("dashboard"))
 
 
@@ -497,12 +531,27 @@ def logout():
 def dashboard():
     org = _org_from_session()
     teams = ClubTeam.query.filter_by(organization_id=org.id).order_by(ClubTeam.name).all()
-    matches = RelayMatch.query.filter_by(organization_id=org.id).order_by(RelayMatch.created_at.desc()).all()
+    relay_count = RelayMatch.query.filter_by(organization_id=org.id).count()
     return render_template(
         "cricrelay_dashboard.html",
         org=org,
         teams=teams,
-        matches=matches,
+        relay_count=relay_count,
+    )
+
+
+@app.get("/dashboard/relays")
+@login_required
+def dashboard_relays():
+    org = _org_from_session()
+    teams = ClubTeam.query.filter_by(organization_id=org.id).order_by(ClubTeam.name).all()
+    matches = RelayMatch.query.filter_by(organization_id=org.id).order_by(RelayMatch.created_at.desc()).all()
+    relay_rows = [{"match": m, "appearance": read_relay_overlay_prefs(m.score_match_slug)} for m in matches]
+    return render_template(
+        "cricrelay_dashboard_relays.html",
+        org=org,
+        teams=teams,
+        relay_rows=relay_rows,
     )
 
 
@@ -530,18 +579,21 @@ def dashboard_add_match():
     org = _org_from_session()
     mid = (request.form.get("play_cricket_match_id") or "").strip()
     if not mid or not re.fullmatch(r"\d+", mid):
-        flash("Match ID must be the numeric id from your fixture URL (e.g. …match_details?id=7344166).", "error")
-        return redirect(url_for("dashboard"))
+        flash(
+            "Match ID must be the numeric fixture id (from …/website/results/7560599 or …match_details?id=7560599).",
+            "error",
+        )
+        return redirect(url_for("dashboard_relays"))
     base_override = (request.form.get("play_cricket_base_url") or "").strip().rstrip("/")
     base = base_override or org.play_cricket_base_url
     if "play-cricket.com" not in base.lower():
         flash("Play-Cricket base URL must include play-cricket.com.", "error")
-        return redirect(url_for("dashboard"))
-    full_url = build_match_details_url(base, mid)
+        return redirect(url_for("dashboard_relays"))
+    full_url = build_play_cricket_scrape_url(base, mid)
     existing = RelayMatch.query.filter_by(organization_id=org.id, play_cricket_match_id=mid).first()
     if existing:
         flash("This Play-Cricket match is already linked for your club.", "error")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("dashboard_relays"))
     club_team_id = (request.form.get("club_team_id") or "").strip() or None
     if club_team_id:
         team_ok = ClubTeam.query.filter_by(id=club_team_id, organization_id=org.id).first()
@@ -567,10 +619,43 @@ def dashboard_add_match():
     except IntegrityError:
         db.session.rollback()
         flash("Could not create that relay (duplicate or conflict).", "error")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("dashboard_relays"))
     apply_relay_to_score_match(score_slug, full_url)
     flash("Relay match created — use the Prism overlay URL below.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("dashboard_relays"))
+
+
+@app.post("/dashboard/relay-appearance")
+@login_required
+def dashboard_relay_appearance():
+    org = _org_from_session()
+    slug = sanitize_match_id(request.form.get("score_match_slug", ""))
+    if not slug:
+        flash("Missing match.", "error")
+        return redirect(url_for("dashboard_relays"))
+    row = RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
+    if not row:
+        flash("Unknown relay for your club.", "error")
+        return redirect(url_for("dashboard_relays"))
+    panel = (request.form.get("active_panel") or "score").strip().lower()
+    if panel not in {"score", "batting", "bowling", "chase", "fullscore", "chart"}:
+        panel = "score"
+    density = (request.form.get("overlay_density") or "expanded").strip().lower()
+    if density not in {"compact", "expanded"}:
+        density = "expanded"
+    try:
+        scale = float(request.form.get("overlay_scale", "1") or 1)
+    except (TypeError, ValueError):
+        scale = 1.0
+    scale = max(0.8, min(1.8, scale))
+    with match_context(slug):
+        merge_missing_state_keys(state)
+        state["active_panel"] = panel
+        state["overlay_density"] = density
+        state["overlay_scale"] = round(scale, 2)
+        save_state()
+    flash("Overlay layout updated for that stream.", "success")
+    return redirect(url_for("dashboard_relays"))
 
 
 @app.get("/stream")
@@ -700,6 +785,9 @@ def setup():
     batting_names = [p.strip() for p in data.get("batting_squad", []) if str(p).strip()]
     bowling_names = [p.strip() for p in data.get("bowling_squad", []) if str(p).strip()]
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         state = blank_state()
         team1 = str(data.get("team1", data.get("batting_team", ""))).strip()
         team2 = str(data.get("team2", data.get("bowling_team", ""))).strip()
@@ -753,6 +841,9 @@ def setup():
 def reset_match():
     global state, last_action, action_history, redo_history
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         state = blank_state()
         last_action = None
         action_history = []
@@ -776,6 +867,9 @@ def ball():
         return jsonify({"error": "out_batter must be striker or non_striker"}), 400
 
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         if state.get("scoring_mode") == "over_only":
             return jsonify({"error": "ball-by-ball disabled in over-only mode"}), 400
         if innings_done():
@@ -887,6 +981,9 @@ def ball():
 def over_update():
     data = request.get_json(silent=True) or {}
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         if state.get("scoring_mode") != "over_only":
             return jsonify({"error": "over-update only allowed in over-only mode"}), 400
         if innings_done():
@@ -937,6 +1034,9 @@ def retire_batter():
     if retire_type not in {"hurt", "unhurt"}:
         return jsonify({"error": "type must be hurt or unhurt"}), 400
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         batter = get_batter_by_selector(selector)
         if not batter:
             return jsonify({"error": "batter not found"}), 400
@@ -966,6 +1066,9 @@ def record_dismissal():
     if kind not in valid_kinds:
         return jsonify({"error": "invalid dismissal kind"}), 400
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         if innings_done():
             return jsonify({"error": "innings already complete"}), 400
         batter = get_batter_by_selector(selector)
@@ -1002,6 +1105,9 @@ def penalty_runs():
     if side not in {"batting", "fielding"}:
         return jsonify({"error": "side must be batting or fielding"}), 400
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         push_history()
         if side == "batting":
             state["runs"] += runs
@@ -1018,6 +1124,9 @@ def dead_ball():
     data = request.get_json(silent=True) or {}
     note = str(data.get("note", "dead ball")).strip()
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         log_event(f"Dead ball: {note}")
         save_state()
         return jsonify(with_calculated_values(state))
@@ -1027,6 +1136,9 @@ def dead_ball():
 def undo():
     global state, last_action, redo_history
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         if not action_history:
             return jsonify({"error": "nothing to undo"}), 400
         redo_history.append(snapshot_state())
@@ -1040,6 +1152,9 @@ def undo():
 def redo():
     global state, action_history
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         if not redo_history:
             return jsonify({"error": "nothing to redo"}), 400
         action_history.append(snapshot_state())
@@ -1052,6 +1167,9 @@ def redo():
 def edit():
     data = request.get_json(silent=True) or {}
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         for key in ("runs", "wickets", "overs", "balls", "extras"):
             if key in data:
                 state[key] = safe_num(data[key], state[key])
@@ -1065,6 +1183,9 @@ def edit():
 def set_players():
     data = request.get_json(silent=True) or {}
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         for key in ("striker", "non_striker", "current_bowler"):
             if key in data:
                 state[key] = str(data[key] or "").strip()
@@ -1116,6 +1237,9 @@ def set_overlay_scale():
 @app.post("/end-over")
 def manual_end_over():
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         if innings_done():
             return jsonify({"error": "innings already complete"}), 400
         if state.get("scoring_mode") == "over_only":
@@ -1140,6 +1264,9 @@ def start_second_innings():
     batting_names = [p.strip() for p in data.get("batting_squad", []) if str(p).strip()]
     bowling_names = [p.strip() for p in data.get("bowling_squad", []) if str(p).strip()]
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         if not batting_names:
             batting_names = [p["name"] for p in state["bowling_squad"] if p.get("name")]
         if not bowling_names:
@@ -1183,6 +1310,9 @@ def save():
 @app.post("/restore")
 def restore():
     with match_context():
+        blocked = manual_scoring_blocked_response()
+        if blocked is not None:
+            return blocked
         if not state_path_for(current_match_id).exists():
             return jsonify({"error": "state file not found"}), 404
         restore_state()

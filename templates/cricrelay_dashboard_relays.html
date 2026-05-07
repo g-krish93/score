@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Live relays — {{ org.name }}</title>
+  <style>
+    :root { --bg:#0b1020; --card:#121a2e; --border:rgba(255,255,255,.1); --text:#f1f5f9; --muted:#94a3b8; --link:#7dd3fc; --ok:rgba(34,197,94,.15); }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font-family:"Segoe UI",system-ui,sans-serif; line-height:1.5; padding:20px 16px 48px; }
+    .top { max-width:960px; margin:0 auto 20px; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; }
+    h1 { font-size:1.25rem; margin:0; }
+    .muted { color:var(--muted); font-size:14px; margin:4px 0 0; }
+    nav a, nav button { color:var(--link); font-size:14px; margin-right:14px; }
+    nav button { background:none; border:none; cursor:pointer; font:inherit; padding:0; text-decoration:underline; }
+    main { max-width:960px; margin:0 auto; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:18px; }
+    .card h2 { margin:0 0 12px; font-size:1.05rem; }
+    label { display:block; font-size:12px; font-weight:600; color:var(--muted); margin:10px 0 4px; }
+    input, select { width:100%; max-width:100%; min-height:42px; border-radius:10px; border:1px solid var(--border); background:#1a2339; color:var(--text); font-size:14px; padding:0 10px; }
+    button.primary { margin-top:12px; padding:10px 16px; border-radius:10px; border:1px solid rgba(34,197,94,.35); background:linear-gradient(180deg,#2ea043,#166534); color:#fff; font-weight:700; cursor:pointer; font-size:14px; }
+    button.small { margin-top:8px; padding:8px 12px; font-size:13px; width:auto; }
+    .row { display:grid; gap:10px; }
+    @media (min-width:640px) {
+      .row.cols-2 { grid-template-columns:1fr 1fr; }
+    }
+    table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+    th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--border); vertical-align:top; }
+    th { color:var(--muted); font-weight:600; font-size:11px; }
+    code { word-break:break-all; font-size:11px; background:#1a2339; padding:2px 6px; border-radius:6px; }
+    .flash { background:var(--ok); border:1px solid rgba(34,197,94,.35); color:#bbf7d0; padding:10px 12px; border-radius:10px; margin-bottom:16px; font-size:14px; }
+    .flash.error { background:rgba(248,113,113,.12); border-color:rgba(248,113,113,.35); color:#fecaca; }
+    .layout-form { margin-top:8px; padding-top:8px; border-top:1px dashed var(--border); }
+    .layout-form .grid { display:grid; gap:8px; grid-template-columns:1fr 1fr; }
+    @media (max-width:720px) { .layout-form .grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h1>Live relays</h1>
+      <p class="muted">{{ org.name }} — default base <code>{{ org.play_cricket_base_url }}</code></p>
+      <p class="muted" style="margin-top:6px;">If your base ends with <code>/website/results</code>, we build <code>…/results/&lt;match id&gt;</code> for the scraper. Otherwise we use <code>…/match_details?id=&lt;id&gt;</code>.</p>
+    </div>
+    <nav>
+      <a href="{{ url_for('cricrelay_home') }}">Home</a>
+      <a href="{{ url_for('dashboard') }}">Club setup</a>
+      <form action="{{ url_for('logout') }}" method="post" style="display:inline;"><button type="submit">Log out</button></form>
+    </nav>
+  </div>
+  <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, m in messages %}<div class="flash{% if cat == 'error' %} error{% endif %}">{{ m }}</div>{% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="card">
+      <h2>New relay match</h2>
+      <p class="muted" style="margin:0 0 12px;">Enter the numeric id from the fixture (same number as in your Play-Cricket URL). Your EC2 scraper should fetch the <strong>Scrape URL</strong> and POST JSON to the ingest URL.</p>
+      <form method="post" action="{{ url_for('dashboard_add_match') }}">
+        <div class="row cols-2">
+          <div>
+            <label for="play_cricket_match_id">Play-Cricket match id</label>
+            <input id="play_cricket_match_id" name="play_cricket_match_id" inputmode="numeric" pattern="[0-9]+" required placeholder="7560599">
+          </div>
+          <div>
+            <label for="club_team_id">Squad (optional)</label>
+            <select id="club_team_id" name="club_team_id">
+              <option value="">— None —</option>
+              {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <label for="play_cricket_base_url">Base URL override (optional)</label>
+        <input id="play_cricket_base_url" name="play_cricket_base_url" type="url" placeholder="{{ org.play_cricket_base_url }}">
+        <button type="submit" class="primary">Create relay &amp; enable Play-Cricket mode</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Active relays &amp; overlay layout</h2>
+      {% if relay_rows %}
+      <p class="muted" style="margin:0 0 10px;">Prism uses the <strong>stream</strong> link. Layout below updates what viewers see (same as the scorer &quot;Stream &amp; overlay&quot; menu).</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Match id</th>
+            <th>Scrape URL</th>
+            <th>Prism / ingest</th>
+            <th>Operator</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in relay_rows %}
+          {% set m = row.match %}
+          {% set ap = row.appearance %}
+          <tr>
+            <td>{{ m.play_cricket_match_id }}</td>
+            <td><code>{{ m.full_scrape_url }}</code></td>
+            <td>
+              <div><strong>Overlay</strong><br><code>{{ request.url_root.rstrip('/') }}/m/{{ m.score_match_slug }}/stream</code></div>
+              <div style="margin-top:6px;"><strong>Ingest</strong><br><code>{{ request.url_root.rstrip('/') }}/relay/ingest?match={{ m.score_match_slug }}</code></div>
+            </td>
+            <td><a href="{{ url_for('cricrelay_landing_scoped', match_id=m.score_match_slug) }}">Operator</a></td>
+          </tr>
+          <tr>
+            <td colspan="4">
+              <form class="layout-form" method="post" action="{{ url_for('dashboard_relay_appearance') }}">
+                <input type="hidden" name="score_match_slug" value="{{ m.score_match_slug }}">
+                <div class="grid">
+                  <div>
+                    <label>Overlay panel</label>
+                    <select name="active_panel">
+                      <option value="score" {% if ap.active_panel == 'score' %}selected{% endif %}>Score strip</option>
+                      <option value="batting" {% if ap.active_panel == 'batting' %}selected{% endif %}>Batting</option>
+                      <option value="bowling" {% if ap.active_panel == 'bowling' %}selected{% endif %}>Bowling</option>
+                      <option value="chase" {% if ap.active_panel == 'chase' %}selected{% endif %}>Chase</option>
+                      <option value="fullscore" {% if ap.active_panel == 'fullscore' %}selected{% endif %}>Full scoreboard</option>
+                      <option value="chart" {% if ap.active_panel == 'chart' %}selected{% endif %}>Run chart</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>Height</label>
+                    <select name="overlay_density">
+                      <option value="expanded" {% if ap.overlay_density == 'expanded' %}selected{% endif %}>Expanded</option>
+                      <option value="compact" {% if ap.overlay_density == 'compact' %}selected{% endif %}>Compact</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>Text size (scale)</label>
+                    <input name="overlay_scale" type="number" step="0.05" min="0.8" max="1.8" value="{{ ap.overlay_scale }}">
+                  </div>
+                  <div style="display:flex;align-items:flex-end;">
+                    <button type="submit" class="primary small" style="margin-top:0;">Save layout</button>
+                  </div>
+                </div>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">No relays yet. Add a match id above.</p>
+      {% endif %}
+    </div>
+  </main>
+</body>
+</html>

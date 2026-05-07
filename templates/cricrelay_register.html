@@ -40,7 +40,8 @@
         <label for="password2">Confirm password</label>
         <input id="password2" name="password2" type="password" required minlength="8" autocomplete="new-password">
         <label for="play_cricket_base_url">Play-Cricket base URL</label>
-        <input id="play_cricket_base_url" name="play_cricket_base_url" type="url" required placeholder="https://yourclub.play-cricket.com" value="{{ request.form.play_cricket_base_url or '' }}">
+        <p class="sub" style="margin:0 0 8px;">Club site root <em>or</em> results folder, e.g. <code>https://bmacc.play-cricket.com</code> or <code>https://bmacc.play-cricket.com/website/results</code> — no match id here.</p>
+        <input id="play_cricket_base_url" name="play_cricket_base_url" type="url" required placeholder="https://yourclub.play-cricket.com/website/results" value="{{ request.form.play_cricket_base_url or '' }}">
         <button type="submit">Create account</button>
       </form>
     </div>

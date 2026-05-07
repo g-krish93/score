@@ -33,7 +33,8 @@
     <div class="brand">CricRelay</div>
     <nav>
       {% if logged_in %}
-      <a href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('dashboard') }}">Club setup</a>
+      <a href="{{ url_for('dashboard_relays') }}">Live relays</a>
       <form action="{{ url_for('logout') }}" method="post" style="display:inline;"><button type="submit" style="background:none;border:none;color:var(--link);cursor:pointer;font:inherit;padding:0;">Log out</button></form>
       {% else %}
       <a href="{{ url_for('register_page') }}">Register club</a>
@@ -48,8 +49,8 @@
 
     <div class="card">
       <h2>How it works</h2>
-      <p>Each club has its own Play-Cricket host (for example <code>https://bmacc.play-cricket.com</code>) and each fixture has a numeric <code>match_details?id=…</code>. CricRelay stores your club profile, squads (1st XI, 2nd XI, T20, and so on), and per-fixture relay rows.</p>
-      <p>When you start a relay, we give you a stable overlay URL for Prism and an ingest URL for your EC2 scraper (for example every 10 seconds). Manual operators can still use the scorer UI.</p>
+      <p>Each club has its own Play-Cricket host. You can save either the club root (for example <code>https://bmacc.play-cricket.com</code>) or the live results area (<code>https://bmacc.play-cricket.com/website/results</code>). We turn your numeric match id into the correct page for your scraper (either <code>…/match_details?id=…</code> or <code>…/website/results/&lt;id&gt;</code>).</p>
+      <p>After registration you manage squads on <strong>Club setup</strong>, then add streams on <strong>Live relays</strong>. Prism uses your overlay URL; manual scoring is available only when the relay source is set to manual.</p>
     </div>
 
     <div class="card">
@@ -57,13 +58,14 @@
       <ul>
         <li>Register your club once (Play-Cricket base URL + contact).</li>
         <li>Add squads under your profile.</li>
-        <li>For each stream, add the match id (and optional base URL override); copy the Prism overlay link and scraper ingest URL from the dashboard.</li>
+        <li>For each stream, open <strong>Live relays</strong>, add the match id, then copy the Prism overlay link and scraper ingest URL.</li>
       </ul>
       {% if not logged_in %}
       <a class="cta" href="{{ url_for('register_page') }}">Register your club</a>
       <a class="cta secondary" href="{{ url_for('login_page') }}" style="margin-left:8px;">Log in</a>
       {% else %}
-      <a class="cta" href="{{ url_for('dashboard') }}">Open dashboard</a>
+      <a class="cta" href="{{ url_for('dashboard') }}">Club setup</a>
+      <a class="cta secondary" href="{{ url_for('dashboard_relays') }}" style="margin-left:8px;">Live relays</a>
       {% endif %}
     </div>
 

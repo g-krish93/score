@@ -20,6 +20,25 @@ def build_match_details_url(base_url: str, match_id: str) -> str:
     return f"{b}/match_details?id={mid}"
 
 
+def build_play_cricket_scrape_url(base_url: str, match_id: str) -> str:
+    """Build the page URL your scraper should fetch.
+
+    If the club base points at the Play-Cricket *results* area (…/website/results),
+    the live fixture is typically ``…/website/results/<numeric_id>``.
+
+    Otherwise we use the classic ``…/match_details?id=<id>`` form.
+    """
+    b = (base_url or "").strip().rstrip("/")
+    mid = str(match_id or "").strip()
+    low = b.lower()
+    marker = "/website/results"
+    if marker in low:
+        idx = low.find(marker)
+        prefix = b[: idx + len(marker)].rstrip("/")
+        return f"{prefix}/{mid}"
+    return f"{b}/match_details?id={mid}"
+
+
 class Organization(db.Model):
     __tablename__ = "cricrelay_org"
 
