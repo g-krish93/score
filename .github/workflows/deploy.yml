@@ -17,7 +17,8 @@ jobs:
           script: |
             cd /app
             git pull origin main
-            pip3 install -r requirements.txt
+            # Gunicorn runs as root and loads /usr/local/... site-packages; user pip would install under ~/.local and the worker would crash on import (exit status 3).
+            sudo pip3 install -r requirements.txt
             sudo systemctl restart cricket
             sleep 3
             sudo systemctl status cricket

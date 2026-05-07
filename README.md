@@ -49,6 +49,10 @@ Clubs can keep **manual scoring** in the input UI, or switch the overlay to foll
   - Overlay: `/m/bmacc-team2/stream`
 - All API calls from those pages automatically include the match scope.
 
+## Deploying updates on EC2
+
+The `cricket` systemd unit runs Gunicorn as **root** and uses packages under `/usr/local/lib/python3.9/site-packages`. If you run `pip3 install` as **ec2-user** without `sudo`, new wheels install under `~/.local` and the app fails to import (Gunicorn exits with status **3**). Use **`sudo pip3 install -r requirements.txt`** after `git pull` (the included GitHub Action does this).
+
 ## SSH cheat sheet
 
 - `sudo systemctl status cricket`
