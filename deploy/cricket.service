@@ -1,0 +1,15 @@
+[Unit]
+Description=Cricket Score Overlay
+After=network.target
+
+[Service]
+WorkingDirectory=/app
+EnvironmentFile=/app/.env
+ExecStart=/usr/local/bin/gunicorn -w 1 -b 127.0.0.1:5000 server.app:app
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
