@@ -19,6 +19,7 @@ def main():
     home = c.get("/")
     assert_ok(home)
     assert "CricRelay" in home.get_data(as_text=True)
+    assert_ok(c.get("/forgot-password"))
     assert_ok(c.get("/pricing"))
     assert_ok(c.get("/compare"))
     assert_ok(c.get("/sitemap.xml"))

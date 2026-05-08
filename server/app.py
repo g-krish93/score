@@ -3,9 +3,11 @@ import json
 import os
 import re
 import secrets
+import smtplib
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
 
@@ -24,6 +26,7 @@ from flask import (
     url_for,
 )
 from flask_cors import CORS
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import inspect, text
 
@@ -497,6 +500,80 @@ def _org_from_session():
     return db.session.get(Organization, oid)
 
 
+def _password_reset_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="cricrelay-password-reset")
+
+
+def _password_reset_ttl_sec() -> int:
+    try:
+        return max(300, int(os.getenv("PASSWORD_RESET_TTL_SEC", "3600")))
+    except ValueError:
+        return 3600
+
+
+def _make_password_reset_token(org: Organization) -> str:
+    payload = {"oid": org.id, "ph": org.password_hash}
+    return _password_reset_serializer().dumps(payload)
+
+
+def _read_password_reset_token(token: str) -> Organization | None:
+    try:
+        payload = _password_reset_serializer().loads(token, max_age=_password_reset_ttl_sec())
+    except SignatureExpired:
+        return None
+    except BadSignature:
+        return None
+    oid = str(payload.get("oid") or "").strip()
+    expected_hash = str(payload.get("ph") or "")
+    if not oid or not expected_hash:
+        return None
+    org = db.session.get(Organization, oid)
+    if not org:
+        return None
+    if org.password_hash != expected_hash:
+        # Token invalidated after password was changed.
+        return None
+    return org
+
+
+def _smtp_enabled() -> bool:
+    return bool((os.getenv("SMTP_HOST") or "").strip())
+
+
+def _send_password_reset_email(to_email: str, reset_url: str) -> bool:
+    host = (os.getenv("SMTP_HOST") or "").strip()
+    if not host:
+        return False
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = (os.getenv("SMTP_USERNAME") or "").strip()
+    password = os.getenv("SMTP_PASSWORD", "")
+    from_addr = (os.getenv("SMTP_FROM") or "no-reply@cricrelay.co.uk").strip()
+    use_tls = (os.getenv("SMTP_USE_TLS", "1") or "1").strip().lower() not in {"0", "false", "no", "off"}
+
+    msg = EmailMessage()
+    msg["Subject"] = "Reset your CricRelay password"
+    msg["From"] = from_addr
+    msg["To"] = to_email
+    msg.set_content(
+        "We received a password reset request for your CricRelay account.\n\n"
+        f"Open this link to reset your password:\n{reset_url}\n\n"
+        f"This link expires in about {max(5, _password_reset_ttl_sec() // 60)} minutes.\n"
+        "If you did not request this, you can ignore this email."
+    )
+
+    try:
+        with smtplib.SMTP(host, port, timeout=20) as server:
+            if use_tls:
+                server.starttls()
+            if username:
+                server.login(username, password)
+            server.send_message(msg)
+        return True
+    except Exception as exc:
+        print(f"[password_reset] email send failed for {to_email}: {exc}", flush=True)
+        return False
+
+
 def read_relay_overlay_prefs(slug):
     safe = sanitize_match_id(slug)
     path = state_path_for(safe)
@@ -673,6 +750,48 @@ def login_page():
         return render_template("cricrelay_login.html"), 401
     session["org_id"] = org.id
     return redirect(url_for("dashboard"))
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password_page():
+    if request.method == "GET":
+        return render_template("forgot_password.html")
+    email = (request.form.get("email") or "").strip().lower()
+    if not email:
+        flash("Enter the account email first.", "error")
+        return render_template("forgot_password.html"), 400
+    org = Organization.query.filter_by(email=email).first()
+    if org:
+        token = _make_password_reset_token(org)
+        reset_url = url_for("reset_password_page", token=token, _external=True)
+        sent = _send_password_reset_email(org.email, reset_url)
+        if not sent:
+            print(f"[password_reset] fallback reset link for {org.email}: {reset_url}", flush=True)
+    # Always return generic message to avoid account enumeration.
+    flash("If this email exists, we sent a password reset link.", "success")
+    return redirect(url_for("login_page"))
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password_page(token):
+    org = _read_password_reset_token(token)
+    if not org:
+        flash("This reset link is invalid or has expired. Please request a new one.", "error")
+        return redirect(url_for("forgot_password_page"))
+    if request.method == "GET":
+        return render_template("reset_password.html", token=token, email_hint=org.email)
+    password = request.form.get("password") or ""
+    password2 = request.form.get("password2") or ""
+    if len(password) < 8:
+        flash("Use a password with at least 8 characters.", "error")
+        return render_template("reset_password.html", token=token, email_hint=org.email), 400
+    if password != password2:
+        flash("Passwords do not match.", "error")
+        return render_template("reset_password.html", token=token, email_hint=org.email), 400
+    org.set_password(password)
+    db.session.commit()
+    flash("Password reset complete. You can now log in.", "success")
+    return redirect(url_for("login_page"))
 
 
 @app.post("/logout")
