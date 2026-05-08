@@ -39,27 +39,26 @@
     <p class="cr-muted" style="margin:0 0 14px;">Slots in use: <strong>{{ stream_slots_used }}</strong> / {{ stream_slots_total }}.</p>
     {% endif %}
     <form method="post" action="{{ url_for('dashboard_add_match') }}" class="cr-next-action-form">
-      <label class="cr-label" for="stream_label">Stream label (optional)</label>
-      <p class="cr-help">Use a simple name operators can read fast: “1st XI vs Brighton”.</p>
-      <input class="cr-input" id="stream_label" name="stream_label" maxlength="120" placeholder="e.g. 1st XI vs Rottingdean — T20">
-
       <div class="cr-row2">
+        <div>
+          <label class="cr-label" for="stream_label">Stream label</label>
+          <input class="cr-input" id="stream_label" name="stream_label" maxlength="120" placeholder="e.g. 1st XI vs Rottingdean">
+        </div>
         <div>
           <label class="cr-label" for="play_cricket_match_id">Play-Cricket match id</label>
           <input class="cr-input" id="play_cricket_match_id" name="play_cricket_match_id" inputmode="numeric" pattern="[0-9]+" required placeholder="7560599">
         </div>
-        <div>
-          <label class="cr-label" for="club_team_id">Squad (optional)</label>
-          <select class="cr-select" id="club_team_id" name="club_team_id">
-            <option value="">— None —</option>
-            {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
-          </select>
-        </div>
       </div>
-
-      <label class="cr-label" for="play_cricket_base_url">Base URL override (optional)</label>
-      <input class="cr-input" id="play_cricket_base_url" name="play_cricket_base_url" type="url" placeholder="{{ org.play_cricket_base_url }}">
-
+      <details style="margin-top:12px;">
+        <summary class="cr-help" style="cursor:pointer;">Advanced options</summary>
+        <label class="cr-label" for="club_team_id">Squad (optional)</label>
+        <select class="cr-select" id="club_team_id" name="club_team_id">
+          <option value="">— None —</option>
+          {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+        </select>
+        <label class="cr-label" for="play_cricket_base_url">Base URL override (optional)</label>
+        <input class="cr-input" id="play_cricket_base_url" name="play_cricket_base_url" type="url" placeholder="{{ org.play_cricket_base_url }}">
+      </details>
       <button type="submit" class="cr-btn cr-btn-primary" style="margin-top:16px;">Create stream &amp; enable Play-Cricket</button>
     </form>
   </div>
@@ -83,7 +82,7 @@
   <div class="cr-card">
     <h2>Your streams &amp; overlays</h2>
     {% if relay_rows %}
-    <p class="cr-muted" style="margin:0 0 14px;">For each stream: copy Overlay URL, paste into Prism/OBS, then go live. Pause stops updates. Remove frees a slot.</p>
+    <p class="cr-muted" style="margin:0 0 14px;">Use Copy overlay to go live. Pause or Remove if needed.</p>
     <div class="cr-table-wrap">
       <table class="cr-table">
         <thead>

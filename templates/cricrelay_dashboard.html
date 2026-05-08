@@ -7,8 +7,7 @@
   <div class="cr-dash-top">
     <div>
       <h1>Squads</h1>
-      <p class="cr-muted">Play-Cricket base: <code class="cr-code">{{ org.play_cricket_base_url }}</code></p>
-      <p class="cr-page-lead">Manage team names for this club. Keep names short so operators can pick quickly on match day.</p>
+      <p class="cr-page-lead">Add and manage squads for your club.</p>
     </div>
   </div>
 
@@ -72,7 +71,7 @@
 
   <div class="cr-card">
     <h2>Your teams ({{ squad_slots_used }} / {{ squad_slots_total }})</h2>
-    <p class="cr-muted" style="margin:0 0 14px;">All teams under one login.</p>
+    <p class="cr-muted" style="margin:0 0 14px;">All teams under one account.</p>
     {% if teams %}
     <div class="cr-table-wrap">
       <table class="cr-table">
@@ -89,11 +88,11 @@
 
   <div class="cr-card cr-card-highlight">
     {% if teams %}
-    <h2>Continue to live streams</h2>
-    <p class="cr-muted" style="margin:0 0 14px;">Your next step is to add a fixture and generate an overlay URL.</p>
+    <h2>Next</h2>
+    <p class="cr-muted" style="margin:0 0 14px;">Create a stream and copy its overlay URL.</p>
     {% else %}
-    <h2>Live streams unlock after first squad</h2>
-    <p class="cr-muted" style="margin:0 0 14px;">Add at least one squad above, then create your stream.</p>
+    <h2>Next</h2>
+    <p class="cr-muted" style="margin:0 0 14px;">Add one squad above to unlock live streams.</p>
     {% endif %}
     <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Open live streams</a>
   </div>

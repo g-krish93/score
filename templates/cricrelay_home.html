@@ -10,136 +10,36 @@
 
 {% block page_shell %}
 <main id="main-content">
-  <section class="cr-hero cr-hero--mega">
-    <div class="cr-hero-mesh" aria-hidden="true"></div>
+  <section class="cr-hero">
     <div class="cr-hero-inner">
-      <div class="cr-hero-grid">
-        <div class="cr-hero-copy">
-          <p class="cr-eyebrow">Play-Cricket in. Overlay out.</p>
-          {% if hero_variant == "b" %}
-          <h1>Go live in 3 simple clicks</h1>
-          <p class="cr-lead">Set up your club, enter a match ID, copy one overlay link. That's it. CricRelay keeps the score updated automatically.</p>
-          {% else %}
-          <h1>Run a pro cricket stream in minutes</h1>
-          <p class="cr-lead">CricRelay takes your Play-Cricket score and puts it on your stream automatically. No coding, no cron jobs, no panic.</p>
-          {% endif %}
-          <div class="cr-hero-actions">
-            {% if not logged_in %}
-            <a class="cr-btn cr-btn-primary" href="{{ url_for('register_page') }}">{% if hero_variant == "b" %}Start setup now{% else %}Create free account{% endif %}</a>
-            <a class="cr-btn cr-btn-secondary" href="{{ url_for('pricing_page') }}">See pricing</a>
-            {% else %}
-            <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">{% if hero_variant == "b" %}Continue setup{% else %}Open live streams{% endif %}</a>
-            <a class="cr-btn cr-btn-secondary" href="{{ url_for('dashboard') }}">Manage squads</a>
-            {% endif %}
-          </div>
-          <div style="margin-top:16px;">
-            <span class="cr-kpi">No coding on match day</span>
-            <span class="cr-kpi">One login for all club teams</span>
-            <span class="cr-kpi">Works with Prism / OBS</span>
-          </div>
-        </div>
-        <div class="cr-hero-panel cr-reveal" aria-label="Product preview">
-          <div class="cr-mock-overlay">
-            <div class="cr-mock-bar"></div>
-            <div class="cr-mock-score">
-              <span class="cr-mock-team">HOME</span>
-              <span class="cr-mock-num">218/3</span>
-              <span class="cr-mock-meta">Play-Cricket · synced</span>
-              <span class="cr-mock-team">AWAY</span>
-              <span class="cr-mock-num">128/3</span>
-            </div>
-            <p class="cr-mock-caption">Representative overlay · colours follow your theme</p>
-          </div>
-        </div>
+      <p class="cr-eyebrow">Simple live scoring</p>
+      <h1>Run your cricket stream in 3 steps</h1>
+      <p class="cr-lead">Register your club, add match ID, copy overlay URL. Done.</p>
+      <div class="cr-hero-actions">
+        {% if not logged_in %}
+        <a class="cr-btn cr-btn-primary" href="{{ url_for('register_page') }}">Start free</a>
+        <a class="cr-btn cr-btn-secondary" href="{{ url_for('login_page') }}">Log in</a>
+        {% else %}
+        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Open live streams</a>
+        <a class="cr-btn cr-btn-secondary" href="{{ url_for('dashboard') }}">Open squads</a>
+        {% endif %}
       </div>
     </div>
   </section>
 
-  <section class="cr-stats" aria-label="Highlights">
-    <div class="cr-stats-inner">
-      <div class="cr-stat cr-reveal"><span class="cr-stat-val">&lt;10s</span><span class="cr-stat-label">Typical poll cadence</span></div>
-      <div class="cr-stat cr-reveal"><span class="cr-stat-val">6+6</span><span class="cr-stat-label">Squads &amp; streams / login</span></div>
-      <div class="cr-stat cr-reveal"><span class="cr-stat-val">ECB</span><span class="cr-stat-label">Play-Cricket compatible</span></div>
-      <div class="cr-stat cr-reveal"><span class="cr-stat-val">AWS-ready</span><span class="cr-stat-label">Scale to RDS &amp; ALB</span></div>
-    </div>
-    <p class="cr-stats-disclaimer">Simple promise: your viewers see the right score without extra manual work.</p>
-  </section>
-
-  <section class="cr-logos" aria-label="Broadcaster compatibility">
-    <div class="cr-logos-inner">
-      <span class="cr-logos-title">Works with your stack</span>
-      <div class="cr-logos-row">
-        <span class="cr-logo-pill">YouTube Live</span>
-        <span class="cr-logo-pill">Facebook Live</span>
-        <span class="cr-logo-pill">TikTok LIVE</span>
-        <span class="cr-logo-pill">OBS Browser</span>
-        <span class="cr-logo-pill">Prism / Larix</span>
-      </div>
-    </div>
-  </section>
-
-  <section class="cr-proof-strip" aria-label="Trust and social proof">
-    <div class="cr-proof-inner">
-      <span class="cr-proof-chip">UK club focused</span>
-      <span class="cr-proof-chip">HTTPS ready</span>
-      <span class="cr-proof-chip">Public club pages included</span>
-      <span class="cr-proof-chip">Auto score sync from Play-Cricket</span>
-    </div>
-  </section>
-
-  <section class="cr-section" id="features">
+  <section class="cr-section" id="how">
     <div class="cr-section-inner">
-      <h2 class="cr-section-head">Made for clubs, not engineers</h2>
-      <p class="cr-section-desc">Everything is built so first-time users can run it confidently.</p>
-      <div class="cr-grid-feature">
-        <article class="cr-feature cr-reveal">
-          <div class="cr-feature-icon">∞</div>
-          <h3>Automatic score sync</h3>
-          <p>We read Play-Cricket and update your overlay for you.</p>
-        </article>
-        <article class="cr-feature cr-reveal">
-          <div class="cr-feature-icon">◎</div>
-          <h3>Choose what to show</h3>
-          <p>Score strip, batting card, chase view, full board, or chart.</p>
-        </article>
-        <article class="cr-feature cr-reveal">
-          <div class="cr-feature-icon">✦</div>
-          <h3>Start / pause / stop</h3>
-          <p>Pause a stream during rain or end it when the game finishes.</p>
-        </article>
-        <article class="cr-feature cr-reveal">
-          <div class="cr-feature-icon">⚑</div>
-          <h3>One account, many teams</h3>
-          <p>Handle 1st XI, 2nd XI, women, juniors — all under one login.</p>
-        </article>
-        <article class="cr-feature cr-reveal">
-          <div class="cr-feature-icon">◇</div>
-          <h3>Public club page included</h3>
-          <p>Each club gets a shareable page showing only their streams and squads.</p>
-        </article>
-        <article class="cr-feature cr-reveal">
-          <div class="cr-feature-icon">⚡</div>
-          <h3>Fast and reliable</h3>
-          <p>Optimised pages and production deployment with HTTPS support.</p>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <section class="cr-section cr-section--alt" id="how">
-    <div class="cr-section-inner">
-      <h2 class="cr-section-head">How it works (3 steps)</h2>
-      <p class="cr-section-desc">A kid can run this flow after one demo.</p>
-      <div class="cr-steps cr-steps--wide">
-        <div class="cr-step cr-reveal">
+      <h2>How it works</h2>
+      <div class="cr-steps">
+        <div class="cr-step">
           <h3>1) Register your club</h3>
-          <p>Add club name and Play-Cricket URL once.</p>
+          <p>Add club name and Play-Cricket URL one time.</p>
         </div>
-        <div class="cr-step cr-reveal">
+        <div class="cr-step">
           <h3>2) Add match ID</h3>
-          <p>Create a live stream from the fixture number.</p>
+          <p>Create a live stream from fixture number.</p>
         </div>
-        <div class="cr-step cr-reveal">
+        <div class="cr-step">
           <h3>3) Paste overlay URL</h3>
           <p>Use it in Prism/OBS and go live.</p>
         </div>
@@ -147,72 +47,38 @@
     </div>
   </section>
 
-  <section class="cr-section">
-    <div class="cr-section-inner">
-      <h2 class="cr-section-head">Why clubs upgrade from “just OBS text”</h2>
-      <p class="cr-section-desc">Static overlays cannot react when Play-Cricket updates ball-by-ball. CricRelay keeps your narrative aligned with the authoritative ECB feed.</p>
-      <div class="cr-callout cr-reveal">
-        <p><strong>Sponsor-ready visuals.</strong> Replace jittery screen shares with a deliberate broadcast layer that respects your colours, typography, and match contexts.</p>
-      </div>
-    </div>
-  </section>
-
-  <section class="cr-testimonials" aria-label="Club stories">
-    <div class="cr-section-inner">
-      <h2 class="cr-section-head">What clubs care about</h2>
-      <div class="cr-grid-3">
-        <figure class="cr-quote cr-reveal">
-          <blockquote>“No more panic in the final overs. The score stayed right on stream.”</blockquote>
-          <figcaption>Volunteer operator</figcaption>
-        </figure>
-        <figure class="cr-quote cr-reveal">
-          <blockquote>“We trained a new scorer in 10 minutes. She ran the stream herself.”</blockquote>
-          <figcaption>Junior media lead</figcaption>
-        </figure>
-        <figure class="cr-quote cr-reveal">
-          <blockquote>“Supporters got one clean club page and stopped asking for links.”</blockquote>
-          <figcaption>Club secretary</figcaption>
-        </figure>
-      </div>
-    </div>
-  </section>
-
   <section class="cr-section" id="faq">
     <div class="cr-section-inner">
-      <h2 class="cr-section-head">FAQ</h2>
+      <h2>FAQ</h2>
       <div class="cr-faq">
-        <details class="cr-faq-item cr-reveal">
+        <details class="cr-faq-item">
           <summary>Do viewers need to install anything?</summary>
           <p>No — overlays render as browser sources inside Prism, OBS, or mobile broadcast stacks.</p>
         </details>
-        <details class="cr-faq-item cr-reveal">
+        <details class="cr-faq-item">
           <summary>Does CricRelay replace Play-Cricket scoring?</summary>
           <p>No — clubs continue scoring in ECB tools. CricRelay relays that truth into overlays.</p>
         </details>
-        <details class="cr-faq-item cr-reveal">
+        <details class="cr-faq-item">
           <summary>Can we show only our own club page publicly?</summary>
           <p>Yes. Each club has its own public page and only that club's data appears there.</p>
-        </details>
-        <details class="cr-faq-item cr-reveal">
-          <summary>What about GDPR / safeguarding?</summary>
-          <p>You control hosting geography &amp; retention — document your posture using our privacy outline.</p>
         </details>
       </div>
     </div>
   </section>
 
-  <section class="cr-cta-band">
-    <div class="cr-cta-inner cr-reveal">
+  <section class="cr-cta-band" aria-label="Primary call to action">
+    <div class="cr-cta-inner">
       <div>
-        <h2 class="cr-cta-title">Start your first live stream today</h2>
+        <h2 class="cr-cta-title">Start your first stream</h2>
         <p class="cr-cta-lead">Register → add match ID → paste overlay link. Done.</p>
       </div>
       <div class="cr-cta-actions">
         {% if not logged_in %}
         <a class="cr-btn cr-btn-primary" href="{{ url_for('register_page') }}">Start free</a>
-        <a class="cr-btn cr-btn-secondary" href="{{ url_for('compare_page') }}">Compare approaches</a>
+        <a class="cr-btn cr-btn-secondary" href="{{ url_for('login_page') }}">Log in</a>
         {% else %}
-        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Go to dashboard</a>
+        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Go to live streams</a>
         {% endif %}
       </div>
     </div>

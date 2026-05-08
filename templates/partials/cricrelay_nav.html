@@ -18,19 +18,13 @@
       <span class="cr-nav-toggle-bar" aria-hidden="true"></span>
     </button>
     <nav class="cr-nav cr-nav--marketing" aria-label="Primary">
-      <a href="{{ url_for('cricrelay_home') }}#features" class="cr-navlink">Features</a>
-      <a href="{{ url_for('pricing_page') }}" class="cr-navlink {% if request.endpoint == 'pricing_page' %}is-active{% endif %}">Pricing</a>
-      <a href="{{ url_for('compare_page') }}" class="cr-navlink {% if request.endpoint == 'compare_page' %}is-active{% endif %}">Compare</a>
-      <a href="{{ url_for('cricrelay_home') }}#faq" class="cr-navlink">FAQ</a>
+      <a href="{{ url_for('cricrelay_home') }}#how" class="cr-navlink">How it works</a>
       <a href="{{ url_for('login_page') }}" class="cr-navlink {% if request.endpoint == 'login_page' %}is-active{% endif %}">Log in</a>
       <a href="{{ url_for('register_page') }}" class="cr-btn cr-btn-primary cr-btn-header">Start free</a>
     </nav>
     <div id="cr-nav-drawer" class="cr-nav-drawer" role="dialog" aria-modal="true" aria-label="Menu" aria-hidden="true">
       <div class="cr-nav-drawer-inner">
-        <a href="{{ url_for('cricrelay_home') }}#features">Features</a>
-        <a href="{{ url_for('pricing_page') }}">Pricing</a>
-        <a href="{{ url_for('compare_page') }}">Compare</a>
-        <a href="{{ url_for('cricrelay_home') }}#faq">FAQ</a>
+        <a href="{{ url_for('cricrelay_home') }}#how">How it works</a>
         <a href="{{ url_for('login_page') }}">Log in</a>
         <a href="{{ url_for('register_page') }}" class="cr-btn cr-btn-primary cr-btn-block">Start free</a>
       </div>

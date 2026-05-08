@@ -601,6 +601,33 @@ label.cr-label {
   color: var(--cr-accent);
 }
 
+/* --- Simplification pass --- */
+.cr-btn,
+.cr-input,
+.cr-select {
+  min-height: 48px;
+}
+
+.cr-main {
+  padding-top: 24px;
+}
+
+.cr-card {
+  margin-bottom: 14px;
+}
+
+.cr-hero {
+  padding: 42px 22px 46px;
+}
+
+.cr-hero h1 {
+  max-width: 14ch;
+}
+
+.cr-section {
+  padding: 34px 22px;
+}
+
 @media (max-width: 560px) {
   .cr-nav {
     width: 100%;
