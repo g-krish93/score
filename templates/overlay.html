@@ -280,9 +280,33 @@
       );
     }
 
+    function relayHasScores(snap) {
+      const i1 = snap.innings_1 || {};
+      const i2 = snap.innings_2 || {};
+      const ok = (x) =>
+        x &&
+        ((x.score != null && String(x.score).trim() !== "") ||
+          (x.runs != null && !Number.isNaN(Number(x.runs))));
+      return ok(i1) || ok(i2);
+    }
+
     function renderRelayScore(data, resultRow) {
       const b = data.relay_bundle || {};
       const snap = b.snapshot || {};
+      const errNote = b.last_error
+        ? `<div class="row muted" style="margin-top:6px;color:#fca5a5;font-size:11px;">Last relay error: ${text(b.last_error)}</div>`
+        : "";
+      if (!relayHasScores(snap)) {
+        const slugHint = encodeURIComponent(MATCH_ID);
+        const tip =
+          `<div class="statline"><span class="pill">Play-Cricket</span><span class="pill">Awaiting data</span></div>` +
+          errNote +
+          `<div class="row muted" style="margin-top:10px;font-size:11px;line-height:1.45;">No score snapshot yet for this stream. Either run ` +
+          `<code style="font-size:10px;">GET /relay-worker/live?url=&lt;scrape-url&gt;&amp;push_match=${slugHint}</code> ` +
+          `(same host; add Authorization if RELAY_INGEST_TOKEN is set), or POST JSON to ` +
+          `<code style="font-size:10px;">/relay/ingest?match=${slugHint}</code>.</div>`;
+        return resultRow + tip;
+      }
       const i1 = snap.innings_1 || {};
       const i2 = snap.innings_2 || {};
       const scoreKey = `${i1.score || ""}|${i2.score || ""}|${snap.status || ""}|${b.stale}`;
@@ -294,16 +318,14 @@
       const statusPill = `<span class="pill">${text(snap.status || "Live")}</span>`;
       const t1 = text(i1.team || data.batting_team);
       const t2 = text(i2.team || data.bowling_team);
-      const s1 = text(i1.score);
-      const s2 = text(i2.score);
-      const o1 = text(i1.overs_display);
-      const o2 = text(i2.overs_display);
+      const s1 = i1.score != null ? text(i1.score) : (i1.runs != null ? `${i1.runs}/${i1.wickets}` : "");
+      const s2 = i2.score != null ? text(i2.score) : (i2.runs != null ? `${i2.runs}/${i2.wickets}` : "");
+      const o1 = text(i1.overs_display || i1.overs);
+      const o2 = text(i2.overs_display || i2.overs);
       const big = (s1 && s2) ? `${s1}  |  ${s2}` : (s1 || s2 || "—");
-      const meta1 = (s1 && o1) ? `${s1} (${o1} ov)` : "Innings 1";
-      const meta2 = (s2 && o2) ? `${s2} (${o2} ov)` : "Innings 2";
-      const wait = (!s1 && !s2)
-        ? `<div class="row muted" style="margin-top:4px;">Waiting for ingest — POST JSON to <code>/relay/ingest</code> (see CricRelay page).</div>`
-        : "";
+      const meta1 = (s1 && o1 && o1 !== "—") ? `${s1} (${o1} ov)` : (s1 ? "Innings 1" : "—");
+      const meta2 = (s2 && o2 && o2 !== "—") ? `${s2} (${o2} ov)` : (s2 ? "Innings 2" : "—");
+      const wait = "";
       return (
         resultRow +
         `<div class="statline">${stalePill}${statusPill}</div>` +

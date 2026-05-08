@@ -45,6 +45,8 @@ Clubs can use **manual scoring** in the input UI, or follow a **Play-Cricket** p
 - **CLI (optional):** `python -m server.scrape_cli "<url>"` from repo root.
 - **Prism overlay:** `/stream` or `/m/<slug>/stream`; `/score?match=…` polling unchanged.
 
+**If the overlay shows “Play-Cricket / Awaiting data”** with no runs: the stream relay is on, but **no JSON has been ingested** for that `match` slug yet. Call **`GET /relay-worker/live?url=<paste scrape URL from dashboard>&push_match=<slug>`** once, or set up a cron loop (~10s). The scraper reads HTML server-side; Play-Cricket often splits scores across lines—we normalize that, but you still must **push** into `/relay/ingest`.
+
 ## Multiple parallel matches
 
 - Use dedicated URLs per match so states do not mix.
