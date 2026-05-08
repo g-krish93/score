@@ -1,7 +1,8 @@
-"""Parse Play-Cricket HTML into a JSON snapshot (runs/wickets/overs per innings)."""
+"""Parse Play-Cricket HTML into snapshots and fixture lists."""
 import re
 from dataclasses import asdict, dataclass
 from typing import Optional
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -321,3 +322,61 @@ def scrape_match(url: str) -> dict:
     html = fetch_page_html(url)
     snapshot = parse_match_snapshot(url, html)
     return snapshot.to_dict()
+
+
+def scrape_fixtures(base_url: str, limit: int = 24) -> list[dict]:
+    """Scrape fixture IDs from a club results page for quick stream setup."""
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        return []
+    html = fetch_page_html(base)
+    soup = BeautifulSoup(html, "html.parser")
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    for a in soup.find_all("a", href=True):
+        href = a.get("href") or ""
+        full = urljoin(base + "/", href)
+        full = canonicalize_play_cricket_scrape_url(full)
+        m = re.search(r"/website/results/(\d+)\b", full)
+        if not m:
+            m = re.search(r"match_details\?id=(\d+)\b", full)
+        if not m:
+            continue
+        mid = m.group(1)
+        if mid in seen:
+            continue
+        seen.add(mid)
+        text = " ".join((a.get_text(" ", strip=True) or "").split())
+        if text.lower() in {"", "search", "location_on"}:
+            # On /Matches pages the clickable icon often has text "search";
+            # use nearby row content to derive a meaningful fixture label.
+            parent = a
+            row_text = ""
+            for _ in range(6):
+                parent = parent.parent
+                if not parent:
+                    break
+                candidate = " ".join(parent.get_text(" ", strip=True).split())
+                if " vs " in candidate.lower() or " v " in candidate.lower():
+                    row_text = candidate
+                    break
+            if row_text:
+                row_text = re.sub(r"\b(Form Guide|search|location_on)\b", "", row_text, flags=re.I)
+                row_text = re.sub(r"(?:\b[WLDT]\b\s*){2,}", "", row_text)
+                row_text = re.sub(r"\s+", " ", row_text).strip(" -|")
+                m_vs = re.search(r"([A-Za-z0-9 ,.'&()-]{8,}?)\s+Vs\s+([A-Za-z0-9 ,.'&()-]{8,})", row_text, flags=re.I)
+                if m_vs:
+                    text = f"{m_vs.group(1).strip()} vs {m_vs.group(2).strip()}"[:140]
+                else:
+                    text = row_text[:140]
+        out.append(
+            {
+                "match_id": mid,
+                "label": text or f"Fixture {mid}",
+                "url": full,
+            }
+        )
+        if len(out) >= max(1, int(limit)):
+            break
+    return out

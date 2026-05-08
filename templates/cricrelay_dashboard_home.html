@@ -1,0 +1,71 @@
+{% extends "base_marketing.html" %}
+{% block title %}Home — {{ org.name }} — CricRelay{% endblock %}
+{% block meta_description %}Select fixtures and start live streams quickly for {{ org.name }}.{% endblock %}
+
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <div class="cr-dash-top">
+    <div>
+      <h1>Home</h1>
+      <p class="cr-page-lead">Pick a fixture and start streaming in one click.</p>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, m in messages %}<div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>{% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="cr-card cr-card-highlight">
+    <h2>Current streams</h2>
+    <p class="cr-muted" style="margin:0 0 12px;">{{ stream_slots_used }} / {{ stream_slots_total }} stream slots in use.</p>
+    <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Open current streams</a>
+    <a class="cr-btn cr-btn-secondary" href="{{ url_for('dashboard') }}" style="margin-left:8px;">Squad management</a>
+  </div>
+
+  <div class="cr-card">
+    <h2>Play-Cricket fixtures</h2>
+    {% if fixtures_error %}
+    <p class="cr-muted">Could not load fixtures right now. You can still add match ID in Current streams.</p>
+    {% endif %}
+    {% if fixtures %}
+    <div class="cr-table-wrap">
+      <table class="cr-table">
+        <thead>
+          <tr>
+            <th>Fixture</th>
+            <th>Match ID</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in fixtures %}
+          <tr>
+            <td>{{ f.label }}</td>
+            <td><code class="cr-code">{{ f.match_id }}</code></td>
+            <td>
+              {% if f.match_id in active_ids %}
+              <span class="cr-badge cr-badge-live">Already active</span>
+              {% elif stream_slots_used >= stream_slots_total %}
+              <span class="cr-badge cr-badge-paused">No slot</span>
+              {% else %}
+              <form method="post" action="{{ url_for('dashboard_add_match') }}" style="display:inline;">
+                <input type="hidden" name="play_cricket_match_id" value="{{ f.match_id }}">
+                <input type="hidden" name="stream_label" value="{{ f.label[:120] }}">
+                <button type="submit" class="cr-btn cr-btn-primary cr-btn-sm">Start stream</button>
+              </form>
+              {% endif %}
+              <a class="cr-btn cr-btn-ghost cr-btn-sm" href="{{ f.url }}" target="_blank" rel="noopener">Open fixture</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="cr-muted">No fixtures found yet from your Play-Cricket base URL.</p>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

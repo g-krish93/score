@@ -40,6 +40,7 @@ from .models_cricrelay import (
     db,
     slugify_org_name,
 )
+from .play_cricket_scraper import scrape_fixtures
 from .scraper_worker import get_live_snapshot, register_relay_worker
 
 load_dotenv()
@@ -625,6 +626,8 @@ def read_relay_overlay_prefs(slug):
 
 @app.get("/")
 def cricrelay_home():
+    if session.get("org_id"):
+        return redirect(url_for("dashboard_home"))
     forced_variant = (request.args.get("v") or "").strip().lower()
     if forced_variant in {"a", "b"}:
         session["hero_variant"] = forced_variant
@@ -769,8 +772,8 @@ def register_page():
         flash("That email or club URL slug is already in use.", "error")
         return render_template("cricrelay_register.html"), 400
     session["org_id"] = org.id
-    flash("Welcome to CricRelay — add squads under Club setup, then open Live relays when you stream.", "success")
-    return redirect(url_for("dashboard"))
+    flash("Welcome to CricRelay — add squads, then create a stream from a fixture.", "success")
+    return redirect(url_for("dashboard_home"))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -784,7 +787,7 @@ def login_page():
         flash("Invalid email or password.", "error")
         return render_template("cricrelay_login.html"), 401
     session["org_id"] = org.id
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("dashboard_home"))
 
 
 @app.route("/forgot-password", methods=["GET", "POST"])
@@ -853,6 +856,33 @@ def dashboard():
     )
 
 
+@app.get("/dashboard/home")
+@login_required
+def dashboard_home():
+    org = _org_from_session()
+    teams = ClubTeam.query.filter_by(organization_id=org.id).order_by(ClubTeam.name).all()
+    matches = RelayMatch.query.filter_by(organization_id=org.id).order_by(
+        RelayMatch.created_at.desc()
+    ).all()
+    active_ids = {m.play_cricket_match_id for m in matches}
+    fixtures = []
+    fixtures_error = None
+    try:
+        fixtures = scrape_fixtures(org.play_cricket_base_url, limit=36)
+    except Exception as exc:
+        fixtures_error = str(exc)
+    return render_template(
+        "cricrelay_dashboard_home.html",
+        org=org,
+        fixtures=fixtures,
+        fixtures_error=fixtures_error,
+        active_ids=active_ids,
+        teams=teams,
+        stream_slots_used=len(matches),
+        stream_slots_total=MAX_LIVE_STREAMS_PER_CLUB,
+    )
+
+
 @app.get("/dashboard/relays")
 @login_required
 def dashboard_relays():
@@ -909,26 +939,6 @@ def dashboard_add_team():
     except IntegrityError:
         db.session.rollback()
         flash("You already have a squad with that name.", "error")
-    return redirect(url_for("dashboard"))
-
-
-@app.post("/dashboard/club-brand")
-@login_required
-def dashboard_club_brand():
-    org = _org_from_session()
-    logo_url = (request.form.get("public_logo_url") or "").strip()
-    if logo_url and not re.match(r"^https?://", logo_url, flags=re.IGNORECASE):
-        flash("Logo URL must start with http:// or https://", "error")
-        return redirect(url_for("dashboard"))
-    org.public_logo_url = logo_url[:1000] or None
-    org.public_primary_color = _safe_hex_color(
-        request.form.get("public_primary_color", ""), "#22d3a8"
-    )
-    org.public_accent_color = _safe_hex_color(
-        request.form.get("public_accent_color", ""), "#38bdf8"
-    )
-    db.session.commit()
-    flash("Public page branding updated.", "success")
     return redirect(url_for("dashboard"))
 
 

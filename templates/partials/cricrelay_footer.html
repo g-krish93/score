@@ -2,7 +2,7 @@
   <div class="cr-footer-links">
     <a href="{{ url_for('cricrelay_home') }}#how">How it works</a>
     {% if session.get('org_id') %}
-    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('dashboard_home') }}">Dashboard</a>
     {% else %}
     <a href="{{ url_for('login_page') }}">Log in</a>
     <a href="{{ url_for('register_page') }}">Start free</a>

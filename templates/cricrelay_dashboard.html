@@ -6,7 +6,7 @@
 <main id="main-content" class="cr-main">
   <div class="cr-dash-top">
     <div>
-      <h1>Squads</h1>
+      <h1>Squad management</h1>
       <p class="cr-page-lead">Add and manage squads for your club.</p>
     </div>
   </div>
@@ -17,23 +17,6 @@
     <p style="margin:0;"><code class="cr-code" id="public-club-url">{{ url_for('public_club_page', slug=org.slug, _external=True) }}</code></p>
     <button type="button" class="cr-btn cr-btn-secondary cr-btn-sm cr-btn-copy" style="margin-top:12px;" data-copy-text="{{ url_for('public_club_page', slug=org.slug, _external=True) }}">Copy link</button>
     <a class="cr-btn cr-btn-ghost cr-btn-sm" style="margin-top:12px;margin-left:8px;" href="{{ url_for('public_club_page', slug=org.slug) }}" target="_blank" rel="noopener">Open page</a>
-    <hr class="cr-soft-divider">
-    <h3 style="margin:0 0 10px;">Page branding</h3>
-    <form method="post" action="{{ url_for('dashboard_club_brand') }}">
-      <label class="cr-label" for="public_logo_url">Club logo URL (optional)</label>
-      <input class="cr-input" id="public_logo_url" name="public_logo_url" type="url" placeholder="https://yourclub.co.uk/logo.png" value="{{ org.public_logo_url or '' }}">
-      <div class="cr-row2">
-        <div>
-          <label class="cr-label" for="public_primary_color">Primary color</label>
-          <input class="cr-input" id="public_primary_color" name="public_primary_color" type="color" value="{{ org.public_primary_color or '#22d3a8' }}">
-        </div>
-        <div>
-          <label class="cr-label" for="public_accent_color">Accent color</label>
-          <input class="cr-input" id="public_accent_color" name="public_accent_color" type="color" value="{{ org.public_accent_color or '#38bdf8' }}">
-        </div>
-      </div>
-      <button type="submit" class="cr-btn cr-btn-primary" style="margin-top:14px;">Save page branding</button>
-    </form>
   </div>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
