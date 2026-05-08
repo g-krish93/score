@@ -2,7 +2,7 @@
 import re
 from dataclasses import asdict, dataclass
 from typing import Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -376,7 +376,37 @@ def scrape_match(url: str) -> dict:
     url = canonicalize_play_cricket_scrape_url(url)
     html = fetch_page_html(url)
     snapshot = parse_match_snapshot(url, html)
-    return snapshot.to_dict()
+    data = snapshot.to_dict()
+
+    # Some pre-match result URLs (…/website/results/<id>) omit fixture metadata
+    # until play starts, while match_details still contains title/ground/competition.
+    missing_fixture = not any(
+        data.get(k)
+        for k in ("fixture_title", "fixture_date", "fixture_start_time", "fixture_ground", "fixture_competition")
+    )
+    missing_scores = not data.get("innings_1") and not data.get("innings_2")
+    if missing_fixture and missing_scores:
+        m = re.search(r"/website/results/(\d+)\b", url.lower())
+        if m:
+            parsed = urlparse(url)
+            fallback = f"{parsed.scheme}://{parsed.netloc}/match_details?id={m.group(1)}"
+            try:
+                html2 = fetch_page_html(fallback)
+                snap2 = parse_match_snapshot(fallback, html2).to_dict()
+                for key in (
+                    "fixture_title",
+                    "fixture_date",
+                    "fixture_start_time",
+                    "fixture_ground",
+                    "fixture_competition",
+                    "status",
+                    "toss_note",
+                ):
+                    if not data.get(key) and snap2.get(key):
+                        data[key] = snap2.get(key)
+            except Exception:
+                pass
+    return data
 
 
 def scrape_fixtures(base_url: str, limit: int = 24) -> list[dict]:
