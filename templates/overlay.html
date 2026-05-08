@@ -359,13 +359,15 @@
         ? `<div class="row muted" style="margin-top:6px;color:#fca5a5;font-size:11px;">Last relay error: ${text(b.last_error)}</div>`
         : "";
       if (!relayHasScores(snap)) {
-        const slugHint = encodeURIComponent(MATCH_ID);
+        const startAt = [snap.fixture_date, snap.fixture_start_time].filter((v) => v && String(v).trim()).join(" · ");
+        const startMsg = startAt
+          ? `Match starts at ${startAt}.`
+          : "Match starts soon.";
         const tip =
           `<div class="statline"><span class="pill">Play-Cricket</span><span class="pill">Awaiting data</span></div>` +
           fixtureRows +
           errNote +
-          `<div class="row muted" style="margin-top:10px;font-size:11px;line-height:1.45;">No score snapshot yet. With <strong>RELAY_AUTO_POLL=1</strong> (default), the server ingests automatically — wait one poll interval or check logs for <code>[relay_poller]</code>. Or POST once to ` +
-          `<code style="font-size:10px;">/relay/ingest?match=${slugHint}</code>.</div>`;
+          `<div class="row muted" style="margin-top:10px;font-size:11px;line-height:1.45;">${startMsg}</div>`;
         return resultRow + tip;
       }
       const i1 = snap.innings_1 || {};
