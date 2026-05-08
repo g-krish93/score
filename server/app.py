@@ -970,7 +970,6 @@ def dashboard_relays():
     relay_rows = [
         {
             "match": m,
-            "appearance": read_relay_overlay_prefs(m.score_match_slug),
             "squad_name": team_names.get(m.club_team_id),
         }
         for m in matches

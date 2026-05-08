@@ -244,12 +244,12 @@
     function setTheme(data) {
       const body = document.body;
       body.classList.remove("theme-classic", "theme-neon", "theme-minimal");
-      body.classList.add(`theme-${data.theme || "classic"}`);
-      body.classList.toggle("density-compact", (data.overlay_density || "expanded") === "compact");
+      body.classList.add("theme-classic");
+      body.classList.remove("density-compact");
       document.documentElement.style.setProperty("--team1", data.team1_color || "#2dd4bf");
       document.documentElement.style.setProperty("--team2", data.team2_color || "#f59e0b");
-      document.documentElement.style.setProperty("--overlay-scale", String(data.overlay_scale || 1));
-      document.documentElement.style.setProperty("--overlay-box-color", data.overlay_box_color || "#101f45");
+      document.documentElement.style.setProperty("--overlay-scale", "1");
+      document.documentElement.style.setProperty("--overlay-box-color", "#101f45");
     }
     function renderMomentum(data) {
       const holder = document.getElementById("momentum");
@@ -473,7 +473,7 @@
       maybeFlash(data);
       renderMomentum(data);
       renderPressure(data);
-      const panel = data.active_panel || "score";
+      const panel = "score";
       const content = document.getElementById("content");
       const resultRow = (data.match_complete && data.match_result)
         ? `<div class="row result">${text(data.match_result)}</div>`
