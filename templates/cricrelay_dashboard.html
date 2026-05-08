@@ -4,32 +4,11 @@
 
 {% block page_shell %}
 <main id="main-content" class="cr-main">
-  {% if not onboarding_done %}
-  <div class="cr-card cr-card-highlight">
-    <h2>First-time setup wizard</h2>
-    <p class="cr-muted" style="margin:0 0 12px;">Follow these steps once. After that, match-day setup is very quick.</p>
-    <div class="cr-steps-inline">
-      <div class="cr-step-chip"><strong>Step 1 (you are here)</strong><span>Add your team names.</span></div>
-      <div class="cr-step-chip"><strong>Step 2</strong><span>Create a stream with match ID.</span></div>
-      <div class="cr-step-chip"><strong>Step 3</strong><span>Copy overlay URL into Prism/OBS.</span></div>
-    </div>
-  </div>
-  {% endif %}
-
   <div class="cr-dash-top">
     <div>
-      <h1>Step 1: Add your club teams</h1>
+      <h1>Squads</h1>
       <p class="cr-muted">Play-Cricket base: <code class="cr-code">{{ org.play_cricket_base_url }}</code></p>
-      <p class="cr-page-lead">Before creating a live stream, add the teams you manage (like 1st XI, 2nd XI, Women, Juniors).</p>
-    </div>
-  </div>
-
-  <div class="cr-card cr-card-highlight">
-    <h2>Quick path</h2>
-    <div class="cr-steps-inline">
-      <div class="cr-step-chip"><strong>1) Add team names</strong><span>Do this on this page.</span></div>
-      <div class="cr-step-chip"><strong>2) Create a stream</strong><span>Go to Live streams and add match ID.</span></div>
-      <div class="cr-step-chip"><strong>3) Paste overlay URL</strong><span>Use in Prism/OBS and go live.</span></div>
+      <p class="cr-page-lead">Manage team names for this club. Keep names short so operators can pick quickly on match day.</p>
     </div>
   </div>
 
@@ -47,9 +26,36 @@
     {% endif %}
   {% endwith %}
 
+  {% if squad_slots_used < squad_slots_total %}
+  <div class="cr-card cr-next-action">
+    <p class="cr-next-action-label">Next action</p>
+    {% if not teams %}
+    <h2>Add your first squad</h2>
+    <p class="cr-muted" style="margin:0 0 14px;">Start here. Then create your first live stream in one click.</p>
+    {% else %}
+    <h2>Add another squad</h2>
+    <p class="cr-muted" style="margin:0 0 14px;">You have <strong>{{ squad_slots_used }}</strong> of {{ squad_slots_total }} squad slots in use.</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('dashboard_add_team') }}" class="cr-next-action-form">
+      <label class="cr-label" for="team_name">Squad name</label>
+      <p class="cr-help">Examples: 1st XI, 2nd XI, Women, U15.</p>
+      <div class="cr-row2">
+        <input class="cr-input" id="team_name" name="name" placeholder="e.g. 1st XI" required>
+        <button type="submit" class="cr-btn cr-btn-primary" style="margin-top:14px;">Add squad</button>
+      </div>
+    </form>
+  </div>
+  {% else %}
+  <div class="cr-card cr-next-action">
+    <p class="cr-next-action-label">Next action</p>
+    <h2>Squad limit reached</h2>
+    <p class="cr-muted" style="margin:0;">You are using all {{ squad_slots_total }} squad slots for this account.</p>
+  </div>
+  {% endif %}
+
   <div class="cr-card">
     <h2>Your teams ({{ squad_slots_used }} / {{ squad_slots_total }})</h2>
-    <p class="cr-muted" style="margin:0 0 14px;">All teams under one login. Keep names short and clear so operators can pick quickly.</p>
+    <p class="cr-muted" style="margin:0 0 14px;">All teams under one login.</p>
     {% if teams %}
     <div class="cr-table-wrap">
       <table class="cr-table">
@@ -60,28 +66,17 @@
       </table>
     </div>
     {% else %}
-    <p class="cr-muted">No squads yet. Add your first team below.</p>
-    {% endif %}
-
-    {% if squad_slots_used < squad_slots_total %}
-    <form method="post" action="{{ url_for('dashboard_add_team') }}" style="margin-top:18px;">
-      <label class="cr-label" for="team_name">Add squad</label>
-      <p class="cr-help">Examples: 1st XI, 2nd XI, Women, U15.</p>
-      <div class="cr-row2">
-        <input class="cr-input" id="team_name" name="name" placeholder="e.g. 1st XI" required>
-        <button type="submit" class="cr-btn cr-btn-primary" style="margin-top:14px;">Add squad</button>
-      </div>
-    </form>
-    {% else %}
-    <p class="cr-muted" style="margin-top:14px;">Maximum squads reached for this account tier.</p>
+    <p class="cr-muted">No squads yet. Add your first team in the next action card above.</p>
     {% endif %}
   </div>
 
   <div class="cr-card cr-card-highlight">
-    <h2>Step 2: Create live streams</h2>
-    <p class="cr-muted" style="margin:0 0 14px;">When your teams are ready, create a stream from fixture ID and copy the overlay URL.</p>
-    {% if relay_count %}
-    <p class="cr-muted" style="margin:0 0 14px;">You have <strong>{{ relay_count }}</strong> active stream configuration(s).</p>
+    {% if teams %}
+    <h2>Continue to live streams</h2>
+    <p class="cr-muted" style="margin:0 0 14px;">Your next step is to add a fixture and generate an overlay URL.</p>
+    {% else %}
+    <h2>Live streams unlock after first squad</h2>
+    <p class="cr-muted" style="margin:0 0 14px;">Add at least one squad above, then create your stream.</p>
     {% endif %}
     <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Open live streams</a>
   </div>

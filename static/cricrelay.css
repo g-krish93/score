@@ -1392,6 +1392,36 @@ label.cr-label {
   font-size: 0.98rem;
 }
 
+.cr-next-action {
+  border-color: rgba(34, 211, 168, 0.34);
+  background: linear-gradient(180deg, rgba(10, 16, 30, 0.92) 0%, rgba(10, 16, 30, 0.82) 100%);
+}
+
+.cr-next-action-label {
+  margin: 0 0 8px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(34, 211, 168, 0.35);
+  background: rgba(34, 211, 168, 0.1);
+  color: #b9f8e4;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cr-next-action h2 {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.cr-next-action-form .cr-input,
+.cr-next-action-form .cr-select {
+  min-height: 46px;
+}
+
 .cr-kpi {
   display: inline-flex;
   align-items: center;

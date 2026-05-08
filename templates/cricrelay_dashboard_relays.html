@@ -4,23 +4,11 @@
 
 {% block page_shell %}
 <main id="main-content" class="cr-main">
-  {% if stream_slots_used == 0 %}
-  <div class="cr-card cr-card-highlight">
-    <h2>First-time setup wizard</h2>
-    <p class="cr-muted" style="margin:0 0 12px;">You're on Step 2. Create your first stream below.</p>
-    <div class="cr-steps-inline">
-      <div class="cr-step-chip"><strong>Step 1</strong><span>Teams added in Squads page.</span></div>
-      <div class="cr-step-chip"><strong>Step 2 (you are here)</strong><span>Add match ID and create stream.</span></div>
-      <div class="cr-step-chip"><strong>Step 3</strong><span>Copy overlay URL and paste in Prism/OBS.</span></div>
-    </div>
-  </div>
-  {% endif %}
-
   <div class="cr-dash-top">
     <div>
-      <h1>Step 2: Create and control live streams</h1>
+      <h1>Live streams</h1>
       <p class="cr-muted">Club: <strong>{{ org.name }}</strong> · Play-Cricket base <code class="cr-code">{{ org.play_cricket_base_url }}</code></p>
-      <p class="cr-page-lead">Simple flow: add fixture ID → copy overlay URL → paste into Prism/OBS. Pause anytime, remove when done.</p>
+      <p class="cr-page-lead">Add fixtures, copy overlay URLs, and control sync from one page.</p>
     </div>
   </div>
 
@@ -40,20 +28,17 @@
     {% endif %}
   {% endwith %}
 
-  <div class="cr-card cr-card-highlight">
-    <h2>Match day sync</h2>
-    {% if relay_auto_poll %}
-    <p class="cr-muted" style="margin:0;">Scores auto-refresh every <strong>{{ relay_poll_sec }} seconds</strong>. No manual scripts needed.</p>
-    {% else %}
-    <p class="cr-muted" style="margin:0;">Automatic polling is off (<code class="cr-code">RELAY_AUTO_POLL=0</code>). Turn it on in production.</p>
-    {% endif %}
-  </div>
-
   {% if stream_slots_used < stream_slots_total %}
-  <div class="cr-card">
-    <h2>Add a new stream</h2>
-    <p class="cr-muted" style="margin:0 0 14px;">Slots in use: <strong>{{ stream_slots_used }}</strong> / {{ stream_slots_total }}. Enter the numeric ECB fixture id from your results URL.</p>
-    <form method="post" action="{{ url_for('dashboard_add_match') }}">
+  <div class="cr-card cr-next-action">
+    <p class="cr-next-action-label">Next action</p>
+    {% if stream_slots_used == 0 %}
+    <h2>Create your first stream</h2>
+    <p class="cr-muted" style="margin:0 0 14px;">Add the numeric ECB fixture ID, then copy your overlay URL.</p>
+    {% else %}
+    <h2>Add another stream</h2>
+    <p class="cr-muted" style="margin:0 0 14px;">Slots in use: <strong>{{ stream_slots_used }}</strong> / {{ stream_slots_total }}.</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('dashboard_add_match') }}" class="cr-next-action-form">
       <label class="cr-label" for="stream_label">Stream label (optional)</label>
       <p class="cr-help">Use a simple name operators can read fast: “1st XI vs Brighton”.</p>
       <input class="cr-input" id="stream_label" name="stream_label" maxlength="120" placeholder="e.g. 1st XI vs Rottingdean — T20">
@@ -79,11 +64,21 @@
     </form>
   </div>
   {% else %}
-  <div class="cr-card">
+  <div class="cr-card cr-next-action">
+    <p class="cr-next-action-label">Next action</p>
     <h2>Stream limit reached</h2>
     <p class="cr-muted" style="margin:0;">You are using all {{ stream_slots_total }} streams for this club. Remove a finished stream or contact us for a higher tier.</p>
   </div>
   {% endif %}
+
+  <div class="cr-card cr-card-highlight">
+    <h2>Match day sync</h2>
+    {% if relay_auto_poll %}
+    <p class="cr-muted" style="margin:0;">Scores auto-refresh every <strong>{{ relay_poll_sec }} seconds</strong>. No manual scripts needed.</p>
+    {% else %}
+    <p class="cr-muted" style="margin:0;">Automatic polling is off (<code class="cr-code">RELAY_AUTO_POLL=0</code>). Turn it on in production.</p>
+    {% endif %}
+  </div>
 
   <div class="cr-card">
     <h2>Your streams &amp; overlays</h2>
@@ -177,7 +172,7 @@
       </table>
     </div>
     {% else %}
-    <p class="cr-muted">No streams yet. Add a Play-Cricket match id above.</p>
+    <p class="cr-muted">No streams yet. Use the next action card above to create your first stream.</p>
     {% endif %}
   </div>
 </main>
