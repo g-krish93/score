@@ -11,6 +11,7 @@ from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from flask import (
@@ -253,6 +254,31 @@ def _safe_hex_color(value: str, default: str) -> str:
     if re.fullmatch(r"#[0-9a-fA-F]{6}", raw):
         return raw.lower()
     return default
+
+
+def _fixture_candidate_urls(base_url: str) -> list[str]:
+    raw = (base_url or "").strip().rstrip("/")
+    if not raw:
+        return []
+    parsed = urlparse(raw)
+    host_root = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+    low = raw.lower()
+    candidates = [raw]
+    if host_root:
+        candidates.append(f"{host_root}/Matches")
+    if "/website/results" in low and host_root:
+        candidates.append(f"{host_root}/Matches")
+    if "/match_details" in low and host_root:
+        candidates.append(f"{host_root}/Matches")
+    out = []
+    seen = set()
+    for c in candidates:
+        k = c.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(c)
+    return out
 
 
 @contextmanager
@@ -867,15 +893,27 @@ def dashboard_home():
     active_ids = {m.play_cricket_match_id for m in matches}
     fixtures = []
     fixtures_error = None
-    try:
-        fixtures = scrape_fixtures(org.play_cricket_base_url, limit=36)
-    except Exception as exc:
-        fixtures_error = str(exc)
+    fixture_source_url = ""
+    probe_errors = []
+    for candidate in _fixture_candidate_urls(org.play_cricket_base_url):
+        try:
+            rows = scrape_fixtures(candidate, limit=36)
+            if rows:
+                fixtures = rows
+                fixture_source_url = candidate
+                break
+        except Exception as exc:
+            probe_errors.append(f"{candidate}: {exc}")
+    if not fixtures and probe_errors:
+        fixtures_error = probe_errors[0]
+    if not fixture_source_url:
+        fixture_source_url = org.play_cricket_base_url
     return render_template(
         "cricrelay_dashboard_home.html",
         org=org,
         fixtures=fixtures,
         fixtures_error=fixtures_error,
+        fixture_source_url=fixture_source_url,
         active_ids=active_ids,
         teams=teams,
         stream_slots_used=len(matches),
