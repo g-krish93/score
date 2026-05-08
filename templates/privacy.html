@@ -1,0 +1,24 @@
+{% extends "base_marketing.html" %}
+{% block title %}Privacy — CricRelay{% endblock %}
+{% block meta_description %}Privacy overview for CricRelay — how club accounts, Play-Cricket relay data, and logs are handled.{% endblock %}
+
+{% block page_shell %}
+<main id="main-content" class="cr-page cr-legal">
+  <article class="cr-section-inner cr-legal-inner cr-reveal">
+    <h1 class="cr-page-title">Privacy overview</h1>
+    <p class="cr-muted">Last updated {{ current_year }}. This page is a high-level summary — have counsel review before an IPO or regulated launch.</p>
+
+    <h2>What we process</h2>
+    <p>Account details you provide at registration (club name, email, hashed password, Play-Cricket base URL). Relay operations fetch public ECB Play-Cricket HTML required to derive scores for overlays you configure.</p>
+
+    <h2>Where data lives</h2>
+    <p>Deployment is under your control (for example AWS EC2 + RDS in the UK). Configure region pinning, encryption at rest, and backups to meet your league obligations.</p>
+
+    <h2>Cookies &amp; analytics</h2>
+    <p>The product uses session cookies for login. Add your own analytics &amp; consent banners when you enable marketing tags.</p>
+
+    <h2>Contact</h2>
+    <p>For privacy requests, reach the data controller email you publish for your deployment.</p>
+  </article>
+</main>
+{% endblock %}

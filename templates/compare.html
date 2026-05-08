@@ -1,0 +1,68 @@
+{% extends "base_marketing.html" %}
+{% block title %}Compare — CricRelay vs spreadsheets &amp; manual overlays{% endblock %}
+{% block meta_description %}See how CricRelay compares to manual scoreboards and generic streaming overlays for ECB Play-Cricket clubs in the UK.{% endblock %}
+
+{% block page_shell %}
+<main id="main-content" class="cr-page">
+  <section class="cr-page-hero cr-reveal">
+    <div class="cr-section-inner">
+      <p class="cr-eyebrow">Decision matrix</p>
+      <h1 class="cr-page-title">Built for Play-Cricket — not generic pixels</h1>
+      <p class="cr-lead cr-page-lead-wide">Investors and committees ask the same question: why not use a score bug template? Because recreational cricket moves fast — your overlay must trust ECB data without someone typing scores twice.</p>
+    </div>
+  </section>
+
+  <section class="cr-section">
+    <div class="cr-section-inner">
+      <div class="cr-table-wrap cr-compare-wrap">
+        <table class="cr-table cr-compare-table">
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>Manual / OBS text</th>
+              <th>Generic sport overlay</th>
+              <th>CricRelay</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Play-Cricket truth source</td>
+              <td><span class="cr-compare-bad">Typing twice</span></td>
+              <td><span class="cr-compare-warn">Often manual</span></td>
+              <td><span class="cr-compare-good">Automatic relay</span></td>
+            </tr>
+            <tr>
+              <td>Match-day operator workload</td>
+              <td><span class="cr-compare-bad">High</span></td>
+              <td><span class="cr-compare-warn">Medium</span></td>
+              <td><span class="cr-compare-good">Low</span></td>
+            </tr>
+            <tr>
+              <td>Multiple XI streams / club</td>
+              <td><span class="cr-compare-warn">Messy</span></td>
+              <td><span class="cr-compare-warn">Licence-bound</span></td>
+              <td><span class="cr-compare-good">Up to 6 streams</span></td>
+            </tr>
+            <tr>
+              <td>Panel layouts (score / chase / chart)</td>
+              <td><span class="cr-compare-warn">DIY</span></td>
+              <td><span class="cr-compare-warn">Generic cricket art</span></td>
+              <td><span class="cr-compare-good">Purpose-built</span></td>
+            </tr>
+            <tr>
+              <td>Pause when rain stops play</td>
+              <td><span class="cr-compare-warn">Manual hide</span></td>
+              <td><span class="cr-compare-warn">Manual</span></td>
+              <td><span class="cr-compare-good">One-click pause</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:28px;display:flex;flex-wrap:wrap;gap:12px;">
+        <a class="cr-btn cr-btn-primary" href="{{ url_for('register_page') }}">Start free</a>
+        <a class="cr-btn cr-btn-ghost" href="{{ url_for('pricing_page') }}">View pricing</a>
+      </div>
+    </div>
+  </section>
+</main>
+{% endblock %}

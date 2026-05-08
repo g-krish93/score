@@ -19,6 +19,9 @@ def main():
     home = c.get("/")
     assert_ok(home)
     assert "CricRelay" in home.get_data(as_text=True)
+    assert_ok(c.get("/pricing"))
+    assert_ok(c.get("/compare"))
+    assert_ok(c.get("/sitemap.xml"))
     assert_ok(c.get("/stream"))
     assert "scoring_locked" in score0
     assert_ok(c.get("/input"))

@@ -1,93 +1,220 @@
-<!doctype html>
-<html lang="en-GB">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Live Play-Cricket scores in your stream overlay for UK clubs — YouTube, TikTok Live, Facebook. One login, multiple squads and streams.">
-  <title>CricRelay — Live cricket scores for streamers</title>
-  {% include 'partials/cricrelay_head.html' %}
-</head>
-<body class="cr-body">
-  {% include 'partials/cricrelay_nav.html' %}
+{% extends "base_marketing.html" %}
+{% block title %}CricRelay — Live cricket scores for professional stream overlays{% endblock %}
+{% block meta_description %}CricRelay syncs ECB Play-Cricket fixtures into browser overlays for UK clubs — YouTube, TikTok Live, OBS &amp; Prism. One login, six squads, six streams, IPO-ready infrastructure story.{% endblock %}
 
-  <section class="cr-hero">
+{% block extra_head %}
+{% if structured_data %}
+<script type="application/ld+json">{{ structured_data | tojson }}</script>
+{% endif %}
+{% endblock %}
+
+{% block page_shell %}
+<main id="main-content">
+  <section class="cr-hero cr-hero--mega">
+    <div class="cr-hero-mesh" aria-hidden="true"></div>
     <div class="cr-hero-inner">
-      <p class="cr-eyebrow">Built for UK recreational cricket</p>
-      <h1>Put Play-Cricket on your stream — without a broadcast truck</h1>
-      <p class="cr-lead">Register once, add up to six squads and six live streams on the same login. Point Prism (or any browser overlay) at your unique URL; scores sync from ECB Play-Cricket automatically on match day.</p>
-      <div class="cr-hero-actions">
-        {% if not logged_in %}
-        <a class="cr-btn cr-btn-primary" href="{{ url_for('register_page') }}">Create free account</a>
-        <a class="cr-btn cr-btn-secondary" href="{{ url_for('login_page') }}">Log in</a>
-        {% else %}
-        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Open live streams</a>
-        <a class="cr-btn cr-btn-secondary" href="{{ url_for('dashboard') }}">Manage squads</a>
-        {% endif %}
+      <div class="cr-hero-grid">
+        <div class="cr-hero-copy">
+          <p class="cr-eyebrow">Play-Cricket · Live stream · One overlay</p>
+          <h1>The overlay platform serious cricket streams deserve</h1>
+          <p class="cr-lead">Relay ECB scorecards into Prism, OBS, or Larix in seconds. Built for UK recreational cricket — from village greens to showcase finals — with one club login covering up to six squads and six concurrent broadcasts.</p>
+          <div class="cr-hero-actions">
+            {% if not logged_in %}
+            <a class="cr-btn cr-btn-primary" href="{{ url_for('register_page') }}">Create free account</a>
+            <a class="cr-btn cr-btn-secondary" href="{{ url_for('pricing_page') }}">See pricing</a>
+            {% else %}
+            <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Open live streams</a>
+            <a class="cr-btn cr-btn-secondary" href="{{ url_for('dashboard') }}">Manage squads</a>
+            {% endif %}
+          </div>
+          <ul class="cr-hero-bullets">
+            <li>Automatic polling — no cron or SSH on match day</li>
+            <li>Panel presets — score strip, chase radar, batting card</li>
+            <li>Pause / resume streams when covers come on</li>
+          </ul>
+        </div>
+        <div class="cr-hero-panel cr-reveal" aria-label="Product preview">
+          <div class="cr-mock-overlay">
+            <div class="cr-mock-bar"></div>
+            <div class="cr-mock-score">
+              <span class="cr-mock-team">HOME</span>
+              <span class="cr-mock-num">218/3</span>
+              <span class="cr-mock-meta">Play-Cricket · synced</span>
+              <span class="cr-mock-team">AWAY</span>
+              <span class="cr-mock-num">128/3</span>
+            </div>
+            <p class="cr-mock-caption">Representative overlay · colours follow your theme</p>
+          </div>
+        </div>
       </div>
-      <p class="cr-hero-note">Works with YouTube Live, Facebook Live, TikTok Live — anywhere you can use a browser source.</p>
+    </div>
+  </section>
+
+  <section class="cr-stats" aria-label="Highlights">
+    <div class="cr-stats-inner">
+      <div class="cr-stat cr-reveal"><span class="cr-stat-val">&lt;10s</span><span class="cr-stat-label">Typical poll cadence</span></div>
+      <div class="cr-stat cr-reveal"><span class="cr-stat-val">6+6</span><span class="cr-stat-label">Squads &amp; streams / login</span></div>
+      <div class="cr-stat cr-reveal"><span class="cr-stat-val">ECB</span><span class="cr-stat-label">Play-Cricket compatible</span></div>
+      <div class="cr-stat cr-reveal"><span class="cr-stat-val">AWS-ready</span><span class="cr-stat-label">Scale to RDS &amp; ALB</span></div>
+    </div>
+    <p class="cr-stats-disclaimer">Operational metrics depend on deployment sizing — values illustrate design targets, not warranties.</p>
+  </section>
+
+  <section class="cr-logos" aria-label="Broadcaster compatibility">
+    <div class="cr-logos-inner">
+      <span class="cr-logos-title">Works with your stack</span>
+      <div class="cr-logos-row">
+        <span class="cr-logo-pill">YouTube Live</span>
+        <span class="cr-logo-pill">Facebook Live</span>
+        <span class="cr-logo-pill">TikTok LIVE</span>
+        <span class="cr-logo-pill">OBS Browser</span>
+        <span class="cr-logo-pill">Prism / Larix</span>
+      </div>
     </div>
   </section>
 
   <section class="cr-section" id="features">
     <div class="cr-section-inner">
-      <h2>Everything your club needs to look professional</h2>
-      <p class="cr-section-desc">Replace spreadsheets and WhatsApp screenshots with a single overlay your viewers can trust.</p>
-      <div class="cr-grid-3">
-        <article class="cr-feature">
-          <div class="cr-feature-icon" aria-hidden="true">⚡</div>
-          <h3>Automatic scoring</h3>
-          <p>While your scorer updates Play-Cricket, our relay polls and pushes JSON into your overlay — no cron jobs or scripts on match day.</p>
+      <h2 class="cr-section-head">Enterprise storytelling. Grassroots soul.</h2>
+      <p class="cr-section-desc">Investors see AWS-ready architecture; volunteers see a dashboard they can trust when there’s ten minutes to toss.</p>
+      <div class="cr-grid-feature">
+        <article class="cr-feature cr-reveal">
+          <div class="cr-feature-icon">∞</div>
+          <h3>Truth from Play-Cricket</h3>
+          <p>Scores lift straight from ECB pages your club already maintains — no duplicate scoring pipeline.</p>
         </article>
-        <article class="cr-feature">
-          <div class="cr-feature-icon" aria-hidden="true">🎛️</div>
-          <h3>You choose what viewers see</h3>
-          <p>Score strip, batting card, chase math, full scoreboard, or run chart — per stream, with compact or expanded layout.</p>
+        <article class="cr-feature cr-reveal">
+          <div class="cr-feature-icon">◎</div>
+          <h3>Director-grade layouts</h3>
+          <p>Choose score strip, batting &amp; bowling cards, chase maths, full scoreboard, or run worm — per stream.</p>
         </article>
-        <article class="cr-feature">
-          <div class="cr-feature-icon" aria-hidden="true">🏏</div>
-          <h3>One club login, many teams</h3>
-          <p>Track up to six squads (e.g. 1st XI, 2nd XI, Sunday XI) and run up to six concurrent streams — ideal for festivals and double-headers.</p>
+        <article class="cr-feature cr-reveal">
+          <div class="cr-feature-icon">✦</div>
+          <h3>Operational pause states</h3>
+          <p>Rain break? Toggle pause — polling stops but your branding stays ready when play resumes.</p>
+        </article>
+        <article class="cr-feature cr-reveal">
+          <div class="cr-feature-icon">⚑</div>
+          <h3>Club-sized tenancy</h3>
+          <p>One credential covers six squads &amp; six simultaneous overlays — multi-team festivals without IT overhead.</p>
+        </article>
+        <article class="cr-feature cr-reveal">
+          <div class="cr-feature-icon">◇</div>
+          <h3>Designed for IPO narratives</h3>
+          <p>Clear upgrade path from single EC2 to RDS, caching, and regional deployments — tell a credible SaaS story.</p>
+        </article>
+        <article class="cr-feature cr-reveal">
+          <div class="cr-feature-icon">⚡</div>
+          <h3>Fast pages, faster ingest</h3>
+          <p>Static-first marketing shell, deferred scripts, intersection observers — purpose-built performance.</p>
         </article>
       </div>
     </div>
   </section>
 
-  <section class="cr-section" id="how">
+  <section class="cr-section cr-section--alt" id="how">
     <div class="cr-section-inner">
-      <h2>Three steps from signup to stream</h2>
-      <p class="cr-section-desc">No terminals, no EC2 tutorials — your ops lead can do this between innings.</p>
-      <div class="cr-steps">
-        <div class="cr-step">
-          <h3>Register your club</h3>
-          <p>Club name, email, password, and your Play-Cricket site root (or <code class="cr-code">…/website/results</code>).</p>
+      <h2 class="cr-section-head">Launch-day playbook</h2>
+      <p class="cr-section-desc">Three calm steps — perfect for volunteer committees presenting to sponsors.</p>
+      <div class="cr-steps cr-steps--wide">
+        <div class="cr-step cr-reveal">
+          <h3>Claim your club shell</h3>
+          <p>Register with your ECB Play-Cricket host. We canonicalise URLs so scrapes never 404 on malformed paths.</p>
         </div>
-        <div class="cr-step">
-          <h3>Add squads &amp; streams</h3>
-          <p>Name your teams, then create a stream with the numeric ECB fixture id. Copy the overlay URL we give you.</p>
+        <div class="cr-step cr-reveal">
+          <h3>Blueprint squads &amp; streams</h3>
+          <p>Name each XI, drop in fixture ids, label streams for operators (“1st XI vs Village CC”). Copy overlay URLs once.</p>
         </div>
-        <div class="cr-step">
-          <h3>Paste into Prism</h3>
-          <p>Use the browser overlay URL in Larix Broadcaster or OBS browser source. Pause or remove a stream anytime from the dashboard.</p>
+        <div class="cr-step cr-reveal">
+          <h3>Go live with Prism</h3>
+          <p>Paste the HTTPS overlay link into your broadcaster. Pause or tear down streams when stumps fly.</p>
         </div>
-      </div>
-      <div style="margin-top:28px;display:flex;flex-wrap:wrap;gap:12px;">
-        {% if not logged_in %}
-        <a class="cr-btn cr-btn-primary" href="{{ url_for('register_page') }}">Get started</a>
-        {% else %}
-        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Go to dashboard</a>
-        {% endif %}
-        <a class="cr-btn cr-btn-ghost" href="{{ url_for('cricrelay_landing') }}">Operator tools</a>
       </div>
     </div>
   </section>
 
   <section class="cr-section">
     <div class="cr-section-inner">
-      <h2>Deploy on AWS — scale when you need it</h2>
-      <p class="cr-section-desc">Run CricRelay on a single EC2 instance today; move to RDS, ElastiCache, or ECS later without changing how clubs use the product.</p>
+      <h2 class="cr-section-head">Why clubs upgrade from “just OBS text”</h2>
+      <p class="cr-section-desc">Static overlays cannot react when Play-Cricket updates ball-by-ball. CricRelay keeps your narrative aligned with the authoritative ECB feed.</p>
+      <div class="cr-callout cr-reveal">
+        <p><strong>Sponsor-ready visuals.</strong> Replace jittery screen shares with a deliberate broadcast layer that respects your colours, typography, and match contexts.</p>
+      </div>
     </div>
   </section>
 
-  {% include 'partials/cricrelay_footer.html' %}
-</body>
-</html>
+  <section class="cr-testimonials" aria-label="Illustrative stories">
+    <div class="cr-section-inner">
+      <h2 class="cr-section-head">Voices from the boundary (illustrative)</h2>
+      <p class="cr-section-desc cr-muted-note">Composite anonymised feedback for storytelling — replace with signed testimonials as you onboard leagues.</p>
+      <div class="cr-grid-3">
+        <figure class="cr-quote cr-reveal">
+          <blockquote>“We stopped screenshotting Play-Cricket on match day — our TikTok audience finally trusts the numbers.”</blockquote>
+          <figcaption>Streaming lead · Southern league club</figcaption>
+        </figure>
+        <figure class="cr-quote cr-reveal">
+          <blockquote>“One login across men’s and women’s XI streams meant our students could operate overlays without IT.”</blockquote>
+          <figcaption>Media officer · University programme</figcaption>
+        </figure>
+        <figure class="cr-quote cr-reveal">
+          <blockquote>“Investors asked how we scale — pointing to AWS + relay architecture turned sceptics into believers.”</blockquote>
+          <figcaption>Founder · Streaming startup pilot</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="cr-section cr-section--infra">
+    <div class="cr-section-inner">
+      <h2 class="cr-section-head">AWS-native when you are ready</h2>
+      <p class="cr-section-desc">Start on a single EC2 + SQLite for velocity. Graduate to RDS Postgres, secrets manager, CloudFront, and multi-AZ when revenues justify it — no rewrite of club workflows.</p>
+      <ul class="cr-infra-list">
+        <li>Horizontal scaling path via containerising the relay worker</li>
+        <li>EU-West / London regions for data residency conversations</li>
+        <li>Observability hooks ready for CloudWatch &amp; alarms</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="cr-section" id="faq">
+    <div class="cr-section-inner">
+      <h2 class="cr-section-head">FAQ for committees &amp; investors</h2>
+      <div class="cr-faq">
+        <details class="cr-faq-item cr-reveal">
+          <summary>Do viewers need to install anything?</summary>
+          <p>No — overlays render as browser sources inside Prism, OBS, or mobile broadcast stacks.</p>
+        </details>
+        <details class="cr-faq-item cr-reveal">
+          <summary>Does CricRelay replace Play-Cricket scoring?</summary>
+          <p>No — clubs continue scoring in ECB tools. CricRelay relays that truth into overlays.</p>
+        </details>
+        <details class="cr-faq-item cr-reveal">
+          <summary>Can we monetise later?</summary>
+          <p>Yes — pricing tiers &amp; metering can snap onto your auth layer without changing operator UX.</p>
+        </details>
+        <details class="cr-faq-item cr-reveal">
+          <summary>What about GDPR / safeguarding?</summary>
+          <p>You control hosting geography &amp; retention — document your posture using our privacy outline.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="cr-cta-band">
+    <div class="cr-cta-inner cr-reveal">
+      <div>
+        <h2 class="cr-cta-title">Ship the overlay your league demo deserves</h2>
+        <p class="cr-cta-lead">Provision a club in minutes — prove traction before you wire up payments.</p>
+      </div>
+      <div class="cr-cta-actions">
+        {% if not logged_in %}
+        <a class="cr-btn cr-btn-primary" href="{{ url_for('register_page') }}">Start free</a>
+        <a class="cr-btn cr-btn-secondary" href="{{ url_for('compare_page') }}">Compare approaches</a>
+        {% else %}
+        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Go to dashboard</a>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+</main>
+{% endblock %}

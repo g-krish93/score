@@ -1,0 +1,69 @@
+{% extends "base_marketing.html" %}
+{% block title %}Pricing — CricRelay{% endblock %}
+{% block meta_description %}Simple pricing for UK cricket clubs: free tier to get streaming, paid tiers when you scale squads, streams, and support — CricRelay overlay relay for Play-Cricket.{% endblock %}
+
+{% block page_shell %}
+<main id="main-content" class="cr-page">
+  <section class="cr-page-hero cr-reveal">
+    <div class="cr-section-inner">
+      <p class="cr-eyebrow">Transparent pricing</p>
+      <h1 class="cr-page-title">Scale from village green to league finals</h1>
+      <p class="cr-lead cr-page-lead-wide">Every tier includes browser overlays, Play-Cricket relay sync, and dashboard control. Upgrade when your club outgrows the free footprint — no surprise limits on match day.</p>
+    </div>
+  </section>
+
+  <section class="cr-section">
+    <div class="cr-section-inner">
+      <div class="cr-pricing-grid">
+        <article class="cr-pricing-card">
+          <h2 class="cr-pricing-name">Community</h2>
+          <p class="cr-pricing-price"><span class="cr-pricing-currency">£</span>0</p>
+          <p class="cr-pricing-cycle">per month · forever</p>
+          <ul class="cr-pricing-list">
+            <li>Up to <strong>6 squads</strong> &amp; <strong>6 live streams</strong></li>
+            <li>Automatic Play-Cricket polling</li>
+            <li>Overlay layouts &amp; panels</li>
+            <li>Pause / remove streams anytime</li>
+          </ul>
+          <a class="cr-btn cr-btn-secondary cr-btn-block" href="{{ url_for('register_page') }}">Start free</a>
+        </article>
+
+        <article class="cr-pricing-card cr-pricing-card--featured cr-reveal">
+          <div class="cr-pricing-ribbon">Growth</div>
+          <h2 class="cr-pricing-name">Club Pro</h2>
+          <p class="cr-pricing-price"><span class="cr-pricing-currency">£</span>29</p>
+          <p class="cr-pricing-cycle">per month · indicative</p>
+          <ul class="cr-pricing-list">
+            <li>Everything in Community</li>
+            <li>Priority email support</li>
+            <li>Higher polling frequency options</li>
+            <li>Custom branding roadmap</li>
+          </ul>
+          <a class="cr-btn cr-btn-primary cr-btn-block" href="{{ url_for('register_page') }}">Join waitlist</a>
+          <p class="cr-pricing-note">Club Pro billing activates when enabled on your tenant — register on Community today.</p>
+        </article>
+
+        <article class="cr-pricing-card">
+          <h2 class="cr-pricing-name">League / County</h2>
+          <p class="cr-pricing-price cr-pricing-price--custom">Custom</p>
+          <p class="cr-pricing-cycle">multi-club rollouts</p>
+          <ul class="cr-pricing-list">
+            <li>Dedicated infrastructure review</li>
+            <li>SLA &amp; onboarding workshops</li>
+            <li>White-label exploration</li>
+            <li>Volume licensing</li>
+          </ul>
+          <a class="cr-btn cr-btn-secondary cr-btn-block" href="mailto:hello@cricrelay.app?subject=CricRelay%20enterprise">Contact sales</a>
+          <p class="cr-pricing-note">Replace placeholder email with yours in production.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="cr-section cr-section--tight">
+    <div class="cr-section-inner cr-legal-note">
+      <p>Figures shown are planning placeholders for investor &amp; club conversations — final billing hooks to your payment provider when you enable monetisation.</p>
+    </div>
+  </section>
+</main>
+{% endblock %}

@@ -1,51 +1,43 @@
-<!doctype html>
-<html lang="en-GB">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Register — CricRelay</title>
-  {% include 'partials/cricrelay_head.html' %}
-</head>
-<body class="cr-body cr-auth">
-  {% include 'partials/cricrelay_nav.html' %}
+{% extends "base_marketing.html" %}
+{% block title %}Register — CricRelay{% endblock %}
+{% block meta_description %}Create your CricRelay club account — up to six squads and six live stream overlays on one login, synced from ECB Play-Cricket.{% endblock %}
+{% block body_extra_class %}cr-auth{% endblock %}
 
-  <main class="cr-main cr-main-narrow">
-    <h1 style="margin:0 0 8px;font-size:1.75rem;letter-spacing:-.03em;">Create your club account</h1>
-    <p class="cr-muted" style="margin:0 0 22px;">One login covers every squad and stream at your club (up to six of each).</p>
+{% block page_shell %}
+<main id="main-content" class="cr-main cr-main-narrow">
+  <h1 style="margin:0 0 8px;font-size:1.75rem;letter-spacing:-.03em;">Create your club account</h1>
+  <p class="cr-muted" style="margin:0 0 22px;">One login covers every squad and stream at your club (up to six of each).</p>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for cat, m in messages %}<div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>{% endfor %}
-      {% endif %}
-    {% endwith %}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, m in messages %}<div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>{% endfor %}
+    {% endif %}
+  {% endwith %}
 
-    <div class="cr-card">
-      <form method="post" action="{{ url_for('register_page') }}">
-        <label class="cr-label" for="name">Club name</label>
-        <input class="cr-input" id="name" name="name" required autocomplete="organization" value="{{ request.form.name or '' }}">
+  <div class="cr-card">
+    <form method="post" action="{{ url_for('register_page') }}">
+      <label class="cr-label" for="name">Club name</label>
+      <input class="cr-input" id="name" name="name" required autocomplete="organization" value="{{ request.form.name or '' }}">
 
-        <label class="cr-label" for="email">Work email</label>
-        <input class="cr-input" id="email" name="email" type="email" required autocomplete="email" value="{{ request.form.email or '' }}">
+      <label class="cr-label" for="email">Work email</label>
+      <input class="cr-input" id="email" name="email" type="email" required autocomplete="email" value="{{ request.form.email or '' }}">
 
-        <label class="cr-label" for="password">Password</label>
-        <input class="cr-input" id="password" name="password" type="password" required minlength="8" autocomplete="new-password">
+      <label class="cr-label" for="password">Password</label>
+      <input class="cr-input" id="password" name="password" type="password" required minlength="8" autocomplete="new-password">
 
-        <label class="cr-label" for="password2">Confirm password</label>
-        <input class="cr-input" id="password2" name="password2" type="password" required minlength="8" autocomplete="new-password">
+      <label class="cr-label" for="password2">Confirm password</label>
+      <input class="cr-input" id="password2" name="password2" type="password" required minlength="8" autocomplete="new-password">
 
-        <label class="cr-label" for="play_cricket_base_url">Play-Cricket club URL</label>
-        <p class="cr-muted" style="margin:0 0 8px;font-size:.88rem;">Root site or results folder — no match id. Example: <code class="cr-code">https://yourclub.play-cricket.com</code> or <code class="cr-code">…/website/results</code></p>
-        <input class="cr-input" id="play_cricket_base_url" name="play_cricket_base_url" type="url" required placeholder="https://yourclub.play-cricket.com/website/results" value="{{ request.form.play_cricket_base_url or '' }}">
+      <label class="cr-label" for="play_cricket_base_url">Play-Cricket club URL</label>
+      <p class="cr-muted" style="margin:0 0 8px;font-size:.88rem;">Root site or results folder — no match id. Example: <code class="cr-code">https://yourclub.play-cricket.com</code> or <code class="cr-code">…/website/results</code></p>
+      <input class="cr-input" id="play_cricket_base_url" name="play_cricket_base_url" type="url" required placeholder="https://yourclub.play-cricket.com/website/results" value="{{ request.form.play_cricket_base_url or '' }}">
 
-        <button type="submit" class="cr-btn cr-btn-primary" style="width:100%;margin-top:20px;">Create account</button>
-      </form>
-    </div>
+      <button type="submit" class="cr-btn cr-btn-primary" style="width:100%;margin-top:20px;">Create account</button>
+    </form>
+  </div>
 
-    <p class="cr-muted" style="margin-top:18px;text-align:center;">
-      Already registered? <a href="{{ url_for('login_page') }}" style="color:var(--cr-accent);">Log in</a>
-    </p>
-  </main>
-
-  {% include 'partials/cricrelay_footer.html' %}
-</body>
-</html>
+  <p class="cr-muted" style="margin-top:18px;text-align:center;">
+    Already registered? <a href="{{ url_for('login_page') }}" style="color:var(--cr-accent);">Log in</a>
+  </p>
+</main>
+{% endblock %}

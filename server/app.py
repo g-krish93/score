@@ -10,7 +10,18 @@ from functools import wraps
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import (
+    Flask,
+    flash,
+    has_request_context,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    Response,
+    session,
+    url_for,
+)
 from flask_cors import CORS
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import inspect, text
@@ -45,6 +56,21 @@ if not _db_url:
 app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
+
+
+@app.context_processor
+def inject_seo_context():
+    year = datetime.now(timezone.utc).year
+    if not has_request_context():
+        return {"canonical_url": "", "current_year": year}
+    env_base = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    req_base = request.url_root.rstrip("/")
+    root = env_base or req_base
+    path = request.path or "/"
+    canonical_url = f"{root}{path}"
+    return {"canonical_url": canonical_url, "current_year": year}
+
+
 DEFAULT_MATCH_ID = "default"
 MAX_CLUB_SQUADS = 6
 MAX_LIVE_STREAMS_PER_CLUB = 6
@@ -483,7 +509,61 @@ def read_relay_overlay_prefs(slug):
 
 @app.get("/")
 def cricrelay_home():
-    return render_template("cricrelay_home.html", logged_in=bool(session.get("org_id")))
+    structured_data = {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "CricRelay",
+        "applicationCategory": "SportsApplication",
+        "operatingSystem": "Web",
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "GBP"},
+        "description": "Relay ECB Play-Cricket scores into live stream overlays for UK cricket clubs.",
+    }
+    return render_template(
+        "cricrelay_home.html",
+        logged_in=bool(session.get("org_id")),
+        structured_data=structured_data,
+    )
+
+
+@app.get("/pricing")
+def pricing_page():
+    return render_template("pricing.html")
+
+
+@app.get("/compare")
+def compare_page():
+    return render_template("compare.html")
+
+
+@app.get("/privacy")
+def privacy_page():
+    return render_template("privacy.html")
+
+
+@app.get("/terms")
+def terms_page():
+    return render_template("terms.html")
+
+
+@app.get("/robots.txt")
+def robots_txt():
+    root = request.url_root.rstrip("/")
+    body = f"User-agent: *\nAllow: /\nSitemap: {root}/sitemap.xml\n"
+    return Response(body, mimetype="text/plain")
+
+
+@app.get("/sitemap.xml")
+def sitemap_xml():
+    root = request.url_root.rstrip("/")
+    paths = ["/", "/pricing", "/compare", "/privacy", "/terms", "/register", "/login"]
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    for p in paths:
+        lines.append(f"<url><loc>{root}{p}</loc><changefreq>weekly</changefreq></url>")
+    lines.append("</urlset>")
+    return Response("\n".join(lines), mimetype="application/xml")
 
 
 @app.route("/register", methods=["GET", "POST"])

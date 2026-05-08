@@ -1,13 +1,39 @@
-<footer class="cr-footer">
-  <div class="cr-footer-links">
-    <a href="{{ url_for('cricrelay_home') }}">CricRelay</a>
-    <a href="{{ url_for('cricrelay_home') }}#features">Features</a>
-    <a href="{{ url_for('cricrelay_home') }}#how">How it works</a>
-    {% if session.get('org_id') %}
-    <a href="{{ url_for('dashboard_relays') }}">Dashboard</a>
-    {% else %}
-    <a href="{{ url_for('register_page') }}">Start free</a>
-    {% endif %}
+<footer class="cr-footer cr-footer--mega">
+  <div class="cr-footer-grid">
+    <div class="cr-footer-brand">
+      <div class="cr-footer-logo"><span class="cr-brand-mark" style="width:28px;height:28px;border-radius:8px;"></span><strong>CricRelay</strong></div>
+      <p class="cr-footer-tag">The overlay layer between ECB Play-Cricket and your viewers — built for UK recreational cricket clubs who stream professionally.</p>
+    </div>
+    <div>
+      <h3 class="cr-footer-heading">Product</h3>
+      <ul class="cr-footer-list">
+        <li><a href="{{ url_for('cricrelay_home') }}#features">Features</a></li>
+        <li><a href="{{ url_for('pricing_page') }}">Pricing</a></li>
+        <li><a href="{{ url_for('compare_page') }}">Compare</a></li>
+        <li><a href="{{ url_for('cricrelay_home') }}#faq">FAQ</a></li>
+        {% if session.get('org_id') %}
+        <li><a href="{{ url_for('dashboard_relays') }}">Dashboard</a></li>
+        {% endif %}
+      </ul>
+    </div>
+    <div>
+      <h3 class="cr-footer-heading">Company</h3>
+      <ul class="cr-footer-list">
+        <li><a href="{{ url_for('register_page') }}">Register club</a></li>
+        <li><a href="{{ url_for('login_page') }}">Log in</a></li>
+        <li><a href="{{ url_for('cricrelay_landing') }}">Operator console</a></li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="cr-footer-heading">Legal</h3>
+      <ul class="cr-footer-list">
+        <li><a href="{{ url_for('privacy_page') }}">Privacy</a></li>
+        <li><a href="{{ url_for('terms_page') }}">Terms</a></li>
+      </ul>
+    </div>
   </div>
-  <div>Play-Cricket is a registered trademark of the England and Wales Cricket Board. CricRelay is an independent overlay relay tool for clubs.</div>
+  <div class="cr-footer-bottom">
+    <span>© {{ now_year }} CricRelay. Play-Cricket is a registered trademark of the England and Wales Cricket Board.</span>
+    <span class="cr-footer-disclaimer">CricRelay is not affiliated with or endorsed by the ECB.</span>
+  </div>
 </footer>

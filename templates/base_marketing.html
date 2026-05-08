@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#070b14">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="index,follow">
+  <meta name="description" content="{% block meta_description %}Live ECB Play-Cricket scores in your stream overlay — built for UK clubs streaming on YouTube, TikTok Live, Facebook &amp; OBS. Register once, run multiple squads and streams.{% endblock %}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="CricRelay">
+  <meta property="og:title" content="{{ self.title()|trim }}">
+  <meta property="og:description" content="{{ self.meta_description()|trim }}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ self.title()|trim }}">
+  <meta name="twitter:description" content="{{ self.meta_description()|trim }}">
+  {% if canonical_url %}
+  <meta property="og:url" content="{{ canonical_url }}">
+  <link rel="canonical" href="{{ canonical_url }}">
+  {% endif %}
+  <title>{% block title %}CricRelay — The cricket stream overlay platform{% endblock %}</title>
+  <link rel="preload" href="{{ url_for('static', filename='cricrelay.css') }}" as="style">
+  {% include 'partials/cricrelay_head.html' %}
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="cr-body {% block body_extra_class %}{% endblock %}">
+  <a class="cr-skip" href="#main-content">Skip to content</a>
+  {% include 'partials/cricrelay_nav.html' %}
+  {% block page_shell %}{% endblock %}
+  {% include 'partials/cricrelay_footer.html' %}
+  <script src="{{ url_for('static', filename='cricrelay.js') }}" defer></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

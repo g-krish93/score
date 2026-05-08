@@ -1,0 +1,24 @@
+{% extends "base_marketing.html" %}
+{% block title %}Terms of use — CricRelay{% endblock %}
+{% block meta_description %}Terms of use summary for CricRelay overlay services — acceptable use, clubs&apos; responsibility for ECB data, and limitation of liability (draft).{% endblock %}
+
+{% block page_shell %}
+<main id="main-content" class="cr-page cr-legal">
+  <article class="cr-section-inner cr-legal-inner cr-reveal">
+    <h1 class="cr-page-title">Terms of use (summary)</h1>
+    <p class="cr-muted">Last updated {{ current_year }}. Draft for operator review — not legal advice.</p>
+
+    <h2>Service</h2>
+    <p>CricRelay provides software that relays publicly available Play-Cricket scorecard information into browser overlays for authorised club operators.</p>
+
+    <h2>Acceptable use</h2>
+    <p>Do not attempt to overload ECB infrastructure, circumvent rate limits, or use the product for non-cricket purposes. Comply with ECB Play-Cricket terms of use.</p>
+
+    <h2>Availability</h2>
+    <p>Community deployments are best-effort. Paid tiers may define SLAs separately.</p>
+
+    <h2>Liability</h2>
+    <p>To the maximum extent permitted by law, the service is provided “as is”. Clubs remain responsible for broadcast compliance and child-safety policies on their channels.</p>
+  </article>
+</main>
+{% endblock %}

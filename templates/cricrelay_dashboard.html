@@ -1,68 +1,59 @@
-<!doctype html>
-<html lang="en-GB">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Squads — {{ org.name }} — CricRelay</title>
-  {% include 'partials/cricrelay_head.html' %}
-</head>
-<body class="cr-body">
-  {% include 'partials/cricrelay_nav.html' %}
+{% extends "base_marketing.html" %}
+{% block title %}Squads — {{ org.name }} — CricRelay{% endblock %}
+{% block meta_description %}Manage cricket squads for {{ org.name }} on CricRelay — link ECB Play-Cricket and prepare live stream overlays.{% endblock %}
 
-  <main class="cr-main">
-    <div class="cr-dash-top">
-      <div>
-        <h1>Squads</h1>
-        <p class="cr-muted">Default Play-Cricket base for new streams: <code class="cr-code">{{ org.play_cricket_base_url }}</code></p>
-        <p class="cr-page-lead">Add each XI or section your club runs (e.g. 1st XI, Women’s T20). You can attach a squad when you create a stream so operators know which game it is.</p>
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <div class="cr-dash-top">
+    <div>
+      <h1>Squads</h1>
+      <p class="cr-muted">Default Play-Cricket base for new streams: <code class="cr-code">{{ org.play_cricket_base_url }}</code></p>
+      <p class="cr-page-lead">Add each XI or section your club runs (e.g. 1st XI, Women’s T20). Attach a squad when you create a stream so operators know which game it is.</p>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, m in messages %}<div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>{% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="cr-card">
+    <h2>Your teams ({{ squad_slots_used }} / {{ squad_slots_total }})</h2>
+    <p class="cr-muted" style="margin:0 0 14px;font-size:.92rem;">Same login for every squad — perfect when firsts, seconds, and juniors all stream from one club account.</p>
+    {% if teams %}
+    <div class="cr-table-wrap">
+      <table class="cr-table">
+        <thead><tr><th>Name</th></tr></thead>
+        <tbody>
+          {% for t in teams %}<tr><td>{{ t.name }}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="cr-muted">No squads yet. Add your first team below.</p>
+    {% endif %}
+
+    {% if squad_slots_used < squad_slots_total %}
+    <form method="post" action="{{ url_for('dashboard_add_team') }}" style="margin-top:18px;">
+      <label class="cr-label" for="team_name">Add squad</label>
+      <div class="cr-row2">
+        <input class="cr-input" id="team_name" name="name" placeholder="e.g. 1st XI" required>
+        <button type="submit" class="cr-btn cr-btn-primary" style="margin-top:14px;">Add squad</button>
       </div>
-    </div>
+    </form>
+    {% else %}
+    <p class="cr-muted" style="margin-top:14px;">Maximum squads reached for this account tier.</p>
+    {% endif %}
+  </div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for cat, m in messages %}<div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>{% endfor %}
-      {% endif %}
-    {% endwith %}
-
-    <div class="cr-card">
-      <h2>Your teams ({{ squad_slots_used }} / {{ squad_slots_total }})</h2>
-      <p class="cr-muted" style="margin:0 0 14px;font-size:.92rem;">Same login for every squad — perfect when firsts, seconds, and juniors all stream from one club account.</p>
-      {% if teams %}
-      <div class="cr-table-wrap">
-        <table class="cr-table">
-          <thead><tr><th>Squad name</th></tr></thead>
-          <tbody>
-            {% for t in teams %}<tr><td>{{ t.name }}</td></tr>{% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <p class="cr-muted">No squads yet. Add your first team below.</p>
-      {% endif %}
-
-      {% if squad_slots_used < squad_slots_total %}
-      <form method="post" action="{{ url_for('dashboard_add_team') }}" style="margin-top:18px;">
-        <label class="cr-label" for="team_name">Add squad</label>
-        <div class="cr-row2">
-          <input class="cr-input" id="team_name" name="name" placeholder="e.g. 1st XI" required>
-          <button type="submit" class="cr-btn cr-btn-primary" style="margin-top:14px;">Add squad</button>
-        </div>
-      </form>
-      {% else %}
-      <p class="cr-muted" style="margin-top:14px;">Maximum squads reached for this account tier.</p>
-      {% endif %}
-    </div>
-
-    <div class="cr-card cr-card-highlight">
-      <h2>Next: live streams</h2>
-      <p class="cr-muted" style="margin:0 0 14px;">Create a stream per fixture, pick what appears on the overlay, then paste the browser URL into Prism.</p>
-      {% if relay_count %}
-      <p class="cr-muted" style="margin:0 0 14px;">You have <strong>{{ relay_count }}</strong> active stream configuration(s).</p>
-      {% endif %}
-      <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Open live streams</a>
-    </div>
-  </main>
-
-  {% include 'partials/cricrelay_footer.html' %}
-</body>
-</html>
+  <div class="cr-card cr-card-highlight">
+    <h2>Next: live streams</h2>
+    <p class="cr-muted" style="margin:0 0 14px;">Create a stream per fixture, pick what appears on the overlay, then paste the browser URL into Prism.</p>
+    {% if relay_count %}
+    <p class="cr-muted" style="margin:0 0 14px;">You have <strong>{{ relay_count }}</strong> active stream configuration(s).</p>
+    {% endif %}
+    <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Open live streams</a>
+  </div>
+</main>
+{% endblock %}

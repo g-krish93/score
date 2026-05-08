@@ -1,40 +1,32 @@
-<!doctype html>
-<html lang="en-GB">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Log in — CricRelay</title>
-  {% include 'partials/cricrelay_head.html' %}
-</head>
-<body class="cr-body cr-auth">
-  {% include 'partials/cricrelay_nav.html' %}
+{% extends "base_marketing.html" %}
+{% block title %}Log in — CricRelay{% endblock %}
+{% block meta_description %}Log in to CricRelay to manage squads, live stream overlays, and Play-Cricket relay settings.{% endblock %}
+{% block body_extra_class %}cr-auth{% endblock %}
 
-  <main class="cr-main cr-main-narrow">
-    <h1 style="margin:0 0 18px;font-size:1.75rem;letter-spacing:-.03em;">Welcome back</h1>
+{% block page_shell %}
+<main id="main-content" class="cr-main cr-main-narrow">
+  <h1 style="margin:0 0 18px;font-size:1.75rem;letter-spacing:-.03em;">Welcome back</h1>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for cat, m in messages %}<div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>{% endfor %}
-      {% endif %}
-    {% endwith %}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, m in messages %}<div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>{% endfor %}
+    {% endif %}
+  {% endwith %}
 
-    <div class="cr-card">
-      <form method="post" action="{{ url_for('login_page') }}">
-        <label class="cr-label" for="email">Email</label>
-        <input class="cr-input" id="email" name="email" type="email" required autocomplete="username">
+  <div class="cr-card">
+    <form method="post" action="{{ url_for('login_page') }}">
+      <label class="cr-label" for="email">Email</label>
+      <input class="cr-input" id="email" name="email" type="email" required autocomplete="username">
 
-        <label class="cr-label" for="password">Password</label>
-        <input class="cr-input" id="password" name="password" type="password" required autocomplete="current-password">
+      <label class="cr-label" for="password">Password</label>
+      <input class="cr-input" id="password" name="password" type="password" required autocomplete="current-password">
 
-        <button type="submit" class="cr-btn cr-btn-primary" style="width:100%;margin-top:18px;">Log in</button>
-      </form>
-    </div>
+      <button type="submit" class="cr-btn cr-btn-primary" style="width:100%;margin-top:18px;">Log in</button>
+    </form>
+  </div>
 
-    <p class="cr-muted" style="margin-top:18px;text-align:center;">
-      New club? <a href="{{ url_for('register_page') }}" style="color:var(--cr-accent);">Register</a>
-    </p>
-  </main>
-
-  {% include 'partials/cricrelay_footer.html' %}
-</body>
-</html>
+  <p class="cr-muted" style="margin-top:18px;text-align:center;">
+    New club? <a href="{{ url_for('register_page') }}" style="color:var(--cr-accent);">Register</a>
+  </p>
+</main>
+{% endblock %}

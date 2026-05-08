@@ -4,18 +4,38 @@
       <span class="cr-brand-mark" aria-hidden="true"></span>
       <span class="cr-brand-text">CricRelay</span>
     </a>
-    <nav class="cr-nav" aria-label="Primary">
-      {% if session.get('org_id') %}
+
+    {% if session.get('org_id') %}
+    <nav class="cr-nav cr-nav--app" aria-label="Primary">
       <a href="{{ url_for('cricrelay_home') }}" class="cr-navlink {% if request.endpoint == 'cricrelay_home' %}is-active{% endif %}">Home</a>
       <a href="{{ url_for('dashboard') }}" class="cr-navlink {% if request.endpoint == 'dashboard' %}is-active{% endif %}">Squads</a>
       <a href="{{ url_for('dashboard_relays') }}" class="cr-navlink {% if request.endpoint == 'dashboard_relays' %}is-active{% endif %}">Live streams</a>
       <form action="{{ url_for('logout') }}" method="post" class="cr-nav-form"><button type="submit" class="cr-navlink cr-navlink-btn">Log out</button></form>
-      {% else %}
+    </nav>
+    {% else %}
+    <button type="button" class="cr-nav-toggle" data-cr-nav-toggle aria-expanded="false" aria-controls="cr-nav-drawer" aria-label="Open menu">
+      <span class="cr-nav-toggle-bar" aria-hidden="true"></span>
+      <span class="cr-nav-toggle-bar" aria-hidden="true"></span>
+      <span class="cr-nav-toggle-bar" aria-hidden="true"></span>
+    </button>
+    <nav class="cr-nav cr-nav--marketing" aria-label="Primary">
       <a href="{{ url_for('cricrelay_home') }}#features" class="cr-navlink">Features</a>
-      <a href="{{ url_for('cricrelay_home') }}#how" class="cr-navlink">How it works</a>
+      <a href="{{ url_for('pricing_page') }}" class="cr-navlink {% if request.endpoint == 'pricing_page' %}is-active{% endif %}">Pricing</a>
+      <a href="{{ url_for('compare_page') }}" class="cr-navlink {% if request.endpoint == 'compare_page' %}is-active{% endif %}">Compare</a>
+      <a href="{{ url_for('cricrelay_home') }}#faq" class="cr-navlink">FAQ</a>
       <a href="{{ url_for('login_page') }}" class="cr-navlink {% if request.endpoint == 'login_page' %}is-active{% endif %}">Log in</a>
       <a href="{{ url_for('register_page') }}" class="cr-btn cr-btn-primary cr-btn-header">Start free</a>
-      {% endif %}
     </nav>
+    <div id="cr-nav-drawer" class="cr-nav-drawer" role="dialog" aria-modal="true" aria-label="Menu" aria-hidden="true">
+      <div class="cr-nav-drawer-inner">
+        <a href="{{ url_for('cricrelay_home') }}#features">Features</a>
+        <a href="{{ url_for('pricing_page') }}">Pricing</a>
+        <a href="{{ url_for('compare_page') }}">Compare</a>
+        <a href="{{ url_for('cricrelay_home') }}#faq">FAQ</a>
+        <a href="{{ url_for('login_page') }}">Log in</a>
+        <a href="{{ url_for('register_page') }}" class="cr-btn cr-btn-primary cr-btn-block">Start free</a>
+      </div>
+    </div>
+    {% endif %}
   </div>
 </header>
