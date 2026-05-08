@@ -16,25 +16,25 @@
     body { margin: 0; padding: 0; background: transparent; font-family: "Segoe UI", Arial, sans-serif; }
     #overlay {
       position: fixed;
-      left: 8px;
-      right: 8px;
-      bottom: 8px;
-      background: linear-gradient(180deg, rgba(15, 28, 68, 0.96), var(--bg));
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: transparent;
       color: var(--fg);
-      border: 1px solid rgba(172, 199, 255, .42);
-      border-radius: 10px;
-      box-shadow: 0 14px 36px rgba(0,0,0,.5);
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
       padding: calc(8px * var(--overlay-scale)) calc(10px * var(--overlay-scale));
       font-size: calc(14px * var(--overlay-scale));
     }
     #overlay::before {
       content: "";
       position: absolute;
-      left: 0;
-      right: 0;
+      left: 8px;
+      right: 8px;
       top: 0;
       height: 3px;
-      border-radius: 10px 10px 0 0;
+      border-radius: 8px 8px 0 0;
       background: linear-gradient(90deg, var(--team1), #93c5fd 56%, var(--team2));
       opacity: .95;
     }
@@ -58,25 +58,31 @@
     .score-pop { animation: pop .32s ease-out; display: inline-block; }
     .score-strip {
       display: grid;
-      grid-template-columns: minmax(130px,1fr) auto minmax(150px,1fr);
-      align-items: center;
-      gap: 8px;
+      grid-template-columns: minmax(260px,1fr) auto minmax(230px,1fr);
+      align-items: stretch;
+      gap: 6px;
       margin-top: 5px;
+      background: linear-gradient(180deg, rgba(16,28,62,.96), rgba(8,16,38,.96));
+      border: 1px solid rgba(166, 194, 241, .32);
+      border-radius: 10px;
+      padding: 6px;
+      box-shadow: 0 10px 28px rgba(0,0,0,.45);
     }
     .team-box {
-      min-height: 52px;
+      min-height: 58px;
       border-radius: 8px;
       display: grid;
       align-content: center;
       gap: 2px;
-      padding: 6px 8px;
+      padding: 7px 10px;
       border: 1px solid rgba(175, 197, 236, .22);
-      background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.03));
+      background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.03));
     }
     .team-box.left { border-left: 4px solid var(--team1); }
     .team-box.right { border-right: 4px solid var(--team2); text-align: right; }
     .team-name { font-size: calc(12px * var(--overlay-scale)); font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
     .team-sub { font-size: calc(10px * var(--overlay-scale)); color: #b4c3de; }
+    .team-stat { font-size: calc(13px * var(--overlay-scale)); font-weight: 800; color: #ecf4ff; font-variant-numeric: tabular-nums; }
     .main-score {
       border-radius: 9px;
       border: 1px solid rgba(190, 215, 255, .5);
@@ -85,6 +91,7 @@
       padding: 6px 12px;
       min-width: 160px;
     }
+    .score-title { font-size: calc(11px * var(--overlay-scale)); color: #e5edff; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
     .score-big {
       font-size: calc(33px * var(--overlay-scale));
       line-height: .95;
@@ -100,6 +107,29 @@
       font-weight: 700;
       letter-spacing: .04em;
     }
+    .bowler-panel {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 8px;
+    }
+    .balls-row { display:flex; gap:4px; justify-content:flex-end; flex-wrap:wrap; }
+    .ball-chip {
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size: calc(10px * var(--overlay-scale));
+      font-weight: 900;
+      background: rgba(255,255,255,.16);
+      border: 1px solid rgba(201,219,248,.35);
+      color: #eaf2ff;
+    }
+    .ball-chip.w { background: rgba(239,68,68,.35); border-color: rgba(254,202,202,.55); }
+    .ball-chip.f { background: rgba(234,179,8,.3); border-color: rgba(254,240,138,.45); }
+    .ball-chip.s { background: rgba(249,115,22,.32); border-color: rgba(254,215,170,.45); }
     .statline {
       margin-top: 6px;
       display: flex;
@@ -153,6 +183,7 @@
       .score-strip { grid-template-columns: 1fr; }
       .team-box.right { text-align: left; border-right: 1px solid rgba(255,255,255,.14); border-left: 4px solid var(--team2); }
       .main-score { min-width: 0; }
+      .balls-row { justify-content:flex-start; }
     }
     @media (min-width: 1600px) {
       #overlay {
@@ -257,6 +288,14 @@
       const scoreKey = `${data.runs}-${data.wickets}`;
       const popClass = scoreKey !== lastScoreKey ? "score-pop" : "";
       lastScoreKey = scoreKey;
+      const strikerLine = `${text(data.striker)} ${text(data.striker_runs || "")}${data.striker_balls != null ? ` (${data.striker_balls})` : ""}`.trim();
+      const nonStrikerLine = `${text(data.non_striker)} ${text(data.non_striker_runs || "")}${data.non_striker_balls != null ? ` (${data.non_striker_balls})` : ""}`.trim();
+      const bowlerLine = `${text(data.current_bowler)} ${text(data.current_bowler_fig || "")}`.trim();
+      const overBalls = (data.current_over || []).slice(-6).map((v) => {
+        const low = String(v).toLowerCase();
+        const cls = low.includes("w") ? "w" : low === "4" ? "f" : low === "6" ? "s" : "";
+        return `<span class="ball-chip ${cls}">${text(v)}</span>`;
+      }).join("");
       const chasePill = data.innings === 2
         ? `<span class="pill">Need ${text(data.runs_needed)} off ${text(data.balls_remaining)}b</span><span class="pill">RRR ${text(data.rrr)}</span>`
         : `<span class="pill">CRR ${text(data.crr)}</span>`;
@@ -265,14 +304,20 @@
         `<div class="score-strip">` +
           `<div class="team-box left">` +
             `<div class="team-name team1">${text(data.batting_team)}</div>` +
-            `<div class="team-sub">Batting</div>` +
+            `<div class="team-stat">${strikerLine}</div>` +
+            `<div class="team-sub">${nonStrikerLine}</div>` +
           `</div>` +
           `<div class="main-score">` +
+            `<div class="score-title">${text(data.team1 || data.batting_team)} vs ${text(data.team2 || data.bowling_team)}</div>` +
             `<div class="score-big ${popClass}">${text(data.runs)}/${text(data.wickets)}</div>` +
-            `<div class="score-meta">${text(data.overs_display)} ov</div>` +
+            `<div class="score-meta">${text(data.overs_display)} ov${data.innings ? ` · INN ${text(data.innings)}` : ""}</div>` +
           `</div>` +
           `<div class="team-box right">` +
             `<div class="team-name team2">${text(data.bowling_team)}</div>` +
+            `<div class="bowler-panel">` +
+              `<div class="team-sub">${bowlerLine}</div>` +
+              `<div class="balls-row">${overBalls}</div>` +
+            `</div>` +
             `<div class="team-sub">${data.innings === 2 ? `Target ${text(data.target)}` : "Fielding"}</div>` +
           `</div>` +
         `</div>` +
