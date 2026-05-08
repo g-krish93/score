@@ -290,6 +290,20 @@
       return ok(i1) || ok(i2);
     }
 
+    function relayFixtureMeta(snap) {
+      const title = text(snap.fixture_title || "");
+      const date = text(snap.fixture_date || "");
+      const time = text(snap.fixture_start_time || "");
+      const ground = text(snap.fixture_ground || "");
+      const comp = text(snap.fixture_competition || "");
+      const rows = [];
+      if (title && title !== "—") rows.push(`<div class="row title">${title}</div>`);
+      if (date !== "—" || time !== "—") rows.push(`<div class="row muted">Start: ${date}${date !== "—" && time !== "—" ? " · " : " "}${time === "—" ? "" : time}</div>`);
+      if (ground !== "—") rows.push(`<div class="row muted">Ground: ${ground}</div>`);
+      if (comp !== "—") rows.push(`<div class="row muted">Competition: ${comp}</div>`);
+      return rows.join("");
+    }
+
     function renderRelayScore(data, resultRow) {
       const b = data.relay_bundle || {};
       const snap = b.snapshot || {};
@@ -298,8 +312,10 @@
         : "";
       if (!relayHasScores(snap)) {
         const slugHint = encodeURIComponent(MATCH_ID);
+        const fixtureRows = relayFixtureMeta(snap);
         const tip =
           `<div class="statline"><span class="pill">Play-Cricket</span><span class="pill">Awaiting data</span></div>` +
+          fixtureRows +
           errNote +
           `<div class="row muted" style="margin-top:10px;font-size:11px;line-height:1.45;">No score snapshot yet. With <strong>RELAY_AUTO_POLL=1</strong> (default), the server ingests automatically — wait one poll interval or check logs for <code>[relay_poller]</code>. Or POST once to ` +
           `<code style="font-size:10px;">/relay/ingest?match=${slugHint}</code>.</div>`;

@@ -39,6 +39,11 @@ class MatchSnapshot:
     source_url: str
     status: Optional[str]
     toss_note: Optional[str]
+    fixture_title: Optional[str]
+    fixture_date: Optional[str]
+    fixture_start_time: Optional[str]
+    fixture_ground: Optional[str]
+    fixture_competition: Optional[str]
     innings_1: Optional[InningsScore]
     innings_2: Optional[InningsScore]
 
@@ -276,6 +281,51 @@ def parse_match_snapshot(url: str, html: str) -> MatchSnapshot:
             status = " ".join(parts)
             break
     toss_note = next((line for line in raw_lines if "won the toss" in line.lower()), None)
+    fixture_title = next((line for line in raw_lines if " vs. " in line.lower() or " vs " in line.lower()), None)
+    if not fixture_title:
+        for i, line in enumerate(raw_lines):
+            if line.strip().lower() in {"vs", "vs."} and 0 < i < len(raw_lines) - 1:
+                left = raw_lines[i - 1].strip()
+                right = raw_lines[i + 1].strip()
+                if left and right and left.lower() not in {"fixture"} and right.lower() not in {"share"}:
+                    fixture_title = f"{left} vs {right}"
+                    break
+
+    # Parse detail rows commonly shown on Play-Cricket match_details pages.
+    known_labels = {
+        "date",
+        "start time",
+        "ground",
+        "match type",
+        "match rules",
+        "umpires",
+        "referee",
+        "scorers",
+        "meeting place",
+        "meeting time",
+    }
+
+    def value_after(label: str) -> Optional[str]:
+        low = label.lower()
+        for i, line in enumerate(raw_lines):
+            if line.strip().lower() == low:
+                for j in range(i + 1, min(i + 6, len(raw_lines))):
+                    val = raw_lines[j].strip()
+                    if not val:
+                        continue
+                    if val.lower() in known_labels:
+                        break
+                    return val or None
+                return None
+            if line.lower().startswith(low + ":"):
+                val = line.split(":", 1)[1].strip()
+                return val or None
+        return None
+
+    fixture_date = value_after("Date")
+    fixture_start_time = value_after("Start Time")
+    fixture_ground = value_after("Ground")
+    fixture_competition = value_after("Match Type")
 
     innings_found: list[InningsScore] = []
     seen_sig: set = set()
@@ -312,6 +362,11 @@ def parse_match_snapshot(url: str, html: str) -> MatchSnapshot:
         source_url=url,
         status=status,
         toss_note=toss_note,
+        fixture_title=fixture_title,
+        fixture_date=fixture_date,
+        fixture_start_time=fixture_start_time,
+        fixture_ground=fixture_ground,
+        fixture_competition=fixture_competition,
         innings_1=innings_1,
         innings_2=innings_2,
     )
