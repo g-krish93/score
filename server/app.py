@@ -12,6 +12,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from flask import (
     Flask,
+    abort,
     flash,
     has_request_context,
     jsonify,
@@ -138,6 +139,12 @@ def merge_missing_state_keys(loaded):
 def sanitize_match_id(raw):
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(raw or DEFAULT_MATCH_ID).strip().lower()).strip("-")
     return slug or DEFAULT_MATCH_ID
+
+
+def normalize_public_club_slug(raw):
+    """URL segment for /club/<slug> — must match stored Organization.slug charset."""
+    s = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(raw or "").strip().lower()).strip("-")
+    return (s or "")[:64]
 
 
 def state_path_for(match_id):
@@ -545,6 +552,37 @@ def terms_page():
     return render_template("terms.html")
 
 
+@app.get("/club/<slug>")
+def public_club_page(slug):
+    """Public, read-only club page for fans and sponsors — only that org’s data."""
+    safe = normalize_public_club_slug(slug)
+    if not safe:
+        abort(404)
+    if safe != slug:
+        return redirect(url_for("public_club_page", slug=safe), code=301)
+    org = Organization.query.filter_by(slug=safe).first()
+    if not org:
+        abort(404)
+    teams = ClubTeam.query.filter_by(organization_id=org.id).order_by(ClubTeam.name).all()
+    relays = RelayMatch.query.filter_by(organization_id=org.id).order_by(RelayMatch.created_at.desc()).all()
+    public_page_url = url_for("public_club_page", slug=org.slug, _external=True)
+    structured_data = {
+        "@context": "https://schema.org",
+        "@type": "SportsOrganization",
+        "name": org.name,
+        "url": public_page_url,
+        "sport": "Cricket",
+    }
+    return render_template(
+        "public_club.html",
+        org=org,
+        teams=teams,
+        relays=relays,
+        structured_data=structured_data,
+        public_page_url=public_page_url,
+    )
+
+
 @app.get("/robots.txt")
 def robots_txt():
     root = request.url_root.rstrip("/")
@@ -562,6 +600,9 @@ def sitemap_xml():
     ]
     for p in paths:
         lines.append(f"<url><loc>{root}{p}</loc><changefreq>weekly</changefreq></url>")
+    for org in Organization.query.all():
+        if org.slug:
+            lines.append(f"<url><loc>{root}/club/{org.slug}</loc><changefreq>daily</changefreq></url>")
     lines.append("</urlset>")
     return Response("\n".join(lines), mimetype="application/xml")
 

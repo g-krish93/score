@@ -1287,3 +1287,43 @@ body.cr-nav-open {
 .cr-footer-disclaimer {
   max-width: 42ch;
 }
+
+/* --- Public club page (/club/<slug>) --- */
+.cr-public-club .cr-public-hero {
+  padding: 8px 0 28px;
+}
+
+.cr-public-title {
+  margin: 0 0 12px;
+  font-size: clamp(1.85rem, 3.5vw, 2.35rem);
+  letter-spacing: -0.03em;
+}
+
+.cr-public-list {
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--cr-muted);
+}
+
+.cr-public-list li {
+  margin: 8px 0;
+}
+
+.cr-public-list--links {
+  list-style: none;
+  padding: 0;
+}
+
+.cr-public-list--links li {
+  margin: 10px 0;
+}
+
+.cr-public-list--links a {
+  color: var(--cr-accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.cr-public-list--links a:hover {
+  text-decoration: underline;
+}

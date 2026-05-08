@@ -12,6 +12,12 @@
     </div>
   </div>
 
+  <div class="cr-card" style="border-color:rgba(34,211,168,.28);">
+    <h2>Public page for supporters</h2>
+    <p class="cr-muted" style="margin:0 0 8px;">Share your club’s read-only page — only your streams &amp; squads appear there.</p>
+    <code class="cr-code">{{ url_for('public_club_page', slug=org.slug, _external=True) }}</code>
+  </div>
+
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       {% for cat, m in messages %}<div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>{% endfor %}

@@ -1,0 +1,77 @@
+{% extends "base_marketing.html" %}
+{% block title %}{{ org.name }} — Live streams | CricRelay{% endblock %}
+{% block meta_description %}Watch {{ org.name }} live score overlays powered by ECB Play-Cricket — stream links and squads on CricRelay.{% endblock %}
+
+{% block extra_head %}
+{% if structured_data %}
+<script type="application/ld+json">{{ structured_data | tojson }}</script>
+{% endif %}
+{% endblock %}
+
+{% block page_shell %}
+<main id="main-content" class="cr-main cr-public-club">
+  <section class="cr-public-hero">
+    <p class="cr-eyebrow">CricRelay club page</p>
+    <h1 class="cr-public-title">{{ org.name }}</h1>
+    <p class="cr-page-lead">Public page for supporters and sponsors — only this club’s streams are listed here. Overlay links update when your club runs a live relay.</p>
+  </section>
+
+  {% if teams %}
+  <div class="cr-card">
+    <h2>Squads</h2>
+    <ul class="cr-public-list">
+      {% for t in teams %}<li>{{ t.name }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <div class="cr-card cr-card-highlight">
+    <h2>Live stream overlays</h2>
+    <p class="cr-muted" style="margin:0 0 14px;">Paste these URLs into a browser source (OBS, Prism, Larix) to show scores on your broadcast. Each link is unique to this club’s fixture.</p>
+    {% if relays %}
+    <div class="cr-table-wrap">
+      <table class="cr-table">
+        <thead>
+          <tr>
+            <th>Stream</th>
+            <th>Fixture</th>
+            <th>Status</th>
+            <th>Overlay URL</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in relays %}
+          {% set stream_title = r.label if r.label else ('Match ' ~ r.play_cricket_match_id) %}
+          <tr>
+            <td><strong>{{ stream_title }}</strong></td>
+            <td><code class="cr-code">{{ r.play_cricket_match_id }}</code></td>
+            <td>{% if r.paused %}<span class="cr-badge cr-badge-paused">Paused</span>{% else %}<span class="cr-badge cr-badge-live">Live sync</span>{% endif %}</td>
+            <td><code class="cr-code">{{ request.url_root.rstrip('/') }}/m/{{ r.score_match_slug }}/stream</code></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="cr-muted" style="margin:14px 0 0;font-size:.85rem;">Operator tools and ingest URLs stay in your private dashboard — not shown here.</p>
+    {% else %}
+    <p class="cr-muted">No public streams configured yet. Club admins can add fixtures in their CricRelay dashboard.</p>
+    {% endif %}
+  </div>
+
+  <div class="cr-card">
+    <h2>Official fixtures</h2>
+    <p class="cr-muted" style="margin:0 0 12px;">Scores originate from ECB Play-Cricket. Each fixture links to the public scorecard page.</p>
+    {% if relays %}
+    <ul class="cr-public-list cr-public-list--links">
+      {% for r in relays %}
+      <li><a href="{{ r.full_scrape_url }}" rel="noopener noreferrer" target="_blank">{{ r.label or ('Fixture ' ~ r.play_cricket_match_id) }} — Play-Cricket</a></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="cr-muted">No fixtures linked yet.</p>
+    {% endif %}
+  </div>
+
+  <p class="cr-muted" style="text-align:center;margin-top:28px;font-size:.88rem;">Powered by <a href="{{ url_for('cricrelay_home') }}">CricRelay</a> · Not affiliated with the ECB.</p>
+</main>
+{% endblock %}

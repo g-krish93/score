@@ -12,6 +12,14 @@
     </div>
   </div>
 
+  <div class="cr-card" style="border-color:rgba(34,211,168,.28);">
+    <h2>Your public club page</h2>
+    <p class="cr-muted" style="margin:0 0 12px;">Share this link on your website, socials, or programme — supporters only see <strong>this club’s</strong> squads and stream URLs (no login required).</p>
+    <p style="margin:0;"><code class="cr-code" id="public-club-url">{{ url_for('public_club_page', slug=org.slug, _external=True) }}</code></p>
+    <button type="button" class="cr-btn cr-btn-secondary cr-btn-sm" style="margin-top:12px;" onclick="navigator.clipboard.writeText(document.getElementById('public-club-url').textContent);this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy link';},2000);">Copy link</button>
+    <a class="cr-btn cr-btn-ghost cr-btn-sm" style="margin-top:12px;margin-left:8px;" href="{{ url_for('public_club_page', slug=org.slug) }}" target="_blank" rel="noopener">Open page</a>
+  </div>
+
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       {% for cat, m in messages %}<div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>{% endfor %}

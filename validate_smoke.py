@@ -22,6 +22,9 @@ def main():
     assert_ok(c.get("/pricing"))
     assert_ok(c.get("/compare"))
     assert_ok(c.get("/sitemap.xml"))
+    r404 = c.get("/club/this-club-slug-does-not-exist-xyz")
+    if r404.status_code != 404:
+        raise AssertionError(f"Expected 404 for unknown club, got {r404.status_code}")
     assert_ok(c.get("/stream"))
     assert "scoring_locked" in score0
     assert_ok(c.get("/input"))
