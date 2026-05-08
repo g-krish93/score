@@ -60,6 +60,8 @@ Clubs can use **manual scoring** in the input UI, or follow a **Play-Cricket** p
 
 The `cricket` systemd unit runs Gunicorn as **root** and uses packages under `/usr/local/lib/python3.9/site-packages`. If you run `pip3 install` as **ec2-user** without `sudo`, new wheels install under `~/.local` and the app fails to import (Gunicorn exits with status **3**). Use **`sudo pip3 install -r requirements.txt`** after `git pull` (the included GitHub Action does this).
 
+On **Amazon Linux**, `python3-requests` may be installed by **RPM**. Plain `pip install requests==…` can fail with *Cannot uninstall requests … RECORD file not found*. Use **`sudo pip3 install --ignore-installed -r requirements.txt`** so pip installs our pinned wheels without removing the RPM package (Python picks up the newer copy under `/usr/local/…`).
+
 ## SSH cheat sheet
 
 - `sudo systemctl status cricket`
