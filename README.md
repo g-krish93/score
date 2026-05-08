@@ -16,10 +16,17 @@ Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000/stream` (or a scope
 
 ## Match day
 
-1. Open input UI on Phone 3 at `/input` (or scoped match page like `/m/bmacc-team1/input`).
-2. Pick **Ball by ball** (full squads and player controls) or **Over by over** (teams, toss, overs only), then complete that screen and start.
-3. Load overlay `/stream` (or scoped overlay `/m/<relay-slug>/stream`) in your stream Browser Source. Requests to `/m/<slug>` redirect to `/m/<slug>/stream`.
-4. Score ball-by-ball and switch overlay panels as needed.
+### Play-Cricket relay (CricRelay)
+
+1. Club logs in → **Live relays** → **create relay** with match id (overlay URL is ready).
+2. Server **polls Play-Cricket automatically** (default every 10s) — **Prism** uses **`/m/<slug>/stream`** only.
+3. Optional: manual scorer at **`/m/<slug>/input`** is blocked while relay mode is on.
+
+### Manual scoring only
+
+1. Open **`/input`** (or **`/m/<slug>/input`**).
+2. Ball by ball or over-by-over setup → score as usual.
+3. Overlay **`/stream`** or **`/m/<slug>/stream`** in Prism.
 
 ## Save/restore
 
@@ -32,12 +39,9 @@ Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000/stream` (or a scope
 Clubs can use **manual scoring** in the input UI, or follow a **Play-Cricket** page. The **Play-Cricket scraper is built into this app** (no separate GitHub project required).
 
 - **Product / registration:** `/` — marketing, register, login. **Club setup** at `/dashboard` (squads + default Play-Cricket base). **Live relays** at `/dashboard/relays` (match id → scrape URL, Prism overlay, ingest, overlay layout). If your saved base contains `…/website/results`, scrape URLs are `…/website/results/<id>`; otherwise `…/match_details?id=<id>`. Set `SECRET_KEY` in production; optional `DATABASE_URL` for Postgres (otherwise SQLite under `STATE_DIR`).
-- **Built-in relay worker** (same Gunicorn process), base path **`/relay-worker/`**:
-  - `GET /relay-worker/health` — worker up
-  - `GET /relay-worker/scrape?url=…` — one-off JSON snapshot
-  - `GET /relay-worker/live?url=…&interval=8&push_match=<slug>` — cached scrape; with `push_match` the payload is applied to that match’s relay (in-process). If `RELAY_INGEST_TOKEN` is set, send `Authorization: Bearer <token>` when using `push_match` (same as `POST /relay/ingest`).
-  - `POST /relay-worker/sync` — JSON `{"url":"…","push_match":"<slug>","interval":8}` — store snapshot under `STATE_DIR/relay_snapshots/` and optional push
-  - `GET /relay-worker/overlay?url=…` — simple HTML overlay that polls `/relay-worker/live`
+- **Automatic relay polling (product default):** With **`RELAY_AUTO_POLL=1`** (default), the server starts a background thread that **every `RELAY_POLL_INTERVAL_SEC` seconds** (default **10**) loads every **`RelayMatch`** row from the database, scrapes **`full_scrape_url`**, and applies ingest to **`score_match_slug`**. Clubs only **create the relay on Live relays** — no cron, no manual `/relay-worker/live` on match day. Use **Gunicorn `-w 1`** so only one poller runs (multiple workers would duplicate polls unless you add an external queue later).
+
+- **Built-in relay worker** (`/relay-worker/…`) remains available for debugging and one-off pushes.
 - **Per-match operator UI:** `/cricrelay` or `/m/<match_id>/cricrelay`.
 - **Scorer controls:** Input page → **CricRelay** card — Manual vs Play-Cricket; manual scoring is blocked while relay mode is active for that match slug.
 - **Ingest endpoint:** `POST /relay/ingest?match=<slug>` with JSON (`snapshot` + optional `stale`, etc.). Same payload shape as `/relay-worker/live` returns.
@@ -45,7 +49,7 @@ Clubs can use **manual scoring** in the input UI, or follow a **Play-Cricket** p
 - **CLI (optional):** `python -m server.scrape_cli "<url>"` from repo root.
 - **Prism overlay:** `/stream` or `/m/<slug>/stream`; `/score?match=…` polling unchanged.
 
-**If the overlay shows “Play-Cricket / Awaiting data”** with no runs: the stream relay is on, but **no JSON has been ingested** for that `match` slug yet. Call **`GET /relay-worker/live?url=<paste scrape URL from dashboard>&push_match=<slug>`** once, or set up a cron loop (~10s). The scraper reads HTML server-side; Play-Cricket often splits scores across lines—we normalize that, but you still must **push** into `/relay/ingest`.
+**If the overlay shows “Awaiting data” for several minutes:** check `journalctl -u cricket` for `[relay_poller]` errors, confirm **`RELAY_AUTO_POLL=1`**, and verify the scrape URL opens in a browser. Legacy manual **`/relay-worker/live?push_match=`** is optional for debugging.
 
 ## Multiple parallel matches
 

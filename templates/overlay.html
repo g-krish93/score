@@ -301,9 +301,7 @@
         const tip =
           `<div class="statline"><span class="pill">Play-Cricket</span><span class="pill">Awaiting data</span></div>` +
           errNote +
-          `<div class="row muted" style="margin-top:10px;font-size:11px;line-height:1.45;">No score snapshot yet for this stream. Either run ` +
-          `<code style="font-size:10px;">GET /relay-worker/live?url=&lt;scrape-url&gt;&amp;push_match=${slugHint}</code> ` +
-          `(same host; add Authorization if RELAY_INGEST_TOKEN is set), or POST JSON to ` +
+          `<div class="row muted" style="margin-top:10px;font-size:11px;line-height:1.45;">No score snapshot yet. With <strong>RELAY_AUTO_POLL=1</strong> (default), the server ingests automatically — wait one poll interval or check logs for <code>[relay_poller]</code>. Or POST once to ` +
           `<code style="font-size:10px;">/relay/ingest?match=${slugHint}</code>.</div>`;
         return resultRow + tip;
       }

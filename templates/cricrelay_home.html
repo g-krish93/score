@@ -58,7 +58,7 @@
       <ul>
         <li>Register your club once (Play-Cricket base URL + contact).</li>
         <li>Add squads under your profile.</li>
-        <li>For each stream, open <strong>Live relays</strong>, add the match id, then copy the Prism overlay link and scraper ingest URL.</li>
+        <li>Open <strong>Live relays</strong>, add the match id — the server keeps Play-Cricket in sync automatically (no cron).</li>
       </ul>
       {% if not logged_in %}
       <a class="cta" href="{{ url_for('register_page') }}">Register your club</a>

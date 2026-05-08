@@ -1,3 +1,7 @@
+import os
+
+os.environ["RELAY_AUTO_POLL"] = "0"
+
 from server.app import app
 
 

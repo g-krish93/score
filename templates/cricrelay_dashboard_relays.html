@@ -55,6 +55,15 @@
       {% endif %}
     {% endwith %}
 
+    <div class="card" style="border-color:rgba(34,197,94,.25);">
+      <h2>Match day — automatic updates</h2>
+      {% if relay_auto_poll %}
+      <p class="muted" style="margin:0;">Once you create a relay here, the server <strong>scrapes Play-Cricket about every {{ relay_poll_sec }} seconds</strong> and updates your stream overlay — no cron jobs or shell commands. Keep one app worker (<code>-w 1</code> on Gunicorn). Tune interval with <code>RELAY_POLL_INTERVAL_SEC</code> in <code>.env</code>.</p>
+      {% else %}
+      <p class="muted" style="margin:0;">Automatic polling is turned off (<code>RELAY_AUTO_POLL=0</code>). Turn it on in production so clubs don’t run scrapers by hand.</p>
+      {% endif %}
+    </div>
+
     <div class="card">
       <h2>New relay match</h2>
       <p class="muted" style="margin:0 0 12px;">Enter the numeric id from the fixture (same number as in your Play-Cricket URL). Your EC2 scraper should fetch the <strong>Scrape URL</strong> and POST JSON to the ingest URL.</p>

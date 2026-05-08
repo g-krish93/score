@@ -22,7 +22,7 @@ from .models_cricrelay import (
     db,
     slugify_org_name,
 )
-from .scraper_worker import register_relay_worker
+from .scraper_worker import get_live_snapshot, register_relay_worker
 
 load_dotenv()
 
@@ -547,12 +547,20 @@ def dashboard_relays():
     org = _org_from_session()
     teams = ClubTeam.query.filter_by(organization_id=org.id).order_by(ClubTeam.name).all()
     matches = RelayMatch.query.filter_by(organization_id=org.id).order_by(RelayMatch.created_at.desc()).all()
-    relay_rows = [{"match": m, "appearance": read_relay_overlay_prefs(m.score_match_slug)} for m in matches]
+    relay_poll_sec = max(5, int(os.getenv("RELAY_POLL_INTERVAL_SEC", "10")))
+    relay_auto_poll = (os.getenv("RELAY_AUTO_POLL", "1") or "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
     return render_template(
         "cricrelay_dashboard_relays.html",
         org=org,
         teams=teams,
         relay_rows=relay_rows,
+        relay_poll_sec=relay_poll_sec,
+        relay_auto_poll=relay_auto_poll,
     )
 
 
@@ -1338,7 +1346,10 @@ def health():
         )
 
 
+from .relay_poller import start_relay_poller
+
 register_relay_worker(app, apply_relay_ingest_payload)
+start_relay_poller(app, apply_relay_ingest_payload, get_live_snapshot)
 
 
 with app.app_context():
