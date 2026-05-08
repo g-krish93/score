@@ -223,6 +223,37 @@ def migrate_relay_match_columns():
         db.session.commit()
 
 
+def migrate_organization_brand_columns():
+    """Add Organization public branding columns for older databases."""
+    insp = inspect(db.engine)
+    if not insp.has_table("cricrelay_org"):
+        return
+    cols = {c["name"] for c in insp.get_columns("cricrelay_org")}
+    altered = False
+    if "public_logo_url" not in cols:
+        db.session.execute(text("ALTER TABLE cricrelay_org ADD COLUMN public_logo_url VARCHAR(1000)"))
+        altered = True
+    if "public_primary_color" not in cols:
+        db.session.execute(
+            text("ALTER TABLE cricrelay_org ADD COLUMN public_primary_color VARCHAR(7) DEFAULT '#22d3a8'")
+        )
+        altered = True
+    if "public_accent_color" not in cols:
+        db.session.execute(
+            text("ALTER TABLE cricrelay_org ADD COLUMN public_accent_color VARCHAR(7) DEFAULT '#38bdf8'")
+        )
+        altered = True
+    if altered:
+        db.session.commit()
+
+
+def _safe_hex_color(value: str, default: str) -> str:
+    raw = (value or "").strip()
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", raw):
+        return raw.lower()
+    return default
+
+
 @contextmanager
 def match_context(match_id=None):
     with state_lock:
@@ -666,6 +697,9 @@ def public_club_page(slug):
         relays=relays,
         structured_data=structured_data,
         public_page_url=public_page_url,
+        public_logo_url=(org.public_logo_url or "").strip(),
+        public_primary_color=_safe_hex_color(getattr(org, "public_primary_color", ""), "#22d3a8"),
+        public_accent_color=_safe_hex_color(getattr(org, "public_accent_color", ""), "#38bdf8"),
     )
 
 
@@ -875,6 +909,26 @@ def dashboard_add_team():
     except IntegrityError:
         db.session.rollback()
         flash("You already have a squad with that name.", "error")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/dashboard/club-brand")
+@login_required
+def dashboard_club_brand():
+    org = _org_from_session()
+    logo_url = (request.form.get("public_logo_url") or "").strip()
+    if logo_url and not re.match(r"^https?://", logo_url, flags=re.IGNORECASE):
+        flash("Logo URL must start with http:// or https://", "error")
+        return redirect(url_for("dashboard"))
+    org.public_logo_url = logo_url[:1000] or None
+    org.public_primary_color = _safe_hex_color(
+        request.form.get("public_primary_color", ""), "#22d3a8"
+    )
+    org.public_accent_color = _safe_hex_color(
+        request.form.get("public_accent_color", ""), "#38bdf8"
+    )
+    db.session.commit()
+    flash("Public page branding updated.", "success")
     return redirect(url_for("dashboard"))
 
 
@@ -1709,6 +1763,7 @@ start_relay_poller(app, apply_relay_ingest_payload, get_live_snapshot)
 with app.app_context():
     db.create_all()
     migrate_relay_match_columns()
+    migrate_organization_brand_columns()
 
 with state_lock:
     try:

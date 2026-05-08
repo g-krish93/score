@@ -47,6 +47,13 @@ html {
     var(--cr-bg);
 }
 
+.cr-body.cr-public-body {
+  background:
+    radial-gradient(900px 440px at 15% -15%, color-mix(in srgb, var(--club-accent, #38bdf8) 18%, transparent), transparent 55%),
+    radial-gradient(900px 500px at 85% -20%, color-mix(in srgb, var(--cr-accent) 16%, transparent), transparent 60%),
+    var(--cr-bg);
+}
+
 /* --- Header --- */
 .cr-header {
   position: sticky;
@@ -1291,6 +1298,17 @@ body.cr-nav-open {
 /* --- Public club page (/club/<slug>) --- */
 .cr-public-club .cr-public-hero {
   padding: 8px 0 28px;
+}
+
+.cr-public-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  border-radius: 14px;
+  border: 1px solid var(--cr-border);
+  background: rgba(15, 23, 41, 0.72);
+  padding: 6px;
+  margin: 0 0 14px;
 }
 
 .cr-public-title {

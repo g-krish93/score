@@ -25,9 +25,9 @@
 </head>
 <body class="cr-body {% block body_extra_class %}{% endblock %}">
   <a class="cr-skip" href="#main-content">Skip to content</a>
-  {% include 'partials/cricrelay_nav.html' %}
+  {% block site_nav %}{% include 'partials/cricrelay_nav.html' %}{% endblock %}
   {% block page_shell %}{% endblock %}
-  {% include 'partials/cricrelay_footer.html' %}
+  {% block site_footer %}{% include 'partials/cricrelay_footer.html' %}{% endblock %}
   <script src="{{ url_for('static', filename='cricrelay.js') }}" defer></script>
   {% block extra_scripts %}{% endblock %}
 </body>

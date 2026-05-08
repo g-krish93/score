@@ -1,17 +1,30 @@
 {% extends "base_marketing.html" %}
-{% block title %}{{ org.name }} — Live streams | CricRelay{% endblock %}
-{% block meta_description %}Watch {{ org.name }} live score overlays powered by ECB Play-Cricket — stream links and squads on CricRelay.{% endblock %}
+{% block title %}{{ org.name }} — Live streams{% endblock %}
+{% block meta_description %}Watch {{ org.name }} live score overlays powered by ECB Play-Cricket — stream links and squads for this club.{% endblock %}
+{% block site_nav %}{% endblock %}
+{% block site_footer %}{% endblock %}
+{% block body_extra_class %}cr-public-body{% endblock %}
 
 {% block extra_head %}
 {% if structured_data %}
 <script type="application/ld+json">{{ structured_data | tojson }}</script>
 {% endif %}
+<style>
+  :root {
+    --cr-accent: {{ public_primary_color }};
+    --cr-accent-glow: color-mix(in srgb, {{ public_primary_color }} 24%, transparent);
+    --club-accent: {{ public_accent_color }};
+  }
+</style>
 {% endblock %}
 
 {% block page_shell %}
 <main id="main-content" class="cr-main cr-public-club">
   <section class="cr-public-hero">
-    <p class="cr-eyebrow">CricRelay club page</p>
+    <p class="cr-eyebrow">Club page</p>
+    {% if public_logo_url %}
+    <img src="{{ public_logo_url }}" alt="{{ org.name }} logo" class="cr-public-logo" loading="lazy">
+    {% endif %}
     <h1 class="cr-public-title">{{ org.name }}</h1>
     <p class="cr-page-lead">This is {{ org.name }}’s live page. Only this club’s squads and stream links are shown here.</p>
   </section>
@@ -77,6 +90,6 @@
     {% endif %}
   </div>
 
-  <p class="cr-muted" style="text-align:center;margin-top:28px;font-size:.88rem;">Powered by <a href="{{ url_for('cricrelay_home') }}">CricRelay</a> · Not affiliated with the ECB.</p>
+  <p class="cr-muted" style="text-align:center;margin-top:28px;font-size:.88rem;">Not affiliated with the ECB.</p>
 </main>
 {% endblock %}
