@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 from flask import (
@@ -516,7 +517,7 @@ def _make_password_reset_token(org: Organization) -> str:
     return _password_reset_serializer().dumps(payload)
 
 
-def _read_password_reset_token(token: str) -> Organization | None:
+def _read_password_reset_token(token: str) -> Optional[Organization]:
     try:
         payload = _password_reset_serializer().loads(token, max_age=_password_reset_ttl_sec())
     except SignatureExpired:
