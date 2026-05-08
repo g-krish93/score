@@ -406,6 +406,60 @@
       );
     }
 
+    function renderRelayDetail(data, resultRow, panel) {
+      const b = data.relay_bundle || {};
+      const snap = b.snapshot || {};
+      if (!relayHasScores(snap)) return "";
+      const i1 = snap.innings_1 || {};
+      const i2 = snap.innings_2 || {};
+      const inningsRows = [
+        i1.score ? `<div class="row">${text(i1.team || "Innings 1")}: ${text(i1.score)}${i1.overs_display || i1.overs ? ` (${text(i1.overs_display || i1.overs)} ov)` : ""}</div>` : "",
+        i2.score ? `<div class="row">${text(i2.team || "Innings 2")}: ${text(i2.score)}${i2.overs_display || i2.overs ? ` (${text(i2.overs_display || i2.overs)} ov)` : ""}</div>` : "",
+      ].filter(Boolean).join("");
+      const statusRow = snap.status ? `<div class="row result">${text(snap.status)}</div>` : "";
+      const tossRow = snap.toss_note ? `<div class="row muted">${text(snap.toss_note)}</div>` : "";
+      const fixtureRows = relayFixtureMeta(snap);
+
+      if (panel === "chase") {
+        return (
+          renderRelayScore(data, resultRow) +
+          `<div class="row section-title">MATCH SITUATION</div>` +
+          inningsRows +
+          tossRow +
+          statusRow
+        );
+      }
+      if (panel === "batting") {
+        return (
+          renderRelayScore(data, resultRow) +
+          `<div class="row section-title">BATTING CARD</div>` +
+          `<div class="row muted">Detailed player card not available from external feed yet.</div>` +
+          inningsRows +
+          statusRow
+        );
+      }
+      if (panel === "bowling") {
+        return (
+          renderRelayScore(data, resultRow) +
+          `<div class="row section-title">BOWLING CARD</div>` +
+          `<div class="row muted">Detailed bowler figures not available from external feed yet.</div>` +
+          inningsRows +
+          statusRow
+        );
+      }
+      if (panel === "fullscore") {
+        return (
+          renderRelayScore(data, resultRow) +
+          `<div class="row section-title">FULL SCOREBOARD</div>` +
+          inningsRows +
+          tossRow +
+          fixtureRows +
+          statusRow
+        );
+      }
+      return "";
+    }
+
     function renderMainScoreBlock(data, resultRow) {
       const b = data.relay_bundle || {};
       if (b.enabled) return renderRelayScore(data, resultRow);
@@ -422,6 +476,11 @@
       const resultRow = (data.match_complete && data.match_result)
         ? `<div class="row result">${text(data.match_result)}</div>`
         : "";
+      const relayDetail = renderRelayDetail(data, resultRow, panel);
+      if (relayDetail) {
+        content.innerHTML = relayDetail;
+        return;
+      }
       if (panel === "batting") {
         const rows = (data.batting_squad || []).filter(p => p.status === "batting" || p.status === "out");
         if (!rows.length) { content.innerHTML = resultRow + '<div class="row section-title">BATTING</div><div class="row muted">— —</div>'; return; }
