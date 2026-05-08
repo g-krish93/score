@@ -354,12 +354,12 @@
     function renderRelayScore(data, resultRow) {
       const b = data.relay_bundle || {};
       const snap = b.snapshot || {};
+      const fixtureRows = relayFixtureMeta(snap);
       const errNote = b.last_error
         ? `<div class="row muted" style="margin-top:6px;color:#fca5a5;font-size:11px;">Last relay error: ${text(b.last_error)}</div>`
         : "";
       if (!relayHasScores(snap)) {
         const slugHint = encodeURIComponent(MATCH_ID);
-        const fixtureRows = relayFixtureMeta(snap);
         const tip =
           `<div class="statline"><span class="pill">Play-Cricket</span><span class="pill">Awaiting data</span></div>` +
           fixtureRows +
@@ -386,10 +386,13 @@
       const big = (s1 && s2) ? `${s1}  |  ${s2}` : (s1 || s2 || "—");
       const meta1 = (s1 && o1 && o1 !== "—") ? `${s1} (${o1} ov)` : (s1 ? "Innings 1" : "—");
       const meta2 = (s2 && o2 && o2 !== "—") ? `${s2} (${o2} ov)` : (s2 ? "Innings 2" : "—");
+      const looksPrematch = (!s1 && !s2) || ((snap.status || "").toLowerCase().includes("scheduled"));
+      const prematchRows = looksPrematch ? fixtureRows : "";
       const wait = "";
       return (
         resultRow +
         `<div class="statline">${stalePill}${statusPill}</div>` +
+        prematchRows +
         wait +
         `<div class="score-strip">` +
           `<div class="team-box left">` +
