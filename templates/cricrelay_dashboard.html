@@ -49,6 +49,20 @@
     {% endif %}
     <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Open live streams</a>
   </div>
+
+  <div class="cr-card">
+    <h2>Website theme</h2>
+    <p class="cr-muted" style="margin:0 0 12px;">Choose how dashboard pages look for your account.</p>
+    <form method="post" action="{{ url_for('dashboard_set_theme') }}">
+      <label class="cr-label" for="ui_theme">Theme</label>
+      <select class="cr-select" id="ui_theme" name="ui_theme">
+        <option value="original" {% if ui_theme == 'original' %}selected{% endif %}>Original</option>
+        <option value="light" {% if ui_theme == 'light' %}selected{% endif %}>Light</option>
+        <option value="dark" {% if ui_theme == 'dark' %}selected{% endif %}>Dark</option>
+      </select>
+      <button type="submit" class="cr-btn cr-btn-primary cr-btn-sm" style="margin-top:12px;">Save theme</button>
+    </form>
+  </div>
   <dialog id="add-squad-dialog" class="cr-dialog">
     <form method="post" action="{{ url_for('dashboard_add_team') }}">
       <h3 style="margin:0 0 10px;">Add squad</h3>

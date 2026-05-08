@@ -23,7 +23,7 @@
   {% include 'partials/cricrelay_head.html' %}
   {% block extra_head %}{% endblock %}
 </head>
-<body class="cr-body {% block body_extra_class %}{% endblock %}">
+<body class="cr-body cr-theme-{{ ui_theme|default('original') }} {% block body_extra_class %}{% endblock %}">
   <a class="cr-skip" href="#main-content">Skip to content</a>
   {% block site_nav %}{% include 'partials/cricrelay_nav.html' %}{% endblock %}
   {% block page_shell %}{% endblock %}

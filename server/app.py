@@ -75,7 +75,15 @@ def inject_seo_context():
     root = env_base or req_base
     path = request.path or "/"
     canonical_url = f"{root}{path}"
-    return {"canonical_url": canonical_url, "current_year": year}
+    ui_theme = "original"
+    oid = session.get("org_id")
+    if oid:
+        org = db.session.get(Organization, oid)
+        if org:
+            raw_theme = (getattr(org, "ui_theme", "original") or "original").strip().lower()
+            if raw_theme in {"original", "light", "dark"}:
+                ui_theme = raw_theme
+    return {"canonical_url": canonical_url, "current_year": year, "ui_theme": ui_theme}
 
 
 DEFAULT_MATCH_ID = "default"
@@ -98,6 +106,7 @@ def blank_state():
         "theme": "classic",
         "overlay_density": "expanded",
         "overlay_scale": 1.0,
+        "overlay_box_color": "#101f45",
         "toss_winner": "",
         "toss_decision": "bat",
         "innings": 1,
@@ -244,6 +253,9 @@ def migrate_organization_brand_columns():
         db.session.execute(
             text("ALTER TABLE cricrelay_org ADD COLUMN public_accent_color VARCHAR(7) DEFAULT '#38bdf8'")
         )
+        altered = True
+    if "ui_theme" not in cols:
+        db.session.execute(text("ALTER TABLE cricrelay_org ADD COLUMN ui_theme VARCHAR(16) DEFAULT 'original'"))
         altered = True
     if altered:
         db.session.commit()
@@ -637,7 +649,12 @@ def read_relay_overlay_prefs(slug):
     safe = sanitize_match_id(slug)
     path = state_path_for(safe)
     if not path.exists():
-        return {"active_panel": "score", "overlay_density": "expanded", "overlay_scale": 1.0}
+        return {
+            "active_panel": "score",
+            "overlay_density": "expanded",
+            "overlay_scale": 1.0,
+            "overlay_box_color": "#101f45",
+        }
     try:
         with path.open("r", encoding="utf-8") as fh:
             s = json.load(fh)
@@ -645,9 +662,15 @@ def read_relay_overlay_prefs(slug):
             "active_panel": s.get("active_panel") or "score",
             "overlay_density": s.get("overlay_density") or "expanded",
             "overlay_scale": float(s.get("overlay_scale") or 1.0),
+            "overlay_box_color": _safe_hex_color(s.get("overlay_box_color"), "#101f45"),
         }
     except Exception:
-        return {"active_panel": "score", "overlay_density": "expanded", "overlay_scale": 1.0}
+        return {
+            "active_panel": "score",
+            "overlay_density": "expanded",
+            "overlay_scale": 1.0,
+            "overlay_box_color": "#101f45",
+        }
 
 
 @app.get("/")
@@ -879,7 +902,21 @@ def dashboard():
         squad_slots_used=len(teams),
         squad_slots_total=MAX_CLUB_SQUADS,
         onboarding_done=onboarding_done,
+        ui_theme=(getattr(org, "ui_theme", "original") or "original"),
     )
+
+
+@app.post("/dashboard/theme")
+@login_required
+def dashboard_set_theme():
+    org = _org_from_session()
+    raw_theme = (request.form.get("ui_theme") or "original").strip().lower()
+    if raw_theme not in {"original", "light", "dark"}:
+        raw_theme = "original"
+    org.ui_theme = raw_theme
+    db.session.commit()
+    flash("Website theme updated.", "success")
+    return redirect(url_for("dashboard"))
 
 
 @app.get("/dashboard/home")
@@ -1065,11 +1102,13 @@ def dashboard_relay_appearance():
     except (TypeError, ValueError):
         scale = 1.0
     scale = max(0.8, min(1.8, scale))
+    overlay_box_color = _safe_hex_color(request.form.get("overlay_box_color"), "#101f45")
     with match_context(slug):
         merge_missing_state_keys(state)
         state["active_panel"] = panel
         state["overlay_density"] = density
         state["overlay_scale"] = round(scale, 2)
+        state["overlay_box_color"] = overlay_box_color
         save_state()
     flash("Overlay layout updated for that stream.", "success")
     return redirect(url_for("dashboard_relays"))

@@ -1,7 +1,7 @@
 <header class="cr-header">
   <div class="cr-header-inner">
     <a href="{% if session.get('org_id') %}{{ url_for('dashboard_home') }}{% else %}{{ url_for('cricrelay_home') }}{% endif %}" class="cr-brand" aria-label="CricRelay home">
-      <span class="cr-brand-mark" aria-hidden="true"></span>
+      <img class="cr-brand-logo" src="{{ url_for('static', filename='cricrelay-icon.svg') }}" alt="" aria-hidden="true">
       <span class="cr-brand-text">CricRelay</span>
     </a>
 

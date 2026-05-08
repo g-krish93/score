@@ -95,6 +95,45 @@ html {
   box-shadow: 0 0 24px var(--cr-accent-glow);
 }
 
+.cr-brand-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: inline-block;
+}
+
+.cr-theme-light {
+  --cr-bg: #f3f7ff;
+  --cr-bg-elevated: #ffffff;
+  --cr-card: #ffffff;
+  --cr-card-hover: #f8fbff;
+  --cr-border: rgba(15, 23, 42, 0.12);
+  --cr-border-strong: rgba(34, 211, 168, 0.4);
+  --cr-text: #0f172a;
+  --cr-muted: #475569;
+}
+
+.cr-theme-light .cr-header {
+  background: rgba(243, 247, 255, 0.9);
+}
+
+.cr-theme-light .cr-input,
+.cr-theme-light .cr-select,
+.cr-theme-light .cr-code {
+  background: #ffffff;
+  color: var(--cr-text);
+}
+
+.cr-theme-dark {
+  --cr-bg: #05070f;
+  --cr-bg-elevated: #0a1020;
+  --cr-card: #0b1327;
+  --cr-card-hover: #111d38;
+  --cr-border: rgba(148, 163, 184, 0.18);
+  --cr-text: #f8fbff;
+  --cr-muted: #9eb1cd;
+}
+
 .cr-nav {
   display: flex;
   align-items: center;

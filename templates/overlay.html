@@ -12,6 +12,7 @@
       --fg: #f8fbff;
       --muted: #95a7c7;
       --overlay-scale: 1;
+      --overlay-box-color: #101f45;
     }
     body { margin: 0; padding: 0; background: transparent; font-family: "Segoe UI", Arial, sans-serif; }
     #overlay {
@@ -62,7 +63,7 @@
       align-items: stretch;
       gap: 6px;
       margin-top: 5px;
-      background: linear-gradient(180deg, rgba(16,28,62,.96), rgba(8,16,38,.96));
+      background: var(--overlay-box-color);
       border: 1px solid rgba(166, 194, 241, .32);
       border-radius: 10px;
       padding: 6px;
@@ -248,6 +249,7 @@
       document.documentElement.style.setProperty("--team1", data.team1_color || "#2dd4bf");
       document.documentElement.style.setProperty("--team2", data.team2_color || "#f59e0b");
       document.documentElement.style.setProperty("--overlay-scale", String(data.overlay_scale || 1));
+      document.documentElement.style.setProperty("--overlay-box-color", data.overlay_box_color || "#101f45");
     }
     function renderMomentum(data) {
       const holder = document.getElementById("momentum");
