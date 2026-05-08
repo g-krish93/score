@@ -447,7 +447,14 @@
       } catch (e) {
         failCount += 1;
         if (failCount >= 3) document.getElementById("stale").style.display = "block";
-        if (lastData) renderOverlay(lastData);
+        if (lastData) {
+          renderOverlay(lastData);
+        } else if (failCount >= 2) {
+          document.getElementById("content").innerHTML =
+            '<div class="row muted">Cannot reach <code>/score</code> on this host (network, firewall, or server error). Open <code>' +
+            withMatch("/score") +
+            "</code> in a browser to verify.</div>";
+        }
       }
     }
 
