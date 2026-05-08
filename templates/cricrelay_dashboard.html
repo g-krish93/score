@@ -1,87 +1,68 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-GB">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Club setup — {{ org.name }}</title>
-  <style>
-    :root { --bg:#0b1020; --card:#121a2e; --border:rgba(255,255,255,.1); --text:#f1f5f9; --muted:#94a3b8; --link:#7dd3fc; --ok:rgba(34,197,94,.15); }
-    * { box-sizing: border-box; }
-    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font-family:"Segoe UI",system-ui,sans-serif; line-height:1.5; padding:20px 16px 48px; }
-    .top { max-width:800px; margin:0 auto 20px; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; }
-    h1 { font-size:1.25rem; margin:0; }
-    .muted { color:var(--muted); font-size:14px; margin:4px 0 0; }
-    nav a, nav button { color:var(--link); font-size:14px; margin-right:14px; }
-    nav button { background:none; border:none; cursor:pointer; font:inherit; padding:0; text-decoration:underline; }
-    main { max-width:800px; margin:0 auto; }
-    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:18px; }
-    .card h2 { margin:0 0 12px; font-size:1.05rem; }
-    label { display:block; font-size:12px; font-weight:600; color:var(--muted); margin:10px 0 4px; }
-    input { width:100%; max-width:100%; min-height:44px; border-radius:10px; border:1px solid var(--border); background:#1a2339; color:var(--text); font-size:15px; padding:0 10px; }
-    button.primary { margin-top:12px; padding:10px 16px; border-radius:10px; border:1px solid rgba(34,197,94,.35); background:linear-gradient(180deg,#2ea043,#166534); color:#fff; font-weight:700; cursor:pointer; font-size:15px; }
-    .row { display:grid; gap:10px; }
-    @media (min-width:640px) {
-      .row.cols-2 { grid-template-columns:1fr 1fr; }
-    }
-    table { width:100%; border-collapse:collapse; font-size:14px; margin-top:8px; }
-    th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--border); }
-    th { color:var(--muted); font-weight:600; font-size:12px; }
-    .flash { background:var(--ok); border:1px solid rgba(34,197,94,.35); color:#bbf7d0; padding:10px 12px; border-radius:10px; margin-bottom:16px; font-size:14px; }
-    .flash.error { background:rgba(248,113,113,.12); border-color:rgba(248,113,113,.35); color:#fecaca; }
-    a.cta { display:inline-block; margin-top:12px; padding:12px 18px; border-radius:10px; background:linear-gradient(180deg,#2ea043,#166534); color:#fff; font-weight:700; text-decoration:none; border:1px solid rgba(34,197,94,.35); }
-    code { word-break:break-all; font-size:13px; background:#1a2339; padding:2px 8px; border-radius:6px; }
-  </style>
+  <title>Squads — {{ org.name }} — CricRelay</title>
+  {% include 'partials/cricrelay_head.html' %}
 </head>
-<body>
-  <div class="top">
-    <div>
-      <h1>{{ org.name }}</h1>
-      <p class="muted">Default Play-Cricket base: <code>{{ org.play_cricket_base_url }}</code></p>
-      <p class="muted" style="margin-top:8px;">This page is only for <strong>club details and squads</strong>. Live streaming links are on the next step.</p>
+<body class="cr-body">
+  {% include 'partials/cricrelay_nav.html' %}
+
+  <main class="cr-main">
+    <div class="cr-dash-top">
+      <div>
+        <h1>Squads</h1>
+        <p class="cr-muted">Default Play-Cricket base for new streams: <code class="cr-code">{{ org.play_cricket_base_url }}</code></p>
+        <p class="cr-page-lead">Add each XI or section your club runs (e.g. 1st XI, Women’s T20). You can attach a squad when you create a stream so operators know which game it is.</p>
+      </div>
     </div>
-    <nav>
-      <a href="{{ url_for('cricrelay_home') }}">Home</a>
-      <a href="{{ url_for('dashboard_relays') }}">Live relays</a>
-      <form action="{{ url_for('logout') }}" method="post" style="display:inline;"><button type="submit">Log out</button></form>
-    </nav>
-  </div>
-  <main>
+
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-        {% for cat, m in messages %}<div class="flash{% if cat == 'error' %} error{% endif %}">{{ m }}</div>{% endfor %}
+        {% for cat, m in messages %}<div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>{% endfor %}
       {% endif %}
     {% endwith %}
 
-    <div class="card">
-      <h2>Squads</h2>
-      <p class="muted" style="margin:0 0 12px;">Examples: 1st XI, 2nd XI, Sunday XI, T20. You can attach a squad when you create a relay.</p>
+    <div class="cr-card">
+      <h2>Your teams ({{ squad_slots_used }} / {{ squad_slots_total }})</h2>
+      <p class="cr-muted" style="margin:0 0 14px;font-size:.92rem;">Same login for every squad — perfect when firsts, seconds, and juniors all stream from one club account.</p>
       {% if teams %}
-      <table>
-        <thead><tr><th>Name</th></tr></thead>
-        <tbody>
-          {% for t in teams %}<tr><td>{{ t.name }}</td></tr>{% endfor %}
-        </tbody>
-      </table>
+      <div class="cr-table-wrap">
+        <table class="cr-table">
+          <thead><tr><th>Squad name</th></tr></thead>
+          <tbody>
+            {% for t in teams %}<tr><td>{{ t.name }}</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
       {% else %}
-      <p class="muted">No squads yet.</p>
+      <p class="cr-muted">No squads yet. Add your first team below.</p>
       {% endif %}
-      <form method="post" action="{{ url_for('dashboard_add_team') }}" style="margin-top:14px;">
-        <label for="team_name">Add squad</label>
-        <div class="row cols-2" style="align-items:end;">
-          <input id="team_name" name="name" placeholder="e.g. 1st XI" required>
-          <button type="submit" class="primary" style="margin-top:0;">Add</button>
+
+      {% if squad_slots_used < squad_slots_total %}
+      <form method="post" action="{{ url_for('dashboard_add_team') }}" style="margin-top:18px;">
+        <label class="cr-label" for="team_name">Add squad</label>
+        <div class="cr-row2">
+          <input class="cr-input" id="team_name" name="name" placeholder="e.g. 1st XI" required>
+          <button type="submit" class="cr-btn cr-btn-primary" style="margin-top:14px;">Add squad</button>
         </div>
       </form>
+      {% else %}
+      <p class="cr-muted" style="margin-top:14px;">Maximum squads reached for this account tier.</p>
+      {% endif %}
     </div>
 
-    <div class="card">
-      <h2>Streaming &amp; scraper</h2>
-      <p class="muted" style="margin:0 0 8px;">When you are ready, open <strong>Live relays</strong> to enter a match id, get your Prism overlay URL, ingest URL for the worker, and overlay layout (score / full board / text size).</p>
+    <div class="cr-card cr-card-highlight">
+      <h2>Next: live streams</h2>
+      <p class="cr-muted" style="margin:0 0 14px;">Create a stream per fixture, pick what appears on the overlay, then paste the browser URL into Prism.</p>
       {% if relay_count %}
-      <p class="muted" style="margin:0;">You already have <strong>{{ relay_count }}</strong> relay match(es) configured.</p>
+      <p class="cr-muted" style="margin:0 0 14px;">You have <strong>{{ relay_count }}</strong> active stream configuration(s).</p>
       {% endif %}
-      <a class="cta" href="{{ url_for('dashboard_relays') }}">Go to live relays</a>
+      <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Open live streams</a>
     </div>
   </main>
+
+  {% include 'partials/cricrelay_footer.html' %}
 </body>
 </html>

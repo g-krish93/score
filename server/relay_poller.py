@@ -37,6 +37,8 @@ def _poller_loop(
             with app.app_context():
                 rows = RelayMatch.query.order_by(RelayMatch.created_at).all()
                 for rm in rows:
+                    if getattr(rm, "paused", False):
+                        continue
                     url = (rm.full_scrape_url or "").strip()
                     slug = (rm.score_match_slug or "").strip()
                     if not url or not slug:

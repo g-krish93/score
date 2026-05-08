@@ -1,0 +1,21 @@
+<header class="cr-header">
+  <div class="cr-header-inner">
+    <a href="{{ url_for('cricrelay_home') }}" class="cr-brand" aria-label="CricRelay home">
+      <span class="cr-brand-mark" aria-hidden="true"></span>
+      <span class="cr-brand-text">CricRelay</span>
+    </a>
+    <nav class="cr-nav" aria-label="Primary">
+      {% if session.get('org_id') %}
+      <a href="{{ url_for('cricrelay_home') }}" class="cr-navlink {% if request.endpoint == 'cricrelay_home' %}is-active{% endif %}">Home</a>
+      <a href="{{ url_for('dashboard') }}" class="cr-navlink {% if request.endpoint == 'dashboard' %}is-active{% endif %}">Squads</a>
+      <a href="{{ url_for('dashboard_relays') }}" class="cr-navlink {% if request.endpoint == 'dashboard_relays' %}is-active{% endif %}">Live streams</a>
+      <form action="{{ url_for('logout') }}" method="post" class="cr-nav-form"><button type="submit" class="cr-navlink cr-navlink-btn">Log out</button></form>
+      {% else %}
+      <a href="{{ url_for('cricrelay_home') }}#features" class="cr-navlink">Features</a>
+      <a href="{{ url_for('cricrelay_home') }}#how" class="cr-navlink">How it works</a>
+      <a href="{{ url_for('login_page') }}" class="cr-navlink {% if request.endpoint == 'login_page' %}is-active{% endif %}">Log in</a>
+      <a href="{{ url_for('register_page') }}" class="cr-btn cr-btn-primary cr-btn-header">Start free</a>
+      {% endif %}
+    </nav>
+  </div>
+</header>

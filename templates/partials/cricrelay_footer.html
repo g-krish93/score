@@ -1,0 +1,13 @@
+<footer class="cr-footer">
+  <div class="cr-footer-links">
+    <a href="{{ url_for('cricrelay_home') }}">CricRelay</a>
+    <a href="{{ url_for('cricrelay_home') }}#features">Features</a>
+    <a href="{{ url_for('cricrelay_home') }}#how">How it works</a>
+    {% if session.get('org_id') %}
+    <a href="{{ url_for('dashboard_relays') }}">Dashboard</a>
+    {% else %}
+    <a href="{{ url_for('register_page') }}">Start free</a>
+    {% endif %}
+  </div>
+  <div>Play-Cricket is a registered trademark of the England and Wales Cricket Board. CricRelay is an independent overlay relay tool for clubs.</div>
+</footer>

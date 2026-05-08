@@ -104,6 +104,8 @@ class RelayMatch(db.Model):
     play_cricket_match_id = db.Column(db.String(32), nullable=False)
     full_scrape_url = db.Column(db.String(800), nullable=False)
     score_match_slug = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    label = db.Column(db.String(120), nullable=True)
+    paused = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (

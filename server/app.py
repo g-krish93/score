@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_cors import CORS
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import inspect, text
 
 from .models_cricrelay import (
     ClubTeam,
@@ -45,6 +46,8 @@ app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 DEFAULT_MATCH_ID = "default"
+MAX_CLUB_SQUADS = 6
+MAX_LIVE_STREAMS_PER_CLUB = 6
 state_lock = threading.Lock()
 last_action = None
 action_history = []
@@ -160,6 +163,27 @@ def persist_active_context():
     ctx["last_action"] = last_action
     ctx["action_history"] = action_history
     ctx["redo_history"] = redo_history
+
+
+def migrate_relay_match_columns():
+    """Add RelayMatch.label / .paused for databases created before those columns existed."""
+    insp = inspect(db.engine)
+    if not insp.has_table("cricrelay_match"):
+        return
+    cols = {c["name"] for c in insp.get_columns("cricrelay_match")}
+    dialect = db.engine.dialect.name
+    altered = False
+    if "label" not in cols:
+        db.session.execute(text("ALTER TABLE cricrelay_match ADD COLUMN label VARCHAR(120)"))
+        altered = True
+    if "paused" not in cols:
+        if dialect == "sqlite":
+            db.session.execute(text("ALTER TABLE cricrelay_match ADD COLUMN paused BOOLEAN DEFAULT 0"))
+        else:
+            db.session.execute(text("ALTER TABLE cricrelay_match ADD COLUMN paused BOOLEAN DEFAULT FALSE"))
+        altered = True
+    if altered:
+        db.session.commit()
 
 
 @contextmanager
@@ -539,6 +563,8 @@ def dashboard():
         org=org,
         teams=teams,
         relay_count=relay_count,
+        squad_slots_used=len(teams),
+        squad_slots_total=MAX_CLUB_SQUADS,
     )
 
 
@@ -550,10 +576,12 @@ def dashboard_relays():
     matches = RelayMatch.query.filter_by(organization_id=org.id).order_by(
         RelayMatch.created_at.desc()
     ).all()
+    team_names = {t.id: t.name for t in teams}
     relay_rows = [
         {
             "match": m,
             "appearance": read_relay_overlay_prefs(m.score_match_slug),
+            "squad_name": team_names.get(m.club_team_id),
         }
         for m in matches
     ]
@@ -564,6 +592,7 @@ def dashboard_relays():
         "no",
         "off",
     }
+    stream_slots_used = len(matches)
     return render_template(
         "cricrelay_dashboard_relays.html",
         org=org,
@@ -571,6 +600,8 @@ def dashboard_relays():
         relay_rows=relay_rows,
         relay_poll_sec=relay_poll_sec,
         relay_auto_poll=relay_auto_poll,
+        stream_slots_used=stream_slots_used,
+        stream_slots_total=MAX_LIVE_STREAMS_PER_CLUB,
     )
 
 
@@ -578,6 +609,10 @@ def dashboard_relays():
 @login_required
 def dashboard_add_team():
     org = _org_from_session()
+    n_teams = ClubTeam.query.filter_by(organization_id=org.id).count()
+    if n_teams >= MAX_CLUB_SQUADS:
+        flash(f"You can add up to {MAX_CLUB_SQUADS} squads per club on one login.", "error")
+        return redirect(url_for("dashboard"))
     team_name = (request.form.get("name") or "").strip()
     if not team_name:
         flash("Squad name is required.", "error")
@@ -596,6 +631,13 @@ def dashboard_add_team():
 @login_required
 def dashboard_add_match():
     org = _org_from_session()
+    n_relays = RelayMatch.query.filter_by(organization_id=org.id).count()
+    if n_relays >= MAX_LIVE_STREAMS_PER_CLUB:
+        flash(
+            f"You can run up to {MAX_LIVE_STREAMS_PER_CLUB} live streams per club. Pause or remove one to add another.",
+            "error",
+        )
+        return redirect(url_for("dashboard_relays"))
     mid = (request.form.get("play_cricket_match_id") or "").strip()
     if not mid or not re.fullmatch(r"\d+", mid):
         flash(
@@ -625,12 +667,15 @@ def dashboard_add_match():
         if not taken:
             break
         score_slug = sanitize_match_id(f"{org.slug}-{mid}-{secrets.token_hex(3)}")
+    stream_label = (request.form.get("stream_label") or "").strip()[:120]
     row = RelayMatch(
         organization_id=org.id,
         club_team_id=club_team_id,
         play_cricket_match_id=mid,
         full_scrape_url=full_url,
         score_match_slug=score_slug,
+        label=(stream_label or None),
+        paused=False,
     )
     db.session.add(row)
     try:
@@ -640,7 +685,7 @@ def dashboard_add_match():
         flash("Could not create that relay (duplicate or conflict).", "error")
         return redirect(url_for("dashboard_relays"))
     apply_relay_to_score_match(score_slug, full_url)
-    flash("Relay match created — use the Prism overlay URL below.", "success")
+    flash("Stream ready — copy your overlay URL into Prism.", "success")
     return redirect(url_for("dashboard_relays"))
 
 
@@ -674,6 +719,51 @@ def dashboard_relay_appearance():
         state["overlay_scale"] = round(scale, 2)
         save_state()
     flash("Overlay layout updated for that stream.", "success")
+    return redirect(url_for("dashboard_relays"))
+
+
+@app.post("/dashboard/relay/toggle-pause")
+@login_required
+def dashboard_relay_toggle_pause():
+    org = _org_from_session()
+    slug = sanitize_match_id(request.form.get("score_match_slug", ""))
+    if not slug:
+        flash("Missing stream.", "error")
+        return redirect(url_for("dashboard_relays"))
+    row = RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
+    if not row:
+        flash("Unknown stream.", "error")
+        return redirect(url_for("dashboard_relays"))
+    row.paused = not bool(row.paused)
+    db.session.commit()
+    flash(
+        "Stream paused — automatic scoring updates are off." if row.paused else "Stream live — Play-Cricket sync is on.",
+        "success",
+    )
+    return redirect(url_for("dashboard_relays"))
+
+
+@app.post("/dashboard/relay/delete")
+@login_required
+def dashboard_relay_delete():
+    org = _org_from_session()
+    slug = sanitize_match_id(request.form.get("score_match_slug", ""))
+    if not slug:
+        flash("Missing stream.", "error")
+        return redirect(url_for("dashboard_relays"))
+    row = RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
+    if not row:
+        flash("Unknown stream.", "error")
+        return redirect(url_for("dashboard_relays"))
+    db.session.delete(row)
+    db.session.commit()
+    path = state_path_for(slug)
+    if path.is_file():
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    flash("Stream removed. Add a new match any time.", "success")
     return redirect(url_for("dashboard_relays"))
 
 
@@ -1367,6 +1457,7 @@ start_relay_poller(app, apply_relay_ingest_payload, get_live_snapshot)
 
 with app.app_context():
     db.create_all()
+    migrate_relay_match_columns()
 
 with state_lock:
     try:
