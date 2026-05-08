@@ -546,9 +546,16 @@ def dashboard():
 def dashboard_relays():
     org = _org_from_session()
     teams = ClubTeam.query.filter_by(organization_id=org.id).order_by(ClubTeam.name).all()
-    relay_rows = RelayMatch.query.filter_by(organization_id=org.id).order_by(
+    matches = RelayMatch.query.filter_by(organization_id=org.id).order_by(
         RelayMatch.created_at.desc()
     ).all()
+    relay_rows = [
+        {
+            "match": m,
+            "appearance": read_relay_overlay_prefs(m.score_match_slug),
+        }
+        for m in matches
+    ]
     relay_poll_sec = max(5, int(os.getenv("RELAY_POLL_INTERVAL_SEC", "10")))
     relay_auto_poll = (os.getenv("RELAY_AUTO_POLL", "1") or "1").strip().lower() not in {
         "0",
