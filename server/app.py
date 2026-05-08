@@ -516,6 +516,13 @@ def read_relay_overlay_prefs(slug):
 
 @app.get("/")
 def cricrelay_home():
+    forced_variant = (request.args.get("v") or "").strip().lower()
+    if forced_variant in {"a", "b"}:
+        session["hero_variant"] = forced_variant
+    hero_variant = session.get("hero_variant")
+    if hero_variant not in {"a", "b"}:
+        hero_variant = "a" if secrets.randbelow(2) == 0 else "b"
+        session["hero_variant"] = hero_variant
     structured_data = {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
@@ -529,6 +536,7 @@ def cricrelay_home():
         "cricrelay_home.html",
         logged_in=bool(session.get("org_id")),
         structured_data=structured_data,
+        hero_variant=hero_variant,
     )
 
 
@@ -679,6 +687,7 @@ def dashboard():
     org = _org_from_session()
     teams = ClubTeam.query.filter_by(organization_id=org.id).order_by(ClubTeam.name).all()
     relay_count = RelayMatch.query.filter_by(organization_id=org.id).count()
+    onboarding_done = bool(teams) and relay_count > 0
     return render_template(
         "cricrelay_dashboard.html",
         org=org,
@@ -686,6 +695,7 @@ def dashboard():
         relay_count=relay_count,
         squad_slots_used=len(teams),
         squad_slots_total=MAX_CLUB_SQUADS,
+        onboarding_done=onboarding_done,
     )
 
 

@@ -51,6 +51,14 @@
       panel.setAttribute("aria-hidden", open ? "false" : "true");
       document.body.classList.toggle("cr-nav-open", open);
     });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && panel.classList.contains("cr-nav-drawer--open")) {
+        panel.classList.remove("cr-nav-drawer--open");
+        toggle.setAttribute("aria-expanded", "false");
+        panel.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("cr-nav-open");
+      }
+    });
     panel.querySelectorAll("a").forEach(function (a) {
       a.addEventListener("click", function () {
         panel.classList.remove("cr-nav-drawer--open");
@@ -60,4 +68,27 @@
       });
     });
   }
+
+  /* Generic copy button: <button data-copy-text=\"...\">Copy</button> */
+  document.querySelectorAll("[data-copy-text]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var text = btn.getAttribute("data-copy-text") || "";
+      if (!text) return;
+      var original = btn.textContent;
+      var done = function (ok) {
+        btn.textContent = ok ? "Copied" : "Copy failed";
+        setTimeout(function () {
+          btn.textContent = original;
+        }, 1300);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(
+          function () { done(true); },
+          function () { done(false); }
+        );
+        return;
+      }
+      done(false);
+    });
+  });
 })();

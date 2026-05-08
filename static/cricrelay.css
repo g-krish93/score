@@ -1327,3 +1327,120 @@ body.cr-nav-open {
 .cr-public-list--links a:hover {
   text-decoration: underline;
 }
+
+/* --- Launch UX readability overrides --- */
+.cr-muted {
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.cr-page-lead {
+  font-size: 1.03rem;
+  line-height: 1.6;
+}
+
+.cr-code {
+  font-size: 0.9rem;
+  padding: 4px 9px;
+}
+
+.cr-table {
+  font-size: 0.96rem;
+}
+
+.cr-table th {
+  font-size: 0.8rem;
+}
+
+label.cr-label {
+  font-size: 0.9rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.cr-navlink {
+  font-size: 0.97rem;
+}
+
+.cr-help {
+  margin: 8px 0 0;
+  color: var(--cr-muted);
+  font-size: 0.96rem;
+}
+
+.cr-steps-inline {
+  display: grid;
+  gap: 12px;
+}
+
+@media (min-width: 840px) {
+  .cr-steps-inline {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.cr-step-chip {
+  border: 1px solid var(--cr-border);
+  background: rgba(15, 23, 41, 0.68);
+  border-radius: var(--cr-radius-sm);
+  padding: 12px 14px;
+}
+
+.cr-step-chip strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.98rem;
+}
+
+.cr-kpi {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--cr-border);
+  background: rgba(15, 23, 41, 0.75);
+  padding: 7px 12px;
+  font-size: 0.88rem;
+  margin: 0 8px 8px 0;
+}
+
+.cr-hero-actions .cr-btn {
+  min-height: 46px;
+}
+
+.cr-btn-copy {
+  min-width: 110px;
+}
+
+.cr-soft-divider {
+  border: 0;
+  border-top: 1px solid var(--cr-border);
+  margin: 20px 0;
+}
+
+.cr-proof-strip {
+  border-top: 1px solid var(--cr-border);
+  border-bottom: 1px solid var(--cr-border);
+  background: rgba(10, 16, 30, 0.82);
+  padding: 16px 22px;
+}
+
+.cr-proof-inner {
+  max-width: var(--cr-max);
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+.cr-proof-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--cr-border);
+  background: rgba(15, 23, 41, 0.7);
+  color: var(--cr-text);
+  font-size: 0.88rem;
+  padding: 8px 12px;
+}

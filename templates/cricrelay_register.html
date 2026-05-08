@@ -5,8 +5,8 @@
 
 {% block page_shell %}
 <main id="main-content" class="cr-main cr-main-narrow">
-  <h1 style="margin:0 0 8px;font-size:1.75rem;letter-spacing:-.03em;">Create your club account</h1>
-  <p class="cr-muted" style="margin:0 0 22px;">One login covers every squad and stream at your club (up to six of each).</p>
+  <h1 style="margin:0 0 8px;font-size:1.9rem;letter-spacing:-.03em;">Create your club account</h1>
+  <p class="cr-muted" style="margin:0 0 22px;">Takes about 2 minutes. Then you can go live.</p>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
@@ -29,7 +29,7 @@
       <input class="cr-input" id="password2" name="password2" type="password" required minlength="8" autocomplete="new-password">
 
       <label class="cr-label" for="play_cricket_base_url">Play-Cricket club URL</label>
-      <p class="cr-muted" style="margin:0 0 8px;font-size:.88rem;">Root site or results folder — no match id. Example: <code class="cr-code">https://yourclub.play-cricket.com</code> or <code class="cr-code">…/website/results</code></p>
+      <p class="cr-help">Do not add match ID here. Just the club site URL.</p>
       <input class="cr-input" id="play_cricket_base_url" name="play_cricket_base_url" type="url" required placeholder="https://yourclub.play-cricket.com/website/results" value="{{ request.form.play_cricket_base_url or '' }}">
 
       <button type="submit" class="cr-btn cr-btn-primary" style="width:100%;margin-top:20px;">Create account</button>

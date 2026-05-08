@@ -4,19 +4,40 @@
 
 {% block page_shell %}
 <main id="main-content" class="cr-main">
+  {% if not onboarding_done %}
+  <div class="cr-card cr-card-highlight">
+    <h2>First-time setup wizard</h2>
+    <p class="cr-muted" style="margin:0 0 12px;">Follow these steps once. After that, match-day setup is very quick.</p>
+    <div class="cr-steps-inline">
+      <div class="cr-step-chip"><strong>Step 1 (you are here)</strong><span>Add your team names.</span></div>
+      <div class="cr-step-chip"><strong>Step 2</strong><span>Create a stream with match ID.</span></div>
+      <div class="cr-step-chip"><strong>Step 3</strong><span>Copy overlay URL into Prism/OBS.</span></div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="cr-dash-top">
     <div>
-      <h1>Squads</h1>
-      <p class="cr-muted">Default Play-Cricket base for new streams: <code class="cr-code">{{ org.play_cricket_base_url }}</code></p>
-      <p class="cr-page-lead">Add each XI or section your club runs (e.g. 1st XI, Women’s T20). Attach a squad when you create a stream so operators know which game it is.</p>
+      <h1>Step 1: Add your club teams</h1>
+      <p class="cr-muted">Play-Cricket base: <code class="cr-code">{{ org.play_cricket_base_url }}</code></p>
+      <p class="cr-page-lead">Before creating a live stream, add the teams you manage (like 1st XI, 2nd XI, Women, Juniors).</p>
+    </div>
+  </div>
+
+  <div class="cr-card cr-card-highlight">
+    <h2>Quick path</h2>
+    <div class="cr-steps-inline">
+      <div class="cr-step-chip"><strong>1) Add team names</strong><span>Do this on this page.</span></div>
+      <div class="cr-step-chip"><strong>2) Create a stream</strong><span>Go to Live streams and add match ID.</span></div>
+      <div class="cr-step-chip"><strong>3) Paste overlay URL</strong><span>Use in Prism/OBS and go live.</span></div>
     </div>
   </div>
 
   <div class="cr-card" style="border-color:rgba(34,211,168,.28);">
     <h2>Your public club page</h2>
-    <p class="cr-muted" style="margin:0 0 12px;">Share this link on your website, socials, or programme — supporters only see <strong>this club’s</strong> squads and stream URLs (no login required).</p>
+    <p class="cr-muted" style="margin:0 0 12px;">Share this link on social media or your website. Fans only see your club’s data.</p>
     <p style="margin:0;"><code class="cr-code" id="public-club-url">{{ url_for('public_club_page', slug=org.slug, _external=True) }}</code></p>
-    <button type="button" class="cr-btn cr-btn-secondary cr-btn-sm" style="margin-top:12px;" onclick="navigator.clipboard.writeText(document.getElementById('public-club-url').textContent);this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy link';},2000);">Copy link</button>
+    <button type="button" class="cr-btn cr-btn-secondary cr-btn-sm cr-btn-copy" style="margin-top:12px;" data-copy-text="{{ url_for('public_club_page', slug=org.slug, _external=True) }}">Copy link</button>
     <a class="cr-btn cr-btn-ghost cr-btn-sm" style="margin-top:12px;margin-left:8px;" href="{{ url_for('public_club_page', slug=org.slug) }}" target="_blank" rel="noopener">Open page</a>
   </div>
 
@@ -28,7 +49,7 @@
 
   <div class="cr-card">
     <h2>Your teams ({{ squad_slots_used }} / {{ squad_slots_total }})</h2>
-    <p class="cr-muted" style="margin:0 0 14px;font-size:.92rem;">Same login for every squad — perfect when firsts, seconds, and juniors all stream from one club account.</p>
+    <p class="cr-muted" style="margin:0 0 14px;">All teams under one login. Keep names short and clear so operators can pick quickly.</p>
     {% if teams %}
     <div class="cr-table-wrap">
       <table class="cr-table">
@@ -45,6 +66,7 @@
     {% if squad_slots_used < squad_slots_total %}
     <form method="post" action="{{ url_for('dashboard_add_team') }}" style="margin-top:18px;">
       <label class="cr-label" for="team_name">Add squad</label>
+      <p class="cr-help">Examples: 1st XI, 2nd XI, Women, U15.</p>
       <div class="cr-row2">
         <input class="cr-input" id="team_name" name="name" placeholder="e.g. 1st XI" required>
         <button type="submit" class="cr-btn cr-btn-primary" style="margin-top:14px;">Add squad</button>
@@ -56,8 +78,8 @@
   </div>
 
   <div class="cr-card cr-card-highlight">
-    <h2>Next: live streams</h2>
-    <p class="cr-muted" style="margin:0 0 14px;">Create a stream per fixture, pick what appears on the overlay, then paste the browser URL into Prism.</p>
+    <h2>Step 2: Create live streams</h2>
+    <p class="cr-muted" style="margin:0 0 14px;">When your teams are ready, create a stream from fixture ID and copy the overlay URL.</p>
     {% if relay_count %}
     <p class="cr-muted" style="margin:0 0 14px;">You have <strong>{{ relay_count }}</strong> active stream configuration(s).</p>
     {% endif %}

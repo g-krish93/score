@@ -4,18 +4,34 @@
 
 {% block page_shell %}
 <main id="main-content" class="cr-main">
+  {% if stream_slots_used == 0 %}
+  <div class="cr-card cr-card-highlight">
+    <h2>First-time setup wizard</h2>
+    <p class="cr-muted" style="margin:0 0 12px;">You're on Step 2. Create your first stream below.</p>
+    <div class="cr-steps-inline">
+      <div class="cr-step-chip"><strong>Step 1</strong><span>Teams added in Squads page.</span></div>
+      <div class="cr-step-chip"><strong>Step 2 (you are here)</strong><span>Add match ID and create stream.</span></div>
+      <div class="cr-step-chip"><strong>Step 3</strong><span>Copy overlay URL and paste in Prism/OBS.</span></div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="cr-dash-top">
     <div>
-      <h1>Live streams</h1>
+      <h1>Step 2: Create and control live streams</h1>
       <p class="cr-muted">Club: <strong>{{ org.name }}</strong> · Play-Cricket base <code class="cr-code">{{ org.play_cricket_base_url }}</code></p>
-      <p class="cr-page-lead"><strong>Start:</strong> add a fixture below — scoring sync runs automatically. <strong>Stop:</strong> pause updates for that stream, or remove it when the match ends. <strong>Customise:</strong> choose overlay panels and text size per stream.</p>
+      <p class="cr-page-lead">Simple flow: add fixture ID → copy overlay URL → paste into Prism/OBS. Pause anytime, remove when done.</p>
     </div>
   </div>
 
   <div class="cr-card" style="border-color:rgba(34,211,168,.28);">
     <h2>Public page for supporters</h2>
-    <p class="cr-muted" style="margin:0 0 8px;">Share your club’s read-only page — only your streams &amp; squads appear there.</p>
-    <code class="cr-code">{{ url_for('public_club_page', slug=org.slug, _external=True) }}</code>
+    <p class="cr-muted" style="margin:0 0 8px;">Share this page with supporters and sponsors.</p>
+    <code class="cr-code" id="public-club-url-relays">{{ url_for('public_club_page', slug=org.slug, _external=True) }}</code>
+    <div class="cr-stream-actions">
+      <button type="button" class="cr-btn cr-btn-secondary cr-btn-sm cr-btn-copy" data-copy-text="{{ url_for('public_club_page', slug=org.slug, _external=True) }}">Copy link</button>
+      <a class="cr-btn cr-btn-ghost cr-btn-sm" href="{{ url_for('public_club_page', slug=org.slug) }}" target="_blank" rel="noopener">Open page</a>
+    </div>
   </div>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
@@ -27,7 +43,7 @@
   <div class="cr-card cr-card-highlight">
     <h2>Match day sync</h2>
     {% if relay_auto_poll %}
-    <p class="cr-muted" style="margin:0;">Play-Cricket is polled about every <strong>{{ relay_poll_sec }} seconds</strong>. Paste your overlay URL into Prism once — no cron or CLI.</p>
+    <p class="cr-muted" style="margin:0;">Scores auto-refresh every <strong>{{ relay_poll_sec }} seconds</strong>. No manual scripts needed.</p>
     {% else %}
     <p class="cr-muted" style="margin:0;">Automatic polling is off (<code class="cr-code">RELAY_AUTO_POLL=0</code>). Turn it on in production.</p>
     {% endif %}
@@ -39,6 +55,7 @@
     <p class="cr-muted" style="margin:0 0 14px;">Slots in use: <strong>{{ stream_slots_used }}</strong> / {{ stream_slots_total }}. Enter the numeric ECB fixture id from your results URL.</p>
     <form method="post" action="{{ url_for('dashboard_add_match') }}">
       <label class="cr-label" for="stream_label">Stream label (optional)</label>
+      <p class="cr-help">Use a simple name operators can read fast: “1st XI vs Brighton”.</p>
       <input class="cr-input" id="stream_label" name="stream_label" maxlength="120" placeholder="e.g. 1st XI vs Rottingdean — T20">
 
       <div class="cr-row2">
@@ -71,7 +88,7 @@
   <div class="cr-card">
     <h2>Your streams &amp; overlays</h2>
     {% if relay_rows %}
-    <p class="cr-muted" style="margin:0 0 14px;">Copy the <strong>Overlay</strong> URL into Prism’s browser overlay. Use <strong>Pause</strong> to stop score updates (overlay stays loadable but won’t refresh). <strong>Remove</strong> frees a slot.</p>
+    <p class="cr-muted" style="margin:0 0 14px;">For each stream: copy Overlay URL, paste into Prism/OBS, then go live. Pause stops updates. Remove frees a slot.</p>
     <div class="cr-table-wrap">
       <table class="cr-table">
         <thead>
@@ -106,6 +123,7 @@
             <td>
               <div><span class="cr-muted" style="font-size:.72rem;">Overlay</span><br><code class="cr-code">{{ request.url_root.rstrip('/') }}/m/{{ m.score_match_slug }}/stream</code></div>
               <div class="cr-stream-actions">
+                <button type="button" class="cr-btn cr-btn-secondary cr-btn-sm cr-btn-copy" data-copy-text="{{ request.url_root.rstrip('/') }}/m/{{ m.score_match_slug }}/stream">Copy overlay</button>
                 <form method="post" action="{{ url_for('dashboard_relay_toggle_pause') }}" style="display:inline;">
                   <input type="hidden" name="score_match_slug" value="{{ m.score_match_slug }}">
                   <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm">{% if m.paused %}Resume{% else %}Pause{% endif %}</button>
@@ -121,6 +139,7 @@
           <tr>
             <td colspan="4">
               <div class="cr-muted" style="font-size:.82rem;margin-bottom:8px;">Scrape URL · <code class="cr-code">{{ m.full_scrape_url }}</code></div>
+              <hr class="cr-soft-divider">
               <form class="cr-layout-form" method="post" action="{{ url_for('dashboard_relay_appearance') }}">
                 <input type="hidden" name="score_match_slug" value="{{ m.score_match_slug }}">
                 <div class="cr-layout-grid">

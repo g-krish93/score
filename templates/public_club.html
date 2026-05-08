@@ -13,7 +13,7 @@
   <section class="cr-public-hero">
     <p class="cr-eyebrow">CricRelay club page</p>
     <h1 class="cr-public-title">{{ org.name }}</h1>
-    <p class="cr-page-lead">Public page for supporters and sponsors — only this club’s streams are listed here. Overlay links update when your club runs a live relay.</p>
+    <p class="cr-page-lead">This is {{ org.name }}’s live page. Only this club’s squads and stream links are shown here.</p>
   </section>
 
   {% if teams %}
@@ -27,7 +27,7 @@
 
   <div class="cr-card cr-card-highlight">
     <h2>Live stream overlays</h2>
-    <p class="cr-muted" style="margin:0 0 14px;">Paste these URLs into a browser source (OBS, Prism, Larix) to show scores on your broadcast. Each link is unique to this club’s fixture.</p>
+    <p class="cr-muted" style="margin:0 0 14px;">Use these links in OBS, Prism, or Larix browser source.</p>
     {% if relays %}
     <div class="cr-table-wrap">
       <table class="cr-table">
@@ -46,13 +46,18 @@
             <td><strong>{{ stream_title }}</strong></td>
             <td><code class="cr-code">{{ r.play_cricket_match_id }}</code></td>
             <td>{% if r.paused %}<span class="cr-badge cr-badge-paused">Paused</span>{% else %}<span class="cr-badge cr-badge-live">Live sync</span>{% endif %}</td>
-            <td><code class="cr-code">{{ request.url_root.rstrip('/') }}/m/{{ r.score_match_slug }}/stream</code></td>
+            <td>
+              <code class="cr-code" id="pub-ov-{{ loop.index }}">{{ request.url_root.rstrip('/') }}/m/{{ r.score_match_slug }}/stream</code>
+              <div class="cr-stream-actions">
+                <button type="button" class="cr-btn cr-btn-secondary cr-btn-sm cr-btn-copy" data-copy-text="{{ request.url_root.rstrip('/') }}/m/{{ r.score_match_slug }}/stream">Copy URL</button>
+              </div>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-    <p class="cr-muted" style="margin:14px 0 0;font-size:.85rem;">Operator tools and ingest URLs stay in your private dashboard — not shown here.</p>
+    <p class="cr-muted" style="margin:14px 0 0;">Operator tools and ingest URLs stay in private dashboard only.</p>
     {% else %}
     <p class="cr-muted">No public streams configured yet. Club admins can add fixtures in their CricRelay dashboard.</p>
     {% endif %}
