@@ -101,8 +101,8 @@ def blank_state():
     return {
         "team1": "",
         "team2": "",
-        "team1_color": "#2dd4bf",
-        "team2_color": "#f59e0b",
+        "team1_color": "#3b82f6",
+        "team2_color": "#facc15",
         "theme": "classic",
         "overlay_density": "expanded",
         "overlay_scale": 1.0,

@@ -6,13 +6,13 @@
   <title>Cricket Overlay</title>
   <style>
     :root {
-      --team1: #2dd4bf;
-      --team2: #f59e0b;
+      --team1: #3b82f6;
+      --team2: #facc15;
       --bg: rgba(5, 14, 38, 0.96);
       --fg: #f8fbff;
       --muted: #95a7c7;
       --overlay-scale: 1;
-      --overlay-box-color: #101f45;
+      --overlay-box-color: #0b1f56;
     }
     body { margin: 0; padding: 0; background: transparent; font-family: "Segoe UI", Arial, sans-serif; }
     #overlay {
@@ -86,13 +86,13 @@
     .team-stat { font-size: calc(13px * var(--overlay-scale)); font-weight: 800; color: #ecf4ff; font-variant-numeric: tabular-nums; }
     .main-score {
       border-radius: 9px;
-      border: 1px solid rgba(190, 215, 255, .5);
-      background: linear-gradient(180deg, rgba(217, 235, 255, .22), rgba(140, 176, 230, .08));
+      border: 1px solid rgba(121, 169, 255, .55);
+      background: linear-gradient(180deg, rgba(38, 74, 150, .9), rgba(19, 45, 105, .88));
       text-align: center;
       padding: 6px 12px;
       min-width: 160px;
     }
-    .score-title { font-size: calc(11px * var(--overlay-scale)); color: #e5edff; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+    .score-title { font-size: calc(11px * var(--overlay-scale)); color: #fef08a; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
     .score-big {
       font-size: calc(33px * var(--overlay-scale));
       line-height: .95;
@@ -246,10 +246,10 @@
       body.classList.remove("theme-classic", "theme-neon", "theme-minimal");
       body.classList.add("theme-classic");
       body.classList.remove("density-compact");
-      document.documentElement.style.setProperty("--team1", data.team1_color || "#2dd4bf");
-      document.documentElement.style.setProperty("--team2", data.team2_color || "#f59e0b");
+      document.documentElement.style.setProperty("--team1", data.team1_color || "#3b82f6");
+      document.documentElement.style.setProperty("--team2", data.team2_color || "#facc15");
       document.documentElement.style.setProperty("--overlay-scale", "1");
-      document.documentElement.style.setProperty("--overlay-box-color", "#101f45");
+      document.documentElement.style.setProperty("--overlay-box-color", "#0b1f56");
     }
     function renderMomentum(data) {
       const holder = document.getElementById("momentum");
