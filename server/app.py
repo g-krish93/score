@@ -22,6 +22,7 @@ from .models_cricrelay import (
     db,
     slugify_org_name,
 )
+from .scraper_worker import register_relay_worker
 
 load_dotenv()
 
@@ -725,16 +726,12 @@ def relay_config():
         return jsonify(with_calculated_values(state))
 
 
-@app.post("/relay/ingest")
-def relay_ingest():
-    if not _relay_ingest_authorized():
-        return jsonify({"error": "unauthorized"}), 401
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        return jsonify({"error": "JSON body required"}), 400
-    with match_context():
+def apply_relay_ingest_payload(match_id: str, payload: dict) -> tuple[dict, int]:
+    """Apply JSON ingest for a match slug. Used by ``/relay/ingest`` and the in-app relay worker."""
+    mid = sanitize_match_id(match_id)
+    with match_context(mid):
         if (state.get("relay_mode") or "manual") != "play_cricket":
-            return jsonify({"error": "relay_mode is not play_cricket for this match"}), 400
+            return ({"error": "relay_mode is not play_cricket for this match"}, 400)
         if isinstance(payload.get("snapshot"), dict):
             wrapper = payload
         elif (
@@ -756,7 +753,7 @@ def relay_ingest():
             }
         snap = wrapper.get("snapshot")
         if not isinstance(snap, dict):
-            return jsonify({"error": "payload must include snapshot object"}), 400
+            return ({"error": "payload must include snapshot object"}, 400)
         state["relay_wrapper"] = {
             "source_url": wrapper.get("source_url") or state.get("relay_play_cricket_url", ""),
             "stale": bool(wrapper.get("stale")),
@@ -769,7 +766,21 @@ def relay_ingest():
         state["relay_last_ok_at"] = datetime.now(timezone.utc).isoformat()
         state["relay_last_error"] = None
         save_state()
-        return jsonify({"ok": True, "relay_bundle": with_calculated_values(state)["relay_bundle"]})
+        return (
+            {"ok": True, "relay_bundle": with_calculated_values(state)["relay_bundle"]},
+            200,
+        )
+
+
+@app.post("/relay/ingest")
+def relay_ingest():
+    if not _relay_ingest_authorized():
+        return jsonify({"error": "unauthorized"}), 401
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "JSON body required"}), 400
+    body, code = apply_relay_ingest_payload(get_request_match_id(), payload)
+    return jsonify(body), code
 
 
 @app.get("/score")
@@ -1325,6 +1336,9 @@ def health():
         return jsonify(
             {"status": "ok", "innings": state["innings"], "match_started": state["match_started"]}
         )
+
+
+register_relay_worker(app, apply_relay_ingest_payload)
 
 
 with app.app_context():

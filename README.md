@@ -29,14 +29,21 @@ Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000/stream` (or a scope
 
 ## CricRelay (Play-Cricket → same overlay URL)
 
-Clubs can keep **manual scoring** in the input UI, or switch the overlay to follow a **Play-Cricket** match page fed by your `play-cricket-score-scrapper` worker.
+Clubs can use **manual scoring** in the input UI, or follow a **Play-Cricket** page. The **Play-Cricket scraper is built into this app** (no separate GitHub project required).
 
 - **Product / registration:** `/` — marketing, register, login. **Club setup** at `/dashboard` (squads + default Play-Cricket base). **Live relays** at `/dashboard/relays` (match id → scrape URL, Prism overlay, ingest, overlay layout). If your saved base contains `…/website/results`, scrape URLs are `…/website/results/<id>`; otherwise `…/match_details?id=<id>`. Set `SECRET_KEY` in production; optional `DATABASE_URL` for Postgres (otherwise SQLite under `STATE_DIR`).
-- **Per-match operator UI:** `/cricrelay` or `/m/<match_id>/cricrelay` (paste full `match_details` URL, test relay).
-- **Scorer controls:** Input page → **CricRelay (Play-Cricket)** card — choose *Manual* vs *Play-Cricket (URL + ingest)*, save the match URL.
-- **Ingest endpoint (for the scraper):** `POST /relay/ingest?match=<match_id>` with JSON body from the scraper (`snapshot` + optional `stale`, etc.).
-- **Optional auth:** set `RELAY_INGEST_TOKEN` on the server and send `Authorization: Bearer <token>` on ingest.
-- **Prism / browser overlay:** use `/stream` or `/m/<match_id>/stream`. Legacy `/m/<match_id>` redirects with HTTP 301. The overlay reads `/score?match=…` and switches layout when relay mode is active.
+- **Built-in relay worker** (same Gunicorn process), base path **`/relay-worker/`**:
+  - `GET /relay-worker/health` — worker up
+  - `GET /relay-worker/scrape?url=…` — one-off JSON snapshot
+  - `GET /relay-worker/live?url=…&interval=8&push_match=<slug>` — cached scrape; with `push_match` the payload is applied to that match’s relay (in-process). If `RELAY_INGEST_TOKEN` is set, send `Authorization: Bearer <token>` when using `push_match` (same as `POST /relay/ingest`).
+  - `POST /relay-worker/sync` — JSON `{"url":"…","push_match":"<slug>","interval":8}` — store snapshot under `STATE_DIR/relay_snapshots/` and optional push
+  - `GET /relay-worker/overlay?url=…` — simple HTML overlay that polls `/relay-worker/live`
+- **Per-match operator UI:** `/cricrelay` or `/m/<match_id>/cricrelay`.
+- **Scorer controls:** Input page → **CricRelay** card — Manual vs Play-Cricket; manual scoring is blocked while relay mode is active for that match slug.
+- **Ingest endpoint:** `POST /relay/ingest?match=<slug>` with JSON (`snapshot` + optional `stale`, etc.). Same payload shape as `/relay-worker/live` returns.
+- **External push only if needed:** `PUSH_TARGET_URL` / `PUSH_AUTH_TOKEN` for pushing to another host; otherwise use **`push_match`** for same-server ingest.
+- **CLI (optional):** `python -m server.scrape_cli "<url>"` from repo root.
+- **Prism overlay:** `/stream` or `/m/<slug>/stream`; `/score?match=…` polling unchanged.
 
 ## Multiple parallel matches
 

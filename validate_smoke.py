@@ -10,6 +10,7 @@ def main():
     c = app.test_client()
 
     assert_ok(c.get("/health"))
+    assert_ok(c.get("/relay-worker/health"))
     score0 = c.get("/score").get_json()
     home = c.get("/")
     assert_ok(home)
