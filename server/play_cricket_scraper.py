@@ -6,6 +6,8 @@ from typing import Optional
 import requests
 from bs4 import BeautifulSoup
 
+from .models_cricrelay import canonicalize_play_cricket_scrape_url
+
 DEFAULT_TIMEOUT = 15
 SCORE_LINE_RE = re.compile(
     r"^(?P<team>.+?)\s+(?P<runs>\d+)\s*/\s*(?P<wkts>\d+)\s*\((?P<overs>\d+(?:\.\d+)?)\)$"
@@ -315,6 +317,7 @@ def parse_match_snapshot(url: str, html: str) -> MatchSnapshot:
 
 
 def scrape_match(url: str) -> dict:
+    url = canonicalize_play_cricket_scrape_url(url)
     html = fetch_page_html(url)
     snapshot = parse_match_snapshot(url, html)
     return snapshot.to_dict()

@@ -19,6 +19,7 @@ from urllib.parse import quote_plus
 import requests
 from flask import Blueprint, jsonify, request
 
+from .models_cricrelay import canonicalize_play_cricket_scrape_url
 from .play_cricket_scraper import scrape_match
 
 relay_worker_bp = Blueprint("relay_worker", __name__, url_prefix="/relay-worker")
@@ -56,6 +57,7 @@ def get_cache_key(url: str) -> str:
 def get_live_snapshot(
     url: str, min_interval_sec: int = 8, stale_after_sec: int = 45
 ) -> dict:
+    url = canonicalize_play_cricket_scrape_url((url or "").strip())
     cache_key = get_cache_key(url)
     with cache_lock:
         row = live_cache.get(cache_key, {})

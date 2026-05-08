@@ -1,6 +1,7 @@
 import re
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlunparse, urlparse
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import UniqueConstraint
@@ -12,6 +13,33 @@ db = SQLAlchemy()
 def slugify_org_name(name: str) -> str:
     s = re.sub(r"[^a-zA-Z0-9]+", "-", (name or "").strip().lower()).strip("-")
     return s[:48] or "club"
+
+
+def canonicalize_play_cricket_scrape_url(url: str) -> str:
+    """Rewrite malformed ECB URLs that 404.
+
+    Clubs sometimes paste or merge paths into
+    ``…/website/results/match_details?id=<id>``. The live scorecard is
+    ``…/website/results/<id>`` (see registration docs).
+    """
+    raw = (url or "").strip()
+    if not raw or "play-cricket.com" not in raw.lower():
+        return raw
+    parsed = urlparse(raw)
+    path = (parsed.path or "").replace("//", "/")
+    low_path = path.lower()
+    qs = parse_qs(parsed.query)
+    mid = (qs.get("id") or [None])[0]
+    if not mid or not str(mid).strip().isdigit():
+        return raw
+    mid = str(mid).strip()
+    marker = "/website/results"
+    if marker not in low_path or "match_details" not in low_path:
+        return raw
+    idx = low_path.find(marker)
+    prefix = path[: idx + len(marker)].rstrip("/")
+    new_path = f"{prefix}/{mid}"
+    return urlunparse((parsed.scheme, parsed.netloc, new_path, "", "", ""))
 
 
 def build_match_details_url(base_url: str, match_id: str) -> str:

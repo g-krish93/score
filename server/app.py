@@ -19,6 +19,7 @@ from .models_cricrelay import (
     Organization,
     RelayMatch,
     build_play_cricket_scrape_url,
+    canonicalize_play_cricket_scrape_url,
     db,
     slugify_org_name,
 )
@@ -203,7 +204,7 @@ def save_state():
 
 
 def apply_relay_to_score_match(match_slug: str, full_url: str):
-    url = (full_url or "").strip()
+    url = canonicalize_play_cricket_scrape_url((full_url or "").strip())
     with match_context(match_slug):
         merge_missing_state_keys(state)
         state["relay_mode"] = "play_cricket"
@@ -607,7 +608,7 @@ def dashboard_add_match():
     if "play-cricket.com" not in base.lower():
         flash("Play-Cricket base URL must include play-cricket.com.", "error")
         return redirect(url_for("dashboard_relays"))
-    full_url = build_play_cricket_scrape_url(base, mid)
+    full_url = canonicalize_play_cricket_scrape_url(build_play_cricket_scrape_url(base, mid))
     existing = RelayMatch.query.filter_by(organization_id=org.id, play_cricket_match_id=mid).first()
     if existing:
         flash("This Play-Cricket match is already linked for your club.", "error")
@@ -780,6 +781,9 @@ def apply_relay_ingest_payload(match_id: str, payload: dict) -> tuple[dict, int]
             "last_changed_at": wrapper.get("last_changed_at"),
             "last_error": wrapper.get("last_error"),
         }
+        src = (wrapper.get("source_url") or state.get("relay_play_cricket_url") or "").strip()
+        if src:
+            state["relay_play_cricket_url"] = canonicalize_play_cricket_scrape_url(src)
         state["relay_last_ok_at"] = datetime.now(timezone.utc).isoformat()
         state["relay_last_error"] = None
         save_state()
