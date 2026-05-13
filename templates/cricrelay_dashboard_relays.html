@@ -7,7 +7,7 @@
   <div class="cr-dash-top">
     <div>
       <h1>Live streams</h1>
-      <p class="cr-muted">Club: <strong>{{ org.name }}</strong> · Play-Cricket base <code class="cr-code">{{ org.play_cricket_base_url }}</code></p>
+      <p class="cr-muted">Club: <strong>{{ org.name }}</strong> · Play-Cricket site <code class="cr-code">{{ play_cricket_root }}</code></p>
       <p class="cr-page-lead">Add fixtures, copy overlay URLs, and control sync from one page.</p>
     </div>
   </div>
@@ -105,8 +105,8 @@
           <option value="">— None —</option>
           {% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
         </select>
-        <label class="cr-label" for="play_cricket_base_url">Base URL override (optional)</label>
-        <input class="cr-input" id="play_cricket_base_url" name="play_cricket_base_url" type="url" placeholder="{{ org.play_cricket_base_url }}">
+        <label class="cr-label" for="play_cricket_base_url">Different club code (optional)</label>
+        <input class="cr-input" id="play_cricket_base_url" name="play_cricket_base_url" autocomplete="off" placeholder="bmacc">
       </details>
       <button type="submit" class="cr-btn cr-btn-primary" style="margin-top:16px;">Create stream &amp; enable Play-Cricket</button>
     </form>

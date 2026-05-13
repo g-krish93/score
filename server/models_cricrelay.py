@@ -42,6 +42,51 @@ def canonicalize_play_cricket_scrape_url(url: str) -> str:
     return urlunparse((parsed.scheme, parsed.netloc, new_path, "", "", ""))
 
 
+def normalize_play_cricket_club_root(raw: str) -> str:
+    """Turn user input into ``https://<subdomain>.play-cricket.com``.
+
+    Accepts the short club code (``bmacc``), a host (``bmacc.play-cricket.com``),
+    or a full URL on that host. Anything after the host is ignored.
+
+    Returns empty string if the value cannot be interpreted as a club site.
+    """
+    s = (raw or "").strip().strip("<>")
+    if not s:
+        return ""
+
+    def slug_ok(slug: str) -> bool:
+        slug = (slug or "").lower()
+        return bool(re.fullmatch(r"[a-z0-9-]{2,48}", slug))
+
+    def from_host(host: str) -> str:
+        host = (host or "").lower().strip(".")
+        if not host.endswith(".play-cricket.com"):
+            return ""
+        without = host[: -len(".play-cricket.com")].strip(".")
+        if not without:
+            return ""
+        parts = without.split(".")
+        if parts[0] == "www" and len(parts) > 1:
+            slug = parts[-1]
+        else:
+            slug = parts[0]
+        slug = re.sub(r"[^a-z0-9-]+", "", slug)
+        if slug_ok(slug):
+            return f"https://{slug}.play-cricket.com"
+        return ""
+
+    s_low = s.lower()
+    if "://" in s_low or ".play-cricket.com" in s_low:
+        to_parse = s_low if "://" in s_low else f"https://{s_low}"
+        parsed = urlparse(to_parse)
+        return from_host(parsed.netloc)
+
+    slug = re.sub(r"[^a-zA-Z0-9-]+", "", s.split("/")[0]).lower()
+    if slug_ok(slug):
+        return f"https://{slug}.play-cricket.com"
+    return ""
+
+
 def build_match_details_url(base_url: str, match_id: str) -> str:
     b = (base_url or "").strip().rstrip("/")
     mid = str(match_id or "").strip()

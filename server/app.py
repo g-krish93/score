@@ -39,6 +39,7 @@ from .models_cricrelay import (
     build_play_cricket_scrape_url,
     canonicalize_play_cricket_scrape_url,
     db,
+    normalize_play_cricket_club_root,
     slugify_org_name,
 )
 from .play_cricket_scraper import scrape_fixtures
@@ -268,6 +269,11 @@ def _safe_hex_color(value: str, default: str) -> str:
     return default
 
 
+def _org_play_cricket_root(org: Organization) -> str:
+    raw = (org.play_cricket_base_url or "").strip()
+    return normalize_play_cricket_club_root(raw) or raw.rstrip("/")
+
+
 def _fixture_candidate_urls(base_url: str) -> list[str]:
     raw = (base_url or "").strip().rstrip("/")
     if not raw:
@@ -278,6 +284,7 @@ def _fixture_candidate_urls(base_url: str) -> list[str]:
     candidates = [raw]
     if host_root:
         candidates.append(f"{host_root}/Matches")
+        candidates.append(f"{host_root}/website/results")
     if "/website/results" in low and host_root:
         candidates.append(f"{host_root}/Matches")
     if "/match_details" in low and host_root:
@@ -787,7 +794,7 @@ def register_page():
     email = (request.form.get("email") or "").strip().lower()
     password = request.form.get("password") or ""
     password2 = request.form.get("password2") or ""
-    base_url = (request.form.get("play_cricket_base_url") or "").strip().rstrip("/")
+    base_url = normalize_play_cricket_club_root(request.form.get("play_cricket_base_url") or "")
     if not name or not email or not password:
         flash("Please fill in club name, email, and password.", "error")
         return render_template("cricrelay_register.html"), 400
@@ -797,8 +804,12 @@ def register_page():
     if len(password) < 8:
         flash("Use a password of at least 8 characters.", "error")
         return render_template("cricrelay_register.html"), 400
-    if "play-cricket.com" not in base_url.lower():
-        flash("Play-Cricket URL must include play-cricket.com.", "error")
+    if not base_url:
+        flash(
+            "Enter your Play-Cricket club code — the short name before .play-cricket.com in your club site "
+            "(for example bmacc for https://bmacc.play-cricket.com). You can type just bmacc.",
+            "error",
+        )
         return render_template("cricrelay_register.html"), 400
     base_slug = slugify_org_name(name)
     slug = base_slug
@@ -932,7 +943,7 @@ def dashboard_home():
     fixtures_error = None
     fixture_source_url = ""
     probe_errors = []
-    for candidate in _fixture_candidate_urls(org.play_cricket_base_url):
+    for candidate in _fixture_candidate_urls(_org_play_cricket_root(org)):
         try:
             rows = scrape_fixtures(candidate, limit=36)
             if rows:
@@ -944,10 +955,11 @@ def dashboard_home():
     if not fixtures and probe_errors:
         fixtures_error = probe_errors[0]
     if not fixture_source_url:
-        fixture_source_url = org.play_cricket_base_url
+        fixture_source_url = _org_play_cricket_root(org)
     return render_template(
         "cricrelay_dashboard_home.html",
         org=org,
+        play_cricket_root=_org_play_cricket_root(org),
         fixtures=fixtures,
         fixtures_error=fixtures_error,
         fixture_source_url=fixture_source_url,
@@ -985,6 +997,7 @@ def dashboard_relays():
     return render_template(
         "cricrelay_dashboard_relays.html",
         org=org,
+        play_cricket_root=_org_play_cricket_root(org),
         teams=teams,
         relay_rows=relay_rows,
         relay_poll_sec=relay_poll_sec,
@@ -1034,10 +1047,20 @@ def dashboard_add_match():
             "error",
         )
         return redirect(url_for("dashboard_relays"))
-    base_override = (request.form.get("play_cricket_base_url") or "").strip().rstrip("/")
-    base = base_override or org.play_cricket_base_url
+    base_override_raw = (request.form.get("play_cricket_base_url") or "").strip()
+    if base_override_raw:
+        base = normalize_play_cricket_club_root(base_override_raw)
+        if not base:
+            flash(
+                "That Play-Cricket club code was not recognised. Use letters and numbers only, "
+                "like bmacc for https://bmacc.play-cricket.com.",
+                "error",
+            )
+            return redirect(url_for("dashboard_relays"))
+    else:
+        base = _org_play_cricket_root(org)
     if "play-cricket.com" not in base.lower():
-        flash("Play-Cricket base URL must include play-cricket.com.", "error")
+        flash("Play-Cricket club site must be on play-cricket.com.", "error")
         return redirect(url_for("dashboard_relays"))
     full_url = canonicalize_play_cricket_scrape_url(build_play_cricket_scrape_url(base, mid))
     existing = RelayMatch.query.filter_by(organization_id=org.id, play_cricket_match_id=mid).first()

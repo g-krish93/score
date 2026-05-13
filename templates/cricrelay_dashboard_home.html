@@ -26,7 +26,8 @@
 
   <div class="cr-card">
     <h2>Play-Cricket fixtures</h2>
-    <p class="cr-muted" style="margin:0 0 12px;">Source: <code class="cr-code">{{ fixture_source_url }}</code></p>
+    <p class="cr-muted" style="margin:0 0 6px;">Club site: <code class="cr-code">{{ play_cricket_root }}</code></p>
+    <p class="cr-muted" style="margin:0 0 12px;">Fixture list source: <code class="cr-code">{{ fixture_source_url }}</code></p>
     {% if fixtures_error %}
     <p class="cr-muted">Could not load fixtures right now. You can still add match ID in Current streams.</p>
     {% endif %}
@@ -73,7 +74,7 @@
       </table>
     </div>
     {% else %}
-    <p class="cr-muted">No fixtures found from this source right now. If needed, update your Play-Cricket base URL in your account settings.</p>
+    <p class="cr-muted">No fixtures found from this source right now. Check that your Play-Cricket club code matches your club site (for example <strong>bmacc</strong> for <code class="cr-code">https://bmacc.play-cricket.com</code>). You can still add a match ID on Current streams.</p>
     {% endif %}
   </div>
 </main>

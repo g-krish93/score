@@ -28,9 +28,14 @@
       <label class="cr-label" for="password2">Confirm password</label>
       <input class="cr-input" id="password2" name="password2" type="password" required minlength="8" autocomplete="new-password">
 
-      <label class="cr-label" for="play_cricket_base_url">Play-Cricket club URL</label>
-      <p class="cr-help">Do not add match ID here. Just the club site URL.</p>
-      <input class="cr-input" id="play_cricket_base_url" name="play_cricket_base_url" type="url" required placeholder="https://yourclub.play-cricket.com/website/results" value="{{ request.form.play_cricket_base_url or '' }}">
+      <label class="cr-label" for="play_cricket_base_url">Play-Cricket club code</label>
+      <p class="cr-help">
+        Enter the short name from your club’s Play-Cricket web address — the part before
+        <code class="cr-code">.play-cricket.com</code>. Example: if your site is
+        <code class="cr-code">https://bmacc.play-cricket.com</code>, type <strong>bmacc</strong>.
+        You do not need to paste the full URL.
+      </p>
+      <input class="cr-input" id="play_cricket_base_url" name="play_cricket_base_url" required autocomplete="off" placeholder="bmacc" value="{{ request.form.play_cricket_base_url or '' }}">
 
       <button type="submit" class="cr-btn cr-btn-primary" style="width:100%;margin-top:20px;">Create account</button>
     </form>
