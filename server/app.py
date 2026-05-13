@@ -275,28 +275,38 @@ def _org_play_cricket_root(org: Organization) -> str:
 
 
 def _fixture_candidate_urls(base_url: str) -> list[str]:
+    """Play-Cricket fixture pages to try, in priority order.
+
+    Prefer the club Weekly matches tab (``/Matches?tab=Weekly``) so the Home
+    fixture list tracks upcoming weekly fixtures instead of arbitrary homepage links
+    (same idea as bmacc.play-cricket.com/Matches?tab=Weekly).
+    """
     raw = (base_url or "").strip().rstrip("/")
     if not raw:
         return []
     parsed = urlparse(raw)
     host_root = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+    if not host_root:
+        return [raw]
     low = raw.lower()
-    candidates = [raw]
-    if host_root:
-        candidates.append(f"{host_root}/Matches")
-        candidates.append(f"{host_root}/website/results")
-    if "/website/results" in low and host_root:
-        candidates.append(f"{host_root}/Matches")
-    if "/match_details" in low and host_root:
-        candidates.append(f"{host_root}/Matches")
-    out = []
-    seen = set()
-    for c in candidates:
-        k = c.lower()
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def add(u: str) -> None:
+        k = u.lower()
         if k in seen:
-            continue
+            return
         seen.add(k)
-        out.append(c)
+        out.append(u)
+
+    weekly = f"{host_root}/Matches?tab=Weekly"
+    add(weekly)
+    # If the org saved a specific matches/results URL (not just the host root), try it next.
+    if low != host_root.lower() and raw.lower().startswith(host_root.lower()):
+        if "/matches" in low or "/website/results" in low:
+            add(raw)
+    add(f"{host_root}/Matches")
+    add(f"{host_root}/website/results")
     return out
 
 
@@ -658,6 +668,7 @@ def read_relay_overlay_prefs(slug):
     if not path.exists():
         return {
             "active_panel": "score",
+            "theme": "classic",
             "overlay_density": "expanded",
             "overlay_scale": 1.0,
             "overlay_box_color": "#101f45",
@@ -665,8 +676,12 @@ def read_relay_overlay_prefs(slug):
     try:
         with path.open("r", encoding="utf-8") as fh:
             s = json.load(fh)
+        th = str(s.get("theme") or "classic").strip().lower()
+        if th not in {"classic", "neon", "minimal"}:
+            th = "classic"
         return {
             "active_panel": s.get("active_panel") or "score",
+            "theme": th,
             "overlay_density": s.get("overlay_density") or "expanded",
             "overlay_scale": float(s.get("overlay_scale") or 1.0),
             "overlay_box_color": _safe_hex_color(s.get("overlay_box_color"), "#101f45"),
@@ -674,6 +689,7 @@ def read_relay_overlay_prefs(slug):
     except Exception:
         return {
             "active_panel": "score",
+            "theme": "classic",
             "overlay_density": "expanded",
             "overlay_scale": 1.0,
             "overlay_box_color": "#101f45",
@@ -983,6 +999,7 @@ def dashboard_relays():
         {
             "match": m,
             "squad_name": team_names.get(m.club_team_id),
+            "overlay_prefs": read_relay_overlay_prefs(m.score_match_slug),
         }
         for m in matches
     ]
@@ -1116,6 +1133,9 @@ def dashboard_relay_appearance():
     panel = (request.form.get("active_panel") or "score").strip().lower()
     if panel not in {"score", "batting", "bowling", "chase", "fullscore", "chart"}:
         panel = "score"
+    theme = (request.form.get("theme") or "classic").strip().lower()
+    if theme not in {"classic", "neon", "minimal"}:
+        theme = "classic"
     density = (request.form.get("overlay_density") or "expanded").strip().lower()
     if density not in {"compact", "expanded"}:
         density = "expanded"
@@ -1128,6 +1148,7 @@ def dashboard_relay_appearance():
     with match_context(slug):
         merge_missing_state_keys(state)
         state["active_panel"] = panel
+        state["theme"] = theme
         state["overlay_density"] = density
         state["overlay_scale"] = round(scale, 2)
         state["overlay_box_color"] = overlay_box_color

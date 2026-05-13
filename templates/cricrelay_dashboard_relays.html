@@ -1,6 +1,6 @@
 {% extends "base_marketing.html" %}
 {% block title %}Live streams — {{ org.name }} — CricRelay{% endblock %}
-{% block meta_description %}Configure Play-Cricket live relays and browser overlay URLs for {{ org.name }} — pause, resume, and run a fixed broadcast overlay style.{% endblock %}
+{% block meta_description %}Configure Play-Cricket live relays and browser overlay URLs for {{ org.name }} — pause, resume, and tune overlay size for Prism or OBS.{% endblock %}
 
 {% block page_shell %}
 <main id="main-content" class="cr-main">
@@ -71,7 +71,41 @@
           <tr>
             <td colspan="4">
               <div class="cr-muted" style="font-size:.82rem;margin-bottom:8px;">Scrape URL · <code class="cr-code">{{ m.full_scrape_url }}</code></div>
-              <div class="cr-muted">Overlay style is fixed to the CricRelay broadcast scoreboard.</div>
+              {% set op = row.overlay_prefs %}
+              <details style="margin-top:4px;">
+                <summary class="cr-help" style="cursor:pointer;font-weight:600;">Overlay readability (Prism / OBS)</summary>
+                <p class="cr-muted" style="margin:8px 0 10px;font-size:.85rem;">Play-Cricket streams use a minimal score card. Tune scale so it reads on phone and full-screen laptop.</p>
+                <form method="post" action="{{ url_for('dashboard_relay_appearance') }}" class="cr-row2" style="max-width:520px;align-items:end;">
+                  <input type="hidden" name="score_match_slug" value="{{ m.score_match_slug }}">
+                  <input type="hidden" name="active_panel" value="score">
+                  <div>
+                    <label class="cr-label" for="theme-{{ loop.index }}">Theme</label>
+                    <select class="cr-select" id="theme-{{ loop.index }}" name="theme">
+                      <option value="classic" {% if op.theme == 'classic' %}selected{% endif %}>Classic</option>
+                      <option value="neon" {% if op.theme == 'neon' %}selected{% endif %}>Neon</option>
+                      <option value="minimal" {% if op.theme == 'minimal' %}selected{% endif %}>Minimal</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="cr-label" for="density-{{ loop.index }}">Density</label>
+                    <select class="cr-select" id="density-{{ loop.index }}" name="overlay_density">
+                      <option value="expanded" {% if op.overlay_density == 'expanded' %}selected{% endif %}>Expanded</option>
+                      <option value="compact" {% if op.overlay_density == 'compact' %}selected{% endif %}>Compact</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="cr-label" for="scale-{{ loop.index }}">Scale</label>
+                    <input class="cr-input" id="scale-{{ loop.index }}" name="overlay_scale" type="number" step="0.05" min="0.8" max="1.8" value="{{ op.overlay_scale }}">
+                  </div>
+                  <div>
+                    <label class="cr-label" for="box-{{ loop.index }}">Bar colour</label>
+                    <input class="cr-input" id="box-{{ loop.index }}" name="overlay_box_color" type="text" maxlength="7" value="{{ op.overlay_box_color }}" pattern="#[0-9a-fA-F]{6}" title="#RRGGBB">
+                  </div>
+                  <div style="grid-column:1/-1;">
+                    <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm">Save overlay settings</button>
+                  </div>
+                </form>
+              </details>
             </td>
           </tr>
           {% endfor %}
