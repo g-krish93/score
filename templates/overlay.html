@@ -231,6 +231,33 @@
       color: #c5d7f5;
       font-variant-numeric: tabular-nums;
     }
+    .relay-card-chase {
+      margin-top: clamp(8px, 1.5vmin, 14px);
+      padding: clamp(8px, 1.2vmin, 12px) clamp(12px, 2.5vw, 20px);
+      border-radius: clamp(8px, 1.2vw, 12px);
+      background: rgba(34, 197, 94, 0.14);
+      border: 1px solid rgba(34, 197, 94, 0.38);
+      font-size: clamp(13px, 2.6vw + 0.45vmin, 19px);
+      font-weight: 800;
+      color: #ecfdf5;
+      letter-spacing: 0.04em;
+      line-height: 1.35;
+    }
+    .relay-card-chase strong {
+      font-weight: 950;
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+    }
+    .relay-card-chase .relay-card-chase-sep {
+      opacity: 0.75;
+      font-weight: 700;
+      padding: 0 0.15em;
+    }
+    .relay-card-chase .relay-card-chase-muted {
+      font-weight: 700;
+      color: #b6e9c9;
+      font-size: 0.92em;
+    }
     .relay-card-row2 {
       margin-top: clamp(10px, 2vmin, 16px);
       padding-top: clamp(8px, 1.5vmin, 14px);
@@ -453,6 +480,38 @@
       return rows.join("");
     }
 
+    function relayInningsRuns(inv) {
+      if (!inv || typeof inv !== "object") return null;
+      const r = inv.runs;
+      if (r != null && r !== "" && !Number.isNaN(Number(r))) return Number(r);
+      const sc = String(inv.score || "").trim();
+      const m = sc.match(/^(\d+)\s*\/\s*\d+/);
+      if (m) return Number(m[1]);
+      return null;
+    }
+
+    /** Limited-overs chase: target = 1st innings runs + 1 (no DLS in relay feed). */
+    function relayChaseHtml(i1, i2, s2) {
+      const r1 = relayInningsRuns(i1);
+      const r2 = relayInningsRuns(i2);
+      if (r1 === null || r2 === null) return "";
+      if (!String(s2 || "").trim()) return "";
+      const target = r1 + 1;
+      const need = Math.max(0, target - r2);
+      let tail = "";
+      if (r2 >= target) {
+        tail = `<span class="relay-card-chase-sep">·</span> <span class="relay-card-chase-muted">Target reached</span>`;
+      } else {
+        tail = `<span class="relay-card-chase-sep">·</span> <span class="relay-card-chase-muted">Need ${need} run${need === 1 ? "" : "s"}</span>`;
+      }
+      return (
+        `<div class="relay-card-chase" role="status" aria-live="polite">` +
+        `Target <strong>${text(String(target))}</strong>` +
+        tail +
+        `</div>`
+      );
+    }
+
     function renderRelayScore(data, resultRow) {
       const b = data.relay_bundle || {};
       const snap = b.snapshot || {};
@@ -510,6 +569,7 @@
           (s2 ? `<span class="team2">${t2}</span>` : `<span class="muted">Opposition / 2nd innings</span>`) +
           ` ${s2 ? `${text(s2)}${o2 && o2 !== "—" ? ` <span class="muted">(${text(o2)} ov)</span>` : ""}` : "—"}` +
           `</div></div>`;
+      const chaseHtml = relayChaseHtml(i1, i2, s2);
       return (
         resultRow +
         `<div class="statline">${stalePill}${statusPill}</div>` +
@@ -519,6 +579,7 @@
           `<div class="relay-card-team">${heroTeam}</div>` +
           `<div class="relay-card-score ${popClass}${dual ? " relay-dual" : ""}">${heroScore}</div>` +
           (heroOv ? `<div class="relay-card-ov">${heroOv}</div>` : "") +
+          chaseHtml +
           row2 +
           `<div class="relay-card-foot">Play-Cricket · External scorecard</div>` +
         `</div>`
