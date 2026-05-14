@@ -62,6 +62,17 @@ Clubs can use **manual scoring** in the input UI, or follow a **Play-Cricket** p
   - Overlay: `/m/bmacc-team2/stream`
 - All API calls from those pages automatically include the match scope.
 
+## EC2 rebuild: site not loading (cricrelay.co.uk)
+
+After a **new instance** from Terraform, run **`deploy/bootstrap-ec2.sh`** on the server once (as root). It creates a minimal `/app/.env` if missing, installs **nginx**, copies **`deploy/nginx-cricrelay.conf`**, fixes **`EnvironmentFile=-/app/.env`**, and restarts **cricket** and **nginx**. Then merge your real secrets (e.g. `DATABASE_URL`, SMTP) into `/app/.env` and `sudo systemctl restart cricket`.
+
+```bash
+cd /app && sudo git pull
+sudo bash deploy/bootstrap-ec2.sh
+```
+
+If you use **HTTPS on the origin** (not only Cloudflare-to-port-80), install certificates on the box (e.g. **certbot**) — the repo nginx sample only listens on **port 80**.
+
 ## Deploying updates on EC2
 
 The `cricket` systemd unit runs Gunicorn as **root** and uses packages under `/usr/local/lib/python3.9/site-packages`. If you run `pip3 install` as **ec2-user** without `sudo`, new wheels install under `~/.local` and the app fails to import (Gunicorn exits with status **3**). Use **`sudo pip3 install -r requirements.txt`** after `git pull` (the included GitHub Action does this).
