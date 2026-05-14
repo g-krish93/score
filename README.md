@@ -73,6 +73,8 @@ sudo bash deploy/bootstrap-ec2.sh
 
 If you use **HTTPS on the origin** (not only Cloudflare-to-port-80), install certificates on the box (e.g. **certbot**) — the repo nginx sample only listens on **port 80**.
 
+GitHub Actions **Deploy to EC2** copies **`deploy/cricket.service`** on each run (so `python3 -m gunicorn` matches `sudo pip3`), then **stop → start** the unit and prints **`journalctl`** if the service is still not active.
+
 ## Deploying updates on EC2
 
 The `cricket` systemd unit runs Gunicorn as **root** and uses packages under `/usr/local/lib/python3.9/site-packages`. If you run `pip3 install` as **ec2-user** without `sudo`, new wheels install under `~/.local` and the app fails to import (Gunicorn exits with status **3**). Use **`sudo pip3 install -r requirements.txt`** after `git pull` (the included GitHub Action does this).

@@ -1,15 +1,20 @@
 [Unit]
-Description=Cricket Score Overlay
+Description=Cricket Score Overlay (CricRelay)
 After=network.target
 
 [Service]
+Type=simple
 WorkingDirectory=/app
-EnvironmentFile=/app/.env
-ExecStart=/usr/local/bin/gunicorn -w 1 -b 127.0.0.1:5000 server.app:app
+# Leading "-" = file optional (avoids start failure before first .env upload).
+EnvironmentFile=-/app/.env
+# Use the same interpreter as `sudo pip3` / system python3 (avoids /usr/local/bin/gunicorn vs site-packages mismatch).
+ExecStart=/usr/bin/python3 -m gunicorn -w 1 -b 0.0.0.0:5000 server.app:app
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+# Give SQLAlchemy / DB a moment on cold start (micro instances).
+TimeoutStartSec=120
 
 [Install]
 WantedBy=multi-user.target

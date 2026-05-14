@@ -15,11 +15,24 @@ jobs:
           username: ec2-user
           key: ${{ secrets.EC2_KEY }}
           script: |
+            set -e
             cd /app
             git pull origin main
+            # Keep systemd unit in sync with repo (python3 -m gunicorn, optional .env).
+            if [ -f deploy/cricket.service ]; then
+              sudo install -m 644 deploy/cricket.service /etc/systemd/system/cricket.service
+              sudo systemctl daemon-reload
+            fi
             # Gunicorn runs as root and loads /usr/local/... site-packages; user pip would install under ~/.local and the worker would crash on import (exit status 3).
             # Amazon Linux often ships requests via rpm — pip cannot uninstall it; --ignore-installed lays down wheels in site-packages without removing the RPM.
             sudo pip3 install --ignore-installed -r requirements.txt
-            sudo systemctl restart cricket
-            sleep 3
-            sudo systemctl status cricket
+            sudo systemctl stop cricket || true
+            sleep 2
+            sudo systemctl start cricket
+            sleep 4
+            if ! sudo systemctl is-active --quiet cricket; then
+              echo "=== journalctl -u cricket (last 120 lines) ==="
+              sudo journalctl -u cricket -n 120 --no-pager || true
+              exit 1
+            fi
+            sudo systemctl status cricket --no-pager

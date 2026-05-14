@@ -36,9 +36,8 @@ else
   echo "WARN: missing $APP/deploy/nginx-cricrelay.conf — pull latest repo on server." >&2
 fi
 
-# Optional env file must not prevent systemd from starting the unit.
-if [[ -f /etc/systemd/system/cricket.service ]]; then
-  sed -i 's|^EnvironmentFile=/app/.env|EnvironmentFile=-/app/.env|' /etc/systemd/system/cricket.service || true
+if [[ -f "$APP/deploy/cricket.service" ]]; then
+  install -m 644 "$APP/deploy/cricket.service" /etc/systemd/system/cricket.service
 fi
 
 systemctl daemon-reload

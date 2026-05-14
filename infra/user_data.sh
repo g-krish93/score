@@ -22,23 +22,9 @@ if [[ -f /app/deploy/nginx-cricrelay.conf ]]; then
   install -m 644 /app/deploy/nginx-cricrelay.conf /etc/nginx/conf.d/cricrelay.conf
 fi
 
-cat > /etc/systemd/system/cricket.service << 'EOF'
-[Unit]
-Description=Cricket Score Overlay
-After=network.target
-
-[Service]
-WorkingDirectory=/app
-EnvironmentFile=-/app/.env
-ExecStart=/usr/local/bin/gunicorn -w 1 -b 0.0.0.0:5000 server.app:app
-Restart=always
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
+if [[ -f /app/deploy/cricket.service ]]; then
+  install -m 644 /app/deploy/cricket.service /etc/systemd/system/cricket.service
+fi
 
 systemctl daemon-reload
 systemctl enable cricket nginx
