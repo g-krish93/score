@@ -64,12 +64,27 @@ Clubs can use **manual scoring** in the input UI, or follow a **Play-Cricket** p
 
 ## EC2 rebuild: site not loading (cricrelay.co.uk)
 
-After a **new instance** from Terraform, run **`deploy/bootstrap-ec2.sh`** on the server once (as root). It creates a minimal `/app/.env` if missing, installs **nginx**, copies **`deploy/nginx-cricrelay.conf`**, fixes **`EnvironmentFile=-/app/.env`**, and restarts **cricket** and **nginx**. Then merge your real secrets (e.g. `DATABASE_URL`, SMTP) into `/app/.env` and `sudo systemctl restart cricket`.
+After a **new instance** from Terraform, or if the site or **cricket** service is broken, SSH in and run **`sudo bash /app/deploy/bootstrap-ec2.sh`** (see commands below). Then merge your real secrets (e.g. `DATABASE_URL`, SMTP) into `/app/.env` and `sudo systemctl restart cricket`.
 
 ```bash
-cd /app && sudo git pull
-sudo bash deploy/bootstrap-ec2.sh
+ssh -i /path/to/score-key.pem ec2-user@YOUR_PUBLIC_IP
+sudo bash /app/deploy/bootstrap-ec2.sh
 ```
+
+That script **pulls `main`**, ensures **`.env`** exists, installs **nginx** + **pip deps**, installs **`deploy/cricket.service`** and **`nginx-cricrelay.conf`**, then **stop/start** `cricket` and verifies **`/health`**. If anything fails, it prints **`journalctl`**.
+
+To skip `git pull` (e.g. broken keys): `sudo GIT_PULL=0 bash /app/deploy/bootstrap-ec2.sh`
+
+If `/app` is missing or empty, clone once (replace repo URL if you use a fork):
+
+```bash
+sudo yum install -y git python3 python3-pip
+sudo git clone https://github.com/g-krish93/score.git /app
+sudo chown -R ec2-user:ec2-user /app
+sudo bash /app/deploy/bootstrap-ec2.sh
+```
+
+Then merge your real **`DATABASE_URL`**, SMTP, etc. into **`/app/.env`** and run `sudo systemctl restart cricket`.
 
 If you use **HTTPS on the origin** (not only Cloudflare-to-port-80), install certificates on the box (e.g. **certbot**) — the repo nginx sample only listens on **port 80**.
 
