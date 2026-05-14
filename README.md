@@ -68,6 +68,8 @@ After a **new instance** from Terraform, or if the site or **cricket** service i
 
 ```bash
 ssh -i /path/to/score-key.pem ec2-user@YOUR_PUBLIC_IP
+# If the server still has an older bootstrap script, update the repo once:
+cd /app && git pull origin main
 sudo bash /app/deploy/bootstrap-ec2.sh
 ```
 
