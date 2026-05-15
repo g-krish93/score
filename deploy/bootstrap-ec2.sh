@@ -32,11 +32,13 @@ if [[ ! -f "$APP/.env" ]]; then
   umask 077
   {
     echo "PORT=5000"
-    echo "SECRET_KEY=$(openssl rand -hex 32)"
     echo "PUBLIC_BASE_URL=$PUBLIC_BASE_URL"
     echo "RELAY_AUTO_POLL=1"
   } >"$APP/.env"
   chown ec2-user:ec2-user "$APP/.env" || true
+fi
+if [[ -f "$APP/deploy/persist-auth-env.sh" ]]; then
+  bash "$APP/deploy/persist-auth-env.sh"
 fi
 
 if command -v dnf >/dev/null 2>&1; then
