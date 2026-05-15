@@ -1,6 +1,6 @@
 {% extends "base_marketing.html" %}
 {% block title %}CricRelay — Live cricket scores for professional stream overlays{% endblock %}
-{% block meta_description %}CricRelay syncs ECB Play-Cricket fixtures into browser overlays for UK clubs — YouTube, TikTok Live, OBS &amp; Prism. One login, six squads, six streams, IPO-ready infrastructure story.{% endblock %}
+{% block meta_description %}CricRelay syncs ECB Play-Cricket fixtures into browser overlays for UK clubs — YouTube, TikTok Live, OBS &amp; Prism. One login, up to six live streams.{% endblock %}
 
 {% block extra_head %}
 {% if structured_data %}
@@ -20,8 +20,7 @@
         <a class="cr-btn cr-btn-primary" href="{{ url_for('register_page') }}">Start free</a>
         <a class="cr-btn cr-btn-secondary" href="{{ url_for('login_page') }}">Log in</a>
         {% else %}
-        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Open live streams</a>
-        <a class="cr-btn cr-btn-secondary" href="{{ url_for('dashboard') }}">Open squads</a>
+        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard') }}">Open streams</a>
         {% endif %}
       </div>
     </div>
@@ -78,7 +77,7 @@
         <a class="cr-btn cr-btn-primary" href="{{ url_for('register_page') }}">Start free</a>
         <a class="cr-btn cr-btn-secondary" href="{{ url_for('login_page') }}">Log in</a>
         {% else %}
-        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard_relays') }}">Go to live streams</a>
+        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard') }}">Go to streams</a>
         {% endif %}
       </div>
     </div>

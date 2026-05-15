@@ -245,73 +245,12 @@ def sync_now():
 
     return jsonify(out), code
 
-
-@relay_worker_bp.get("/overlay")
-def overlay():
-    url = (request.args.get("url") or "").strip()
-    if not url:
-        return (
-            "<h3>Missing query param: url</h3>"
-            "<p>Example: /relay-worker/overlay?url=https://bmacc.play-cricket.com/website/results/7681278</p>",
-            400,
-        )
-    return f"""<!doctype html>
-<html><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Play-Cricket Live Overlay</title>
-<style>
-body {{ margin:0; background:transparent; font-family:Segoe UI, Arial, sans-serif; color:#fff; }}
-#ov {{ position:fixed; left:0; right:0; bottom:0; padding:8px 12px; background:rgba(7,17,41,.92); border-top:3px solid #5fa8ff; }}
-.top {{ display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:6px; font-size:12px; }}
-.muted {{ color:#a9bbd9; }}
-.warn {{ color:#ff6b6b; font-weight:700; }}
-.main {{ display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:center; }}
-.box {{ background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.17); border-radius:8px; padding:6px 8px; }}
-.score {{ font-size:34px; font-weight:900; text-align:center; background:rgba(255,255,255,.16); border-radius:8px; padding:5px 10px; }}
-.team {{ font-size:13px; font-weight:800; text-transform:uppercase; }}
-.meta {{ font-size:11px; color:#c8d7f0; margin-top:3px; }}
-</style>
-</head>
-<body>
-<div id="ov">
-  <div class="top"><span class="muted" id="status">Loading...</span><span id="stale"></span></div>
-  <div class="main">
-    <div class="box"><div class="team" id="t1">-</div><div class="meta" id="i1">-</div></div>
-    <div class="score" id="score">-</div>
-    <div class="box"><div class="team" id="t2">-</div><div class="meta" id="i2">-</div></div>
-  </div>
-</div>
-<script>
-const SRC = {url!r};
-const api = () => `/relay-worker/live?url=${{encodeURIComponent(SRC)}}&interval=8&stale_after=45`;
-function tx(v) {{ return (v===null||v===undefined||v==='') ? '-' : String(v); }}
-async function tick() {{
-  try {{
-    const r = await fetch(api());
-    const d = await r.json();
-    const s = d.snapshot || {{}};
-    const a = s.innings_1 || {{}};
-    const b = s.innings_2 || {{}};
-    document.getElementById('status').textContent = tx(s.status || 'Live scrape');
-    document.getElementById('stale').textContent = d.stale ? 'STALE' : '';
-    document.getElementById('stale').className = d.stale ? 'warn' : 'muted';
-    document.getElementById('t1').textContent = tx(a.team);
-    document.getElementById('i1').textContent = `${{tx(a.score)}} (${{tx(a.overs_display)}} ov)`;
-    document.getElementById('t2').textContent = tx(b.team);
-    document.getElementById('i2').textContent = `${{tx(b.score)}} (${{tx(b.overs_display)}} ov)`;
-    document.getElementById('score').textContent = a.score && b.score ? `${{a.score}}  |  ${{b.score}}` : tx(a.score || b.score);
-  }} catch (e) {{
-    document.getElementById('stale').textContent = 'ERROR';
-    document.getElementById('stale').className = 'warn';
-  }}
-}}
-tick();
-setInterval(tick, 2000);
-</script>
-</body></html>"""
+def _relay_worker_http_enabled() -> bool:
+    v = (os.getenv("RELAY_WORKER_HTTP") or "").strip().lower()
+    return v in {"1", "true", "yes", "on"}
 
 
-def register_relay_worker(app, ingest_fn: Callable[[str, dict], tuple[dict, int]]) -> None:
+def register_relay_worker(app, ingest_fn) -> None:
     set_relay_ingest_handler(ingest_fn)
-    app.register_blueprint(relay_worker_bp)
+    if _relay_worker_http_enabled():
+        app.register_blueprint(relay_worker_bp)

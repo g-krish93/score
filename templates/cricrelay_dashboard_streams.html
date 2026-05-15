@@ -1,0 +1,151 @@
+{% extends "base_marketing.html" %}
+{% block title %}Streams — {{ org.name }} — CricRelay{% endblock %}
+{% block meta_description %}Start Play-Cricket live streams and copy overlay URLs for {{ org.name }} — Prism, OBS, Larix.{% endblock %}
+
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <div class="cr-dash-top">
+    <div>
+      <h1>Streams</h1>
+      <p class="cr-muted">Club: <strong>{{ org.name }}</strong> · Play-Cricket <code class="cr-code">{{ play_cricket_root }}</code></p>
+      <p class="cr-page-lead">Pick a fixture, start a stream, copy the overlay URL into Prism or OBS.</p>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, m in messages %}<div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>{% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="cr-card">
+    <h2>Active streams</h2>
+    <p class="cr-muted" style="margin:0 0 14px;">{{ stream_slots_used }} / {{ stream_slots_total }} slots · {% if relay_auto_poll %}auto-sync every {{ relay_poll_sec }}s{% else %}auto-sync off{% endif %}</p>
+    {% if relay_rows %}
+    <div class="cr-table-wrap">
+      <table class="cr-table">
+        <thead>
+          <tr>
+            <th>Stream</th>
+            <th>Match ID</th>
+            <th>Status</th>
+            <th>Overlay</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in relay_rows %}
+          {% set m = row.match %}
+          {% set title = m.label if m.label else ('Match ' ~ m.play_cricket_match_id) %}
+          <tr>
+            <td><strong>{{ title }}</strong></td>
+            <td><code class="cr-code">{{ m.play_cricket_match_id }}</code></td>
+            <td>
+              {% if m.paused %}
+              <span class="cr-badge cr-badge-paused">Paused</span>
+              {% else %}
+              <span class="cr-badge cr-badge-live">Live sync</span>
+              {% endif %}
+            </td>
+            <td>
+              <code class="cr-code">{{ request.url_root.rstrip('/') }}/m/{{ m.score_match_slug }}/stream</code>
+              <div class="cr-stream-actions">
+                <button type="button" class="cr-btn cr-btn-secondary cr-btn-sm cr-btn-copy" data-copy-text="{{ request.url_root.rstrip('/') }}/m/{{ m.score_match_slug }}/stream">Copy overlay</button>
+                <form method="post" action="{{ url_for('dashboard_relay_toggle_pause') }}" style="display:inline;">
+                  <input type="hidden" name="score_match_slug" value="{{ m.score_match_slug }}">
+                  <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm">{% if m.paused %}Resume{% else %}Pause{% endif %}</button>
+                </form>
+                <form method="post" action="{{ url_for('dashboard_relay_delete') }}" style="display:inline;" onsubmit="return confirm('Remove this stream?');">
+                  <input type="hidden" name="score_match_slug" value="{{ m.score_match_slug }}">
+                  <button type="submit" class="cr-btn cr-btn-danger cr-btn-sm">Remove</button>
+                </form>
+              </div>
+              <details style="margin-top:8px;">
+                <summary class="cr-help" style="cursor:pointer;font-weight:600;">Overlay size</summary>
+                <form method="post" action="{{ url_for('dashboard_relay_appearance') }}" style="margin-top:10px;max-width:280px;">
+                  <input type="hidden" name="score_match_slug" value="{{ m.score_match_slug }}">
+                  <label class="cr-label" for="scale-{{ loop.index }}">Scale (phone / laptop)</label>
+                  <input class="cr-input" id="scale-{{ loop.index }}" name="overlay_scale" type="number" step="0.05" min="0.8" max="1.8" value="{{ row.overlay_prefs.overlay_scale }}">
+                  <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm" style="margin-top:10px;">Save</button>
+                </form>
+              </details>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="cr-muted">No streams yet — start one from a fixture below.</p>
+    {% endif %}
+  </div>
+
+  <div class="cr-card cr-card-highlight">
+    <h2>Play-Cricket fixtures</h2>
+    <p class="cr-muted" style="margin:0 0 6px;">Loaded from <code class="cr-code">{{ fixture_source_url }}</code></p>
+    {% if fixtures_error %}
+    <p class="cr-muted">Could not load fixtures — use manual match ID below.</p>
+    {% endif %}
+    {% if fixtures %}
+    <div class="cr-table-wrap">
+      <table class="cr-table">
+        <thead>
+          <tr>
+            <th>Fixture</th>
+            <th>Match ID</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in fixtures %}
+          <tr>
+            <td>{{ f.label }}</td>
+            <td><code class="cr-code">{{ f.match_id }}</code></td>
+            <td>
+              {% if f.match_id in active_ids %}
+              <span class="cr-badge cr-badge-live">Active</span>
+              {% elif stream_slots_used >= stream_slots_total %}
+              <span class="cr-badge cr-badge-paused">No slot</span>
+              {% else %}
+              <form method="post" action="{{ url_for('dashboard_add_match') }}">
+                <input type="hidden" name="play_cricket_match_id" value="{{ f.match_id }}">
+                <input type="hidden" name="stream_label" value="{{ f.label[:120] }}">
+                <button type="submit" class="cr-btn cr-btn-primary cr-btn-sm">Start stream</button>
+                <a class="cr-btn cr-btn-ghost cr-btn-sm" href="{{ f.url }}" target="_blank" rel="noopener">Fixture</a>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="cr-muted">No fixtures listed — check your Play-Cricket club code or add a match ID manually.</p>
+    {% endif %}
+  </div>
+
+  {% if stream_slots_used < stream_slots_total %}
+  <div class="cr-card">
+    <h2>Start by match ID</h2>
+    <form method="post" action="{{ url_for('dashboard_add_match') }}">
+      <div class="cr-row2">
+        <div>
+          <label class="cr-label" for="stream_label">Label (optional)</label>
+          <input class="cr-input" id="stream_label" name="stream_label" maxlength="120" placeholder="e.g. 1st XI vs Club B">
+        </div>
+        <div>
+          <label class="cr-label" for="play_cricket_match_id">Play-Cricket match id</label>
+          <input class="cr-input" id="play_cricket_match_id" name="play_cricket_match_id" inputmode="numeric" pattern="[0-9]+" required placeholder="7560599">
+        </div>
+      </div>
+      <details style="margin-top:12px;">
+        <summary class="cr-help" style="cursor:pointer;">Different club code</summary>
+        <label class="cr-label" for="play_cricket_base_url">Club code</label>
+        <input class="cr-input" id="play_cricket_base_url" name="play_cricket_base_url" autocomplete="off" placeholder="bmacc">
+      </details>
+      <button type="submit" class="cr-btn cr-btn-primary" style="margin-top:16px;">Create stream</button>
+    </form>
+  </div>
+  {% endif %}
+</main>
+{% endblock %}

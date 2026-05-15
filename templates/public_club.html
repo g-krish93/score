@@ -1,6 +1,6 @@
 {% extends "base_marketing.html" %}
 {% block title %}{{ org.name }} — Live streams{% endblock %}
-{% block meta_description %}Watch {{ org.name }} live score overlays powered by ECB Play-Cricket — stream links and squads for this club.{% endblock %}
+{% block meta_description %}Watch {{ org.name }} live score overlays powered by ECB Play-Cricket — stream links for this club.{% endblock %}
 {% block site_nav %}{% endblock %}
 {% block site_footer %}{% endblock %}
 {% block body_extra_class %}cr-public-body{% endblock %}
@@ -26,17 +26,8 @@
     <img src="{{ public_logo_url }}" alt="{{ org.name }} logo" class="cr-public-logo" loading="lazy">
     {% endif %}
     <h1 class="cr-public-title">{{ org.name }}</h1>
-    <p class="cr-page-lead">This is {{ org.name }}’s live page. Only this club’s squads and stream links are shown here.</p>
+    <p class="cr-page-lead">This is {{ org.name }}’s live page. Live stream overlay links for this club only.</p>
   </section>
-
-  {% if teams %}
-  <div class="cr-card">
-    <h2>Squads</h2>
-    <ul class="cr-public-list">
-      {% for t in teams %}<li>{{ t.name }}</li>{% endfor %}
-    </ul>
-  </div>
-  {% endif %}
 
   <div class="cr-card cr-card-highlight">
     <h2>Live stream overlays</h2>

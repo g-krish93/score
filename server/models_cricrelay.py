@@ -134,22 +134,11 @@ class Organization(db.Model):
         return check_password_hash(self.password_hash, password)
 
 
-class ClubTeam(db.Model):
-    __tablename__ = "cricrelay_club_team"
-
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id = db.Column(db.String(36), db.ForeignKey("cricrelay_org.id"), nullable=False)
-    name = db.Column(db.String(200), nullable=False)
-
-    __table_args__ = (UniqueConstraint("organization_id", "name", name="uq_cricrelay_club_team_name"),)
-
-
 class RelayMatch(db.Model):
     __tablename__ = "cricrelay_match"
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id = db.Column(db.String(36), db.ForeignKey("cricrelay_org.id"), nullable=False)
-    club_team_id = db.Column(db.String(36), db.ForeignKey("cricrelay_club_team.id"), nullable=True)
     play_cricket_match_id = db.Column(db.String(32), nullable=False)
     full_scrape_url = db.Column(db.String(800), nullable=False)
     score_match_slug = db.Column(db.String(120), unique=True, nullable=False, index=True)

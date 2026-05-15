@@ -14,7 +14,8 @@ def main():
     c = app.test_client()
 
     assert_ok(c.get("/health"))
-    assert_ok(c.get("/relay-worker/health"))
+    if (os.getenv("RELAY_WORKER_HTTP") or "").strip().lower() in {"1", "true", "yes", "on"}:
+        assert_ok(c.get("/relay-worker/health"))
     score0 = c.get("/score").get_json()
     home = c.get("/")
     assert_ok(home)
@@ -114,72 +115,6 @@ def main():
             f"{restore_resp.get_data(as_text=True)}"
         )
     assert_ok(c.get("/health"))
-
-    # Over-only setup with no squads: server fills placeholder lineups
-    r = c.post(
-        "/setup",
-        json={
-            "team1": "OA",
-            "team2": "OB",
-            "toss_winner": "OA",
-            "toss_decision": "bat",
-            "scoring_mode": "over_only",
-            "total_overs": 6,
-            "batting_squad": [],
-            "bowling_squad": [],
-        },
-    )
-    assert_ok(r)
-    data = r.get_json()
-    assert len(data["batting_squad"]) == 11 and len(data["bowling_squad"]) == 11, data
-
-    # Over-only scoring mode validation
-    over_only_payload = {
-        "team1": "Team X",
-        "team2": "Team Y",
-        "toss_winner": "Team X",
-        "toss_decision": "bat",
-        "scoring_mode": "over_only",
-        "total_overs": 10,
-        "batting_squad": [f"X{i}" for i in range(1, 12)],
-        "bowling_squad": [f"Y{i}" for i in range(1, 12)],
-    }
-    assert_ok(c.post("/setup", json=over_only_payload))
-    blocked_ball = c.post("/ball", json={"type": "1"})
-    assert blocked_ball.status_code == 400
-    assert_ok(
-        c.post("/over-update", json={"after_over": 1, "innings_runs": 12, "innings_wickets": 1})
-    )
-    score = c.get("/score").get_json()
-    assert score["runs"] == 12 and score["wickets"] == 1 and score["overs_display"] == "1.0", score
-    pop = score.get("over_only_per_over") or []
-    assert len(pop) == 1 and pop[0]["runs_in_over"] == 12 and pop[0]["wkts_in_over"] == 1, score
-    skip = c.post("/over-update", json={"after_over": 3, "innings_runs": 30, "innings_wickets": 2})
-    assert skip.status_code == 400, skip.get_data(as_text=True)
-
-    # Over-only: innings completes when scheduled overs are filled; further over-update rejected
-    assert_ok(
-        c.post(
-            "/setup",
-            json={
-                "team1": "P1",
-                "team2": "P2",
-                "toss_winner": "P1",
-                "toss_decision": "bat",
-                "scoring_mode": "over_only",
-                "total_overs": 1,
-                "batting_squad": [],
-                "bowling_squad": [],
-            },
-        )
-    )
-    assert_ok(
-        c.post("/over-update", json={"after_over": 1, "innings_runs": 3, "innings_wickets": 0})
-    )
-    locked = c.get("/score").get_json()
-    assert locked["scoring_locked"] is True, locked
-    blocked_over = c.post("/over-update", json={"runs": 1, "wickets": 0})
-    assert blocked_over.status_code == 400, blocked_over.get_data(as_text=True)
 
     assert_ok(c.post("/reset-match"))
     assert_ok(c.post("/setup", json=setup_payload))

@@ -18,14 +18,14 @@ Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000/stream` (or a scope
 
 ### Play-Cricket relay (CricRelay)
 
-1. Club logs in → **Live relays** → **create relay** with match id (overlay URL is ready).
-2. Server **polls Play-Cricket automatically** (default every 10s) — **Prism** uses **`/m/<slug>/stream`** only.
-3. Optional: manual scorer at **`/m/<slug>/input`** is blocked while relay mode is on.
+1. Club logs in → **Streams** (`/dashboard`) → pick a Play-Cricket fixture or enter match id.
+2. Server **polls Play-Cricket automatically** (default every 10s) — paste **`/m/<slug>/stream`** into Prism.
+3. Optional: manual ball-by-ball scorer at **`/m/<slug>/input`** when Play-Cricket is unavailable.
 
-### Manual scoring only
+### Manual scoring fallback
 
 1. Open **`/input`** (or **`/m/<slug>/input`**).
-2. Ball by ball or over-by-over setup → score as usual.
+2. Ball-by-ball setup → score as usual.
 3. Overlay **`/stream`** or **`/m/<slug>/stream`** in Prism.
 
 ## Save/restore
@@ -38,13 +38,11 @@ Phone 1 (Larix) streams with overlay URL `http://EC2-IP:5000/stream` (or a scope
 
 Clubs can use **manual scoring** in the input UI, or follow a **Play-Cricket** page. The **Play-Cricket scraper is built into this app** (no separate GitHub project required).
 
-- **Product / registration:** `/` — marketing, register, login. **Club setup** at `/dashboard` (squads + default Play-Cricket base). **Live relays** at `/dashboard/relays` (match id → scrape URL, Prism overlay, ingest, overlay layout). If your saved base contains `…/website/results`, scrape URLs are `…/website/results/<id>`; otherwise `…/match_details?id=<id>`. Set `SECRET_KEY` in production; optional `DATABASE_URL` for Postgres (otherwise SQLite under `STATE_DIR`).
-- **Automatic relay polling (product default):** With **`RELAY_AUTO_POLL=1`** (default), the server starts a background thread that **every `RELAY_POLL_INTERVAL_SEC` seconds** (default **10**) loads every **`RelayMatch`** row from the database, scrapes **`full_scrape_url`**, and applies ingest to **`score_match_slug`**. Clubs only **create the relay on Live relays** — no cron, no manual `/relay-worker/live` on match day. Use **Gunicorn `-w 1`** so only one poller runs (multiple workers would duplicate polls unless you add an external queue later).
+- **Product / registration:** `/` — marketing, register, login. **Streams** at `/dashboard` (fixtures from Play-Cricket + active overlays). If your saved base contains `…/website/results`, scrape URLs are `…/website/results/<id>`; otherwise `…/match_details?id=<id>`. Set `SECRET_KEY` in production; optional `DATABASE_URL` for Postgres (otherwise SQLite under `STATE_DIR`).
+- **Automatic relay polling (product default):** With **`RELAY_AUTO_POLL=1`** (default), the server starts a background thread that **every `RELAY_POLL_INTERVAL_SEC` seconds** (default **10**) loads every **`RelayMatch`** row from the database, scrapes **`full_scrape_url`**, and applies ingest to **`score_match_slug`**. Use **Gunicorn `-w 1`** so only one poller runs.
 
-- **Built-in relay worker** (`/relay-worker/…`) remains available for debugging and one-off pushes.
-- **Per-match operator UI:** `/cricrelay` or `/m/<match_id>/cricrelay`.
-- **Scorer controls:** Input page → **CricRelay** card — Manual vs Play-Cricket; manual scoring is blocked while relay mode is active for that match slug.
-- **Ingest endpoint:** `POST /relay/ingest?match=<slug>` with JSON (`snapshot` + optional `stale`, etc.). Same payload shape as `/relay-worker/live` returns.
+- **Debug HTTP API:** set **`RELAY_WORKER_HTTP=1`** to expose `/relay-worker/…` (off by default in production).
+- **Ingest endpoint:** `POST /relay/ingest?match=<slug>` with JSON (`snapshot` + optional `stale`, etc.).
 - **External push only if needed:** `PUSH_TARGET_URL` / `PUSH_AUTH_TOKEN` for pushing to another host; otherwise use **`push_match`** for same-server ingest.
 - **CLI (optional):** `python -m server.scrape_cli "<url>"` from repo root.
 - **Prism overlay:** `/stream` or `/m/<slug>/stream`; `/score?match=…` polling unchanged.

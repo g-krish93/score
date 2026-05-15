@@ -1,15 +1,13 @@
 <header class="cr-header">
   <div class="cr-header-inner">
-    <a href="{% if session.get('org_id') %}{{ url_for('dashboard_home') }}{% else %}{{ url_for('cricrelay_home') }}{% endif %}" class="cr-brand" aria-label="CricRelay home">
+    <a href="{% if session.get('org_id') %}{{ url_for('dashboard') }}{% else %}{{ url_for('cricrelay_home') }}{% endif %}" class="cr-brand" aria-label="CricRelay home">
       <img class="cr-brand-logo" src="{{ url_for('static', filename='cricrelay-icon.svg') }}" alt="" aria-hidden="true">
       <span class="cr-brand-text">CricRelay</span>
     </a>
 
     {% if session.get('org_id') %}
     <nav class="cr-nav cr-nav--app" aria-label="Primary">
-      <a href="{{ url_for('dashboard_home') }}" class="cr-navlink {% if request.endpoint == 'dashboard_home' %}is-active{% endif %}">Home</a>
-      <a href="{{ url_for('dashboard') }}" class="cr-navlink {% if request.endpoint == 'dashboard' %}is-active{% endif %}">Squad management</a>
-      <a href="{{ url_for('dashboard_relays') }}" class="cr-navlink {% if request.endpoint == 'dashboard_relays' %}is-active{% endif %}">Current streams</a>
+      <a href="{{ url_for('dashboard') }}" class="cr-navlink {% if request.endpoint in ('dashboard', 'dashboard_legacy_redirect') %}is-active{% endif %}">Streams</a>
       <form action="{{ url_for('logout') }}" method="post" class="cr-nav-form"><button type="submit" class="cr-navlink cr-navlink-btn">Log out</button></form>
     </nav>
     {% else %}

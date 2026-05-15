@@ -262,21 +262,10 @@
   </style>
 </head>
 <body>
-  <div id="setupChooseScreen" class="setup-intro app-shell">
-    <h1>Scoring type</h1>
-    <h2 id="matchLabelChoose"></h2>
-    <p>Choose how this match is scored. You can go back before you start.</p>
-    <button type="button" id="pickBallByBall" class="big-choice primary">Ball by ball</button>
-    <p style="font-size:13px;color:var(--muted);margin:4px 20px 12px;">Squads, players, extras, and full laws.</p>
-    <button type="button" id="pickOverOnly" class="big-choice secondary">Over by over</button>
-    <p style="font-size:13px;color:var(--muted);margin:4px 20px;">Teams, toss, and overs — update runs and wickets each over.</p>
-  </div>
-
-  <div id="setupBallScreen" class="hidden app-shell">
+  <div id="setupBallScreen" class="app-shell">
     <h1 class="setup-title">Match setup</h1>
     <h2 id="matchLabelBall" class="setup-sub"></h2>
     <div class="card">
-      <button type="button" id="backFromBall" class="secondary">← Change scoring type</button>
       <label>Team 1</label><input id="team1Name" placeholder="Team 1 name">
       <label>Team 2</label><input id="team2Name" placeholder="Team 2 name">
       <label>Toss winner</label>
@@ -314,43 +303,6 @@
     <button type="button" id="startMatch" class="primary">Start match</button>
   </div>
 
-  <div id="setupOverScreen" class="hidden app-shell">
-    <h1 class="setup-title">Over-by-over</h1>
-    <h2 id="matchLabelOver" class="setup-sub"></h2>
-    <div class="card">
-      <button type="button" id="backFromOver" class="secondary">← Change scoring type</button>
-      <label>Team 1</label><input id="overTeam1Name" placeholder="Team 1 name">
-      <label>Team 2</label><input id="overTeam2Name" placeholder="Team 2 name">
-      <label>Toss winner</label>
-      <select id="overTossWinner">
-        <option value="team1">Team 1</option>
-        <option value="team2">Team 2</option>
-      </select>
-      <label>Toss decision</label>
-      <select id="overTossDecision">
-        <option value="bat">Bat first</option>
-        <option value="bowl">Bowl first</option>
-      </select>
-      <label>Total overs</label>
-      <input id="overTotalOvers" type="number" value="20" placeholder="Total overs">
-      <label>Overlay theme</label>
-      <select id="overThemeSelect">
-        <option value="classic">Classic</option>
-        <option value="neon">Neon</option>
-        <option value="minimal">Minimal</option>
-      </select>
-      <div class="grid2">
-        <div><label>Team 1 colour</label><input id="overTeam1Color" type="color" value="#2dd4bf"></div>
-        <div><label>Team 2 colour</label><input id="overTeam2Color" type="color" value="#f59e0b"></div>
-      </div>
-      <div class="grid2" style="margin-top:12px;">
-        <button type="button" id="saveOverTemplateBtn" class="secondary">Save template</button>
-        <button type="button" id="loadOverTemplateBtn" class="secondary">Load template</button>
-      </div>
-    </div>
-    <button type="button" id="startMatchOverOnly" class="primary">Start match</button>
-  </div>
-
   <div id="matchScreen" class="hidden app-shell">
     <header class="app-header">
       <div class="eyebrow" id="liveMatchLabel"></div>
@@ -358,7 +310,7 @@
     </header>
 
     <div id="relayManualLockBanner" class="card hidden" style="margin-bottom:14px;padding:12px 14px;font-size:14px;border-color:rgba(251,191,36,.35);background:rgba(251,191,36,.08);">
-      Play-Cricket relay is driving this match — manual ball, over-by-over, and laws controls are turned off. Use <strong>Stream &amp; overlay</strong> for layout (or your club dashboard). To score by hand again, set the source below to <strong>Manual</strong>.
+      Play-Cricket relay is driving this match — manual scoring is off while the stream syncs from Play-Cricket. Manage streams in your <a href="/dashboard" style="color:#7dd3fc;">CricRelay dashboard</a>.
     </div>
 
     <section class="card card--primary" id="scoringCard">
@@ -392,56 +344,15 @@
         </div>
       </div>
 
-      <div id="overOnlySection" class="hidden">
-        <div id="overInningsBanner" class="over-innings-banner" role="status"></div>
-        <div id="overLockedBanner" class="over-locked-banner hidden"></div>
-        <p class="hint" style="margin-top:0;">Enter the <strong>innings total</strong> runs and wickets <strong>after</strong> the over you pick — the server works out runs and wickets per over.</p>
-        <p id="overProgressLabel" class="over-hint"></p>
-        <label>Score is after this over (boundary)</label>
-        <select id="overAfterOverSelect"></select>
-        <p id="overBoundaryHint" class="over-hint"></p>
-        <label>Innings runs (total so far)</label>
-        <input id="overRunsInput" type="number" min="0" value="0" placeholder="e.g. 42">
-        <label>Innings wickets (total so far)</label>
-        <input id="overWktsInput" type="number" min="0" max="10" value="0" placeholder="0">
-        <p id="overWktsCapHint" class="over-hint"></p>
-        <p id="overRRHint" class="over-hint hidden"></p>
-        <div id="overPerOverTableWrap" class="hidden" style="margin-top:12px;">
-          <p class="hint" style="margin:0 0 8px;font-size:12px;">Per-over breakdown (from your checkpoints)</p>
-          <div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border);">
-            <table id="overPerOverTable" style="width:100%;border-collapse:collapse;font-size:14px;"></table>
-          </div>
-        </div>
-        <button type="button" id="applyOverUpdateBtn" class="primary" style="margin-top:10px;">Review &amp; apply</button>
-        <div class="grid2 row-actions">
-          <button type="button" id="undoOverBtn" class="secondary">Undo</button>
-          <button type="button" id="redoOverBtn" class="secondary">Redo</button>
-        </div>
-        <p id="overLastApplied" class="over-last hidden" role="status"></p>
-      </div>
-
       <div class="grid2 row-actions" id="endOverRow" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
         <button type="button" id="endOverBtn" class="secondary">End over</button>
         <div id="scoringHint"></div>
       </div>
     </section>
 
-    <section class="card" id="cricRelayCard">
-      <div class="card-head">
-        <span class="card-title">CricRelay (Play-Cricket)</span>
-      </div>
-      <p class="hint" style="margin-top:0;">Send live data from your Play-Cricket page (worker or <code>play-cricket-score-scrapper</code> → <code>POST /relay/ingest</code>). While source is <strong>Play-Cricket</strong>, manual scoring is disabled so the stream stays in sync with the scraper. Switch to <strong>Manual</strong> to use this app as the scorer again.</p>
-      <label>Overlay score source</label>
-      <select id="relayModeSelect">
-        <option value="manual">Manual (this app)</option>
-        <option value="play_cricket">Play-Cricket (URL + ingest)</option>
-      </select>
-      <label>Play-Cricket match URL</label>
-      <input id="relayUrlInput" type="url" placeholder="https://bmacc.play-cricket.com/website/results/7681278">
-      <p id="relayStatusLine" class="hint" style="min-height:1.25em;"></p>
-      <button type="button" id="saveRelayBtn" class="primary">Save relay settings</button>
-      <p class="hint" style="margin-top:10px;">Club product site: <a href="/" target="_blank" rel="noopener">CricRelay home</a> · Match relay setup: <a id="cricrelayLink" href="/m/{{ match_id|default('default') }}/cricrelay" target="_blank" rel="noopener">operator page</a> — point <strong>cricrelay.co.uk</strong> at this server when ready.</p>
-    </section>
+    <div id="relayDashboardBanner" class="card hidden" style="margin-bottom:14px;padding:12px 14px;font-size:14px;border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.08);">
+      This match is synced from Play-Cricket. Manage streams in your <a href="/dashboard" style="color:#7dd3fc;">CricRelay dashboard</a>. To score manually here, set overlay source to Manual in dashboard or contact your stream operator.
+    </div>
 
     <section class="card" id="lawsCard">
       <div class="card-head">
@@ -777,16 +688,13 @@
       return MATCH_ID.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
     }
     function syncMatchLabels() {
-      const t = prettyMatchTitle();
-      byId("matchLabelChoose").textContent = t;
-      byId("matchLabelBall").textContent = t;
-      byId("matchLabelOver").textContent = t;
+      const title = prettyMatchTitle();
+      const el = byId("matchLabelBall");
+      if (el) el.textContent = title;
     }
     function showSetupWizard() {
       byId("matchScreen").classList.add("hidden");
-      byId("setupChooseScreen").classList.toggle("hidden", setupWizardStep !== "choose");
-      byId("setupBallScreen").classList.toggle("hidden", setupWizardStep !== "ball");
-      byId("setupOverScreen").classList.toggle("hidden", setupWizardStep !== "over");
+      byId("setupBallScreen").classList.remove("hidden");
     }
 
     function setOverlayMenuOpen(open) {
@@ -825,45 +733,34 @@
         return;
       }
       if (!score.match_started && score.relay_mode === "play_cricket") {
-        byId("setupChooseScreen").classList.add("hidden");
         byId("setupBallScreen").classList.add("hidden");
-        byId("setupOverScreen").classList.add("hidden");
         byId("matchScreen").classList.remove("hidden");
         byId("liveMatchLabel").textContent = "Play-Cricket relay";
-        byId("scoreBar").textContent = "Scores appear after your scraper POSTs to /relay/ingest.";
+        byId("scoreBar").textContent = "Waiting for Play-Cricket sync…";
         byId("scoringCard").classList.add("hidden");
         byId("lawsCard").classList.add("hidden");
         byId("relayManualLockBanner").classList.add("hidden");
-        const rb = score.relay_bundle || {};
-        byId("relayModeSelect").value = score.relay_mode || "manual";
-        byId("relayUrlInput").value = score.relay_play_cricket_url || "";
-        let relayLine = "";
-        if (rb.last_error) relayLine = `Ingest: ${rb.last_error}`;
-        else if (rb.last_ok_at) relayLine = `Last ingest: ${rb.last_ok_at}`;
-        else if (rb.enabled) relayLine = "Play-Cricket mode — waiting for first ingest.";
-        else relayLine = "Overlay source: manual (in-app scoring).";
-        byId("relayStatusLine").textContent = relayLine;
+        const db = byId("relayDashboardBanner");
+        if (db) db.classList.remove("hidden");
         updateToggleVisuals();
         return;
       }
-      byId("setupChooseScreen").classList.add("hidden");
       byId("setupBallScreen").classList.add("hidden");
-      byId("setupOverScreen").classList.add("hidden");
       byId("matchScreen").classList.remove("hidden");
       byId("scoringCard").classList.remove("hidden");
       byId("liveMatchLabel").textContent = prettyMatchTitle();
       const locked = !!(score.match_complete || score.scoring_locked);
-      const overOnly = score.scoring_mode === "over_only";
+      const overOnly = false;
       byId("ballByBallSection").classList.toggle("hidden", overOnly);
-      byId("overOnlySection").classList.toggle("hidden", !overOnly);
+      (byId("overOnlySection") || {classList:{toggle:()=>{},add:()=>{},remove:()=>{}}}).classList.toggle("hidden", !overOnly);
       byId("lawsCard").classList.toggle("hidden", overOnly);
       byId("lawsHeading").classList.toggle("hidden", guidedMode || overOnly);
       byId("lawsSection").classList.toggle("hidden", guidedMode || overOnly);
       byId("guidedModeBtn").classList.toggle("hidden", overOnly);
       byId("umpireModeBtn").classList.toggle("hidden", overOnly || !guidedMode);
       byId("guidedModeBtn").textContent = guidedMode ? "Guided: ON" : "Guided: OFF";
-      byId("bbbPanelBlock").classList.toggle("hidden", overOnly);
-      byId("overOnlyPanelBlock").classList.toggle("hidden", !overOnly);
+      (byId("bbbPanelBlock") || {classList:{toggle:()=>{},add:()=>{},remove:()=>{}}}).classList.toggle("hidden", overOnly);
+      (byId("overOnlyPanelBlock") || {classList:{toggle:()=>{},add:()=>{},remove:()=>{}}}).classList.toggle("hidden", !overOnly);
       byId("scoreBar").textContent = `${score.batting_team} ${score.runs}/${score.wickets} (${score.overs}.${score.balls})`;
       setSelect("striker", score.batting_squad || [], score.striker, false);
       setSelect("nonStriker", score.batting_squad || [], score.non_striker, false);
@@ -879,7 +776,7 @@
       byId("thisOver").innerHTML = (score.current_over || []).map(v => `<span class="over-item ${overClass(v)}">${v}</span>`).join("");
       document.querySelectorAll(".panel-btn").forEach(b => b.classList.toggle("active", b.dataset.panel === score.active_panel));
       byId("chaseBtn").disabled = score.innings === 1;
-      const chaseOver = byId("chaseBtnOver");
+      const chaseOver = (byId("chaseBtnOver") || {classList:{toggle:()=>{},add:()=>{},remove:()=>{}}});
       if (chaseOver) chaseOver.disabled = score.innings === 1;
       byId("targetText").textContent = `Target: ${(score.runs || 0) + 1} runs`;
       byId("secondBattingTeam").value = score.bowling_team || "";
@@ -887,94 +784,11 @@
       else if (score.innings === 2 && score.runs_needed === 0) byId("scoringHint").textContent = "Chase complete";
       else if (overOnly && score.scoring_locked) byId("scoringHint").textContent = "Innings complete — no more over updates.";
       else byId("scoringHint").textContent = "";
-      const rb = score.relay_bundle || {};
-      byId("relayModeSelect").value = score.relay_mode || "manual";
-      byId("relayUrlInput").value = score.relay_play_cricket_url || "";
-      let relayLine = "";
-      if (rb.last_error) relayLine = `Ingest: ${rb.last_error}`;
-      else if (rb.last_ok_at) relayLine = `Last ingest: ${rb.last_ok_at}`;
-      else if (rb.enabled) relayLine = "Play-Cricket mode — waiting for first ingest.";
-      else relayLine = "Overlay source: manual (in-app scoring).";
-      byId("relayStatusLine").textContent = relayLine;
       const relayManual = score.relay_mode === "play_cricket" && score.match_started;
       const rlb = byId("relayManualLockBanner");
       if (rlb) rlb.classList.toggle("hidden", !relayManual);
       byId("scoringCard").classList.toggle("relay-locked", relayManual);
       byId("lawsCard").classList.toggle("relay-locked", relayManual);
-      if (overOnly) {
-        const sl = !!score.scoring_locked;
-        const innLabel = score.innings === 1 ? "1st innings" : "2nd innings";
-        byId("overInningsBanner").textContent =
-          `${innLabel} · ${score.batting_team} batting vs ${score.bowling_team}`;
-        const totalOvers = score.total_overs || 20;
-        const maxAllowed = Math.min(totalOvers, score.overs + 1);
-        const sel = byId("overAfterOverSelect");
-        const prevSel = sel.value;
-        sel.innerHTML = "";
-        for (let o = 1; o <= maxAllowed; o++) {
-          const opt = document.createElement("option");
-          opt.value = String(o);
-          opt.textContent = `After over ${o} (innings total at stumps of that over)`;
-          sel.appendChild(opt);
-        }
-        let want;
-        if (preferOverDropdownNext) {
-          preferOverDropdownNext = false;
-          want = sl ? Math.max(1, score.overs) : Math.min(score.overs + 1, maxAllowed);
-        } else {
-          want = Number(prevSel) || 0;
-          if (!want || want > maxAllowed) {
-            want = sl ? Math.max(1, score.overs) : Math.min(score.overs + 1, totalOvers);
-          }
-        }
-        sel.value = String(Math.max(1, Math.min(want, maxAllowed)));
-        byId("overBoundaryHint").textContent =
-          `Pick which over has just finished. You may choose an earlier over to correct the innings total; later overs are cleared when you do.`;
-        const maxW = 10;
-        byId("overWktsInput").max = String(maxW);
-        byId("overWktsCapHint").textContent = "Innings wickets fallen in total (0–10), after the over you selected.";
-        byId("overLockedBanner").classList.toggle("hidden", !sl);
-        byId("overLockedBanner").textContent = sl
-          ? (score.match_complete && score.match_result
-            ? `Match finished: ${score.match_result}`
-            : "Innings complete — no more over updates. Use Undo if that was wrong, or 2nd innings / New match.")
-          : "";
-        byId("overProgressLabel").textContent = sl
-          ? "Scoring is locked for this innings."
-          : `You can record up to after over ${maxAllowed} of ${totalOvers} (${score.batting_team}).`;
-        const syncKey = `${score.overs}-${score.runs}-${score.wickets}-${(score.over_only_checkpoints || []).length}-${maxAllowed}`;
-        if (syncKey !== lastOverOnlySyncKey) {
-          lastOverOnlySyncKey = syncKey;
-          syncOverOnlyInputsFromServer();
-        }
-        const oc = Number(score.over_only_overs_completed) || 0;
-        const rr = score.over_only_run_rate;
-        const rrEl = byId("overRRHint");
-        if (oc > 0 && rr != null) {
-          rrEl.classList.remove("hidden");
-          rrEl.textContent = `Innings run rate (from checkpoints): ${rr} runs per over (${oc} over(s) logged).`;
-        } else {
-          rrEl.classList.add("hidden");
-        }
-        const rows = score.over_only_per_over || [];
-        const tw = byId("overPerOverTableWrap");
-        const tbl = byId("overPerOverTable");
-        if (rows.length) {
-          tw.classList.remove("hidden");
-          tbl.innerHTML =
-            "<thead><tr style=\"text-align:left;background:var(--surface);\"><th style=\"padding:8px;\">Over</th><th style=\"padding:8px;\">Runs in over</th><th style=\"padding:8px;\">Wkts in over</th><th style=\"padding:8px;\">Innings R/W</th></tr></thead><tbody>" +
-            rows.map((r) =>
-              `<tr style=\"border-top:1px solid var(--border);\"><td style=\"padding:8px;\">${r.over}</td><td style=\"padding:8px;\">${r.runs_in_over}</td><td style=\"padding:8px;\">${r.wkts_in_over}</td><td style=\"padding:8px;\">${r.innings_runs}/${r.innings_wickets}</td></tr>`
-            ).join("") + "</tbody>";
-        } else {
-          tw.classList.add("hidden");
-          tbl.innerHTML = "";
-        }
-        byId("overRunsInput").disabled = sl;
-        byId("overWktsInput").disabled = sl;
-        byId("overAfterOverSelect").disabled = sl;
-        byId("applyOverUpdateBtn").disabled = sl;
-      }
       byId("endOverRow").classList.toggle("hidden", overOnly);
       const controls = document.querySelectorAll(
         "[data-ball],#undoBtn,#redoBtn,#undoOverBtn,#redoOverBtn,#endOverBtn,#applyOverUpdateBtn,#overAfterOverSelect,#striker,#nonStriker,#bowler,#penaltyRunsBtn,#retireStrikerHurtBtn,#retireStrikerUnhurtBtn,#retireNonStrikerHurtBtn,#retireNonStrikerUnhurtBtn"
@@ -1021,10 +835,6 @@
 
     byId("overlayMenuToggle").onclick = () => setOverlayMenuOpen(!overlayMenuOpen);
 
-    byId("pickBallByBall").onclick = () => { setupWizardStep = "ball"; showSetupWizard(); };
-    byId("pickOverOnly").onclick = () => { setupWizardStep = "over"; showSetupWizard(); };
-    byId("backFromBall").onclick = () => { setupWizardStep = "choose"; showSetupWizard(); };
-    byId("backFromOver").onclick = () => { setupWizardStep = "choose"; showSetupWizard(); };
 
     byId("startMatch").onclick = async () => {
       const team1_squad = names("t1"), team2_squad = names("t2");
@@ -1162,7 +972,7 @@
         score = await api("/ball", "POST", { type: btn.dataset.ball, runs: byeRuns });
         byId("extraRuns").value = "0";
         render();
-        if (score.scoring_mode !== "over_only" && lastOverDisplay && score.overs_display !== lastOverDisplay && score.balls === 0) {
+        if (true && lastOverDisplay && score.overs_display !== lastOverDisplay && score.balls === 0) {
           setSelect("wizStriker", score.batting_squad || [], score.striker, false);
           setSelect("wizNonStriker", score.batting_squad || [], score.non_striker, false);
           setSelect("wizBowler", score.bowling_squad || [], score.current_bowler, true);
@@ -1175,7 +985,7 @@
       score = await api("/ball", "POST", { type: btn.dataset.ball, runs: extraRuns });
       render();
       byId("extraRuns").value = "0";
-      if (score.scoring_mode !== "over_only" && lastOverDisplay && score.overs_display !== lastOverDisplay && score.balls === 0) {
+      if (true && lastOverDisplay && score.overs_display !== lastOverDisplay && score.balls === 0) {
         setSelect("wizStriker", score.batting_squad || [], score.striker, false);
         setSelect("wizNonStriker", score.batting_squad || [], score.non_striker, false);
         setSelect("wizBowler", score.bowling_squad || [], score.current_bowler, true);
@@ -1208,25 +1018,7 @@
     };
     byId("undoBtn").onclick = async () => { await api("/undo", "POST"); await refresh(); };
     byId("redoBtn").onclick = async () => { await api("/redo", "POST"); await refresh(); };
-    byId("undoOverBtn").onclick = async () => { await api("/undo", "POST"); await refresh(); };
-    byId("redoOverBtn").onclick = async () => { await api("/redo", "POST"); await refresh(); };
     byId("endOverBtn").onclick = async () => { await api("/end-over", "POST"); await refresh(); };
-    byId("applyOverUpdateBtn").onclick = () => openOverApplyPreview();
-    byId("overAfterOverSelect").onchange = () => syncOverOnlyInputsFromServer();
-    byId("saveRelayBtn").onclick = async () => {
-      try {
-        await api("/relay/config", "POST", {
-          relay_mode: byId("relayModeSelect").value,
-          relay_play_cricket_url: byId("relayUrlInput").value.trim(),
-        });
-        await refresh();
-      } catch (e) {
-        alert(String(e.message || e));
-        await refresh();
-      }
-    };
-    byId("overApplyPreviewCancel").onclick = () => closeModal("overApplyPreviewModal");
-    byId("overApplyPreviewConfirm").onclick = () => executePendingOverApply();
     byId("retireStrikerHurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "striker", type: "hurt" }); await refresh(); };
     byId("retireStrikerUnhurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "striker", type: "unhurt" }); await refresh(); };
     byId("retireNonStrikerHurtBtn").onclick = async () => { await api("/retire-batter", "POST", { batter: "non_striker", type: "hurt" }); await refresh(); };
@@ -1273,7 +1065,7 @@
       const ok = confirm("Close current match and return to setup?");
       if (!ok) return;
       score = await api("/reset-match", "POST");
-      setupWizardStep = "choose";
+      setupWizardStep = "ball";
       byId("overLastApplied").classList.add("hidden");
       byId("overLastApplied").textContent = "";
       lastOverApplyTs = 0;

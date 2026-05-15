@@ -33,7 +33,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import inspect, text
 
 from .models_cricrelay import (
-    ClubTeam,
     Organization,
     RelayMatch,
     build_play_cricket_scrape_url,
@@ -88,7 +87,6 @@ def inject_seo_context():
 
 
 DEFAULT_MATCH_ID = "default"
-MAX_CLUB_SQUADS = 6
 MAX_LIVE_STREAMS_PER_CLUB = 6
 state_lock = threading.Lock()
 last_action = None
@@ -132,7 +130,6 @@ def blank_state():
         "match_started": False,
         "match_ended": False,
         "event_log": [],
-        "over_only_checkpoints": [],
         "relay_mode": "manual",
         "relay_play_cricket_url": "",
         "relay_wrapper": None,
@@ -445,27 +442,6 @@ def with_calculated_values(snapshot):
             and data["runs"] >= data["target"]
         )
     )
-    cps = data.get("over_only_checkpoints")
-    if not isinstance(cps, list):
-        cps = []
-    data["over_only_checkpoints"] = cps
-    if data.get("scoring_mode") == "over_only":
-        pop = compute_over_only_per_over(cps)
-        data["over_only_per_over"] = pop
-        if pop:
-            last = pop[-1]
-            o = max(1, safe_num(last.get("over"), 1))
-            data["over_only_overs_completed"] = o
-            data["over_only_run_rate"] = round(
-                max(0, safe_num(last.get("innings_runs"), 0)) / o, 2
-            )
-        else:
-            data["over_only_overs_completed"] = 0
-            data["over_only_run_rate"] = 0.0
-    else:
-        data["over_only_per_over"] = []
-        data["over_only_overs_completed"] = 0
-        data["over_only_run_rate"] = 0.0
     wrapper = data.get("relay_wrapper")
     if not isinstance(wrapper, dict):
         wrapper = {}
@@ -484,28 +460,6 @@ def with_calculated_values(snapshot):
     }
     return data
 
-
-def compute_over_only_per_over(checkpoints):
-    if not checkpoints:
-        return []
-    sorted_cp = sorted(checkpoints, key=lambda x: x["after_over"])
-    out = []
-    prev_r, prev_w = 0, 0
-    for c in sorted_cp:
-        r = max(0, safe_num(c.get("runs"), 0))
-        w = max(0, min(10, safe_num(c.get("wickets"), 0)))
-        o = max(1, safe_num(c.get("after_over"), 1))
-        out.append(
-            {
-                "over": o,
-                "runs_in_over": r - prev_r,
-                "wkts_in_over": w - prev_w,
-                "innings_runs": r,
-                "innings_wickets": w,
-            }
-        )
-        prev_r, prev_w = r, w
-    return out
 
 
 def get_batter(name):
@@ -665,48 +619,21 @@ def _send_password_reset_email(to_email: str, reset_url: str) -> bool:
 def read_relay_overlay_prefs(slug):
     safe = sanitize_match_id(slug)
     path = state_path_for(safe)
+    default_scale = 1.0
     if not path.exists():
-        return {
-            "active_panel": "score",
-            "theme": "classic",
-            "overlay_density": "expanded",
-            "overlay_scale": 1.0,
-            "overlay_box_color": "#101f45",
-        }
+        return {"overlay_scale": default_scale}
     try:
         with path.open("r", encoding="utf-8") as fh:
             s = json.load(fh)
-        th = str(s.get("theme") or "classic").strip().lower()
-        if th not in {"classic", "neon", "minimal"}:
-            th = "classic"
-        return {
-            "active_panel": s.get("active_panel") or "score",
-            "theme": th,
-            "overlay_density": s.get("overlay_density") or "expanded",
-            "overlay_scale": float(s.get("overlay_scale") or 1.0),
-            "overlay_box_color": _safe_hex_color(s.get("overlay_box_color"), "#101f45"),
-        }
+        return {"overlay_scale": float(s.get("overlay_scale") or default_scale)}
     except Exception:
-        return {
-            "active_panel": "score",
-            "theme": "classic",
-            "overlay_density": "expanded",
-            "overlay_scale": 1.0,
-            "overlay_box_color": "#101f45",
-        }
+        return {"overlay_scale": default_scale}
 
 
 @app.get("/")
 def cricrelay_home():
     if session.get("org_id"):
-        return redirect(url_for("dashboard_home"))
-    forced_variant = (request.args.get("v") or "").strip().lower()
-    if forced_variant in {"a", "b"}:
-        session["hero_variant"] = forced_variant
-    hero_variant = session.get("hero_variant")
-    if hero_variant not in {"a", "b"}:
-        hero_variant = "a" if secrets.randbelow(2) == 0 else "b"
-        session["hero_variant"] = hero_variant
+        return redirect(url_for("dashboard"))
     structured_data = {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
@@ -718,9 +645,8 @@ def cricrelay_home():
     }
     return render_template(
         "cricrelay_home.html",
-        logged_in=bool(session.get("org_id")),
+        logged_in=False,
         structured_data=structured_data,
-        hero_variant=hero_variant,
     )
 
 
@@ -755,7 +681,6 @@ def public_club_page(slug):
     org = Organization.query.filter_by(slug=safe).first()
     if not org:
         abort(404)
-    teams = ClubTeam.query.filter_by(organization_id=org.id).order_by(ClubTeam.name).all()
     relays = RelayMatch.query.filter_by(organization_id=org.id).order_by(RelayMatch.created_at.desc()).all()
     public_page_url = url_for("public_club_page", slug=org.slug, _external=True)
     structured_data = {
@@ -768,7 +693,6 @@ def public_club_page(slug):
     return render_template(
         "public_club.html",
         org=org,
-        teams=teams,
         relays=relays,
         structured_data=structured_data,
         public_page_url=public_page_url,
@@ -848,8 +772,8 @@ def register_page():
         flash("That email or club URL slug is already in use.", "error")
         return render_template("cricrelay_register.html"), 400
     session["org_id"] = org.id
-    flash("Welcome to CricRelay — add squads, then create a stream from a fixture.", "success")
-    return redirect(url_for("dashboard_home"))
+    flash("Welcome to CricRelay — pick a fixture and start your first stream.", "success")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -863,7 +787,7 @@ def login_page():
         flash("Invalid email or password.", "error")
         return render_template("cricrelay_login.html"), 401
     session["org_id"] = org.id
-    return redirect(url_for("dashboard_home"))
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/forgot-password", methods=["GET", "POST"])
@@ -914,43 +838,8 @@ def logout():
     return redirect(url_for("cricrelay_home"))
 
 
-@app.get("/dashboard")
-@login_required
-def dashboard():
-    org = _org_from_session()
-    teams = ClubTeam.query.filter_by(organization_id=org.id).order_by(ClubTeam.name).all()
-    relay_count = RelayMatch.query.filter_by(organization_id=org.id).count()
-    onboarding_done = bool(teams) and relay_count > 0
-    return render_template(
-        "cricrelay_dashboard.html",
-        org=org,
-        teams=teams,
-        relay_count=relay_count,
-        squad_slots_used=len(teams),
-        squad_slots_total=MAX_CLUB_SQUADS,
-        onboarding_done=onboarding_done,
-        ui_theme=(getattr(org, "ui_theme", "original") or "original"),
-    )
 
-
-@app.post("/dashboard/theme")
-@login_required
-def dashboard_set_theme():
-    org = _org_from_session()
-    raw_theme = (request.form.get("ui_theme") or "original").strip().lower()
-    if raw_theme not in {"original", "light", "dark"}:
-        raw_theme = "original"
-    org.ui_theme = raw_theme
-    db.session.commit()
-    flash("Website theme updated.", "success")
-    return redirect(url_for("dashboard"))
-
-
-@app.get("/dashboard/home")
-@login_required
-def dashboard_home():
-    org = _org_from_session()
-    teams = ClubTeam.query.filter_by(organization_id=org.id).order_by(ClubTeam.name).all()
+def _dashboard_fixture_data(org):
     matches = RelayMatch.query.filter_by(organization_id=org.id).order_by(
         RelayMatch.created_at.desc()
     ).all()
@@ -972,77 +861,48 @@ def dashboard_home():
         fixtures_error = probe_errors[0]
     if not fixture_source_url:
         fixture_source_url = _org_play_cricket_root(org)
-    return render_template(
-        "cricrelay_dashboard_home.html",
-        org=org,
-        play_cricket_root=_org_play_cricket_root(org),
-        fixtures=fixtures,
-        fixtures_error=fixtures_error,
-        fixture_source_url=fixture_source_url,
-        active_ids=active_ids,
-        teams=teams,
-        stream_slots_used=len(matches),
-        stream_slots_total=MAX_LIVE_STREAMS_PER_CLUB,
-    )
-
-
-@app.get("/dashboard/relays")
-@login_required
-def dashboard_relays():
-    org = _org_from_session()
-    teams = ClubTeam.query.filter_by(organization_id=org.id).order_by(ClubTeam.name).all()
-    matches = RelayMatch.query.filter_by(organization_id=org.id).order_by(
-        RelayMatch.created_at.desc()
-    ).all()
-    team_names = {t.id: t.name for t in teams}
+    relay_poll_sec = max(5, int(os.getenv("RELAY_POLL_INTERVAL_SEC", "10")))
+    relay_auto_poll = (os.getenv("RELAY_AUTO_POLL", "1") or "1").strip().lower() not in {
+        "0", "false", "no", "off",
+    }
     relay_rows = [
         {
             "match": m,
-            "squad_name": team_names.get(m.club_team_id),
             "overlay_prefs": read_relay_overlay_prefs(m.score_match_slug),
         }
         for m in matches
     ]
-    relay_poll_sec = max(5, int(os.getenv("RELAY_POLL_INTERVAL_SEC", "10")))
-    relay_auto_poll = (os.getenv("RELAY_AUTO_POLL", "1") or "1").strip().lower() not in {
-        "0",
-        "false",
-        "no",
-        "off",
+    return {
+        "matches": matches,
+        "active_ids": active_ids,
+        "fixtures": fixtures,
+        "fixtures_error": fixtures_error,
+        "fixture_source_url": fixture_source_url,
+        "relay_rows": relay_rows,
+        "relay_poll_sec": relay_poll_sec,
+        "relay_auto_poll": relay_auto_poll,
+        "stream_slots_used": len(matches),
+        "stream_slots_total": MAX_LIVE_STREAMS_PER_CLUB,
     }
-    stream_slots_used = len(matches)
+
+
+@app.get("/dashboard")
+@login_required
+def dashboard():
+    org = _org_from_session()
+    ctx = _dashboard_fixture_data(org)
     return render_template(
-        "cricrelay_dashboard_relays.html",
+        "cricrelay_dashboard_streams.html",
         org=org,
         play_cricket_root=_org_play_cricket_root(org),
-        teams=teams,
-        relay_rows=relay_rows,
-        relay_poll_sec=relay_poll_sec,
-        relay_auto_poll=relay_auto_poll,
-        stream_slots_used=stream_slots_used,
-        stream_slots_total=MAX_LIVE_STREAMS_PER_CLUB,
+        **ctx,
     )
 
 
-@app.post("/dashboard/teams")
+@app.get("/dashboard/home")
+@app.get("/dashboard/relays")
 @login_required
-def dashboard_add_team():
-    org = _org_from_session()
-    n_teams = ClubTeam.query.filter_by(organization_id=org.id).count()
-    if n_teams >= MAX_CLUB_SQUADS:
-        flash(f"You can add up to {MAX_CLUB_SQUADS} squads per club on one login.", "error")
-        return redirect(url_for("dashboard"))
-    team_name = (request.form.get("name") or "").strip()
-    if not team_name:
-        flash("Squad name is required.", "error")
-        return redirect(url_for("dashboard"))
-    row = ClubTeam(organization_id=org.id, name=team_name)
-    db.session.add(row)
-    try:
-        db.session.commit()
-    except IntegrityError:
-        db.session.rollback()
-        flash("You already have a squad with that name.", "error")
+def dashboard_legacy_redirect():
     return redirect(url_for("dashboard"))
 
 
@@ -1056,14 +916,14 @@ def dashboard_add_match():
             f"You can run up to {MAX_LIVE_STREAMS_PER_CLUB} live streams per club. Pause or remove one to add another.",
             "error",
         )
-        return redirect(url_for("dashboard_relays"))
+        return redirect(url_for("dashboard"))
     mid = (request.form.get("play_cricket_match_id") or "").strip()
     if not mid or not re.fullmatch(r"\d+", mid):
         flash(
             "Match ID must be the numeric fixture id (from …/website/results/7560599 or …match_details?id=7560599).",
             "error",
         )
-        return redirect(url_for("dashboard_relays"))
+        return redirect(url_for("dashboard"))
     base_override_raw = (request.form.get("play_cricket_base_url") or "").strip()
     if base_override_raw:
         base = normalize_play_cricket_club_root(base_override_raw)
@@ -1073,22 +933,17 @@ def dashboard_add_match():
                 "like bmacc for https://bmacc.play-cricket.com.",
                 "error",
             )
-            return redirect(url_for("dashboard_relays"))
+            return redirect(url_for("dashboard"))
     else:
         base = _org_play_cricket_root(org)
     if "play-cricket.com" not in base.lower():
         flash("Play-Cricket club site must be on play-cricket.com.", "error")
-        return redirect(url_for("dashboard_relays"))
+        return redirect(url_for("dashboard"))
     full_url = canonicalize_play_cricket_scrape_url(build_play_cricket_scrape_url(base, mid))
     existing = RelayMatch.query.filter_by(organization_id=org.id, play_cricket_match_id=mid).first()
     if existing:
         flash("This Play-Cricket match is already linked for your club.", "error")
-        return redirect(url_for("dashboard_relays"))
-    club_team_id = (request.form.get("club_team_id") or "").strip() or None
-    if club_team_id:
-        team_ok = ClubTeam.query.filter_by(id=club_team_id, organization_id=org.id).first()
-        if not team_ok:
-            club_team_id = None
+        return redirect(url_for("dashboard"))
     base_slug = sanitize_match_id(f"{org.slug}-{mid}")
     score_slug = base_slug
     for _ in range(16):
@@ -1099,7 +954,6 @@ def dashboard_add_match():
     stream_label = (request.form.get("stream_label") or "").strip()[:120]
     row = RelayMatch(
         organization_id=org.id,
-        club_team_id=club_team_id,
         play_cricket_match_id=mid,
         full_scrape_url=full_url,
         score_match_slug=score_slug,
@@ -1112,10 +966,10 @@ def dashboard_add_match():
     except IntegrityError:
         db.session.rollback()
         flash("Could not create that relay (duplicate or conflict).", "error")
-        return redirect(url_for("dashboard_relays"))
+        return redirect(url_for("dashboard"))
     apply_relay_to_score_match(score_slug, full_url)
     flash("Stream ready — copy your overlay URL into Prism.", "success")
-    return redirect(url_for("dashboard_relays"))
+    return redirect(url_for("dashboard"))
 
 
 @app.post("/dashboard/relay-appearance")
@@ -1125,36 +979,22 @@ def dashboard_relay_appearance():
     slug = sanitize_match_id(request.form.get("score_match_slug", ""))
     if not slug:
         flash("Missing match.", "error")
-        return redirect(url_for("dashboard_relays"))
+        return redirect(url_for("dashboard"))
     row = RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
     if not row:
         flash("Unknown relay for your club.", "error")
-        return redirect(url_for("dashboard_relays"))
-    panel = (request.form.get("active_panel") or "score").strip().lower()
-    if panel not in {"score", "batting", "bowling", "chase", "fullscore", "chart"}:
-        panel = "score"
-    theme = (request.form.get("theme") or "classic").strip().lower()
-    if theme not in {"classic", "neon", "minimal"}:
-        theme = "classic"
-    density = (request.form.get("overlay_density") or "expanded").strip().lower()
-    if density not in {"compact", "expanded"}:
-        density = "expanded"
+        return redirect(url_for("dashboard"))
     try:
         scale = float(request.form.get("overlay_scale", "1") or 1)
     except (TypeError, ValueError):
         scale = 1.0
     scale = max(0.8, min(1.8, scale))
-    overlay_box_color = _safe_hex_color(request.form.get("overlay_box_color"), "#101f45")
     with match_context(slug):
         merge_missing_state_keys(state)
-        state["active_panel"] = panel
-        state["theme"] = theme
-        state["overlay_density"] = density
         state["overlay_scale"] = round(scale, 2)
-        state["overlay_box_color"] = overlay_box_color
         save_state()
-    flash("Overlay layout updated for that stream.", "success")
-    return redirect(url_for("dashboard_relays"))
+    flash("Overlay size updated.", "success")
+    return redirect(url_for("dashboard"))
 
 
 @app.post("/dashboard/relay/toggle-pause")
@@ -1164,18 +1004,18 @@ def dashboard_relay_toggle_pause():
     slug = sanitize_match_id(request.form.get("score_match_slug", ""))
     if not slug:
         flash("Missing stream.", "error")
-        return redirect(url_for("dashboard_relays"))
+        return redirect(url_for("dashboard"))
     row = RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
     if not row:
         flash("Unknown stream.", "error")
-        return redirect(url_for("dashboard_relays"))
+        return redirect(url_for("dashboard"))
     row.paused = not bool(row.paused)
     db.session.commit()
     flash(
         "Stream paused — automatic scoring updates are off." if row.paused else "Stream live — Play-Cricket sync is on.",
         "success",
     )
-    return redirect(url_for("dashboard_relays"))
+    return redirect(url_for("dashboard"))
 
 
 @app.post("/dashboard/relay/delete")
@@ -1185,11 +1025,11 @@ def dashboard_relay_delete():
     slug = sanitize_match_id(request.form.get("score_match_slug", ""))
     if not slug:
         flash("Missing stream.", "error")
-        return redirect(url_for("dashboard_relays"))
+        return redirect(url_for("dashboard"))
     row = RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
     if not row:
         flash("Unknown stream.", "error")
-        return redirect(url_for("dashboard_relays"))
+        return redirect(url_for("dashboard"))
     db.session.delete(row)
     db.session.commit()
     path = state_path_for(slug)
@@ -1199,7 +1039,7 @@ def dashboard_relay_delete():
         except OSError:
             pass
     flash("Stream removed. Add a new match any time.", "success")
-    return redirect(url_for("dashboard_relays"))
+    return redirect(url_for("dashboard"))
 
 
 @app.get("/stream")
@@ -1226,17 +1066,6 @@ def input_page():
 @app.get("/m/<match_id>/input")
 def input_page_scoped(match_id):
     return render_template("input.html", match_id=sanitize_match_id(match_id))
-
-
-@app.get("/cricrelay")
-def cricrelay_landing():
-    mid = sanitize_match_id(request.args.get("match", DEFAULT_MATCH_ID))
-    return render_template("cricrelay.html", match_id=mid)
-
-
-@app.get("/m/<match_id>/cricrelay")
-def cricrelay_landing_scoped(match_id):
-    return render_template("cricrelay.html", match_id=sanitize_match_id(match_id))
 
 
 def _relay_ingest_authorized() -> bool:
@@ -1372,20 +1201,12 @@ def setup():
         state["theme"] = theme
         state["toss_winner"] = toss_winner
         state["toss_decision"] = toss_decision
-        scoring_mode = str(data.get("scoring_mode", "ball_by_ball")).strip()
-        if scoring_mode not in {"ball_by_ball", "over_only"}:
-            scoring_mode = "ball_by_ball"
-        state["scoring_mode"] = scoring_mode
+        state["scoring_mode"] = "ball_by_ball"
         state["batting_team"] = batting_team
         state["bowling_team"] = bowling_team
         state["total_overs"] = safe_num(data.get("total_overs", 20), 20)
-        if scoring_mode == "over_only" and (len(batting_names) < 2 or len(bowling_names) < 2):
-            batting_names = [f"{batting_team} {i}" for i in range(1, 12)]
-            bowling_names = [f"{bowling_team} {i}" for i in range(1, 12)]
         state["batting_squad"] = build_batting_squad(batting_names)
         state["bowling_squad"] = build_bowling_squad(bowling_names)
-        if scoring_mode == "over_only":
-            state["active_panel"] = "score"
         state["match_started"] = True
         last_action = None
         action_history = []
@@ -1427,8 +1248,6 @@ def ball():
         blocked = manual_scoring_blocked_response()
         if blocked is not None:
             return blocked
-        if state.get("scoring_mode") == "over_only":
-            return jsonify({"error": "ball-by-ball disabled in over-only mode"}), 400
         if innings_done():
             return jsonify({"error": "innings already complete"}), 400
         push_history()
@@ -1530,55 +1349,6 @@ def ball():
             state["striker"], state["non_striker"] = state["non_striker"], state["striker"]
 
         end_over()
-        save_state()
-        return jsonify(with_calculated_values(state))
-
-
-@app.post("/over-update")
-def over_update():
-    data = request.get_json(silent=True) or {}
-    with match_context():
-        blocked = manual_scoring_blocked_response()
-        if blocked is not None:
-            return blocked
-        if state.get("scoring_mode") != "over_only":
-            return jsonify({"error": "over-update only allowed in over-only mode"}), 400
-        if innings_done():
-            return jsonify({"error": "innings already complete"}), 400
-        after_over = safe_num(data.get("after_over"), 0)
-        inn_r = max(0, safe_num(data.get("innings_runs"), -1))
-        inn_w = max(0, min(10, safe_num(data.get("innings_wickets"), -1)))
-        if after_over < 1 or inn_r < 0 or inn_w < 0:
-            return jsonify({"error": "after_over (1+), innings_runs and innings_wickets required"}), 400
-        total_overs = max(1, safe_num(state.get("total_overs"), 20))
-        if after_over > total_overs:
-            return jsonify({"error": "after_over cannot exceed total_overs"}), 400
-        checkpoints = state.get("over_only_checkpoints") or []
-        if not isinstance(checkpoints, list):
-            checkpoints = []
-        prev_r, prev_w = 0, 0
-        if after_over > 1:
-            prev_cp = next((c for c in checkpoints if c.get("after_over") == after_over - 1), None)
-            if not prev_cp:
-                return jsonify(
-                    {"error": f"record score after over {after_over - 1} before after over {after_over}"}
-                ), 400
-            prev_r = max(0, safe_num(prev_cp.get("runs"), 0))
-            prev_w = max(0, min(10, safe_num(prev_cp.get("wickets"), 0)))
-        if inn_r < prev_r or inn_w < prev_w:
-            return jsonify(
-                {"error": f"innings total must be >= after over {after_over - 1} ({prev_r}/{prev_w})"}
-            ), 400
-        push_history()
-        new_cp = [c for c in checkpoints if safe_num(c.get("after_over"), 0) < after_over]
-        new_cp.append({"after_over": after_over, "runs": inn_r, "wickets": inn_w})
-        state["over_only_checkpoints"] = sorted(new_cp, key=lambda x: x["after_over"])
-        last = state["over_only_checkpoints"][-1]
-        state["overs"] = min(total_overs, safe_num(last.get("after_over"), 0))
-        state["runs"] = max(0, safe_num(last.get("runs"), 0))
-        state["wickets"] = max(0, min(10, safe_num(last.get("wickets"), 0)))
-        state["balls"] = 0
-        state["current_over"] = []
         save_state()
         return jsonify(with_calculated_values(state))
 
@@ -1730,8 +1500,6 @@ def edit():
         for key in ("runs", "wickets", "overs", "balls", "extras"):
             if key in data:
                 state[key] = safe_num(data[key], state[key])
-        if state.get("scoring_mode") == "over_only":
-            state["over_only_checkpoints"] = []
         save_state()
         return jsonify(with_calculated_values(state))
 
@@ -1758,7 +1526,7 @@ def set_players():
 def set_panel():
     data = request.get_json(silent=True) or {}
     panel = str(data.get("panel", "")).strip()
-    if panel not in {"score", "batting", "bowling", "chase", "fullscore", "chart"}:
+    if panel not in {"score", "batting", "bowling", "chase", "fullscore"}:
         return jsonify({"error": "invalid panel"}), 400
     with match_context():
         state["active_panel"] = panel
@@ -1799,8 +1567,6 @@ def manual_end_over():
             return blocked
         if innings_done():
             return jsonify({"error": "innings already complete"}), 400
-        if state.get("scoring_mode") == "over_only":
-            return jsonify({"error": "use /over-update in over-only mode"}), 400
         bowler = get_bowler(state["current_bowler"])
         if bowler:
             if bowler["balls"] > 0:
@@ -1852,7 +1618,6 @@ def start_second_innings():
         state["non_striker"] = ""
         state["current_bowler"] = ""
         state["active_panel"] = "score"
-        state["over_only_checkpoints"] = []
         save_state()
         return jsonify(with_calculated_values(state))
 
