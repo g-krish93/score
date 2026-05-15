@@ -39,6 +39,10 @@ grep -q "^RELAY_AUTO_POLL=" "$ENV_FILE" || upsert "RELAY_AUTO_POLL" "1"
 
 chown ec2-user:ec2-user "$ENV_FILE" 2>/dev/null || true
 
+if [[ -f "$APP/deploy/configure-smtp-env.sh" ]]; then
+  bash "$APP/deploy/configure-smtp-env.sh"
+fi
+
 if [[ -f /tmp/cricrelay.db ]] && [[ ! -f "${DATA_DIR}/cricrelay.db" ]]; then
   echo "Migrating SQLite from /tmp/cricrelay.db -> ${DATA_DIR}/cricrelay.db"
   cp -a /tmp/cricrelay.db "${DATA_DIR}/cricrelay.db"

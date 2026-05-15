@@ -1,4 +1,5 @@
 .env
+deploy/smtp.env.local
 *.pem
 *.log
 *.json

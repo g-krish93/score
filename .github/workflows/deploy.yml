@@ -10,10 +10,13 @@ jobs:
     steps:
       - name: Deploy
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_KEY }}
+          envs: SMTP_PASSWORD
           script: |
             set -e
             cd /app
@@ -28,6 +31,14 @@ jobs:
             sudo pip3 install --ignore-installed -r requirements.txt
             if [ -f deploy/persist-auth-env.sh ]; then
               sudo bash deploy/persist-auth-env.sh
+            fi
+            if [ -f deploy/configure-smtp-env.sh ]; then
+              if [ -n "${SMTP_PASSWORD:-}" ]; then
+                sudo mkdir -p /app/secrets
+                printf '%s' "$SMTP_PASSWORD" | sudo tee /app/secrets/smtp_password > /dev/null
+                sudo chmod 600 /app/secrets/smtp_password
+              fi
+              sudo bash deploy/configure-smtp-env.sh
             fi
             sudo systemctl stop cricket || true
             sleep 2
