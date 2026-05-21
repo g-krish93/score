@@ -105,6 +105,7 @@ def blank_state():
         "theme": "classic",
         "overlay_density": "expanded",
         "overlay_scale": 1.0,
+        "overlay_size": 3,
         "overlay_box_color": "#101f45",
         "toss_winner": "",
         "toss_decision": "bat",
@@ -616,18 +617,35 @@ def _send_password_reset_email(to_email: str, reset_url: str) -> bool:
         return False
 
 
+def normalize_overlay_size(value, fallback_scale=None) -> int:
+    """Widget size preset 1 (smallest) … 5 (largest) for Play-Cricket relay overlays."""
+    try:
+        n = int(value)
+        if 1 <= n <= 5:
+            return n
+    except (TypeError, ValueError):
+        pass
+    if fallback_scale is not None:
+        try:
+            sc = float(fallback_scale)
+            return max(1, min(5, round(1 + (sc - 0.8) / 0.25)))
+        except (TypeError, ValueError):
+            pass
+    return 3
+
+
 def read_relay_overlay_prefs(slug):
     safe = sanitize_match_id(slug)
     path = state_path_for(safe)
-    default_scale = 1.0
     if not path.exists():
-        return {"overlay_scale": default_scale}
+        return {"overlay_size": 3, "overlay_scale": 1.0}
     try:
         with path.open("r", encoding="utf-8") as fh:
             s = json.load(fh)
-        return {"overlay_scale": float(s.get("overlay_scale") or default_scale)}
+        size = normalize_overlay_size(s.get("overlay_size"), s.get("overlay_scale"))
+        return {"overlay_size": size, "overlay_scale": float(s.get("overlay_scale") or 1.0)}
     except Exception:
-        return {"overlay_scale": default_scale}
+        return {"overlay_size": 3, "overlay_scale": 1.0}
 
 
 @app.get("/")
@@ -984,16 +1002,13 @@ def dashboard_relay_appearance():
     if not row:
         flash("Unknown relay for your club.", "error")
         return redirect(url_for("dashboard"))
-    try:
-        scale = float(request.form.get("overlay_scale", "1") or 1)
-    except (TypeError, ValueError):
-        scale = 1.0
-    scale = max(0.8, min(1.8, scale))
+    size = normalize_overlay_size(request.form.get("overlay_size"), request.form.get("overlay_scale"))
     with match_context(slug):
         merge_missing_state_keys(state)
-        state["overlay_scale"] = round(scale, 2)
+        state["overlay_size"] = size
+        state["overlay_scale"] = round(0.8 + (size - 1) * 0.25, 2)
         save_state()
-    flash("Overlay size updated.", "success")
+    flash("Overlay widget size updated.", "success")
     return redirect(url_for("dashboard"))
 
 

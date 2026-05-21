@@ -60,12 +60,19 @@
                 </form>
               </div>
               <details style="margin-top:8px;">
-                <summary class="cr-help" style="cursor:pointer;font-weight:600;">Overlay size</summary>
-                <form method="post" action="{{ url_for('dashboard_relay_appearance') }}" style="margin-top:10px;max-width:280px;">
+                <summary class="cr-help" style="cursor:pointer;font-weight:600;">Widget size</summary>
+                <form method="post" action="{{ url_for('dashboard_relay_appearance') }}" style="margin-top:10px;max-width:320px;">
                   <input type="hidden" name="score_match_slug" value="{{ m.score_match_slug }}">
-                  <label class="cr-label" for="scale-{{ loop.index }}">Scale (phone / laptop)</label>
-                  <input class="cr-input" id="scale-{{ loop.index }}" name="overlay_scale" type="number" step="0.05" min="0.8" max="1.8" value="{{ row.overlay_prefs.overlay_scale }}">
-                  <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm" style="margin-top:10px;">Save</button>
+                  <label class="cr-label" for="size-{{ loop.index }}">Center score box (5 sizes)</label>
+                  <select class="cr-input" id="size-{{ loop.index }}" name="overlay_size">
+                    <option value="1" {% if row.overlay_prefs.overlay_size == 1 %}selected{% endif %}>1 — Extra small</option>
+                    <option value="2" {% if row.overlay_prefs.overlay_size == 2 %}selected{% endif %}>2 — Small</option>
+                    <option value="3" {% if row.overlay_prefs.overlay_size == 3 %}selected{% endif %}>3 — Medium</option>
+                    <option value="4" {% if row.overlay_prefs.overlay_size == 4 %}selected{% endif %}>4 — Large</option>
+                    <option value="5" {% if row.overlay_prefs.overlay_size == 5 %}selected{% endif %}>5 — Extra large</option>
+                  </select>
+                  <p class="cr-help" style="margin:8px 0 0;">Centered score widget: team names, runs/wickets, and overs (Play-Cricket updates over-by-over, not ball-by-ball).</p>
+                  <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm" style="margin-top:10px;">Save size</button>
                 </form>
               </details>
             </td>
