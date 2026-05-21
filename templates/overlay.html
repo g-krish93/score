@@ -421,9 +421,21 @@
 
     const text = (v) => (v === null || v === undefined || v === "" ? "—" : String(v));
     const pad = (v) => text(v).padEnd(18, " ");
+    function abbreviateBmaccTeam(name) {
+      const s = String(name || "").trim();
+      if (!s || s === "—") return null;
+      if (!/^brighton\s+malayalee\s+association\s+cc\b/i.test(s)) return null;
+      if (/\b2nd(\s+xi)?\b/i.test(s) || /\-\s*2nd\b/i.test(s)) return "BMACC 2nd XI";
+      if (/\b1st(\s+xi)?\b/i.test(s) || /\-\s*1st\b/i.test(s)) return "BMACC 1st XI";
+      const afterClub = s.replace(/^brighton\s+malayalee\s+association\s+cc\s*/i, "").trim();
+      if (!afterClub || /^\([^)]*\)$/.test(afterClub)) return "BMACC";
+      return "BMACC";
+    }
     function shortTeamName(name, maxLen = 28) {
       let s = String(name || "").trim();
       if (!s || s === "—") return "—";
+      const bmacc = abbreviateBmaccTeam(s);
+      if (bmacc) return bmacc.length > maxLen ? `${bmacc.slice(0, maxLen - 1)}…` : bmacc;
       s = s.replace(/\s+CC(\s*\([^)]*\))?$/i, "").replace(/\s+-\s+[^-]+$/i, "").trim();
       if (s.length > maxLen) s = `${s.slice(0, maxLen - 1)}…`;
       return s;
