@@ -58,7 +58,7 @@
       background: linear-gradient(90deg, var(--team1), #93c5fd 56%, var(--team2));
       opacity: .95;
     }
-    /* Play-Cricket relay: centered widget (5 sizes via html.overlay-size-N) */
+    /* Play-Cricket relay: compact widget (5 sizes via html.overlay-size-N) */
     html.overlay-size-1 { --widget-max-w: 210px; --widget-pad: 8px; --widget-name: 8px; --widget-score: 20px; --widget-ov: 9px; --widget-vs: 9px; }
     html.overlay-size-2 { --widget-max-w: 260px; --widget-pad: 10px; --widget-name: 9px; --widget-score: 24px; --widget-ov: 10px; --widget-vs: 10px; }
     html.overlay-size-3 { --widget-max-w: 320px; --widget-pad: 12px; --widget-name: 10px; --widget-score: 30px; --widget-ov: 11px; --widget-vs: 11px; }
@@ -66,16 +66,26 @@
     html.overlay-size-5 { --widget-max-w: 440px; --widget-pad: 16px; --widget-name: 12px; --widget-score: 42px; --widget-ov: 13px; --widget-vs: 13px; }
     body.relay-active #overlay {
       left: 50%;
-      top: 56%;
       right: auto;
-      bottom: auto;
+      top: auto;
+      bottom: max(10px, env(safe-area-inset-bottom, 0px));
       width: min(var(--widget-max-w, 320px), 92vw);
       max-width: var(--widget-max-w, 320px);
       padding: 0;
       background: transparent;
       border: none;
       box-shadow: none;
-      transform: translate(-50%, -50%) translate3d(0, 0, 0);
+      transform: translateX(-50%) translate3d(0, 0, 0);
+    }
+    /* Landscape (typical Prism / live stream): pin widget to bottom centre */
+    @media (orientation: landscape) {
+      body.relay-active #overlay {
+        left: 50%;
+        right: auto;
+        top: auto;
+        bottom: max(12px, env(safe-area-inset-bottom, 0px));
+        transform: translateX(-50%) translate3d(0, 0, 0);
+      }
     }
     body.relay-active #overlay::before { display: none; }
     body.relay-active #matchTag,
@@ -337,6 +347,12 @@
     }
     .wk-ios body.relay-active #overlay {
       z-index: 2147483646;
+      bottom: max(14px, env(safe-area-inset-bottom, 0px));
+    }
+    @media (orientation: landscape) {
+      .wk-ios body.relay-active #overlay {
+        bottom: max(16px, env(safe-area-inset-bottom, 0px));
+      }
     }
     @media (max-width: 720px) {
       .score-strip { grid-template-columns: 1fr; }
