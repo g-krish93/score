@@ -2,12 +2,15 @@
 import re
 from dataclasses import asdict, dataclass
 from typing import Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
 
-from .models_cricrelay import canonicalize_play_cricket_scrape_url
+from .models_cricrelay import (
+    build_play_cricket_results_url,
+    canonicalize_play_cricket_scrape_url,
+)
 
 DEFAULT_TIMEOUT = 15
 SCORE_LINE_RE = re.compile(
@@ -372,28 +375,64 @@ def parse_match_snapshot(url: str, html: str) -> MatchSnapshot:
     )
 
 
+def _merge_snapshot_fields(target: dict, source: dict, keys: tuple[str, ...]) -> None:
+    for key in keys:
+        if not target.get(key) and source.get(key):
+            target[key] = source.get(key)
+
+
 def scrape_match(url: str) -> dict:
     url = canonicalize_play_cricket_scrape_url(url)
     html = fetch_page_html(url)
     snapshot = parse_match_snapshot(url, html)
     data = snapshot.to_dict()
 
-    # Some pre-match result URLs (…/website/results/<id>) omit fixture metadata
-    # until play starts, while match_details still contains title/ground/competition.
     missing_fixture = not any(
         data.get(k)
         for k in ("fixture_title", "fixture_date", "fixture_start_time", "fixture_ground", "fixture_competition")
     )
     missing_scores = not data.get("innings_1") and not data.get("innings_2")
-    if missing_fixture and missing_scores:
-        m = re.search(r"/website/results/(\d+)\b", url.lower())
-        if m:
-            parsed = urlparse(url)
-            fallback = f"{parsed.scheme}://{parsed.netloc}/match_details?id={m.group(1)}"
+
+    parsed = urlparse(url)
+    mid = re.search(r"/website/results/(\d+)\b", url.lower())
+    match_id = mid.group(1) if mid else None
+    if not match_id:
+        raw_id = (parse_qs(parsed.query).get("id") or [None])[0]
+        if raw_id and str(raw_id).strip().isdigit():
+            match_id = str(raw_id).strip()
+
+    # Scores usually live on …/website/results/<id>; match_details often has metadata only.
+    if missing_scores and match_id and parsed.netloc:
+        results_url = build_play_cricket_results_url(
+            f"{parsed.scheme or 'https'}://{parsed.netloc}", match_id
+        )
+        if results_url and results_url.rstrip("/") != url.rstrip("/"):
             try:
-                html2 = fetch_page_html(fallback)
-                snap2 = parse_match_snapshot(fallback, html2).to_dict()
-                for key in (
+                html_scores = fetch_page_html(results_url)
+                snap_scores = parse_match_snapshot(results_url, html_scores).to_dict()
+                for inn in ("innings_1", "innings_2"):
+                    if not data.get(inn) and snap_scores.get(inn):
+                        data[inn] = snap_scores[inn]
+                _merge_snapshot_fields(
+                    data,
+                    snap_scores,
+                    ("status", "toss_note", "fixture_title", "fixture_date", "fixture_start_time", "fixture_ground", "fixture_competition"),
+                )
+                data["source_url"] = results_url
+            except Exception:
+                pass
+            missing_scores = not data.get("innings_1") and not data.get("innings_2")
+
+    # Pre-match results pages may omit fixture rows; match_details still has title/ground.
+    if missing_fixture and missing_scores and match_id:
+        fallback = f"{parsed.scheme or 'https'}://{parsed.netloc}/match_details?id={match_id}"
+        try:
+            html2 = fetch_page_html(fallback)
+            snap2 = parse_match_snapshot(fallback, html2).to_dict()
+            _merge_snapshot_fields(
+                data,
+                snap2,
+                (
                     "fixture_title",
                     "fixture_date",
                     "fixture_start_time",
@@ -401,11 +440,10 @@ def scrape_match(url: str) -> dict:
                     "fixture_competition",
                     "status",
                     "toss_note",
-                ):
-                    if not data.get(key) and snap2.get(key):
-                        data[key] = snap2.get(key)
-            except Exception:
-                pass
+                ),
+            )
+        except Exception:
+            pass
     return data
 
 

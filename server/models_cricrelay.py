@@ -15,12 +15,40 @@ def slugify_org_name(name: str) -> str:
     return s[:48] or "club"
 
 
-def canonicalize_play_cricket_scrape_url(url: str) -> str:
-    """Rewrite malformed ECB URLs that 404.
+def _play_cricket_match_id_from_url(url: str) -> str:
+    """Extract numeric fixture id from results or match_details URLs."""
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    qs = parse_qs(parsed.query)
+    mid = (qs.get("id") or [None])[0]
+    if mid and str(mid).strip().isdigit():
+        return str(mid).strip()
+    m = re.search(r"/website/results/(\d+)\b", (parsed.path or "").lower())
+    if m:
+        return m.group(1)
+    return ""
 
-    Clubs sometimes paste or merge paths into
-    ``…/website/results/match_details?id=<id>``. The live scorecard is
-    ``…/website/results/<id>`` (see registration docs).
+
+def build_play_cricket_results_url(host_root: str, match_id: str) -> str:
+    """Live scorecards are published at ``…/website/results/<id>``."""
+    root = (host_root or "").strip().rstrip("/")
+    mid = str(match_id or "").strip()
+    if not root or not mid.isdigit():
+        return ""
+    parsed = urlparse(root if "://" in root else f"https://{root}")
+    if not parsed.netloc or "play-cricket.com" not in parsed.netloc.lower():
+        return ""
+    scheme = parsed.scheme or "https"
+    return f"{scheme}://{parsed.netloc}/website/results/{mid}"
+
+
+def canonicalize_play_cricket_scrape_url(url: str) -> str:
+    """Normalize ECB Play-Cricket URLs to the page that carries live scores.
+
+    - ``match_details?id=<id>`` → ``/website/results/<id>`` (scores are not on match_details)
+    - ``…/website/results/match_details?id=<id>`` → ``…/website/results/<id>``
     """
     raw = (url or "").strip()
     if not raw or "play-cricket.com" not in raw.lower():
@@ -28,18 +56,26 @@ def canonicalize_play_cricket_scrape_url(url: str) -> str:
     parsed = urlparse(raw)
     path = (parsed.path or "").replace("//", "/")
     low_path = path.lower()
-    qs = parse_qs(parsed.query)
-    mid = (qs.get("id") or [None])[0]
-    if not mid or not str(mid).strip().isdigit():
+    mid = _play_cricket_match_id_from_url(raw)
+    if not mid:
         return raw
-    mid = str(mid).strip()
+    scheme = parsed.scheme or "https"
+    netloc = parsed.netloc
+    if not netloc:
+        return raw
+
+    if "match_details" in low_path:
+        results = build_play_cricket_results_url(f"{scheme}://{netloc}", mid)
+        if results:
+            return results
+
     marker = "/website/results"
-    if marker not in low_path or "match_details" not in low_path:
-        return raw
-    idx = low_path.find(marker)
-    prefix = path[: idx + len(marker)].rstrip("/")
-    new_path = f"{prefix}/{mid}"
-    return urlunparse((parsed.scheme, parsed.netloc, new_path, "", "", ""))
+    if marker in low_path and "match_details" in low_path:
+        idx = low_path.find(marker)
+        prefix = path[: idx + len(marker)].rstrip("/")
+        new_path = f"{prefix}/{mid}"
+        return urlunparse((scheme, netloc, new_path, "", "", ""))
+    return raw
 
 
 def normalize_play_cricket_club_root(raw: str) -> str:
@@ -94,15 +130,14 @@ def build_match_details_url(base_url: str, match_id: str) -> str:
 
 
 def build_play_cricket_scrape_url(base_url: str, match_id: str) -> str:
-    """Build the page URL your scraper should fetch.
-
-    If the club base points at the Play-Cricket *results* area (…/website/results),
-    the live fixture is typically ``…/website/results/<numeric_id>``.
-
-    Otherwise we use the classic ``…/match_details?id=<id>`` form.
-    """
+    """Build the scrape URL for a fixture (live scores on ``/website/results/<id>``)."""
     b = (base_url or "").strip().rstrip("/")
     mid = str(match_id or "").strip()
+    if not mid:
+        return b
+    results = build_play_cricket_results_url(b, mid)
+    if results:
+        return results
     low = b.lower()
     marker = "/website/results"
     if marker in low:
