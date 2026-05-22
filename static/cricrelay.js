@@ -4,7 +4,53 @@
 (function () {
   "use strict";
 
+  var STORAGE_KEY = "cricrelay-color-mode";
+  var THEME_META = "#cr-theme-color-meta";
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function getStoredColorMode() {
+    try {
+      var m = localStorage.getItem(STORAGE_KEY);
+      if (m === "light" || m === "dark") return m;
+    } catch (e) {}
+    return null;
+  }
+
+  function resolveColorMode() {
+    var stored = getStoredColorMode();
+    if (stored) return stored;
+    if (document.body && document.body.classList.contains("cr-theme-light")) {
+      return "light";
+    }
+    return "dark";
+  }
+
+  function applyColorMode(mode, persist) {
+    var light = mode === "light";
+    document.documentElement.setAttribute("data-color-mode", light ? "light" : "dark");
+    document.body.classList.toggle("cr-theme-light", light);
+    var meta = document.querySelector(THEME_META);
+    if (meta) meta.setAttribute("content", light ? "#f3f7ff" : "#070b14");
+    if (persist) {
+      try {
+        localStorage.setItem(STORAGE_KEY, light ? "light" : "dark");
+      } catch (e) {}
+    }
+    document.querySelectorAll("[data-cr-theme-toggle]").forEach(function (btn) {
+      btn.setAttribute("aria-pressed", light ? "true" : "false");
+      btn.setAttribute("aria-label", light ? "Switch to dark mode" : "Switch to light mode");
+      btn.setAttribute("title", light ? "Dark mode" : "Light mode");
+    });
+  }
+
+  applyColorMode(resolveColorMode(), false);
+
+  document.querySelectorAll("[data-cr-theme-toggle]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var next = document.documentElement.getAttribute("data-color-mode") === "light" ? "dark" : "light";
+      applyColorMode(next, true);
+    });
+  });
 
   /* Scroll reveal */
   if (!reduceMotion && "IntersectionObserver" in window) {

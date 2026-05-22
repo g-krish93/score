@@ -2,9 +2,19 @@
 <html lang="en-GB">
 <head>
   <meta charset="utf-8">
+  <script>
+    (function () {
+      try {
+        var m = localStorage.getItem("cricrelay-color-mode");
+        if (m === "light" || m === "dark") {
+          document.documentElement.setAttribute("data-color-mode", m);
+        }
+      } catch (e) {}
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#070b14">
-  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#070b14" id="cr-theme-color-meta">
+  <meta name="color-scheme" content="dark light">
   <meta name="robots" content="index,follow">
   <meta name="description" content="{% block meta_description %}Live ECB Play-Cricket scores in your stream overlay — built for UK clubs streaming on YouTube, TikTok Live, Facebook &amp; OBS. Register once, run up to six parallel streams.{% endblock %}">
   <meta property="og:type" content="website">

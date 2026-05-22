@@ -8,6 +8,7 @@
     {% if session.get('org_id') %}
     <nav class="cr-nav cr-nav--app" aria-label="Primary">
       <a href="{{ url_for('dashboard') }}" class="cr-navlink {% if request.endpoint in ('dashboard', 'dashboard_legacy_redirect') %}is-active{% endif %}">Streams</a>
+      {% include 'partials/cricrelay_theme_toggle.html' %}
       <form action="{{ url_for('logout') }}" method="post" class="cr-nav-form"><button type="submit" class="cr-navlink cr-navlink-btn">Log out</button></form>
     </nav>
     {% else %}
@@ -18,12 +19,14 @@
     </button>
     <nav class="cr-nav cr-nav--marketing" aria-label="Primary">
       <a href="{{ url_for('cricrelay_home') }}#how" class="cr-navlink">How it works</a>
+      {% include 'partials/cricrelay_theme_toggle.html' %}
       <a href="{{ url_for('login_page') }}" class="cr-navlink {% if request.endpoint == 'login_page' %}is-active{% endif %}">Log in</a>
       <a href="{{ url_for('register_page') }}" class="cr-btn cr-btn-primary cr-btn-header">Start free</a>
     </nav>
     <div id="cr-nav-drawer" class="cr-nav-drawer" role="dialog" aria-modal="true" aria-label="Menu" aria-hidden="true">
       <div class="cr-nav-drawer-inner">
         <a href="{{ url_for('cricrelay_home') }}#how">How it works</a>
+        <div class="cr-nav-drawer-theme">{% include 'partials/cricrelay_theme_toggle.html' %}</div>
         <a href="{{ url_for('login_page') }}">Log in</a>
         <a href="{{ url_for('register_page') }}" class="cr-btn cr-btn-primary cr-btn-block">Start free</a>
       </div>
