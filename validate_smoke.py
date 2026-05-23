@@ -156,13 +156,46 @@ def main():
         per_tok = (cfg.get_json() or {}).get("pcs_ingest_token") or ""
         if per_tok:
             pcs_headers["Authorization"] = f"Bearer {per_tok}"
-    pcs_events = {"events": ["BTNHome Side", "FTNAway Side", "BTS42/3"]}
+    pcs_events = {
+        "events": [
+            "BTNHome Side",
+            "FTNAway Side",
+            "B1NStriker",
+            "B2NNonStrike",
+            "BTS42/3",
+            "B1S45",
+            "B2S12",
+            "B1B32",
+            "B2B8",
+            "OVB8.2",
+            "FTS200/8",
+            "RRQ159",
+            "BTS10/1",
+            "B1NOpener",
+            "B1S10",
+            "OVB15.0",
+        ]
+    }
     assert_ok(c.post("/relay/pcs-ingest", json=pcs_events, headers=pcs_headers))
     pcs_score = c.get("/score").get_json()
     assert pcs_score["relay_bundle"]["enabled"] is True, pcs_score
     assert pcs_score["relay_bundle"]["mode"] == "pcs_ble", pcs_score
     snap = pcs_score["relay_bundle"]["snapshot"]
-    assert snap["innings_1"]["runs"] == 42, pcs_score
+    live = snap.get("live") or {}
+    assert live.get("runs") == 10, pcs_score
+    assert (live.get("batsman_1") or {}).get("runs") == 10, pcs_score
+    assert live.get("target") == 201, pcs_score
+    assert live.get("runs_required") == 159, pcs_score
+    assert snap["innings_1"]["runs"] == 200, pcs_score
+    st = c.get("/relay/pcs-status", query_string={"match": "default"}, headers=pcs_headers)
+    assert_ok(st)
+    stj = st.get_json()
+    assert stj["pcs_live"]["packet_count"] >= 6, stj
+    assert_ok(c.post("/relay/pcs-ingest", json={"line": "XYZunknown"}, headers=pcs_headers))
+    cap = c.get("/relay/pcs-status", query_string={"match": "default"}, headers=pcs_headers).get_json()["pcs_capture"]
+    assert "XYZ" in cap.get("unknown_opcodes", []) or any(
+        e.get("opcode") == "XYZ" for e in cap.get("packet_log_tail", [])
+    ), cap
     assert_ok(c.post("/relay/config", json={"relay_mode": "manual"}))
 
     print("Smoke validation passed for all core endpoints.")

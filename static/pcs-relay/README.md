@@ -1,20 +1,29 @@
 # PCS BLE Relay APK (R&D)
 
-The site serves **`/download/pcs-relay.apk`** from **`static/pcs-relay.apk`** (this folder’s parent).
+## BLE modes in the app (Settings)
 
-## Rebuild
+| Mode | Use when |
+|------|----------|
+| **Scan all devices** | Discovering what PCS actually advertises (nRF Connect style) |
+| **Scan PCS preset UUIDs** | Testing community UUIDs without hardcoding behaviour |
+| **Advertise as scoreboard** | Matches [buildyourownscoreboard](https://buildyourownscoreboard.wordpress.com/optional-play-cricket-scorer-app-integration/) — PCS connects **to** the phone |
+
+Preset UUIDs (optional, may need verification on your kit):
+
+- Service: `5a0d6a15-b664-4304-8530-3a0ec53e5bc1`
+- Characteristic: `df531f62-fc0b-40ce-81b2-32a6262ea440`
+- Advertise name: `BT-Scoreboard`
+
+## CricRelay
+
+1. Dashboard → PCS BLE stream → copy ingest URL + Bearer token.
+2. App Settings → paste those → pick BLE mode.
+3. Overlay URL in OBS (not entered in the app).
+
+## Rebuild APK
 
 ```bash
 cd pcs-ble-relay-android
-./gradlew assembleRelease   # Windows: gradlew.bat assembleRelease
-cp app/build/outputs/apk/release/app-release.apk ../static/pcs-relay.apk
+gradlew.bat assembleRelease
+copy app\build\outputs\apk\release\app-release.apk ..\static\pcs-relay.apk
 ```
-
-CI: `.github/workflows/build-pcs-relay-apk.yml` on push to `main`.
-
-## App setup
-
-1. Install APK on Android phone (enable “Install unknown apps” if needed).
-2. CricRelay dashboard → PCS BLE stream → copy **ingest URL** + **Bearer token**.
-3. App **Settings** → paste both → **Scan BLE** → connect to PCS iPad.
-4. Copy **overlay URL** into OBS.

@@ -41,7 +41,13 @@ from .models_cricrelay import (
     normalize_play_cricket_club_root,
     slugify_org_name,
 )
-from .pcs_protocol import apply_pcs_events, apply_pcs_packet, pcs_state_to_snapshot
+from .pcs_protocol import (
+    apply_pcs_events,
+    apply_pcs_packet,
+    pcs_capture_report,
+    pcs_live_summary,
+    pcs_state_to_snapshot,
+)
 from .play_cricket_scraper import scrape_fixtures
 from .scraper_worker import get_live_snapshot, register_relay_worker
 
@@ -961,9 +967,18 @@ def _dashboard_fixture_data(org):
         slug = m.score_match_slug
         ingest_url = f"{base}/relay/pcs-ingest?match={slug}" if base else f"/relay/pcs-ingest?match={slug}"
         pcs_token = ""
+        pcs_live = {}
+        overlay_url = f"{base}/m/{slug}/stream" if base else f"/m/{slug}/stream"
         with match_context(slug):
             merge_missing_state_keys(state)
             pcs_token = (state.get("pcs_ingest_token") or "").strip()
+            if (getattr(m, "relay_source", None) or "scraper") == "pcs_ble":
+                pcs_live = pcs_live_summary(
+                    state.get("pcs_ble_state"),
+                    state.get("relay_wrapper"),
+                )
+                pcs_live["last_ok_at"] = state.get("relay_last_ok_at")
+                pcs_live["relay_mode"] = state.get("relay_mode")
         relay_rows.append(
             {
                 "match": m,
@@ -971,6 +986,8 @@ def _dashboard_fixture_data(org):
                 "relay_source": (getattr(m, "relay_source", None) or "scraper"),
                 "pcs_ingest_url": ingest_url,
                 "pcs_ingest_token": pcs_token,
+                "pcs_live": pcs_live,
+                "overlay_url": overlay_url,
             }
         )
     return {
@@ -1247,6 +1264,10 @@ def _relay_ingest_authorized() -> bool:
     return auth == f"Bearer {expected}"
 
 
+def _relay_allow_open_ingest() -> bool:
+    return os.getenv("RELAY_ALLOW_OPEN_INGEST", "").strip().lower() in {"1", "true", "yes"}
+
+
 def _pcs_ingest_authorized(match_slug: str) -> bool:
     auth = (request.headers.get("Authorization") or "").strip()
     global_tok = os.getenv("RELAY_INGEST_TOKEN", "").strip()
@@ -1258,7 +1279,7 @@ def _pcs_ingest_authorized(match_slug: str) -> bool:
     if per and auth == f"Bearer {per}":
         return True
     if not global_tok and not per:
-        return True
+        return _relay_allow_open_ingest()
     return False
 
 
@@ -1348,7 +1369,12 @@ def apply_pcs_ble_ingest_payload(match_id: str, payload: dict) -> tuple[dict, in
             events.append(line)
         if not events:
             return ({"error": "payload must include events[] or line/packet"}, 400)
-        pcs_state = apply_pcs_events(state.get("pcs_ble_state"), events)
+        pcs_state = state.get("pcs_ble_state")
+        for ev in events:
+            pcs_state = apply_pcs_packet(pcs_state, ev)
+        raw_extra = (payload.get("raw") or payload.get("raw_line") or "").strip()
+        if raw_extra and raw_extra not in events:
+            pcs_state = apply_pcs_packet(pcs_state, raw_extra)
         state["pcs_ble_state"] = pcs_state
         label = ""
         rm = RelayMatch.query.filter_by(score_match_slug=mid).first()
@@ -1368,14 +1394,68 @@ def apply_pcs_ble_ingest_payload(match_id: str, payload: dict) -> tuple[dict, in
         state["relay_last_ok_at"] = now
         state["relay_last_error"] = None
         save_state()
+        bundle = with_calculated_values(state)["relay_bundle"]
+        capture = pcs_capture_report(state.get("pcs_ble_state"), state.get("relay_wrapper"))
         return (
             {
                 "ok": True,
                 "packets": len(events),
-                "relay_bundle": with_calculated_values(state)["relay_bundle"],
+                "snapshot": bundle.get("snapshot"),
+                "relay_bundle": bundle,
+                "pcs_live": pcs_live_summary(state.get("pcs_ble_state"), state.get("relay_wrapper")),
+                "pcs_capture": capture,
             },
             200,
         )
+
+
+@app.get("/relay/pcs-status")
+def relay_pcs_status():
+    """JSON status for PCS BLE stream (overlay poll / debug). Same match slug as ingest."""
+    match_id = get_request_match_id()
+    if not _pcs_ingest_authorized(match_id):
+        return jsonify({"error": "unauthorized"}), 401
+    with match_context(match_id):
+        if (state.get("relay_mode") or "manual") != "pcs_ble":
+            return jsonify({"error": "relay_mode is not pcs_ble for this match"}), 400
+        bundle = with_calculated_values(state).get("relay_bundle") or {}
+        pcs_st = state.get("pcs_ble_state")
+        wrap = state.get("relay_wrapper")
+        return jsonify(
+            {
+                "ok": True,
+                "relay_bundle": bundle,
+                "pcs_live": pcs_live_summary(pcs_st, wrap),
+                "pcs_capture": pcs_capture_report(pcs_st, wrap),
+            }
+        )
+
+
+@app.get("/dashboard/pcs-capture-export")
+@login_required
+def dashboard_pcs_capture_export():
+    """Download BLE capture log JSON for a PCS stream (R&D)."""
+    org = _org_from_session()
+    slug = sanitize_match_id(request.args.get("match", ""))
+    if not slug:
+        flash("Missing match slug.", "error")
+        return redirect(url_for("dashboard"))
+    row = RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
+    if not row or (getattr(row, "relay_source", None) or "scraper") != "pcs_ble":
+        flash("Unknown PCS BLE stream.", "error")
+        return redirect(url_for("dashboard"))
+    with match_context(slug):
+        report = pcs_capture_report(state.get("pcs_ble_state"), state.get("relay_wrapper"))
+        report["match_slug"] = slug
+        report["stream_label"] = row.label
+    body = json.dumps(report, indent=2)
+    return Response(
+        body,
+        mimetype="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="pcs-capture-{slug}.json"',
+        },
+    )
 
 
 @app.post("/relay/ingest")
