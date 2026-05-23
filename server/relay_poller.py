@@ -39,6 +39,8 @@ def _poller_loop(
                 for rm in rows:
                     if getattr(rm, "paused", False):
                         continue
+                    if (getattr(rm, "relay_source", None) or "scraper") == "pcs_ble":
+                        continue
                     url = (rm.full_scrape_url or "").strip()
                     slug = (rm.score_match_slug or "").strip()
                     if not url or not slug:

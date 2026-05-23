@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.PcsRelay" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#22D3A8</item>
+        <item name="colorSecondary">#38BDF8</item>
+    </style>
+</resources>

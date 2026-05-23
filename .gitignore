@@ -11,3 +11,10 @@ __pycache__/
 .terraform.lock.hcl
 venv/
 .venv/
+pcs-ble-relay-android/.gradle/
+pcs-ble-relay-android/app/build/
+pcs-ble-relay-android/build/
+pcs-ble-relay/build/
+pcs-ble-relay/.dart_tool/
+**/terraform.tfvars
+!**/terraform.tfvars.example

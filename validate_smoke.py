@@ -14,6 +14,7 @@ def main():
     c = app.test_client()
 
     assert_ok(c.get("/health"))
+    c.post("/relay/config", json={"relay_mode": "manual"})
     if (os.getenv("RELAY_WORKER_HTTP") or "").strip().lower() in {"1", "true", "yes", "on"}:
         assert_ok(c.get("/relay-worker/health"))
     score0 = c.get("/score").get_json()
@@ -143,6 +144,25 @@ def main():
     relay_score = c.get("/score").get_json()
     assert relay_score["relay_bundle"]["enabled"] is True, relay_score
     assert relay_score["relay_bundle"]["snapshot"]["innings_1"]["runs"] == 7, relay_score
+    assert_ok(c.post("/relay/config", json={"relay_mode": "manual"}))
+
+    cfg = c.post("/relay/config", json={"relay_mode": "pcs_ble"})
+    assert_ok(cfg)
+    pcs_headers = {}
+    global_tok = (os.getenv("RELAY_INGEST_TOKEN") or "").strip()
+    if global_tok:
+        pcs_headers["Authorization"] = f"Bearer {global_tok}"
+    else:
+        per_tok = (cfg.get_json() or {}).get("pcs_ingest_token") or ""
+        if per_tok:
+            pcs_headers["Authorization"] = f"Bearer {per_tok}"
+    pcs_events = {"events": ["BTNHome Side", "FTNAway Side", "BTS42/3"]}
+    assert_ok(c.post("/relay/pcs-ingest", json=pcs_events, headers=pcs_headers))
+    pcs_score = c.get("/score").get_json()
+    assert pcs_score["relay_bundle"]["enabled"] is True, pcs_score
+    assert pcs_score["relay_bundle"]["mode"] == "pcs_ble", pcs_score
+    snap = pcs_score["relay_bundle"]["snapshot"]
+    assert snap["innings_1"]["runs"] == 42, pcs_score
     assert_ok(c.post("/relay/config", json={"relay_mode": "manual"}))
 
     print("Smoke validation passed for all core endpoints.")

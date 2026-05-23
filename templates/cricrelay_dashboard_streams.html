@@ -19,15 +19,26 @@
   {% endwith %}
 
   <div class="cr-card">
+    <h2>PCS BLE relay (R&amp;D)</h2>
+    <p class="cr-muted" style="margin:0 0 12px;">For your testing: Android app relays Play Cricket Scorer Bluetooth data to CricRelay. Not shown on marketing pages.</p>
+    {% if pcs_apk_available %}
+    <a class="cr-btn cr-btn-primary" href="{{ pcs_apk_download_url }}">Download relay APK</a>
+    {% else %}
+    <p class="cr-help" style="margin:0 0 10px;">APK not on server yet — build the Flutter app and place <code class="cr-code">pcs-relay.apk</code> under <code class="cr-code">static/</code> (see <code class="cr-code">static/pcs-relay/README.md</code>).</p>
+    <a class="cr-btn cr-btn-secondary" href="{{ pcs_apk_download_url }}">APK download (after upload)</a>
+    {% endif %}
+  </div>
+
+  <div class="cr-card">
     <h2>Active streams</h2>
-    <p class="cr-muted" style="margin:0 0 14px;">{{ stream_slots_used }} / {{ stream_slots_total }} slots · {% if relay_auto_poll %}auto-sync every {{ relay_poll_sec }}s{% else %}auto-sync off{% endif %}</p>
+    <p class="cr-muted" style="margin:0 0 14px;">{{ stream_slots_used }} / {{ stream_slots_total }} slots · {% if relay_auto_poll %}auto-sync every {{ relay_poll_sec }}s (scraper only){% else %}auto-sync off{% endif %}</p>
     {% if relay_rows %}
     <div class="cr-table-wrap">
       <table class="cr-table">
         <thead>
           <tr>
             <th>Stream</th>
-            <th>Match ID</th>
+            <th>Source</th>
             <th>Status</th>
             <th>Overlay</th>
           </tr>
@@ -38,10 +49,19 @@
           {% set title = m.label if m.label else ('Match ' ~ m.play_cricket_match_id) %}
           <tr>
             <td><strong>{{ title }}</strong></td>
-            <td><code class="cr-code">{{ m.play_cricket_match_id }}</code></td>
+            <td>
+              {% if row.relay_source == 'pcs_ble' %}
+              <span class="cr-badge" style="background:#4c1d95;color:#e9d5ff;">PCS BLE</span>
+              {% else %}
+              <span class="cr-badge cr-badge-live">Scraper</span>
+              <br><code class="cr-code" style="font-size:0.85em;">{{ m.play_cricket_match_id }}</code>
+              {% endif %}
+            </td>
             <td>
               {% if m.paused %}
               <span class="cr-badge cr-badge-paused">Paused</span>
+              {% elif row.relay_source == 'pcs_ble' %}
+              <span class="cr-badge cr-badge-live">BLE relay</span>
               {% else %}
               <span class="cr-badge cr-badge-live">Live sync</span>
               {% endif %}
@@ -59,6 +79,18 @@
                   <button type="submit" class="cr-btn cr-btn-danger cr-btn-sm">Remove</button>
                 </form>
               </div>
+              {% if row.relay_source == 'pcs_ble' %}
+              <details style="margin-top:8px;" open>
+                <summary class="cr-help" style="cursor:pointer;font-weight:600;">Relay app setup</summary>
+                <p class="cr-help" style="margin:8px 0 4px;"><strong>POST ingest URL</strong></p>
+                <code class="cr-code" style="display:block;word-break:break-all;margin-bottom:8px;">{{ row.pcs_ingest_url }}</code>
+                <button type="button" class="cr-btn cr-btn-secondary cr-btn-sm cr-btn-copy" data-copy-text="{{ row.pcs_ingest_url }}">Copy ingest URL</button>
+                <p class="cr-help" style="margin:12px 0 4px;"><strong>Authorization header</strong></p>
+                <code class="cr-code" style="display:block;word-break:break-all;margin-bottom:8px;">Bearer {{ row.pcs_ingest_token }}</code>
+                <button type="button" class="cr-btn cr-btn-secondary cr-btn-sm cr-btn-copy" data-copy-text="Bearer {{ row.pcs_ingest_token }}">Copy Bearer token</button>
+                <p class="cr-help" style="margin:10px 0 0;">Body JSON: <code class="cr-code">{"line":"BTS10/2"}</code> or <code class="cr-code">{"events":["BTNHome","BTS10/2"]}</code></p>
+              </details>
+              {% endif %}
               <details style="margin-top:8px;">
                 <summary class="cr-help" style="cursor:pointer;font-weight:600;">Widget size</summary>
                 <form method="post" action="{{ url_for('dashboard_relay_appearance') }}" style="margin-top:10px;max-width:320px;">
@@ -71,7 +103,6 @@
                     <option value="4" {% if row.overlay_prefs.overlay_size == 4 %}selected{% endif %}>4 — Large</option>
                     <option value="5" {% if row.overlay_prefs.overlay_size == 5 %}selected{% endif %}>5 — Extra large</option>
                   </select>
-                  <p class="cr-help" style="margin:8px 0 0;">Centered score widget: team names, runs/wickets, and overs (Play-Cricket updates over-by-over, not ball-by-ball).</p>
                   <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm" style="margin-top:10px;">Save size</button>
                 </form>
               </details>
@@ -82,7 +113,7 @@
       </table>
     </div>
     {% else %}
-    <p class="cr-muted">No streams yet — start one from a fixture below.</p>
+    <p class="cr-muted">No streams yet — start one from a fixture or PCS BLE below.</p>
     {% endif %}
   </div>
 
@@ -114,6 +145,7 @@
               <span class="cr-badge cr-badge-paused">No slot</span>
               {% else %}
               <form method="post" action="{{ url_for('dashboard_add_match') }}">
+                <input type="hidden" name="relay_source" value="scraper">
                 <input type="hidden" name="play_cricket_match_id" value="{{ f.match_id }}">
                 <input type="hidden" name="stream_label" value="{{ f.label[:120] }}">
                 <button type="submit" class="cr-btn cr-btn-primary cr-btn-sm">Start stream</button>
@@ -133,8 +165,9 @@
 
   {% if stream_slots_used < stream_slots_total %}
   <div class="cr-card">
-    <h2>Start by match ID</h2>
+    <h2>Start by match ID (scraper)</h2>
     <form method="post" action="{{ url_for('dashboard_add_match') }}">
+      <input type="hidden" name="relay_source" value="scraper">
       <div class="cr-row2">
         <div>
           <label class="cr-label" for="stream_label">Label (optional)</label>
@@ -151,6 +184,17 @@
         <input class="cr-input" id="play_cricket_base_url" name="play_cricket_base_url" autocomplete="off" placeholder="bmacc">
       </details>
       <button type="submit" class="cr-btn cr-btn-primary" style="margin-top:16px;">Create stream</button>
+    </form>
+  </div>
+
+  <div class="cr-card">
+    <h2>Start PCS BLE stream (R&amp;D)</h2>
+    <p class="cr-muted" style="margin:0 0 12px;">No Play-Cricket URL — scores come from the relay app at the ground.</p>
+    <form method="post" action="{{ url_for('dashboard_add_match') }}">
+      <input type="hidden" name="relay_source" value="pcs_ble">
+      <label class="cr-label" for="pcs_stream_label">Stream label</label>
+      <input class="cr-input" id="pcs_stream_label" name="stream_label" maxlength="120" required placeholder="e.g. 1st XI vs Club B — Saturday">
+      <button type="submit" class="cr-btn cr-btn-secondary" style="margin-top:16px;">Create PCS BLE stream</button>
     </form>
   </div>
   {% endif %}

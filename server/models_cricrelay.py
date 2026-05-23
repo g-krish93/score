@@ -179,6 +179,8 @@ class RelayMatch(db.Model):
     score_match_slug = db.Column(db.String(120), unique=True, nullable=False, index=True)
     label = db.Column(db.String(120), nullable=True)
     paused = db.Column(db.Boolean, nullable=False, default=False)
+    # scraper = Play-Cricket HTML poll; pcs_ble = Android PCS relay (R&D)
+    relay_source = db.Column(db.String(24), nullable=False, default="scraper")
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (

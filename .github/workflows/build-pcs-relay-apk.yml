@@ -1,0 +1,51 @@
+name: Build PCS Relay APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pcs-ble-relay-android/**"
+      - "pcs-ble-relay/**"
+      - ".github/workflows/build-pcs-relay-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Build release APK (Kotlin)
+        working-directory: pcs-ble-relay-android
+        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+
+      - name: Publish APK for CricRelay download
+        run: cp pcs-ble-relay-android/app/build/outputs/apk/release/app-release.apk static/pcs-relay.apk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cricrelay-pcs-relay-apk
+          path: static/pcs-relay.apk
+
+      - name: Commit APK for EC2 git pull
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add static/pcs-relay.apk
+          if git diff --staged --quiet; then
+            echo "APK unchanged"
+            exit 0
+          fi
+          git commit -m "chore: update PCS relay APK [skip deploy]"
+          git push
