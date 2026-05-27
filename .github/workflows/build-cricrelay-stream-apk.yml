@@ -30,13 +30,9 @@ jobs:
         working-directory: cricrelay-stream
         run: flutter create . --platforms=android,ios
 
-      - name: Restore custom Android RTMP capture code
+      - name: Apply custom Stream plugin (keep flutter create assets)
         run: |
-          git checkout HEAD -- \
-            cricrelay-stream/android/app/src/main/kotlin \
-            cricrelay-stream/android/app/src/main/AndroidManifest.xml \
-            cricrelay-stream/android/app/build.gradle \
-            cricrelay-stream/android/build.gradle
+          cp -r cricrelay-stream/android-custom/uk cricrelay-stream/android/app/src/main/kotlin/
 
       - name: Build release APK
         working-directory: cricrelay-stream
