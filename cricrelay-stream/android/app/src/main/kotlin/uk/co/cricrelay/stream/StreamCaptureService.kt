@@ -8,9 +8,10 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpDisplay
 
-class StreamCaptureService : Service() {
+class StreamCaptureService : Service(), ConnectChecker {
 
     private var display: RtmpDisplay? = null
 
@@ -45,6 +46,26 @@ class StreamCaptureService : Service() {
         display = null
         super.onDestroy()
     }
+
+    override fun onConnectionStarted(url: String) {}
+
+    override fun onConnectionSuccess() {}
+
+    override fun onConnectionFailed(reason: String) {
+        stopSelf()
+    }
+
+    override fun onNewBitrate(bitrate: Long) {}
+
+    override fun onDisconnect() {
+        stopSelf()
+    }
+
+    override fun onAuthError() {
+        stopSelf()
+    }
+
+    override fun onAuthSuccess() {}
 
     private fun buildNotification(): Notification {
         val channelId = "cricrelay_stream"
