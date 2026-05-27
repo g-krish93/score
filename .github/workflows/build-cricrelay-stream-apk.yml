@@ -28,7 +28,7 @@ jobs:
 
       - name: Scaffold missing Flutter platform files
         working-directory: cricrelay-stream
-        run: flutter create . --platforms=android,ios
+        run: flutter create . --platforms=android,ios --org uk.co.cricrelay --project-name stream
 
       - name: Apply custom Stream plugin (keep flutter create assets)
         run: |
