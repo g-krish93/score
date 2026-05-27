@@ -288,17 +288,24 @@ def migrate_organization_brand_columns():
         db.session.commit()
 
 
+def _sql_timestamp_type() -> str:
+    if db.engine.dialect.name == "postgresql":
+        return "TIMESTAMP WITHOUT TIME ZONE"
+    return "DATETIME"
+
+
 def migrate_youtube_columns():
     """Add YouTube Stream columns on Organization."""
     insp = inspect(db.engine)
     if not insp.has_table("cricrelay_org"):
         return
     cols = {c["name"] for c in insp.get_columns("cricrelay_org")}
+    ts = _sql_timestamp_type()
     specs = [
         ("youtube_refresh_token_enc", "TEXT"),
         ("youtube_channel_id", "VARCHAR(64)"),
         ("youtube_channel_title", "VARCHAR(200)"),
-        ("youtube_connected_at", "DATETIME"),
+        ("youtube_connected_at", ts),
         ("youtube_active_broadcast_id", "VARCHAR(64)"),
         ("youtube_active_stream_id", "VARCHAR(64)"),
         ("youtube_active_match_slug", "VARCHAR(120)"),
