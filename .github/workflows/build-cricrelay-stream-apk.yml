@@ -20,6 +20,10 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Scaffold missing Flutter platform files
+        working-directory: cricrelay-stream
+        run: flutter create . --platforms=android,ios
+
       - name: Build release APK
         working-directory: cricrelay-stream
         run: |
