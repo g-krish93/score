@@ -22,6 +22,27 @@
       min-height: 100%;
       background: transparent;
     }
+    {% if embed_mode|default(false) %}
+    html.embed-mode, html.embed-mode body {
+      background: transparent !important;
+      overflow: hidden;
+    }
+    html.embed-mode #stale,
+    html.embed-mode #matchTag,
+    html.embed-mode #flash,
+    html.embed-mode #momentum,
+    html.embed-mode #pressureWrap {
+      display: none !important;
+    }
+    html.embed-mode body.relay-active #overlay {
+      left: 50%;
+      right: auto;
+      bottom: max(8px, env(safe-area-inset-bottom, 0px));
+      width: min(92vw, 420px);
+      max-width: 420px;
+      transform: translateX(-50%);
+    }
+  {% endif %}
     body {
       font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
       -webkit-text-size-adjust: 100%;
@@ -458,7 +479,7 @@
     }
   </style>
 </head>
-<body>
+<body{% if embed_mode|default(false) %} class="embed-mode"{% endif %}>
   <div id="overlay">
     <div id="stale">●</div>
     <div id="flash"></div>
@@ -472,6 +493,9 @@
       const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent || "") ||
         (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
       if (ios) document.documentElement.classList.add("wk-ios");
+      {% if embed_mode|default(false) %}
+      document.documentElement.classList.add("embed-mode");
+      {% endif %}
     })();
 
     let lastData = null;
@@ -911,7 +935,7 @@
     }
 
     fetchScore();
-    setInterval(fetchScore, 2000);
+    setInterval(fetchScore, {{ poll_interval_ms | default(2000) }});
   </script>
 </body>
 </html>

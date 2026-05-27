@@ -1,0 +1,47 @@
+name: Build CricRelay Stream APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "cricrelay-stream/**"
+      - ".github/workflows/build-cricrelay-stream-apk.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Build release APK
+        working-directory: cricrelay-stream
+        run: |
+          flutter pub get
+          flutter build apk --release
+      - name: Copy to static
+        run: |
+          cp cricrelay-stream/build/app/outputs/flutter-apk/app-release.apk static/cricrelay-stream.apk
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cricrelay-stream-apk
+          path: static/cricrelay-stream.apk
+
+      - name: Commit APK for EC2 git pull
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add static/cricrelay-stream.apk
+          if git diff --staged --quiet; then
+            echo "APK unchanged"
+            exit 0
+          fi
+          git commit -m "chore: update CricRelay Stream APK [skip deploy]"
+          git push

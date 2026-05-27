@@ -160,6 +160,13 @@ class Organization(db.Model):
     public_primary_color = db.Column(db.String(7), nullable=False, default="#22d3a8")
     public_accent_color = db.Column(db.String(7), nullable=False, default="#38bdf8")
     ui_theme = db.Column(db.String(16), nullable=False, default="original")
+    youtube_refresh_token_enc = db.Column(db.Text, nullable=True)
+    youtube_channel_id = db.Column(db.String(64), nullable=True)
+    youtube_channel_title = db.Column(db.String(200), nullable=True)
+    youtube_connected_at = db.Column(db.DateTime, nullable=True)
+    youtube_active_broadcast_id = db.Column(db.String(64), nullable=True)
+    youtube_active_stream_id = db.Column(db.String(64), nullable=True)
+    youtube_active_match_slug = db.Column(db.String(120), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def set_password(self, password: str) -> None:

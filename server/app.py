@@ -50,6 +50,13 @@ from .pcs_protocol import (
 )
 from .play_cricket_scraper import scrape_fixtures
 from .scraper_worker import get_live_snapshot, register_relay_worker
+from .stream_api import (
+    bearer_org_from_request,
+    issue_stream_token,
+    relay_matches_for_org,
+    stream_api_auth_required,
+)
+from . import youtube_stream as yt
 
 load_dotenv()
 
@@ -281,6 +288,54 @@ def migrate_organization_brand_columns():
         db.session.commit()
 
 
+def migrate_youtube_columns():
+    """Add YouTube Stream columns on Organization."""
+    insp = inspect(db.engine)
+    if not insp.has_table("cricrelay_org"):
+        return
+    cols = {c["name"] for c in insp.get_columns("cricrelay_org")}
+    specs = [
+        ("youtube_refresh_token_enc", "TEXT"),
+        ("youtube_channel_id", "VARCHAR(64)"),
+        ("youtube_channel_title", "VARCHAR(200)"),
+        ("youtube_connected_at", "DATETIME"),
+        ("youtube_active_broadcast_id", "VARCHAR(64)"),
+        ("youtube_active_stream_id", "VARCHAR(64)"),
+        ("youtube_active_match_slug", "VARCHAR(120)"),
+    ]
+    altered = False
+    for name, typ in specs:
+        if name not in cols:
+            db.session.execute(text(f"ALTER TABLE cricrelay_org ADD COLUMN {name} {typ}"))
+            altered = True
+    if altered:
+        db.session.commit()
+
+
+def _youtube_redirect_uri() -> str:
+    env = (os.getenv("YOUTUBE_REDIRECT_URI") or "").strip()
+    if env:
+        return env
+    base = _public_base_url()
+    if base:
+        return f"{base}/dashboard/youtube/callback"
+    return ""
+
+
+def _org_youtube_access_token(org: Organization) -> str | None:
+    enc = (org.youtube_refresh_token_enc or "").strip()
+    if not enc:
+        return None
+    refresh = yt.decrypt_token(enc)
+    if not refresh:
+        return None
+    try:
+        data = yt.refresh_access_token(refresh)
+        return data.get("access_token")
+    except Exception:
+        return None
+
+
 def _safe_hex_color(value: str, default: str) -> str:
     raw = (value or "").strip()
     if re.fullmatch(r"#[0-9a-fA-F]{6}", raw):
@@ -422,6 +477,17 @@ def _pcs_relay_apk_path() -> Path:
         if candidate.is_file():
             return candidate
     return static / "pcs-relay.apk"
+
+
+def _stream_apk_path() -> Path:
+    custom = (os.getenv("STREAM_APP_APK_PATH") or "").strip()
+    if custom:
+        return Path(custom).expanduser()
+    static = Path(app.static_folder or "../static")
+    for candidate in (static / "cricrelay-stream.apk", static / "cricrelay-stream" / "cricrelay-stream.apk"):
+        if candidate.is_file():
+            return candidate
+    return static / "cricrelay-stream.apk"
 
 
 def manual_scoring_blocked_response():
@@ -979,6 +1045,7 @@ def _dashboard_fixture_data(org):
                 )
                 pcs_live["last_ok_at"] = state.get("relay_last_ok_at")
                 pcs_live["relay_mode"] = state.get("relay_mode")
+        embed_url = f"{overlay_url}?embed=1" if "?" not in overlay_url else f"{overlay_url}&embed=1"
         relay_rows.append(
             {
                 "match": m,
@@ -988,8 +1055,10 @@ def _dashboard_fixture_data(org):
                 "pcs_ingest_token": pcs_token,
                 "pcs_live": pcs_live,
                 "overlay_url": overlay_url,
+                "overlay_embed_url": embed_url,
             }
         )
+    youtube_connected = bool((org.youtube_refresh_token_enc or "").strip())
     return {
         "matches": matches,
         "active_ids": active_ids,
@@ -1004,6 +1073,13 @@ def _dashboard_fixture_data(org):
         "public_base_url": base,
         "pcs_apk_available": apk_path.is_file(),
         "pcs_apk_download_url": url_for("download_pcs_relay_apk"),
+        "stream_apk_available": _stream_apk_path().is_file(),
+        "stream_apk_download_url": url_for("download_stream_apk"),
+        "youtube_connected": youtube_connected,
+        "youtube_channel_title": org.youtube_channel_title or "",
+        "youtube_oauth_configured": yt.oauth_configured(),
+        "youtube_live_active": bool(org.youtube_active_broadcast_id),
+        "youtube_active_match_slug": org.youtube_active_match_slug or "",
     }
 
 
@@ -1025,6 +1101,22 @@ def dashboard():
 @login_required
 def dashboard_legacy_redirect():
     return redirect(url_for("dashboard"))
+
+
+@app.get("/download/cricrelay-stream.apk")
+def download_stream_apk():
+    path = _stream_apk_path()
+    if not path.is_file():
+        flash(
+            "Stream app APK is not on the server yet. Build from cricrelay-stream/ (see README).",
+            "error",
+        )
+        return redirect(url_for("dashboard"))
+    return Response(
+        path.read_bytes(),
+        mimetype="application/vnd.android.package-archive",
+        headers={"Content-Disposition": 'attachment; filename="cricrelay-stream.apk"'},
+    )
 
 
 @app.get("/download/pcs-relay.apk")
@@ -1232,12 +1324,26 @@ def dashboard_relay_delete():
 
 @app.get("/stream")
 def stream_overlay_default():
-    return render_template("overlay.html", match_id=DEFAULT_MATCH_ID)
+    embed = request.args.get("embed", "").strip().lower() in {"1", "true", "yes"}
+    poll_ms = 1000 if embed else 2000
+    return render_template(
+        "overlay.html",
+        match_id=DEFAULT_MATCH_ID,
+        embed_mode=embed,
+        poll_interval_ms=poll_ms,
+    )
 
 
 @app.get("/m/<match_id>/stream")
 def stream_overlay_scoped(match_id):
-    return render_template("overlay.html", match_id=sanitize_match_id(match_id))
+    embed = request.args.get("embed", "").strip().lower() in {"1", "true", "yes"}
+    poll_ms = 1000 if embed else 2000
+    return render_template(
+        "overlay.html",
+        match_id=sanitize_match_id(match_id),
+        embed_mode=embed,
+        poll_interval_ms=poll_ms,
+    )
 
 
 @app.get("/m/<match_id>")
@@ -1964,6 +2070,200 @@ def restore():
         return jsonify(with_calculated_values(state))
 
 
+@app.get("/dashboard/youtube/connect")
+@login_required
+def dashboard_youtube_connect():
+    org = _org_from_session()
+    if not yt.oauth_configured():
+        flash("YouTube OAuth is not configured on this server (YOUTUBE_CLIENT_ID / SECRET).", "error")
+        return redirect(url_for("dashboard"))
+    redirect_uri = _youtube_redirect_uri()
+    if not redirect_uri:
+        flash("Set PUBLIC_BASE_URL or YOUTUBE_REDIRECT_URI for YouTube connect.", "error")
+        return redirect(url_for("dashboard"))
+    state = yt.new_oauth_state()
+    session["youtube_oauth_state"] = state
+    session["youtube_oauth_org_id"] = org.id
+    return redirect(yt.build_authorize_url(redirect_uri, state))
+
+
+@app.get("/dashboard/youtube/callback")
+@login_required
+def dashboard_youtube_callback():
+    org = _org_from_session()
+    err = request.args.get("error")
+    if err:
+        flash(f"YouTube authorization failed: {err}", "error")
+        return redirect(url_for("dashboard"))
+    state = request.args.get("state") or ""
+    if state != session.pop("youtube_oauth_state", None):
+        flash("Invalid OAuth state. Try connecting YouTube again.", "error")
+        return redirect(url_for("dashboard"))
+    if session.pop("youtube_oauth_org_id", None) != org.id:
+        flash("Session mismatch. Try again.", "error")
+        return redirect(url_for("dashboard"))
+    code = request.args.get("code")
+    if not code:
+        flash("Missing authorization code from Google.", "error")
+        return redirect(url_for("dashboard"))
+    redirect_uri = _youtube_redirect_uri()
+    try:
+        tok = yt.exchange_code(code, redirect_uri)
+        access = tok.get("access_token")
+        refresh = tok.get("refresh_token")
+        if not refresh:
+            flash("Google did not return a refresh token. Revoke app access and reconnect.", "error")
+            return redirect(url_for("dashboard"))
+        ch_id, ch_title = yt.fetch_channel_for_token(access)
+        org.youtube_refresh_token_enc = yt.encrypt_token(refresh)
+        org.youtube_channel_id = ch_id
+        org.youtube_channel_title = ch_title
+        org.youtube_connected_at = datetime.now(timezone.utc)
+        db.session.commit()
+        flash(f"YouTube connected: {ch_title}", "success")
+    except Exception as exc:
+        flash(f"Could not connect YouTube: {exc}", "error")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/dashboard/youtube/disconnect")
+@login_required
+def dashboard_youtube_disconnect():
+    org = _org_from_session()
+    org.youtube_refresh_token_enc = None
+    org.youtube_channel_id = None
+    org.youtube_channel_title = None
+    org.youtube_connected_at = None
+    org.youtube_active_broadcast_id = None
+    org.youtube_active_stream_id = None
+    org.youtube_active_match_slug = None
+    db.session.commit()
+    flash("YouTube disconnected.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/api/auth/login")
+def api_stream_login():
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+    if not email or not password:
+        return jsonify({"error": "email and password required"}), 400
+    org = Organization.query.filter_by(email=email).first()
+    if not org or not org.check_password(password):
+        return jsonify({"error": "invalid credentials"}), 401
+    return jsonify(
+        {
+            "ok": True,
+            "token": issue_stream_token(org),
+            "org_id": org.id,
+            "org_name": org.name,
+            "youtube_connected": bool((org.youtube_refresh_token_enc or "").strip()),
+        }
+    )
+
+
+@app.get("/api/streams")
+@stream_api_auth_required
+def api_list_streams(org: Organization):
+    return jsonify({"ok": True, "streams": relay_matches_for_org(org)})
+
+
+@app.get("/api/stream/youtube-status")
+@stream_api_auth_required
+def api_youtube_status(org: Organization):
+    return jsonify(
+        {
+            "ok": True,
+            "connected": bool((org.youtube_refresh_token_enc or "").strip()),
+            "channel_title": org.youtube_channel_title or "",
+            "live_active": bool(org.youtube_active_broadcast_id),
+            "active_match_slug": org.youtube_active_match_slug or "",
+        }
+    )
+
+
+@app.post("/api/stream/go-live")
+@stream_api_auth_required
+def api_stream_go_live(org: Organization):
+    data = request.get_json(silent=True) or {}
+    slug = sanitize_match_id(data.get("match_slug") or "")
+    if not slug:
+        return jsonify({"error": "match_slug required"}), 400
+    row = RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
+    if not row:
+        return jsonify({"error": "unknown stream"}), 404
+    access = _org_youtube_access_token(org)
+    if not access:
+        return jsonify({"error": "YouTube not connected for this club"}), 400
+    title = (row.label or f"CricRelay {slug}")[:100]
+    try:
+        bundle = yt.go_live_bundle(access, title)
+    except Exception as exc:
+        return jsonify({"error": f"YouTube go-live failed: {exc}"}), 502
+    org.youtube_active_broadcast_id = bundle["broadcast_id"]
+    org.youtube_active_stream_id = bundle["stream_id"]
+    org.youtube_active_match_slug = slug
+    db.session.commit()
+    rtmp_url = bundle["ingestion_address"]
+    stream_key = bundle["stream_name"]
+    base = _public_base_url().rstrip("/")
+    embed_url = f"{base}/m/{slug}/stream?embed=1" if base else f"/m/{slug}/stream?embed=1"
+    return jsonify(
+        {
+            "ok": True,
+            "match_slug": slug,
+            "broadcast_id": bundle["broadcast_id"],
+            "stream_id": bundle["stream_id"],
+            "watch_url": bundle["watch_url"],
+            "rtmp_url": rtmp_url,
+            "stream_key": stream_key,
+            "rtmp_full_url": f"{rtmp_url.rstrip('/')}/{stream_key}" if stream_key else rtmp_url,
+            "overlay_embed_url": embed_url,
+        }
+    )
+
+
+@app.post("/api/stream/stop")
+@stream_api_auth_required
+def api_stream_stop(org: Organization):
+    access = _org_youtube_access_token(org)
+    if not access:
+        return jsonify({"error": "YouTube not connected"}), 400
+    b_id = org.youtube_active_broadcast_id
+    s_id = org.youtube_active_stream_id
+    if b_id:
+        try:
+            yt.stop_live_bundle(access, b_id, s_id)
+        except Exception:
+            pass
+    org.youtube_active_broadcast_id = None
+    org.youtube_active_stream_id = None
+    org.youtube_active_match_slug = None
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@app.get("/api/stream/status")
+@stream_api_auth_required
+def api_stream_status(org: Organization):
+    slug = org.youtube_active_match_slug or ""
+    overlay = ""
+    if slug:
+        base = _public_base_url()
+        overlay = f"{base}/m/{slug}/stream?embed=1" if base else f"/m/{slug}/stream?embed=1"
+    return jsonify(
+        {
+            "ok": True,
+            "youtube_connected": bool((org.youtube_refresh_token_enc or "").strip()),
+            "live_active": bool(org.youtube_active_broadcast_id),
+            "active_match_slug": slug,
+            "overlay_embed_url": overlay,
+            "broadcast_id": org.youtube_active_broadcast_id,
+        }
+    )
+
+
 @app.get("/health")
 def health():
     with match_context():
@@ -1983,6 +2283,7 @@ with app.app_context():
     migrate_relay_match_columns()
     migrate_relay_source_column()
     migrate_organization_brand_columns()
+    migrate_youtube_columns()
 
 with state_lock:
     try:

@@ -198,6 +198,22 @@ def main():
     ), cap
     assert_ok(c.post("/relay/config", json={"relay_mode": "manual"}))
 
+  # Stream app API (login + list; no YouTube go-live without OAuth)
+    login = c.post(
+        "/api/auth/login",
+        json={"email": "smoke@example.com", "password": "smokepass123"},
+    )
+    if login.status_code == 401:
+        pass
+    else:
+        assert_ok(login)
+        tok = login.get_json().get("token")
+        assert tok, login.get_json()
+        hdrs = {"Authorization": f"Bearer {tok}"}
+        assert_ok(c.get("/api/streams", headers=hdrs))
+        st = c.get("/api/stream/youtube-status", headers=hdrs).get_json()
+        assert st.get("ok") is True, st
+
     print("Smoke validation passed for all core endpoints.")
 
 

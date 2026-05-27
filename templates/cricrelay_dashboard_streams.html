@@ -8,7 +8,7 @@
     <div>
       <h1>Streams</h1>
       <p class="cr-muted">Club: <strong>{{ org.name }}</strong> · Play-Cricket <code class="cr-code">{{ play_cricket_root }}</code></p>
-      <p class="cr-page-lead">Pick a fixture, start a stream, copy the overlay URL into Prism or OBS.</p>
+      <p class="cr-page-lead">Stream to YouTube from the <strong>CricRelay Stream</strong> app, or use the overlay URL in OBS (advanced).</p>
     </div>
   </div>
 
@@ -17,6 +17,37 @@
       {% for cat, m in messages %}<div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>{% endfor %}
     {% endif %}
   {% endwith %}
+
+  <div class="cr-card">
+    <h2>Stream to YouTube (app)</h2>
+    <p class="cr-muted" style="margin:0 0 10px;">One iPhone or Android — camera + live scorecard burned into the video (like ThirdMan Live).</p>
+    <ol class="cr-help" style="margin:0 0 12px;padding-left:20px;line-height:1.5;">
+      <li>{% if youtube_oauth_configured %}<a href="{{ url_for('dashboard_youtube_connect') }}">Connect YouTube</a>{% else %}Ask your host to configure YouTube OAuth{% endif %} for this club's channel.</li>
+      <li>Create a <strong>Play-Cricket stream</strong> below (scores sync automatically).</li>
+      <li>Install <strong>CricRelay Stream</strong> → log in → pick stream → <strong>Go Live</strong>.</li>
+    </ol>
+    <p style="margin:0 0 8px;">
+      {% if youtube_connected %}
+      <span class="cr-compare-good">YouTube: {{ youtube_channel_title or 'Connected' }}</span>
+      {% if youtube_live_active %} · <strong>Live now</strong> ({{ youtube_active_match_slug }}){% endif %}
+      {% else %}
+      <span class="cr-compare-warn">YouTube not connected</span>
+      {% endif %}
+    </p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      {% if youtube_connected %}
+      <form method="post" action="{{ url_for('dashboard_youtube_disconnect') }}" style="display:inline;">
+        <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm">Disconnect YouTube</button>
+      </form>
+      {% elif youtube_oauth_configured %}
+      <a class="cr-btn cr-btn-primary cr-btn-sm" href="{{ url_for('dashboard_youtube_connect') }}">Connect YouTube</a>
+      {% endif %}
+      {% if stream_apk_available %}
+      <a class="cr-btn cr-btn-primary cr-btn-sm" href="{{ stream_apk_download_url }}">Download Stream app (APK)</a>
+      {% endif %}
+    </div>
+    <p class="cr-help" style="margin:10px 0 0;">iOS: build from <code class="cr-code">cricrelay-stream/</code> via TestFlight (see README).</p>
+  </div>
 
   <div class="cr-card">
     <h2>PCS BLE → live stream (R&amp;D)</h2>
