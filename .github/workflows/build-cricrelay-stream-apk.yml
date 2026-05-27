@@ -42,7 +42,15 @@ jobs:
         working-directory: cricrelay-stream
         run: |
           flutter pub get
-          flutter build apk --release
+          flutter build apk --release 2>&1 | tee ../stream-apk-build.log
+          tail -n 60 ../stream-apk-build.log
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stream-apk-build-log
+          path: stream-apk-build.log
       - name: Copy to static
         run: |
           cp cricrelay-stream/build/app/outputs/flutter-apk/app-release.apk static/cricrelay-stream.apk
