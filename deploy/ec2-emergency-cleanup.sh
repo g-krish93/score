@@ -21,7 +21,9 @@ journalctl --vacuum-size=100M 2>/dev/null
 journalctl --vacuum-time=1d 2>/dev/null
 
 rm -rf /tmp/pip-* /tmp/pip-unpack-* 2>/dev/null
-find /tmp -mindepth 1 -maxdepth 1 -mmin +60 -exec rm -rf {} + 2>/dev/null
+
+# systemd reload nginx needs this after a full-disk event.
+mkdir -p /run/systemd/unit-root/tmp 2>/dev/null || true
 
 find /var/log -type f \( -name '*.gz' -o -name '*.1' -o -name '*.old' \) -delete 2>/dev/null
 rm -rf /var/cache/dnf /var/cache/yum 2>/dev/null
