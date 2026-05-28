@@ -55,12 +55,15 @@ from .scraper_worker import get_live_snapshot, register_relay_worker
 from .stream_api import (
     bearer_org_from_request,
     issue_stream_token,
+    issue_twitch_oauth_state,
     issue_youtube_oauth_state,
+    org_id_from_twitch_oauth_state,
     org_id_from_youtube_oauth_state,
     relay_match_for_org,
     relay_matches_for_org,
     stream_api_auth_required,
 )
+from . import twitch_stream as tw
 from . import youtube_stream as yt
 
 load_dotenv()
@@ -324,6 +327,30 @@ def migrate_youtube_columns():
         db.session.commit()
 
 
+def migrate_twitch_columns():
+    """Add Twitch Stream columns on Organization."""
+    insp = inspect(db.engine)
+    if not insp.has_table("cricrelay_org"):
+        return
+    cols = {c["name"] for c in insp.get_columns("cricrelay_org")}
+    ts = _sql_timestamp_type()
+    specs = [
+        ("twitch_refresh_token_enc", "TEXT"),
+        ("twitch_user_id", "VARCHAR(32)"),
+        ("twitch_login", "VARCHAR(64)"),
+        ("twitch_display_name", "VARCHAR(200)"),
+        ("twitch_connected_at", ts),
+        ("twitch_active_match_slug", "VARCHAR(120)"),
+    ]
+    altered = False
+    for name, typ in specs:
+        if name not in cols:
+            db.session.execute(text(f"ALTER TABLE cricrelay_org ADD COLUMN {name} {typ}"))
+            altered = True
+    if altered:
+        db.session.commit()
+
+
 def _youtube_redirect_uri() -> str:
     env = (os.getenv("YOUTUBE_REDIRECT_URI") or "").strip()
     if env:
@@ -343,6 +370,30 @@ def _org_youtube_access_token(org: Organization) -> str | None:
         return None
     try:
         data = yt.refresh_access_token(refresh)
+        return data.get("access_token")
+    except Exception:
+        return None
+
+
+def _twitch_redirect_uri() -> str:
+    env = (os.getenv("TWITCH_REDIRECT_URI") or "").strip()
+    if env:
+        return env
+    base = _public_base_url()
+    if base:
+        return f"{base}/dashboard/twitch/callback"
+    return ""
+
+
+def _org_twitch_access_token(org: Organization) -> str | None:
+    enc = (org.twitch_refresh_token_enc or "").strip()
+    if not enc:
+        return None
+    refresh = tw.decrypt_token(enc)
+    if not refresh:
+        return None
+    try:
+        data = tw.refresh_access_token(refresh)
         return data.get("access_token")
     except Exception:
         return None
@@ -1125,6 +1176,11 @@ def _dashboard_fixture_data(org):
         "youtube_oauth_configured": yt.oauth_configured(),
         "youtube_live_active": bool(org.youtube_active_broadcast_id),
         "youtube_active_match_slug": org.youtube_active_match_slug or "",
+        "twitch_connected": bool((org.twitch_refresh_token_enc or "").strip()),
+        "twitch_display_name": org.twitch_display_name or org.twitch_login or "",
+        "twitch_oauth_configured": tw.oauth_configured(),
+        "twitch_live_active": bool(org.twitch_active_match_slug),
+        "twitch_active_match_slug": org.twitch_active_match_slug or "",
     }
 
 
@@ -2250,6 +2306,111 @@ def dashboard_youtube_disconnect():
     return redirect(url_for("dashboard"))
 
 
+@app.get("/dashboard/twitch/connect")
+@login_required
+def dashboard_twitch_connect():
+    org = _org_from_session()
+    if not tw.oauth_configured():
+        flash("Twitch OAuth is not configured on this server (TWITCH_CLIENT_ID / SECRET).", "error")
+        return redirect(url_for("dashboard"))
+    redirect_uri = _twitch_redirect_uri()
+    if not redirect_uri:
+        flash("Set PUBLIC_BASE_URL or TWITCH_REDIRECT_URI for Twitch connect.", "error")
+        return redirect(url_for("dashboard"))
+    state = tw.new_oauth_state()
+    session["twitch_oauth_state"] = state
+    session["twitch_oauth_org_id"] = org.id
+    return redirect(tw.build_authorize_url(redirect_uri, state))
+
+
+@app.get("/dashboard/twitch/callback")
+def dashboard_twitch_callback():
+    org = _org_from_session()
+    state = request.args.get("state") or ""
+    if org is None:
+        mobile_oid = org_id_from_twitch_oauth_state(state)
+        if mobile_oid:
+            org = db.session.get(Organization, mobile_oid)
+    if org is None:
+        flash("Sign in to the dashboard, then connect Twitch.", "error")
+        return redirect(url_for("cricrelay_login"))
+    err = request.args.get("error")
+    if err:
+        flash(f"Twitch authorization failed: {err}", "error")
+        return redirect(url_for("dashboard"))
+    web_state = session.pop("twitch_oauth_state", None)
+    web_oid = session.pop("twitch_oauth_org_id", None)
+    if web_state is not None:
+        if state != web_state or web_oid != org.id:
+            flash("Invalid OAuth state. Try connecting Twitch again.", "error")
+            return redirect(url_for("dashboard"))
+    elif org_id_from_twitch_oauth_state(state) != org.id:
+        flash("Invalid OAuth state. Try connecting Twitch again.", "error")
+        return redirect(url_for("dashboard"))
+    code = request.args.get("code")
+    if not code:
+        flash("Missing authorization code from Twitch.", "error")
+        return redirect(url_for("dashboard"))
+    redirect_uri = _twitch_redirect_uri()
+    try:
+        tok = tw.exchange_code(code, redirect_uri)
+        access = tok.get("access_token")
+        refresh = tok.get("refresh_token")
+        if not refresh:
+            flash("Twitch did not return a refresh token. Disconnect and connect again.", "error")
+            return redirect(url_for("dashboard"))
+        user_id, login, display = tw.fetch_user_for_token(access)
+        live_check = tw.verify_streaming_access(access, user_id)
+        org.twitch_refresh_token_enc = tw.encrypt_token(refresh)
+        org.twitch_user_id = user_id
+        org.twitch_login = login
+        org.twitch_display_name = display
+        org.twitch_connected_at = datetime.now(timezone.utc)
+        db.session.commit()
+        if live_check.get("ok"):
+            flash(f"Twitch connected: {display} (@{login})", "success")
+        else:
+            flash(
+                f"Twitch linked ({display}) but stream key access failed: {live_check.get('message')}",
+                "error",
+            )
+    except Exception as exc:
+        flash(f"Could not connect Twitch: {exc}", "error")
+        return redirect(url_for("dashboard"))
+    if web_state is None:
+        live_ok = live_check.get("ok")
+        live_msg = (live_check.get("message") or "").strip()
+        extra = (
+            "<p style='color:#22c55e'>Stream key API: OK — you can use Go Live to Twitch from the app.</p>"
+            if live_ok
+            else f"<p style='color:#f97316'>Stream key not ready: {live_msg}</p>"
+        )
+        return (
+            "<!DOCTYPE html><html><body style='font-family:sans-serif;padding:2rem;max-width:36rem'>"
+            f"<h2>Twitch connected</h2><p><b>{display}</b> (@{login})</p>"
+            f"{extra}"
+            "<p><b>Next:</b> switch back to <b>CricRelay Live</b> and choose "
+            "<b>Twitch (OAuth)</b> on the broadcast screen, or paste a stream key under Custom RTMP.</p>"
+            "</body></html>"
+        )
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/dashboard/twitch/disconnect")
+@login_required
+def dashboard_twitch_disconnect():
+    org = _org_from_session()
+    org.twitch_refresh_token_enc = None
+    org.twitch_user_id = None
+    org.twitch_login = None
+    org.twitch_display_name = None
+    org.twitch_connected_at = None
+    org.twitch_active_match_slug = None
+    db.session.commit()
+    flash("Twitch disconnected.", "success")
+    return redirect(url_for("dashboard"))
+
+
 @app.post("/api/auth/login")
 def api_stream_login():
     data = request.get_json(silent=True) or {}
@@ -2267,6 +2428,7 @@ def api_stream_login():
             "org_id": org.id,
             "org_name": org.name,
             "youtube_connected": bool((org.youtube_refresh_token_enc or "").strip()),
+            "twitch_connected": bool((org.twitch_refresh_token_enc or "").strip()),
         }
     )
 
@@ -2474,20 +2636,128 @@ def api_youtube_disconnect(org: Organization):
     return jsonify({"ok": True})
 
 
+@app.get("/api/stream/twitch/authorize")
+@stream_api_auth_required
+def api_twitch_authorize(org: Organization):
+    if not tw.oauth_configured():
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "Twitch OAuth is not configured on this server. "
+                        "Set TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET."
+                    )
+                }
+            ),
+            503,
+        )
+    redirect_uri = _twitch_redirect_uri()
+    if not redirect_uri:
+        return jsonify({"error": "Set PUBLIC_BASE_URL or TWITCH_REDIRECT_URI"}), 503
+    state = issue_twitch_oauth_state(org.id)
+    return jsonify(
+        {
+            "ok": True,
+            "authorize_url": tw.build_authorize_url(redirect_uri, state),
+            "scopes": tw.oauth_scopes(),
+        }
+    )
+
+
+@app.get("/api/stream/twitch-status")
+@stream_api_auth_required
+def api_twitch_status(org: Organization):
+    connected = bool((org.twitch_refresh_token_enc or "").strip())
+    stream_key_ok = False
+    stream_key_message = ""
+    if connected:
+        access = _org_twitch_access_token(org)
+        bid = (org.twitch_user_id or "").strip()
+        if access and bid:
+            check = tw.verify_streaming_access(access, bid)
+            stream_key_ok = bool(check.get("ok"))
+            stream_key_message = (check.get("message") or "").strip()
+    return jsonify(
+        {
+            "ok": True,
+            "oauth_configured": tw.oauth_configured(),
+            "oauth_scopes": tw.oauth_scopes(),
+            "connected": connected,
+            "display_name": org.twitch_display_name or org.twitch_login or "",
+            "login": org.twitch_login or "",
+            "stream_key_ok": stream_key_ok,
+            "stream_key_message": stream_key_message,
+            "live_active": bool(org.twitch_active_match_slug),
+            "active_match_slug": org.twitch_active_match_slug or "",
+        }
+    )
+
+
+@app.post("/api/stream/twitch-disconnect")
+@stream_api_auth_required
+def api_twitch_disconnect(org: Organization):
+    org.twitch_refresh_token_enc = None
+    org.twitch_user_id = None
+    org.twitch_login = None
+    org.twitch_display_name = None
+    org.twitch_connected_at = None
+    org.twitch_active_match_slug = None
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
 @app.post("/api/stream/go-live")
 @stream_api_auth_required
 def api_stream_go_live(org: Organization):
     data = request.get_json(silent=True) or {}
     slug = sanitize_match_id(data.get("match_slug") or "")
+    platform = str(data.get("platform") or "youtube").strip().lower()
     if not slug:
         return jsonify({"error": "match_slug required"}), 400
+    if platform not in {"youtube", "twitch"}:
+        return jsonify({"error": "platform must be youtube or twitch"}), 400
     row = RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
     if not row:
         return jsonify({"error": "unknown stream"}), 404
+    title = (row.label or f"CricRelay {slug}")[:100]
+    base = _public_base_url().rstrip("/")
+    embed_url = f"{base}/m/{slug}/stream?embed=1" if base else f"/m/{slug}/stream?embed=1"
+
+    if platform == "twitch":
+        access = _org_twitch_access_token(org)
+        if not access:
+            return jsonify({"error": "Twitch not connected for this club"}), 400
+        bid = (org.twitch_user_id or "").strip()
+        login = (org.twitch_login or "").strip()
+        if not bid or not login:
+            return jsonify({"error": "Twitch channel info missing — reconnect Twitch"}), 400
+        try:
+            bundle = tw.go_live_bundle(access, bid, login, title)
+        except Exception as exc:
+            return jsonify({"error": f"Twitch go-live failed: {exc}"}), 502
+        org.twitch_active_match_slug = slug
+        org.youtube_active_broadcast_id = None
+        org.youtube_active_stream_id = None
+        org.youtube_active_match_slug = None
+        db.session.commit()
+        rtmp_url = bundle["ingestion_address"]
+        stream_key = bundle["stream_name"]
+        return jsonify(
+            {
+                "ok": True,
+                "platform": "twitch",
+                "match_slug": slug,
+                "watch_url": bundle["watch_url"],
+                "rtmp_url": rtmp_url,
+                "stream_key": stream_key,
+                "rtmp_full_url": f"{rtmp_url.rstrip('/')}/{stream_key}" if stream_key else rtmp_url,
+                "overlay_embed_url": embed_url,
+            }
+        )
+
     access = _org_youtube_access_token(org)
     if not access:
         return jsonify({"error": "YouTube not connected for this club"}), 400
-    title = (row.label or f"CricRelay {slug}")[:100]
     try:
         bundle = yt.go_live_bundle(access, title)
     except Exception as exc:
@@ -2495,14 +2765,14 @@ def api_stream_go_live(org: Organization):
     org.youtube_active_broadcast_id = bundle["broadcast_id"]
     org.youtube_active_stream_id = bundle["stream_id"]
     org.youtube_active_match_slug = slug
+    org.twitch_active_match_slug = None
     db.session.commit()
     rtmp_url = bundle["ingestion_address"]
     stream_key = bundle["stream_name"]
-    base = _public_base_url().rstrip("/")
-    embed_url = f"{base}/m/{slug}/stream?embed=1" if base else f"/m/{slug}/stream?embed=1"
     return jsonify(
         {
             "ok": True,
+            "platform": "youtube",
             "match_slug": slug,
             "broadcast_id": bundle["broadcast_id"],
             "stream_id": bundle["stream_id"],
@@ -2518,19 +2788,26 @@ def api_stream_go_live(org: Organization):
 @app.post("/api/stream/stop")
 @stream_api_auth_required
 def api_stream_stop(org: Organization):
-    access = _org_youtube_access_token(org)
-    if not access:
-        return jsonify({"error": "YouTube not connected"}), 400
-    b_id = org.youtube_active_broadcast_id
-    s_id = org.youtube_active_stream_id
-    if b_id:
-        try:
-            yt.stop_live_bundle(access, b_id, s_id)
-        except Exception:
-            pass
-    org.youtube_active_broadcast_id = None
-    org.youtube_active_stream_id = None
-    org.youtube_active_match_slug = None
+    data = request.get_json(silent=True) or {}
+    platform = str(data.get("platform") or "").strip().lower()
+
+    if platform in {"", "youtube"} and org.youtube_active_broadcast_id:
+        access = _org_youtube_access_token(org)
+        if access:
+            b_id = org.youtube_active_broadcast_id
+            s_id = org.youtube_active_stream_id
+            if b_id:
+                try:
+                    yt.stop_live_bundle(access, b_id, s_id)
+                except Exception:
+                    pass
+        org.youtube_active_broadcast_id = None
+        org.youtube_active_stream_id = None
+        org.youtube_active_match_slug = None
+
+    if platform in {"", "twitch"} or org.twitch_active_match_slug:
+        org.twitch_active_match_slug = None
+
     db.session.commit()
     return jsonify({"ok": True})
 
@@ -2567,12 +2844,16 @@ def health():
 def api_stream_setup():
     """Public setup check for mobile app (no secrets exposed)."""
     redirect_uri = _youtube_redirect_uri()
+    twitch_redirect = _twitch_redirect_uri()
     return jsonify(
         {
             "ok": True,
             "youtube_oauth_configured": yt.oauth_configured(),
             "youtube_redirect_uri": redirect_uri,
             "youtube_oauth_scopes": yt.oauth_scopes(),
+            "twitch_oauth_configured": tw.oauth_configured(),
+            "twitch_redirect_uri": twitch_redirect,
+            "twitch_oauth_scopes": tw.oauth_scopes(),
             "public_base_url": _public_base_url(),
         }
     )
@@ -2590,6 +2871,7 @@ with app.app_context():
     migrate_relay_source_column()
     migrate_organization_brand_columns()
     migrate_youtube_columns()
+    migrate_twitch_columns()
 
 with state_lock:
     try:

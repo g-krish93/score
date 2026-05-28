@@ -50,6 +50,33 @@
   </div>
 
   <div class="cr-card">
+    <h2>Stream to Twitch (app)</h2>
+    <p class="cr-muted" style="margin:0 0 10px;">Same one-phone flow — OAuth to the club Twitch channel, or volunteers paste a stream key (Custom RTMP in the app).</p>
+    <ol class="cr-help" style="margin:0 0 12px;padding-left:20px;line-height:1.5;">
+      <li>{% if twitch_oauth_configured %}<a href="{{ url_for('dashboard_twitch_connect') }}">Connect Twitch</a>{% else %}Ask your host to configure Twitch OAuth (<code class="cr-code">TWITCH_CLIENT_ID</code> / <code class="cr-code">SECRET</code>){% endif %}.</li>
+      <li>In the app: broadcast screen → destination → <strong>Twitch (OAuth)</strong> or Custom RTMP with key from <a href="https://dashboard.twitch.tv/settings/stream" target="_blank" rel="noopener">Twitch stream settings</a>.</li>
+    </ol>
+    <p style="margin:0 0 8px;">
+      {% if twitch_connected %}
+      <span class="cr-compare-good">Twitch: {{ twitch_display_name or 'Connected' }}</span>
+      {% if twitch_live_active %} · <strong>Live now</strong> ({{ twitch_active_match_slug }}){% endif %}
+      {% else %}
+      <span class="cr-compare-warn">Twitch not connected</span>
+      {% endif %}
+    </p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      {% if twitch_connected %}
+      <form method="post" action="{{ url_for('dashboard_twitch_disconnect') }}" style="display:inline;">
+        <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm">Disconnect Twitch</button>
+      </form>
+      {% elif twitch_oauth_configured %}
+      <a class="cr-btn cr-btn-primary cr-btn-sm" href="{{ url_for('dashboard_twitch_connect') }}">Connect Twitch</a>
+      {% endif %}
+    </div>
+    <p class="cr-help" style="margin:10px 0 0;">Setup guide: <code class="cr-code">docs/TWITCH_SETUP.md</code> in the repo.</p>
+  </div>
+
+  <div class="cr-card">
     <h2>PCS BLE → live stream (R&amp;D)</h2>
     <p class="cr-muted" style="margin:0 0 10px;">Same Bluetooth path as a ground scoreboard, but your phone sends scores to CricRelay instead of LEDs.</p>
     <ol class="cr-help" style="margin:0 0 12px;padding-left:20px;line-height:1.5;">

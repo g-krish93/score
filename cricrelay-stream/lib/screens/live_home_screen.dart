@@ -25,6 +25,11 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
   bool _youtubeLiveOk = false;
   String _channelTitle = '';
   String _youtubeLiveMessage = '';
+  bool _twitchOk = false;
+  bool _twitchOauthConfigured = true;
+  bool _twitchKeyOk = false;
+  String _twitchDisplayName = '';
+  String _twitchKeyMessage = '';
 
   @override
   void initState() {
@@ -53,6 +58,7 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
     });
     try {
       final yt = await widget.api.youtubeStatus();
+      final tw = await widget.api.twitchStatus();
       final list = await widget.api.listStreams();
       for (var i = 0; i < list.length; i++) {
         final m = list[i];
@@ -73,11 +79,65 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
         _youtubeLiveOk = yt['live_streaming_ok'] == true;
         _youtubeLiveMessage = (yt['live_streaming_message'] ?? '').toString();
         _channelTitle = (yt['channel_title'] ?? '').toString();
+        _twitchOauthConfigured = tw['oauth_configured'] != false;
+        _twitchOk = tw['connected'] == true;
+        _twitchKeyOk = tw['stream_key_ok'] == true;
+        _twitchKeyMessage = (tw['stream_key_message'] ?? '').toString();
+        _twitchDisplayName = (tw['display_name'] ?? '').toString();
       });
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _connectTwitch() async {
+    if (!_twitchOauthConfigured) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Twitch sign-in is not set up on the server yet. '
+            'Use Custom RTMP with a Twitch stream key, or add TWITCH_CLIENT_ID / TWITCH_CLIENT_SECRET.',
+          ),
+          duration: Duration(seconds: 8),
+        ),
+      );
+      return;
+    }
+    try {
+      final url = await widget.api.twitchAuthorizeUrl();
+      if (url.isEmpty) throw Exception('No authorize URL from server');
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Connect Twitch in browser'),
+          content: const Text(
+            'Sign in with the club Twitch account and approve stream key + channel access.\n\n'
+            'When finished, return to this app.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Open browser')),
+          ],
+        ),
+      );
+      if (proceed != true || !mounted) return;
+      final opened = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!opened) {
+        throw Exception('Could not open browser');
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Complete Twitch sign-in in the browser, then return here.'),
+          duration: Duration(seconds: 6),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
@@ -245,6 +305,48 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
                               onPressed: _reconnectYoutube,
                               icon: const Icon(Icons.refresh),
                               label: const Text('Reconnect for live access'),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text('Optional: club Twitch login',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 6),
+                          Text(
+                            _twitchOk && _twitchKeyOk
+                                ? 'Connected: $_twitchDisplayName'
+                                : _twitchOk
+                                    ? 'Connected: $_twitchDisplayName — stream key access issue'
+                                    : (_twitchOauthConfigured
+                                        ? 'Connect club Twitch for OAuth Go Live'
+                                        : 'Twitch OAuth not configured on server'),
+                            style: TextStyle(
+                              color: (_twitchOk && _twitchKeyOk)
+                                  ? Colors.greenAccent
+                                  : Colors.orangeAccent,
+                            ),
+                          ),
+                          if (_twitchOk && !_twitchKeyOk && _twitchKeyMessage.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                _twitchKeyMessage,
+                                style: const TextStyle(fontSize: 12, color: Colors.orangeAccent),
+                              ),
+                            ),
+                          const SizedBox(height: 10),
+                          if (!_twitchOk && _twitchOauthConfigured)
+                            FilledButton.icon(
+                              onPressed: _connectTwitch,
+                              icon: const Icon(Icons.videogame_asset),
+                              label: const Text('Connect Twitch'),
                             ),
                         ],
                       ),

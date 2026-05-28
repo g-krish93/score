@@ -12,6 +12,7 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../services/api.dart';
 import '../services/rtmp_platform.dart';
+import '../models/stream_destination.dart';
 import '../models/stream_quality.dart';
 import '../utils/rtmp_endpoint.dart';
 import '../widgets/scoring_mode_sheet.dart';
@@ -38,9 +39,10 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   ScoringConfig? _scoring;
   String _scoringLabel = 'Scoring';
   bool _androidCapture = false;
-  /// Default: volunteer phone uses stream key from YouTube Studio (no club Google login).
-  bool _useCustomDestination = true;
+  /// Default: volunteer stream key (no OAuth on phone).
+  StreamDestination _destination = StreamDestination.custom;
   bool _liveManagedByApi = false;
+  String? _livePlatform;
   String? _customRtmpUrl;
   String? _customStreamKey;
   String? _customWatchUrl;
@@ -66,7 +68,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       _customRtmpUrl = server;
       _customStreamKey = key;
       _customWatchUrl = prefs.getString(_rtmpPrefsKey('watch'));
-      _useCustomDestination = true;
+      _destination = StreamDestination.custom;
       if (mounted) {
         setState(() => _status = 'Volunteer RTMP ready (saved for this stream)');
       }
@@ -233,17 +235,19 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   }
 
   Future<void> _goLive() async {
-    if (_useCustomDestination &&
+    if (_destination == StreamDestination.custom &&
         ((_customRtmpUrl ?? '').isEmpty || (_customStreamKey ?? '').isEmpty)) {
-      setState(() => _status = 'Paste Studio stream URL + key first (antenna icon)');
+      setState(() => _status = 'Paste stream URL + key first (antenna icon)');
       await _editCustomDestination();
       return;
     }
     setState(() {
       _busy = true;
-      _status = _useCustomDestination
-          ? 'Connecting to YouTube ingest…'
-          : 'Starting YouTube stream…';
+      _status = switch (_destination) {
+        StreamDestination.custom => 'Connecting to RTMP ingest…',
+        StreamDestination.twitch => 'Starting Twitch stream…',
+        StreamDestination.youtube => 'Starting YouTube stream…',
+      };
     });
     try {
       if (_scoring?.mode != 'auto') {
@@ -252,26 +256,34 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
           if (mounted) setState(() => _applyScoringLabel(auto));
         } catch (_) {}
       }
-      final cred = _useCustomDestination
-          ? GoLiveResult(
-              rtmpUrl: _customRtmpUrl ?? '',
-              streamKey: _customStreamKey ?? '',
-              watchUrl: _customWatchUrl ?? '',
-              overlayEmbedUrl: widget.match.overlayEmbedUrl,
-            )
-          : await widget.api.goLive(widget.match.slug);
+      final GoLiveResult cred;
+      if (_destination == StreamDestination.custom) {
+        cred = GoLiveResult(
+          rtmpUrl: _customRtmpUrl ?? '',
+          streamKey: _customStreamKey ?? '',
+          watchUrl: _customWatchUrl ?? '',
+          overlayEmbedUrl: widget.match.overlayEmbedUrl,
+        );
+        _livePlatform = null;
+      } else {
+        final platform = _destination == StreamDestination.twitch ? 'twitch' : 'youtube';
+        cred = await widget.api.goLive(widget.match.slug, platform: platform);
+        _livePlatform = platform;
+      }
       await WakelockPlus.enable();
       await _startEncoder(cred);
       if (!mounted) return;
       setState(() {
-        _liveManagedByApi = !_useCustomDestination;
+        _liveManagedByApi = _destination != StreamDestination.custom;
         _watchUrl = cred.watchUrl;
         _live = true;
-        _status = _useCustomDestination
-            ? 'Live on custom RTMP destination'
-            : (_androidCapture
-                ? 'Live on YouTube — scoreboard is burned into the stream'
-                : 'Live on YouTube');
+        _status = switch (_destination) {
+          StreamDestination.custom => 'Live on custom RTMP',
+          StreamDestination.twitch => 'Live on Twitch',
+          StreamDestination.youtube => _androidCapture
+              ? 'Live on YouTube — scoreboard burned in'
+              : 'Live on YouTube',
+        };
       });
     } catch (e) {
       await _stopEncoder();
@@ -286,13 +298,14 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       if (_live) {
         await _stopEncoder();
         if (_liveManagedByApi) {
-          await widget.api.stopLive();
+          await widget.api.stopLive(platform: _livePlatform);
         }
       }
     } catch (_) {}
     await WakelockPlus.disable();
     _live = false;
     _liveManagedByApi = false;
+    _livePlatform = null;
   }
 
   Future<void> _stop() async {
@@ -321,27 +334,40 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.phonelink_ring),
-              title: const Text('Volunteer: YouTube Studio stream key'),
+              title: const Text('Volunteer: paste stream key'),
               subtitle: const Text(
-                'Recommended — club starts live in Studio, volunteer pastes key. No Google login on this phone.',
+                'YouTube Studio or Twitch dashboard key — no login on this phone (recommended for volunteers).',
               ),
               onTap: () => Navigator.of(ctx).pop('custom'),
             ),
             ListTile(
               leading: const Icon(Icons.account_circle),
-              title: const Text('Club account (OAuth)'),
-              subtitle: const Text('One phone logged into club YouTube — not for rotating volunteers'),
-              onTap: () => Navigator.of(ctx).pop('oauth'),
+              title: const Text('Club YouTube (OAuth)'),
+              subtitle: const Text('Connect club channel once on the server'),
+              onTap: () => Navigator.of(ctx).pop('youtube'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.videogame_asset),
+              title: const Text('Club Twitch (OAuth)'),
+              subtitle: const Text('Connect club Twitch once on the server'),
+              onTap: () => Navigator.of(ctx).pop('twitch'),
             ),
           ],
         ),
       ),
     );
     if (!mounted || choice == null) return;
-    if (choice == 'oauth') {
+    if (choice == 'youtube') {
       setState(() {
-        _useCustomDestination = false;
-        _status = 'Destination: connected YouTube account';
+        _destination = StreamDestination.youtube;
+        _status = 'Destination: club YouTube (OAuth)';
+      });
+      return;
+    }
+    if (choice == 'twitch') {
+      setState(() {
+        _destination = StreamDestination.twitch;
+        _status = 'Destination: club Twitch (OAuth)';
       });
       return;
     }
@@ -355,16 +381,15 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('YouTube Studio stream key'),
+        title: const Text('Custom RTMP (stream key)'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                '1. Club admin: YouTube Studio → Go live → copy Stream URL + Stream key.\n'
-                '2. Volunteer: paste below (no Google login on this phone).\n'
-                '3. Tap Go Live.\n\n'
-                'Server is usually rtmp://a.rtmp.youtube.com/live2',
+                'YouTube: Studio → Go live → copy URL + key (rtmp://a.rtmp.youtube.com/live2).\n'
+                'Twitch: Dashboard → Settings → Stream → copy key (rtmp://live.twitch.tv/app).\n'
+                'Volunteer pastes below — no login on this phone.',
                 style: TextStyle(fontSize: 12, color: Colors.white70),
               ),
               const SizedBox(height: 10),
@@ -412,11 +437,11 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       return;
     }
     setState(() {
-      _useCustomDestination = true;
+      _destination = StreamDestination.custom;
       _customRtmpUrl = server;
       _customStreamKey = key;
       _customWatchUrl = watch;
-      _status = 'Volunteer RTMP saved — tap Go Live when Studio shows LIVE';
+      _status = 'Stream key saved — tap Go Live when the platform is ready';
     });
     await _saveRtmpPrefs();
   }
@@ -505,7 +530,11 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
           IconButton(
             icon: const Icon(Icons.settings_input_antenna),
             onPressed: _chooseDestination,
-            tooltip: _useCustomDestination ? 'Volunteer stream key (Studio)' : 'Club YouTube OAuth',
+            tooltip: switch (_destination) {
+              StreamDestination.custom => 'Volunteer stream key',
+              StreamDestination.youtube => 'Club YouTube OAuth',
+              StreamDestination.twitch => 'Club Twitch OAuth',
+            },
           ),
           TextButton(
             onPressed: _openScoringMenu,

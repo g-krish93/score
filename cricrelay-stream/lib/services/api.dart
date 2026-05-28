@@ -122,11 +122,11 @@ class CricRelayApi {
     return (body['authorize_url'] ?? '').toString();
   }
 
-  Future<GoLiveResult> goLive(String matchSlug) async {
+  Future<GoLiveResult> goLive(String matchSlug, {String platform = 'youtube'}) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/stream/go-live'),
       headers: _headers,
-      body: jsonEncode({'match_slug': matchSlug}),
+      body: jsonEncode({'match_slug': matchSlug, 'platform': platform}),
     );
     final body = _parseJsonResponse(res, fallback: 'Go live failed');
     if (res.statusCode != 200) {
@@ -135,10 +135,15 @@ class CricRelayApi {
     return GoLiveResult.fromJson(body);
   }
 
-  Future<void> stopLive() async {
+  Future<void> stopLive({String? platform}) async {
+    final body = <String, dynamic>{};
+    if (platform != null && platform.isNotEmpty) {
+      body['platform'] = platform;
+    }
     final res = await http.post(
       Uri.parse('$baseUrl/api/stream/stop'),
       headers: _headers,
+      body: body.isEmpty ? null : jsonEncode(body),
     );
     if (res.statusCode != 200) {
       final body = _parseJsonResponse(res, fallback: 'Stop failed');
@@ -157,6 +162,37 @@ class CricRelayApi {
   Future<void> youtubeDisconnect() async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/stream/youtube-disconnect'),
+      headers: _headers,
+    );
+    if (res.statusCode != 200) {
+      final body = _parseJsonResponse(res, fallback: 'Disconnect failed');
+      throw Exception(body['error']?.toString() ?? 'Disconnect failed');
+    }
+  }
+
+  Future<String> twitchAuthorizeUrl() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/stream/twitch/authorize'),
+      headers: _headers,
+    );
+    final body = _parseJsonResponse(res, fallback: 'Twitch authorize failed');
+    if (res.statusCode != 200) {
+      throw Exception(body['error']?.toString() ?? 'Twitch authorize failed');
+    }
+    return (body['authorize_url'] ?? '').toString();
+  }
+
+  Future<Map<String, dynamic>> twitchStatus() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/stream/twitch-status'),
+      headers: _headers,
+    );
+    return _parseJsonResponse(res, fallback: 'Twitch status failed');
+  }
+
+  Future<void> twitchDisconnect() async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/stream/twitch-disconnect'),
       headers: _headers,
     );
     if (res.statusCode != 200) {

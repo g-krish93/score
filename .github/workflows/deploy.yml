@@ -19,11 +19,14 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           YOUTUBE_REDIRECT_URI: ${{ secrets.YOUTUBE_REDIRECT_URI }}
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          TWITCH_REDIRECT_URI: ${{ secrets.TWITCH_REDIRECT_URI }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_KEY }}
-          envs: SMTP_PASSWORD,YOUTUBE_CLIENT_ID,YOUTUBE_CLIENT_SECRET,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,YOUTUBE_REDIRECT_URI
+          envs: SMTP_PASSWORD,YOUTUBE_CLIENT_ID,YOUTUBE_CLIENT_SECRET,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,YOUTUBE_REDIRECT_URI,TWITCH_CLIENT_ID,TWITCH_CLIENT_SECRET,TWITCH_REDIRECT_URI
           script: |
             set -e
             cd /app
@@ -50,6 +53,18 @@ jobs:
                 sudo chmod 600 /app/secrets/youtube_client_secret
               fi
               sudo -E bash deploy/configure-youtube-env.sh
+            fi
+            if [ -f deploy/configure-twitch-env.sh ]; then
+              sudo mkdir -p /app/secrets
+              if [ -n "${TWITCH_CLIENT_ID:-}" ]; then
+                printf '%s' "${TWITCH_CLIENT_ID}" | sudo tee /app/secrets/twitch_client_id > /dev/null
+                sudo chmod 600 /app/secrets/twitch_client_id
+              fi
+              if [ -n "${TWITCH_CLIENT_SECRET:-}" ]; then
+                printf '%s' "${TWITCH_CLIENT_SECRET}" | sudo tee /app/secrets/twitch_client_secret > /dev/null
+                sudo chmod 600 /app/secrets/twitch_client_secret
+              fi
+              sudo -E bash deploy/configure-twitch-env.sh
             fi
             if [ -f deploy/configure-smtp-env.sh ]; then
               if [ -n "${SMTP_PASSWORD:-}" ]; then

@@ -167,6 +167,12 @@ class Organization(db.Model):
     youtube_active_broadcast_id = db.Column(db.String(64), nullable=True)
     youtube_active_stream_id = db.Column(db.String(64), nullable=True)
     youtube_active_match_slug = db.Column(db.String(120), nullable=True)
+    twitch_refresh_token_enc = db.Column(db.Text, nullable=True)
+    twitch_user_id = db.Column(db.String(32), nullable=True)
+    twitch_login = db.Column(db.String(64), nullable=True)
+    twitch_display_name = db.Column(db.String(200), nullable=True)
+    twitch_connected_at = db.Column(db.DateTime, nullable=True)
+    twitch_active_match_slug = db.Column(db.String(120), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def set_password(self, password: str) -> None:
