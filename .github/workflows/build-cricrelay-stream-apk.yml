@@ -70,9 +70,7 @@ jobs:
             tail -n 120 ../stream-apk-build.log || true
             exit 1
           fi
-          mkdir -p build/app/outputs/flutter-apk
-          cp "$APK" build/app/outputs/flutter-apk/app-release.apk
-          ls -la build/app/outputs/flutter-apk/app-release.apk
+          ls -la "$APK"
 
       - name: Upload build log on failure
         if: failure()
