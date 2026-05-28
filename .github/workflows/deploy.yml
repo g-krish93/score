@@ -3,6 +3,7 @@ name: Deploy to EC2
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -29,9 +30,24 @@ jobs:
           envs: SMTP_PASSWORD,YOUTUBE_CLIENT_ID,YOUTUBE_CLIENT_SECRET,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,YOUTUBE_REDIRECT_URI,TWITCH_CLIENT_ID,TWITCH_CLIENT_SECRET,TWITCH_REDIRECT_URI
           script: |
             set -e
+            EMERGENCY_URL="https://raw.githubusercontent.com/g-krish93/score/main/deploy/ec2-emergency-cleanup.sh"
+            # Must free disk BEFORE git pull — pull fails with "No space left on device" otherwise.
+            curl -sfSL "$EMERGENCY_URL" | sudo bash || {
+              echo "curl emergency cleanup failed — minimal inline fallback"
+              sudo pip3 cache purge 2>/dev/null || true
+              sudo rm -rf /root/.cache/pip /home/ec2-user/.cache/pip 2>/dev/null || true
+              sudo journalctl --vacuum-size=100M 2>/dev/null || true
+              df -h /
+            }
             cd /app
-            git pull origin main
-            sudo bash deploy/ec2-disk-cleanup.sh
+            if ! git pull origin main; then
+              echo "git pull failed — retry after second cleanup"
+              curl -sfSL "$EMERGENCY_URL" | sudo bash || true
+              git pull origin main
+            fi
+            if [ -f deploy/ec2-disk-cleanup.sh ]; then
+              sudo bash deploy/ec2-disk-cleanup.sh
+            fi
             # Keep systemd unit in sync with repo (python3 -m gunicorn, optional .env).
             if [ -f deploy/cricket.service ]; then
               sudo install -m 644 deploy/cricket.service /etc/systemd/system/cricket.service

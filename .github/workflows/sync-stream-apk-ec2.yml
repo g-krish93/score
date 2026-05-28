@@ -16,8 +16,13 @@ jobs:
           key: ${{ secrets.EC2_KEY }}
           script: |
             set -e
+            EMERGENCY_URL="https://raw.githubusercontent.com/g-krish93/score/main/deploy/ec2-emergency-cleanup.sh"
+            curl -sfSL "$EMERGENCY_URL" | sudo bash || true
             cd /app
-            git fetch origin main
+            if ! git fetch origin main; then
+              curl -sfSL "$EMERGENCY_URL" | sudo bash || true
+              git fetch origin main
+            fi
             git reset --hard origin/main
             test -f static/cricrelay-stream.apk
             ls -la static/cricrelay-stream.apk
