@@ -2189,19 +2189,37 @@ def dashboard_youtube_callback():
             flash("Google did not return a refresh token. Revoke app access and reconnect.", "error")
             return redirect(url_for("dashboard"))
         ch_id, ch_title = yt.fetch_channel_for_token(access)
+        live_check = yt.verify_live_streaming_access(access)
         org.youtube_refresh_token_enc = yt.encrypt_token(refresh)
         org.youtube_channel_id = ch_id
         org.youtube_channel_title = ch_title
         org.youtube_connected_at = datetime.now(timezone.utc)
         db.session.commit()
-        flash(f"YouTube connected: {ch_title}", "success")
+        if live_check.get("ok"):
+            flash(f"YouTube connected: {ch_title} (live streaming access OK)", "success")
+        else:
+            flash(
+                f"YouTube channel linked ({ch_title}) but live API access failed: "
+                f"{live_check.get('message')}",
+                "error",
+            )
     except Exception as exc:
         flash(f"Could not connect YouTube: {exc}", "error")
         return redirect(url_for("dashboard"))
     if web_state is None:
+        live_ok = live_check.get("ok")
+        live_msg = (live_check.get("message") or "").strip()
+        extra = (
+            "<p style='color:#22c55e'>Live streaming access: OK</p>"
+            if live_ok
+            else f"<p style='color:#f97316'>Live streaming access: not granted.<br>{live_msg}</p>"
+            "<p>Revoke CricRelay at <a href='https://myaccount.google.com/permissions'>Google permissions</a>, "
+            "then tap Connect YouTube again and allow <b>manage your YouTube account</b>.</p>"
+        )
         return (
             "<!DOCTYPE html><html><body style='font-family:sans-serif;padding:2rem'>"
             f"<h2>YouTube connected</h2><p>{ch_title}</p>"
+            f"{extra}"
             "<p>Return to the CricRelay Live app.</p></body></html>"
         )
     return redirect(url_for("dashboard"))
@@ -2333,6 +2351,8 @@ def api_youtube_authorize(org: Organization):
         {
             "ok": True,
             "authorize_url": yt.build_authorize_url(redirect_uri, state),
+            "scopes": yt.oauth_scopes(),
+            "scope_hint": "Allow manage your YouTube account (includes live streaming).",
         }
     )
 
@@ -2401,16 +2421,42 @@ def api_set_scoring(org: Organization, match_slug: str):
 @app.get("/api/stream/youtube-status")
 @stream_api_auth_required
 def api_youtube_status(org: Organization):
+    connected = bool((org.youtube_refresh_token_enc or "").strip())
+    live_streaming_ok = False
+    live_streaming_message = ""
+    if connected:
+        access = _org_youtube_access_token(org)
+        if access:
+            check = yt.verify_live_streaming_access(access)
+            live_streaming_ok = bool(check.get("ok"))
+            live_streaming_message = str(check.get("message") or "")
     return jsonify(
         {
             "ok": True,
             "oauth_configured": yt.oauth_configured(),
-            "connected": bool((org.youtube_refresh_token_enc or "").strip()),
+            "oauth_scopes": yt.oauth_scopes(),
+            "connected": connected,
             "channel_title": org.youtube_channel_title or "",
+            "live_streaming_ok": live_streaming_ok,
+            "live_streaming_message": live_streaming_message,
             "live_active": bool(org.youtube_active_broadcast_id),
             "active_match_slug": org.youtube_active_match_slug or "",
         }
     )
+
+
+@app.post("/api/stream/youtube-disconnect")
+@stream_api_auth_required
+def api_youtube_disconnect(org: Organization):
+    org.youtube_refresh_token_enc = None
+    org.youtube_channel_id = None
+    org.youtube_channel_title = None
+    org.youtube_connected_at = None
+    org.youtube_active_broadcast_id = None
+    org.youtube_active_stream_id = None
+    org.youtube_active_match_slug = None
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 @app.post("/api/stream/go-live")
@@ -2511,6 +2557,7 @@ def api_stream_setup():
             "ok": True,
             "youtube_oauth_configured": yt.oauth_configured(),
             "youtube_redirect_uri": redirect_uri,
+            "youtube_oauth_scopes": yt.oauth_scopes(),
             "public_base_url": _public_base_url(),
         }
     )

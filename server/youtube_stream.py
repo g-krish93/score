@@ -17,10 +17,13 @@ YOUTUBE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 YOUTUBE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 YOUTUBE_API = "https://www.googleapis.com/youtube/v3"
 
-SCOPES = (
-    "https://www.googleapis.com/auth/youtube.force-ssl "
-    "https://www.googleapis.com/auth/youtube.readonly"
-)
+# Full account management (required for liveBroadcasts + liveStreams). Read-only is not enough.
+OAUTH_SCOPE_MANAGE = "https://www.googleapis.com/auth/youtube"
+SCOPES = OAUTH_SCOPE_MANAGE
+
+
+def oauth_scopes() -> list[str]:
+    return [OAUTH_SCOPE_MANAGE]
 
 
 def _fernet() -> Fernet | None:
@@ -152,6 +155,38 @@ def fetch_channel_for_token(access_token: str) -> tuple[str, str]:
         raise ValueError("No YouTube channel found for this Google account")
     ch = items[0]
     return ch["id"], (ch.get("snippet") or {}).get("title") or "YouTube channel"
+
+
+def _youtube_error_message(exc: requests.HTTPError) -> str:
+    try:
+        body = exc.response.json()
+        err = body.get("error") if isinstance(body, dict) else None
+        if isinstance(err, dict):
+            return str(err.get("message") or err.get("status") or exc)
+    except Exception:
+        pass
+    return str(exc)
+
+
+def verify_live_streaming_access(access_token: str) -> dict[str, Any]:
+    """Confirm token can call YouTube Live APIs (not just read channel name)."""
+    try:
+        youtube_get(
+            access_token,
+            "liveStreams",
+            {"part": "id", "mine": "true", "maxResults": 1},
+        )
+        return {"ok": True, "message": ""}
+    except requests.HTTPError as exc:
+        msg = _youtube_error_message(exc)
+        hint = (
+            "Disconnect YouTube in the app, revoke CricRelay at "
+            "https://myaccount.google.com/permissions, then Connect YouTube again. "
+            "On Google's screen, allow access to manage your YouTube account (live streaming)."
+        )
+        if exc.response is not None and exc.response.status_code == 403:
+            return {"ok": False, "message": f"{msg}. {hint}"}
+        return {"ok": False, "message": msg or hint}
 
 
 def create_live_broadcast(access_token: str, title: str, description: str = "") -> dict[str, Any]:

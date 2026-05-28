@@ -114,6 +114,17 @@ class CricRelayApi {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
+  Future<void> youtubeDisconnect() async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/stream/youtube-disconnect'),
+      headers: _headers,
+    );
+    if (res.statusCode != 200) {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      throw Exception(body['error']?.toString() ?? 'Disconnect failed');
+    }
+  }
+
   Future<ScoringConfig> getScoring(String matchSlug) async {
     final res = await http.get(
       Uri.parse('$baseUrl/api/match/$matchSlug/scoring'),

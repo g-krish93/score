@@ -22,7 +22,9 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> {
   String? _error;
   bool _youtubeOk = false;
   bool _youtubeOauthConfigured = true;
+  bool _youtubeLiveOk = false;
   String _channelTitle = '';
+  String _youtubeLiveMessage = '';
 
   @override
   void initState() {
@@ -54,6 +56,8 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> {
         _streams = list;
         _youtubeOauthConfigured = yt['oauth_configured'] != false;
         _youtubeOk = yt['connected'] == true;
+        _youtubeLiveOk = yt['live_streaming_ok'] == true;
+        _youtubeLiveMessage = (yt['live_streaming_message'] ?? '').toString();
         _channelTitle = (yt['channel_title'] ?? '').toString();
       });
     } catch (e) {
@@ -61,6 +65,14 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _reconnectYoutube() async {
+    try {
+      await widget.api.youtubeDisconnect();
+    } catch (_) {}
+    if (!mounted) return;
+    await _connectYoutube();
   }
 
   Future<void> _connectYoutube() async {
@@ -138,21 +150,39 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> {
                               style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 6),
                           Text(
-                            _youtubeOk
-                                ? 'Connected: $_channelTitle'
-                                : (_youtubeOauthConfigured
-                                    ? 'Connect your club channel to stream'
-                                    : 'YouTube OAuth is not configured on server'),
+                            _youtubeOk && _youtubeLiveOk
+                                ? 'Connected: $_channelTitle (live streaming OK)'
+                                : _youtubeOk
+                                    ? 'Connected: $_channelTitle — live access missing'
+                                    : (_youtubeOauthConfigured
+                                        ? 'Connect your club channel to stream'
+                                        : 'YouTube OAuth is not configured on server'),
                             style: TextStyle(
-                              color: _youtubeOk ? Colors.greenAccent : Colors.orangeAccent,
+                              color: (_youtubeOk && _youtubeLiveOk)
+                                  ? Colors.greenAccent
+                                  : Colors.orangeAccent,
                             ),
                           ),
+                          if (_youtubeOk && !_youtubeLiveOk && _youtubeLiveMessage.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                _youtubeLiveMessage,
+                                style: const TextStyle(fontSize: 12, color: Colors.orangeAccent),
+                              ),
+                            ),
                           const SizedBox(height: 10),
                           if (!_youtubeOk)
                             FilledButton.icon(
                               onPressed: _connectYoutube,
                               icon: const Icon(Icons.link),
                               label: const Text('Connect YouTube'),
+                            ),
+                          if (_youtubeOk && !_youtubeLiveOk)
+                            OutlinedButton.icon(
+                              onPressed: _reconnectYoutube,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Reconnect for live access'),
                             ),
                         ],
                       ),
@@ -179,7 +209,7 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> {
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: FilledButton.icon(
-                        onPressed: _youtubeOk
+                        onPressed: (_youtubeOk && _youtubeLiveOk)
                             ? () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
@@ -209,7 +239,7 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> {
                 ],
               ),
             ),
-      floatingActionButton: _youtubeOk
+      floatingActionButton: (_youtubeOk && _youtubeLiveOk)
           ? FloatingActionButton.extended(
               onPressed: () {
                 Navigator.of(context).push(
