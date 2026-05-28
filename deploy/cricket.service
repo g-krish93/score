@@ -8,7 +8,7 @@ WorkingDirectory=/app
 # Leading "-" = file optional (avoids start failure before first .env upload).
 EnvironmentFile=-/app/.env
 # Use the same interpreter as `sudo pip3` / system python3 (avoids /usr/local/bin/gunicorn vs site-packages mismatch).
-ExecStart=/usr/bin/python3 -m gunicorn -w 1 -b 0.0.0.0:5000 server.app:app
+ExecStart=/usr/bin/python3 -m gunicorn -w 1 -b 0.0.0.0:5000 --timeout 300 server.app:app
 Restart=always
 RestartSec=5
 StandardOutput=journal

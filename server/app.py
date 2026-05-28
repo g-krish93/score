@@ -25,7 +25,7 @@ from flask import (
     redirect,
     render_template,
     request,
-    Response,
+    send_file,
     session,
     url_for,
 )
@@ -581,6 +581,19 @@ def _stream_apk_path() -> Path:
         if candidate.is_file():
             return candidate
     return static / "cricrelay-stream.apk"
+
+
+def _apk_download_response(path: Path, filename: str):
+    """Stream APK from disk with Range support (resume) — do not read_bytes() large APKs."""
+    return send_file(
+        path,
+        mimetype="application/vnd.android.package-archive",
+        as_attachment=True,
+        download_name=filename,
+        conditional=True,
+        etag=True,
+        max_age=0,
+    )
 
 
 def manual_scoring_blocked_response():
@@ -1213,11 +1226,7 @@ def download_stream_apk():
             "error",
         )
         return redirect(url_for("dashboard"))
-    return Response(
-        path.read_bytes(),
-        mimetype="application/vnd.android.package-archive",
-        headers={"Content-Disposition": 'attachment; filename="cricrelay-stream.apk"'},
-    )
+    return _apk_download_response(path, "cricrelay-stream.apk")
 
 
 @app.get("/download/pcs-relay.apk")
@@ -1230,11 +1239,7 @@ def download_pcs_relay_apk():
             "error",
         )
         return redirect(url_for("dashboard"))
-    return Response(
-        path.read_bytes(),
-        mimetype="application/vnd.android.package-archive",
-        headers={"Content-Disposition": 'attachment; filename="cricrelay-pcs-relay.apk"'},
-    )
+    return _apk_download_response(path, "cricrelay-pcs-relay.apk")
 
 
 def _stream_slot_error(org: Organization) -> str | None:

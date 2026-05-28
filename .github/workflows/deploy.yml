@@ -36,6 +36,11 @@ jobs:
               sudo install -m 644 deploy/cricket.service /etc/systemd/system/cricket.service
               sudo systemctl daemon-reload
             fi
+            if [ -f deploy/nginx-cricrelay.conf ]; then
+              sudo install -m 644 deploy/nginx-cricrelay.conf /etc/nginx/conf.d/cricrelay.conf
+              sudo nginx -t
+              sudo systemctl reload nginx
+            fi
             # Gunicorn runs as root and loads /usr/local/... site-packages; user pip would install under ~/.local and the worker would crash on import (exit status 3).
             # Amazon Linux often ships requests via rpm — pip cannot uninstall it; --ignore-installed lays down wheels in site-packages without removing the RPM.
             sudo pip3 install --ignore-installed -r requirements.txt
