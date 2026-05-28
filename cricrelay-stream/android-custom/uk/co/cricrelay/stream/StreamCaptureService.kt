@@ -51,7 +51,8 @@ class StreamCaptureService : Service(), ConnectChecker {
                 glInterface.setForceRender(true, 15)
             }
             val audioOk = display?.prepareAudio() == true
-            val videoOk = display?.prepareVideo(width, height, fps, bitrate) == true
+            // RootEncoder 2.4.8: prepareVideo(width, height, fps, bitrate, rotation, dpi)
+            val videoOk = display?.prepareVideo(width, height, fps, bitrate, 0, 320) == true
             if (!audioOk || !videoOk) {
                 emitStatus(EVENT_ERROR, "Could not prepare camera/audio for stream")
                 stopSelf()
