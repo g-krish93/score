@@ -26,22 +26,20 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Scaffold missing Flutter platform files
+      - name: Regenerate Android/iOS (avoid stale Gradle files)
         working-directory: cricrelay-stream
-        run: flutter create . --platforms=android,ios --org uk.co.cricrelay --project-name stream
-
-      - name: Apply custom Stream plugin (keep flutter create assets)
         run: |
-          # Legacy root build.gradle breaks Gradle 8+ (evaluationDependsOn); Flutter uses settings.gradle only.
-          rm -f cricrelay-stream/android/build.gradle
-          cp -r cricrelay-stream/android-custom/uk cricrelay-stream/android/app/src/main/kotlin/
+          rm -rf android ios
+          flutter create . --platforms=android,ios --org uk.co.cricrelay --project-name stream
+          cp -r android-custom/uk android/app/src/main/kotlin/
+          cp android-custom/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
 
       - name: Build release APK
         working-directory: cricrelay-stream
         run: |
           flutter pub get
           flutter build apk --release 2>&1 | tee ../stream-apk-build.log
-          tail -n 60 ../stream-apk-build.log
+          tail -n 80 ../stream-apk-build.log
 
       - name: Upload build log on failure
         if: failure()
@@ -49,9 +47,11 @@ jobs:
         with:
           name: stream-apk-build-log
           path: stream-apk-build.log
+
       - name: Copy to static
         run: |
           cp cricrelay-stream/build/app/outputs/flutter-apk/app-release.apk static/cricrelay-stream.apk
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
