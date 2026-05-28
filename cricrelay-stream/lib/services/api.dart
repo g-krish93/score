@@ -37,8 +37,48 @@ class CricRelayApi {
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
         if (_token != null && _token!.isNotEmpty) 'Authorization': 'Bearer $_token',
       };
+
+  Uri _matchApiUri(String matchSlug, String suffix) {
+    final slug = Uri.encodeComponent(matchSlug);
+    return Uri.parse('$baseUrl/api/match/$slug/$suffix');
+  }
+
+  Map<String, dynamic> _parseJsonResponse(http.Response res, {String fallback = 'Request failed'}) {
+    final raw = res.body.trim();
+    final ct = (res.headers['content-type'] ?? '').toLowerCase();
+    final looksHtml = raw.toLowerCase().startsWith('<!doctype') ||
+        raw.toLowerCase().startsWith('<html') ||
+        (!ct.contains('json') && raw.startsWith('<'));
+
+    if (looksHtml) {
+      if (res.statusCode == 401) {
+        throw Exception('Session expired — log out and sign in again.');
+      }
+      if (res.statusCode == 404) {
+        throw Exception(
+          'Scoring API not found (404). Update the server or check the stream still exists.',
+        );
+      }
+      throw Exception(
+        'Server returned a web page instead of JSON (${res.statusCode}). '
+        'Try logging in again or contact your club admin.',
+      );
+    }
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      throw const FormatException('not a JSON object');
+    } on FormatException {
+      throw Exception(
+        'Invalid server response (${res.statusCode}). ${raw.length > 120 ? '${raw.substring(0, 120)}…' : raw}',
+      );
+    }
+  }
 
   Future<Map<String, dynamic>> login(String email, String password) async {
     final res = await http.post(
@@ -46,7 +86,7 @@ class CricRelayApi {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'email': email, 'password': password}),
     );
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final body = _parseJsonResponse(res, fallback: 'Login failed');
     if (res.statusCode != 200) {
       throw Exception(body['error']?.toString() ?? 'Login failed');
     }
@@ -60,7 +100,7 @@ class CricRelayApi {
       Uri.parse('$baseUrl/api/streams'),
       headers: _headers,
     );
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final body = _parseJsonResponse(res, fallback: 'Failed to load streams');
     if (res.statusCode != 200) {
       throw Exception(body['error']?.toString() ?? 'Failed to load streams');
     }
@@ -75,7 +115,7 @@ class CricRelayApi {
       Uri.parse('$baseUrl/api/stream/youtube/authorize'),
       headers: _headers,
     );
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final body = _parseJsonResponse(res, fallback: 'YouTube authorize failed');
     if (res.statusCode != 200) {
       throw Exception(body['error']?.toString() ?? 'YouTube authorize failed');
     }
@@ -88,7 +128,7 @@ class CricRelayApi {
       headers: _headers,
       body: jsonEncode({'match_slug': matchSlug}),
     );
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final body = _parseJsonResponse(res, fallback: 'Go live failed');
     if (res.statusCode != 200) {
       throw Exception(body['error']?.toString() ?? 'Go live failed');
     }
@@ -101,7 +141,7 @@ class CricRelayApi {
       headers: _headers,
     );
     if (res.statusCode != 200) {
-      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final body = _parseJsonResponse(res, fallback: 'Stop failed');
       throw Exception(body['error']?.toString() ?? 'Stop failed');
     }
   }
@@ -111,7 +151,7 @@ class CricRelayApi {
       Uri.parse('$baseUrl/api/stream/youtube-status'),
       headers: _headers,
     );
-    return jsonDecode(res.body) as Map<String, dynamic>;
+    return _parseJsonResponse(res, fallback: 'YouTube status failed');
   }
 
   Future<void> youtubeDisconnect() async {
@@ -120,17 +160,17 @@ class CricRelayApi {
       headers: _headers,
     );
     if (res.statusCode != 200) {
-      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final body = _parseJsonResponse(res, fallback: 'Disconnect failed');
       throw Exception(body['error']?.toString() ?? 'Disconnect failed');
     }
   }
 
   Future<ScoringConfig> getScoring(String matchSlug) async {
     final res = await http.get(
-      Uri.parse('$baseUrl/api/match/$matchSlug/scoring'),
+      _matchApiUri(matchSlug, 'scoring'),
       headers: _headers,
     );
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final body = _parseJsonResponse(res, fallback: 'Failed to load scoring mode');
     if (res.statusCode != 200) {
       throw Exception(body['error']?.toString() ?? 'Failed to load scoring mode');
     }
@@ -142,7 +182,7 @@ class CricRelayApi {
       Uri.parse('$baseUrl/api/fixtures'),
       headers: _headers,
     );
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final body = _parseJsonResponse(res, fallback: 'Failed to load fixtures');
     if (res.statusCode != 200) {
       throw Exception(body['error']?.toString() ?? 'Failed to load fixtures');
     }
@@ -162,7 +202,7 @@ class CricRelayApi {
         'label': label,
       }),
     );
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final body = _parseJsonResponse(res, fallback: 'Could not create stream');
     if (res.statusCode != 200) {
       throw Exception(body['error']?.toString() ?? 'Could not create stream');
     }
@@ -176,7 +216,7 @@ class CricRelayApi {
       headers: _headers,
       body: jsonEncode({'type': 'pcs_ble', 'label': label}),
     );
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final body = _parseJsonResponse(res, fallback: 'Could not create stream');
     if (res.statusCode != 200) {
       throw Exception(body['error']?.toString() ?? 'Could not create stream');
     }
@@ -186,11 +226,11 @@ class CricRelayApi {
 
   Future<ScoringConfig> setScoring(String matchSlug, String mode) async {
     final res = await http.post(
-      Uri.parse('$baseUrl/api/match/$matchSlug/scoring'),
+      _matchApiUri(matchSlug, 'scoring'),
       headers: _headers,
       body: jsonEncode({'mode': mode}),
     );
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final body = _parseJsonResponse(res, fallback: 'Failed to set scoring mode');
     if (res.statusCode != 200) {
       throw Exception(body['error']?.toString() ?? 'Failed to set scoring mode');
     }

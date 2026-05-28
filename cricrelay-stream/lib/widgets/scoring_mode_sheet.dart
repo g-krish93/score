@@ -67,8 +67,16 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
       widget.onUpdated(next);
       if (!mounted) return;
       setState(() => _cfg = next);
+      if (mode == 'manual' && next.manualInputUrl.isNotEmpty) {
+        Navigator.pop(context);
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ManualScoringScreen(inputUrl: next.manualInputUrl),
+          ),
+        );
+      }
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

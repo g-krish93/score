@@ -2399,32 +2399,38 @@ def api_get_scoring(org: Organization, match_slug: str):
 @app.post("/api/match/<match_slug>/scoring")
 @stream_api_auth_required
 def api_set_scoring(org: Organization, match_slug: str):
-    slug = sanitize_match_id(match_slug)
-    row = relay_match_for_org(org, slug)
-    if not row:
-        return jsonify({"error": "unknown stream"}), 404
-    data = request.get_json(silent=True) or {}
-    mode = str(data.get("mode") or "").strip().lower()
-    if mode not in {"auto", "manual", "ble"}:
-        return jsonify({"error": "mode must be auto, manual, or ble"}), 400
-    if mode == "auto":
-        apply_relay_to_score_match(slug, row.full_scrape_url)
-        row.relay_source = "scraper"
-    elif mode == "manual":
-        with match_context(slug):
-            merge_missing_state_keys(state)
-            state["relay_mode"] = "manual"
-            state["relay_wrapper"] = None
-            state["relay_last_error"] = None
-            save_state()
-    else:
-        with match_context(slug):
-            merge_missing_state_keys(state)
-            token = (state.get("pcs_ingest_token") or "").strip() or secrets.token_urlsafe(24)
-        apply_pcs_ble_to_score_match(slug, token, row.label or "")
-        row.relay_source = "pcs_ble"
-    db.session.commit()
-    return api_get_scoring(org, slug)
+    try:
+        slug = sanitize_match_id(match_slug)
+        row = relay_match_for_org(org, slug)
+        if not row:
+            return jsonify({"error": "unknown stream"}), 404
+        data = request.get_json(silent=True) or {}
+        mode = str(data.get("mode") or "").strip().lower()
+        if mode not in {"auto", "manual", "ble"}:
+            return jsonify({"error": "mode must be auto, manual, or ble"}), 400
+        if mode == "auto":
+            apply_relay_to_score_match(slug, row.full_scrape_url)
+            row.relay_source = "scraper"
+        elif mode == "manual":
+            with match_context(slug):
+                merge_missing_state_keys(state)
+                state["relay_mode"] = "manual"
+                state["relay_wrapper"] = None
+                state["relay_last_error"] = None
+                save_state()
+            row.relay_source = "scraper"
+        else:
+            with match_context(slug):
+                merge_missing_state_keys(state)
+                token = (state.get("pcs_ingest_token") or "").strip() or secrets.token_urlsafe(24)
+            apply_pcs_ble_to_score_match(slug, token, row.label or "")
+            row.relay_source = "pcs_ble"
+        db.session.commit()
+        return api_get_scoring(org, slug)
+    except Exception as exc:
+        current_app.logger.exception("api_set_scoring failed for %s", match_slug)
+        db.session.rollback()
+        return jsonify({"error": str(exc) or "scoring update failed"}), 500
 
 
 @app.get("/api/stream/youtube-status")

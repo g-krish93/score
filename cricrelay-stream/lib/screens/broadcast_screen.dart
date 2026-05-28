@@ -1,16 +1,21 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:camera/camera.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../services/api.dart';
 import '../services/rtmp_platform.dart';
+import '../models/stream_quality.dart';
+import '../utils/rtmp_endpoint.dart';
 import '../widgets/scoring_mode_sheet.dart';
+import '../widgets/stream_settings_sheet.dart';
 
 /// Live broadcast: in-app RTMP to YouTube + overlay + scoring menu.
 class BroadcastScreen extends StatefulWidget {
@@ -33,11 +38,17 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   ScoringConfig? _scoring;
   String _scoringLabel = 'Scoring';
   bool _androidCapture = false;
-  bool _useCustomDestination = false;
+  /// Default: volunteer phone uses stream key from YouTube Studio (no club Google login).
+  bool _useCustomDestination = true;
   bool _liveManagedByApi = false;
   String? _customRtmpUrl;
   String? _customStreamKey;
   String? _customWatchUrl;
+  double _zoom = 1.0;
+  double _minZoom = 1.0;
+  double _maxZoom = 1.0;
+  double _pinchBaseZoom = 1.0;
+  StreamQualityProfile _quality = StreamQualityProfile.high;
 
   @override
   void initState() {
@@ -45,8 +56,38 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     _init();
   }
 
+  String _rtmpPrefsKey(String field) => 'rtmp_${field}_${widget.match.slug}';
+
+  Future<void> _loadSavedRtmp() async {
+    final prefs = await SharedPreferences.getInstance();
+    final server = prefs.getString(_rtmpPrefsKey('server'));
+    final key = prefs.getString(_rtmpPrefsKey('key'));
+    if (server != null && server.isNotEmpty && key != null && key.isNotEmpty) {
+      _customRtmpUrl = server;
+      _customStreamKey = key;
+      _customWatchUrl = prefs.getString(_rtmpPrefsKey('watch'));
+      _useCustomDestination = true;
+      if (mounted) {
+        setState(() => _status = 'Volunteer RTMP ready (saved for this stream)');
+      }
+    } else if (mounted) {
+      setState(() => _status = 'Volunteer mode: paste stream key from YouTube Studio (antenna icon)');
+    }
+  }
+
+  Future<void> _saveRtmpPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_rtmpPrefsKey('server'), _customRtmpUrl ?? '');
+    await prefs.setString(_rtmpPrefsKey('key'), _customStreamKey ?? '');
+    if (_customWatchUrl != null && _customWatchUrl!.isNotEmpty) {
+      await prefs.setString(_rtmpPrefsKey('watch'), _customWatchUrl!);
+    }
+  }
+
   Future<void> _init() async {
     await [Permission.camera, Permission.microphone].request();
+    _quality = await loadStreamQualityProfile();
+    await _loadSavedRtmp();
     if (Platform.isAndroid) {
       _androidCapture = await RtmpPlatform.isCaptureSupported;
     }
@@ -58,6 +99,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       );
       _camera = CameraController(back, ResolutionPreset.high, enableAudio: true);
       await _camera!.initialize();
+      await _initZoomLevels();
     }
     try {
       final cfg = await widget.api.getScoring(widget.match.slug);
@@ -75,6 +117,51 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     await web.loadRequest(Uri.parse(overlay));
     if (!mounted) return;
     setState(() => _web = web);
+  }
+
+  Future<void> _initZoomLevels() async {
+    final cam = _camera;
+    if (cam == null || !cam.value.isInitialized) return;
+    try {
+      _minZoom = await cam.getMinZoomLevel();
+      _maxZoom = await cam.getMaxZoomLevel();
+      _zoom = _minZoom;
+    } catch (_) {
+      _minZoom = 1.0;
+      _maxZoom = 1.0;
+      _zoom = 1.0;
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _setZoom(double level) async {
+    final cam = _camera;
+    if (cam == null || !cam.value.isInitialized) return;
+    final clamped = level.clamp(_minZoom, _maxZoom);
+    try {
+      await cam.setZoomLevel(clamped);
+      if (mounted) setState(() => _zoom = clamped);
+    } catch (_) {}
+  }
+
+  double get _zoomDisplayFactor {
+    if (_minZoom <= 0) return 1.0;
+    return _zoom / _minZoom;
+  }
+
+  Future<void> _openStreamSettings() async {
+    await showStreamSettingsSheet(
+      context: context,
+      initial: _quality,
+      onChanged: (p) {
+        if (mounted) {
+          setState(() {
+            _quality = p;
+            _status = 'Stream quality: ${p.label} (${p.width}×${p.height})';
+          });
+        }
+      },
+    );
   }
 
   void _applyScoringLabel(ScoringConfig cfg) {
@@ -119,13 +206,24 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       throw Exception('In-app YouTube streaming is Android-only for now. Use an Android device.');
     }
     if (!_androidCapture) {
-      throw Exception('Screen capture is not available on this device.');
+      throw Exception(
+        'This APK cannot stream yet. Install the latest CricRelay Stream APK from cricrelay.co.uk',
+      );
     }
+    final connected = RtmpPlatform.waitForConnected();
     await RtmpPlatform.startStream(
       rtmpUrl: cred.rtmpUrl,
       streamKey: cred.streamKey,
       overlayUrl: cred.overlayEmbedUrl,
+      width: _quality.width,
+      height: _quality.height,
+      bitrateBps: _quality.bitrateBps,
+      fps: _quality.fps,
     );
+    if (mounted) {
+      setState(() => _status = 'Connecting to YouTube… (Studio must be live)');
+    }
+    await connected;
   }
 
   Future<void> _stopEncoder() async {
@@ -135,9 +233,17 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   }
 
   Future<void> _goLive() async {
+    if (_useCustomDestination &&
+        ((_customRtmpUrl ?? '').isEmpty || (_customStreamKey ?? '').isEmpty)) {
+      setState(() => _status = 'Paste Studio stream URL + key first (antenna icon)');
+      await _editCustomDestination();
+      return;
+    }
     setState(() {
       _busy = true;
-      _status = 'Starting YouTube stream…';
+      _status = _useCustomDestination
+          ? 'Connecting to YouTube ingest…'
+          : 'Starting YouTube stream…';
     });
     try {
       if (_scoring?.mode != 'auto') {
@@ -168,7 +274,8 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
                 : 'Live on YouTube');
       });
     } catch (e) {
-      setState(() => _status = e.toString());
+      await _stopEncoder();
+      if (mounted) setState(() => _status = e.toString());
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -213,16 +320,18 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.account_circle),
-              title: const Text('Use connected YouTube account'),
-              subtitle: const Text('Create live event via CricRelay'),
-              onTap: () => Navigator.of(ctx).pop('oauth'),
+              leading: const Icon(Icons.phonelink_ring),
+              title: const Text('Volunteer: YouTube Studio stream key'),
+              subtitle: const Text(
+                'Recommended — club starts live in Studio, volunteer pastes key. No Google login on this phone.',
+              ),
+              onTap: () => Navigator.of(ctx).pop('custom'),
             ),
             ListTile(
-              leading: const Icon(Icons.link),
-              title: const Text('Use custom RTMP URL / key'),
-              subtitle: const Text('Paste YouTube or any RTMP destination'),
-              onTap: () => Navigator.of(ctx).pop('custom'),
+              leading: const Icon(Icons.account_circle),
+              title: const Text('Club account (OAuth)'),
+              subtitle: const Text('One phone logged into club YouTube — not for rotating volunteers'),
+              onTap: () => Navigator.of(ctx).pop('oauth'),
             ),
           ],
         ),
@@ -246,14 +355,16 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Custom RTMP destination'),
+        title: const Text('YouTube Studio stream key'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Option A: paste RTMP server + stream key.\n'
-                'Option B: paste full RTMP URL in server field and leave key empty.',
+                '1. Club admin: YouTube Studio → Go live → copy Stream URL + Stream key.\n'
+                '2. Volunteer: paste below (no Google login on this phone).\n'
+                '3. Tap Go Live.\n\n'
+                'Server is usually rtmp://a.rtmp.youtube.com/live2',
                 style: TextStyle(fontSize: 12, color: Colors.white70),
               ),
               const SizedBox(height: 10),
@@ -281,22 +392,23 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       ),
     );
     if (ok != true || !mounted) return;
-    String server = serverCtrl.text.trim();
-    String key = keyCtrl.text.trim();
     final watch = watchCtrl.text.trim();
+    final parsed = RtmpEndpoint.parse(
+      serverInput: serverCtrl.text,
+      keyInput: keyCtrl.text,
+    );
+    final server = parsed.server;
+    final key = parsed.key;
     if (server.isEmpty) {
       setState(() => _status = 'Enter RTMP URL/server first');
       return;
     }
-    if (key.isEmpty && server.startsWith('rtmp://') && server.contains('/')) {
-      final i = server.lastIndexOf('/');
-      if (i > 'rtmp://'.length && i < server.length - 1) {
-        key = server.substring(i + 1);
-        server = server.substring(0, i);
-      }
-    }
     if (key.isEmpty) {
       setState(() => _status = 'Stream key missing. Paste full RTMP URL or provide key.');
+      return;
+    }
+    if (!server.startsWith('rtmp://')) {
+      setState(() => _status = 'Server must start with rtmp:// (not a watch link)');
       return;
     }
     setState(() {
@@ -304,8 +416,68 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       _customRtmpUrl = server;
       _customStreamKey = key;
       _customWatchUrl = watch;
-      _status = 'Destination: custom RTMP';
+      _status = 'Volunteer RTMP saved — tap Go Live when Studio shows LIVE';
     });
+    await _saveRtmpPrefs();
+  }
+
+  Widget _buildPreviewStack() {
+    final camReady = _camera?.value.isInitialized ?? false;
+    final portrait = MediaQuery.of(context).orientation == Orientation.portrait;
+    final overlayH = _androidCapture ? (portrait ? 140.0 : 120.0) : (portrait ? 110.0 : 96.0);
+    return GestureDetector(
+      onScaleStart: (_) => _pinchBaseZoom = _zoom,
+      onScaleUpdate: (d) => _setZoom(_pinchBaseZoom * d.scale),
+      child: Listener(
+        onPointerSignal: (event) {
+          if (event is PointerScrollEvent) {
+            _setZoom(_zoom + event.scrollDelta.dy * -0.002);
+          }
+        },
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (camReady) CameraPreview(_camera!),
+            if (_web != null)
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                height: overlayH,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xFF22D3A8), width: 2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: WebViewWidget(controller: _web!),
+                    ),
+                  ),
+                ),
+              ),
+            if (_live) const Positioned(top: 12, left: 12, child: _LiveBadge()),
+            if (camReady && _maxZoom > _minZoom)
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${_zoomDisplayFactor.toStringAsFixed(1)}×',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -326,9 +498,14 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
               tooltip: 'Open YouTube',
             ),
           IconButton(
+            icon: const Icon(Icons.hd),
+            onPressed: _openStreamSettings,
+            tooltip: 'Stream quality (${_quality.label})',
+          ),
+          IconButton(
             icon: const Icon(Icons.settings_input_antenna),
             onPressed: _chooseDestination,
-            tooltip: _useCustomDestination ? 'Destination: Custom RTMP' : 'Destination: YouTube OAuth',
+            tooltip: _useCustomDestination ? 'Volunteer stream key (Studio)' : 'Club YouTube OAuth',
           ),
           TextButton(
             onPressed: _openScoringMenu,
@@ -339,39 +516,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       body: isLandscape
           ? Row(
               children: [
-                Expanded(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (camReady) CameraPreview(_camera!),
-                      if (_web != null)
-                        Positioned(
-                          left: 8,
-                          right: 8,
-                          bottom: 8,
-                          height: _androidCapture ? 120 : 96,
-                          child: IgnorePointer(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                border: Border.all(color: const Color(0xFF22D3A8), width: 2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: WebViewWidget(controller: _web!),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (_live)
-                        const Positioned(
-                          top: 12,
-                          left: 12,
-                          child: _LiveBadge(),
-                        ),
-                    ],
-                  ),
-                ),
+                Expanded(child: _buildPreviewStack()),
                 SizedBox(
                   width: 270,
                   child: Material(
@@ -383,6 +528,13 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
                         live: _live,
                         busy: _busy,
                         camReady: camReady,
+                        qualityLabel: _quality.label,
+                        zoom: _zoom,
+                        minZoom: _minZoom,
+                        maxZoom: _maxZoom,
+                        zoomDisplay: _zoomDisplayFactor,
+                        onZoomChanged: _setZoom,
+                        onOpenQuality: _openStreamSettings,
                         onOpenScoring: _openScoringMenu,
                         onGoLive: _goLive,
                         onStop: _stop,
@@ -394,39 +546,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
             )
           : Column(
               children: [
-                Expanded(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (camReady) CameraPreview(_camera!),
-                      if (_web != null)
-                        Positioned(
-                          left: 8,
-                          right: 8,
-                          bottom: 8,
-                          height: _androidCapture ? 140 : 110,
-                          child: IgnorePointer(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                border: Border.all(color: const Color(0xFF22D3A8), width: 2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: WebViewWidget(controller: _web!),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (_live)
-                        const Positioned(
-                          top: 12,
-                          left: 12,
-                          child: _LiveBadge(),
-                        ),
-                    ],
-                  ),
-                ),
+                Expanded(child: _buildPreviewStack()),
                 Material(
                   color: Colors.black87,
                   child: Padding(
@@ -436,6 +556,13 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
                       live: _live,
                       busy: _busy,
                       camReady: camReady,
+                      qualityLabel: _quality.label,
+                      zoom: _zoom,
+                      minZoom: _minZoom,
+                      maxZoom: _maxZoom,
+                      zoomDisplay: _zoomDisplayFactor,
+                      onZoomChanged: _setZoom,
+                      onOpenQuality: _openStreamSettings,
                       onOpenScoring: _openScoringMenu,
                       onGoLive: _goLive,
                       onStop: _stop,
@@ -454,6 +581,13 @@ class _ControlPanel extends StatelessWidget {
     required this.live,
     required this.busy,
     required this.camReady,
+    required this.qualityLabel,
+    required this.zoom,
+    required this.minZoom,
+    required this.maxZoom,
+    required this.zoomDisplay,
+    required this.onZoomChanged,
+    required this.onOpenQuality,
     required this.onOpenScoring,
     required this.onGoLive,
     required this.onStop,
@@ -463,17 +597,54 @@ class _ControlPanel extends StatelessWidget {
   final bool live;
   final bool busy;
   final bool camReady;
+  final String qualityLabel;
+  final double zoom;
+  final double minZoom;
+  final double maxZoom;
+  final double zoomDisplay;
+  final ValueChanged<double> onZoomChanged;
+  final VoidCallback onOpenQuality;
   final VoidCallback onOpenScoring;
   final Future<void> Function() onGoLive;
   final Future<void> Function() onStop;
 
   @override
   Widget build(BuildContext context) {
+    final canZoom = camReady && maxZoom > minZoom;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (status != null)
           Text(status!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13)),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: onOpenQuality,
+          icon: const Icon(Icons.hd),
+          label: Text('Quality: $qualityLabel'),
+        ),
+        if (canZoom) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(Icons.zoom_out, size: 18),
+              Expanded(
+                child: Slider(
+                  value: zoom,
+                  min: minZoom,
+                  max: maxZoom,
+                  onChanged: onZoomChanged,
+                ),
+              ),
+              const Icon(Icons.zoom_in, size: 18),
+              Text('${zoomDisplay.toStringAsFixed(1)}×', style: const TextStyle(fontSize: 12)),
+            ],
+          ),
+          const Text(
+            'Pinch on preview to zoom (uses full camera range)',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: Colors.white54),
+          ),
+        ],
         const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: onOpenScoring,

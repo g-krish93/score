@@ -183,12 +183,32 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
                 padding: const EdgeInsets.all(16),
                 children: [
                   Card(
+                    color: const Color(0xFF0d2818),
                     child: Padding(
                       padding: const EdgeInsets.all(14),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const Text('YouTube destination',
+                          const Text('Volunteer streaming (recommended)',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Club YouTube account stays with the admin. Each week’s volunteer only needs the '
+                            'stream key from YouTube Studio — no Google login on their phone.\n\n'
+                            'Open a stream → antenna icon → paste Studio stream URL + key → Go Live.',
+                            style: TextStyle(color: Colors.white70, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text('Optional: club YouTube login',
                               style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 6),
                           Text(
@@ -238,7 +258,7 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
                     ),
                   ),
                   const Text(
-                    'Create a stream here or tap one below → Go Live streams straight to YouTube. '
+                    'Create a stream, open it, paste the Studio stream key (antenna icon), then Go Live. '
                     'Scoring: Auto, Manual, or BLE from the broadcast screen.',
                     style: TextStyle(color: Colors.white70),
                   ),
@@ -251,15 +271,13 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: FilledButton.icon(
-                        onPressed: (_youtubeOk && _youtubeLiveOk)
-                            ? () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => CreateStreamScreen(api: widget.api),
-                                  ),
-                                );
-                              }
-                            : null,
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => CreateStreamScreen(api: widget.api),
+                            ),
+                          );
+                        },
                         icon: const Icon(Icons.add),
                         label: const Text('Create your first stream'),
                       ),
@@ -281,8 +299,7 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
                 ],
               ),
             ),
-      floatingActionButton: (_youtubeOk && _youtubeLiveOk)
-          ? FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton.extended(
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
@@ -292,8 +309,7 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
               },
               icon: const Icon(Icons.add),
               label: const Text('New stream'),
-            )
-          : null,
+            ),
     );
   }
 }
