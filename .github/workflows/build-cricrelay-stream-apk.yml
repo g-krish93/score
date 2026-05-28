@@ -28,10 +28,11 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.24.5"
           channel: stable
           cache: true
 
-      - name: Regenerate Android/iOS (avoid stale Gradle files)
+      - name: Regenerate Android/iOS and apply overlay
         working-directory: cricrelay-stream
         run: |
           rm -rf android ios
@@ -39,21 +40,35 @@ jobs:
           chmod +x android-custom/apply_android_overlay.sh
           bash android-custom/apply_android_overlay.sh
 
+      - name: Dart analyze
+        working-directory: cricrelay-stream
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+
       - name: Build release APK
         working-directory: cricrelay-stream
         run: |
-          set -o pipefail
-          flutter pub get
-          # Direct Gradle build: avoids Flutter "couldn't find .apk" when outputs land under android/app/build.
-          cd android
-          chmod +x gradlew
-          ./gradlew :app:assembleRelease --no-daemon 2>&1 | tee ../../stream-apk-build.log
-          cd ..
-          tail -n 80 ../stream-apk-build.log
-          APK="$(find android/app/build build/app/outputs -type f \( -name 'app-release.apk' -o -name 'app-release-unsigned.apk' \) 2>/dev/null | head -1)"
-          if [ -z "$APK" ]; then
+          set -euo pipefail
+          flutter --version
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          if (set -o pipefail; flutter build apk --release 2>&1 | tee ../stream-apk-build.log); then
+            echo "flutter build apk succeeded"
+          else
+            echo "flutter build apk failed; trying gradlew"
+            cd android
+            chmod +x gradlew
+            ./gradlew :app:assembleRelease --no-daemon 2>&1 | tee -a ../../stream-apk-build.log
+            cd ..
+            APK=""
+          fi
+          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
+            APK="$(find android/app/build build/app/outputs -type f \( -name 'app-release.apk' -o -name 'app-release-unsigned.apk' \) 2>/dev/null | head -1)"
+          fi
+          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
             echo "No release APK found:"
             find android build -type f -name '*.apk' 2>/dev/null || true
+            tail -n 100 ../stream-apk-build.log || true
             exit 1
           fi
           mkdir -p build/app/outputs/flutter-apk

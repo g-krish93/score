@@ -1,13 +1,11 @@
-name: Deploy to EC2
+# Optional OCI deploy — manual only. Production uses deploy.yml (EC2).
+name: Deploy to OCI Compute
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:
-    # APK bot commits use [skip deploy]; EC2 is updated by the APK workflow SSH step.
-    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip deploy]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Deploy
@@ -15,22 +13,19 @@ jobs:
         env:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_KEY }}
+          host: ${{ secrets.OCI_COMPUTE_HOST }}
+          username: opc
+          key: ${{ secrets.OCI_SSH_KEY }}
           envs: SMTP_PASSWORD
           script: |
             set -e
             cd /app
             git pull origin main
-            # Keep systemd unit in sync with repo (python3 -m gunicorn, optional .env).
             if [ -f deploy/cricket.service ]; then
               sudo install -m 644 deploy/cricket.service /etc/systemd/system/cricket.service
               sudo systemctl daemon-reload
             fi
-            # Gunicorn runs as root and loads /usr/local/... site-packages; user pip would install under ~/.local and the worker would crash on import (exit status 3).
-            # Amazon Linux often ships requests via rpm — pip cannot uninstall it; --ignore-installed lays down wheels in site-packages without removing the RPM.
-            sudo pip3 install --ignore-installed -r requirements.txt
+            sudo pip3 install --break-system-packages --ignore-installed -r requirements.txt
             if [ -f deploy/persist-auth-env.sh ]; then
               sudo bash deploy/persist-auth-env.sh
             fi
