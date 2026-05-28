@@ -44,9 +44,21 @@ jobs:
         run: |
           set -o pipefail
           flutter pub get
-          flutter build apk --release 2>&1 | tee ../stream-apk-build.log
-          tail -n 100 ../stream-apk-build.log
-          test -f build/app/outputs/flutter-apk/app-release.apk
+          # Direct Gradle build: avoids Flutter "couldn't find .apk" when outputs land under android/app/build.
+          cd android
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon 2>&1 | tee ../../stream-apk-build.log
+          cd ..
+          tail -n 80 ../stream-apk-build.log
+          APK="$(find android/app/build build/app/outputs -type f \( -name 'app-release.apk' -o -name 'app-release-unsigned.apk' \) 2>/dev/null | head -1)"
+          if [ -z "$APK" ]; then
+            echo "No release APK found:"
+            find android build -type f -name '*.apk' 2>/dev/null || true
+            exit 1
+          fi
+          mkdir -p build/app/outputs/flutter-apk
+          cp "$APK" build/app/outputs/flutter-apk/app-release.apk
+          ls -la build/app/outputs/flutter-apk/app-release.apk
 
       - name: Upload build log on failure
         if: failure()
@@ -59,11 +71,11 @@ jobs:
         run: |
           APK="cricrelay-stream/build/app/outputs/flutter-apk/app-release.apk"
           if [ ! -f "$APK" ]; then
-            APK="$(find cricrelay-stream/build -name 'app-release.apk' -type f | head -1)"
+            APK="$(find cricrelay-stream/android/app/build cricrelay-stream/build -type f \( -name 'app-release.apk' -o -name 'app-release-unsigned.apk' \) 2>/dev/null | head -1)"
           fi
           if [ -z "$APK" ] || [ ! -f "$APK" ]; then
-            echo "No APK found under cricrelay-stream/build"
-            find cricrelay-stream/build -type f -name '*.apk' 2>/dev/null || true
+            echo "No APK found:"
+            find cricrelay-stream/android cricrelay-stream/build -type f -name '*.apk' 2>/dev/null || true
             exit 1
           fi
           cp "$APK" static/cricrelay-stream.apk
