@@ -20,7 +20,12 @@ class StreamCaptureService : Service(), ConnectChecker {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) return START_NOT_STICKY
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
-        val data = intent.getParcelableExtra<Intent>(EXTRA_DATA)
+        val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(EXTRA_DATA, Intent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(EXTRA_DATA)
+        }
         val rtmpUrl = intent.getStringExtra(EXTRA_RTMP_URL) ?: ""
         val streamKey = intent.getStringExtra(EXTRA_STREAM_KEY) ?: ""
         startForeground(NOTIF_ID, buildNotification())

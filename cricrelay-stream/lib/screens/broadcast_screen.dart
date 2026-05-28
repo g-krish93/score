@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:rtmp_broadcaster/camera.dart';
+import 'package:camera/camera.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -110,30 +110,22 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   }
 
   Future<void> _startEncoder(GoLiveResult cred) async {
-    if (_androidCapture) {
-      await RtmpPlatform.startStream(
-        rtmpUrl: cred.rtmpUrl,
-        streamKey: cred.streamKey,
-        overlayUrl: cred.overlayEmbedUrl,
-      );
-      return;
+    if (!Platform.isAndroid) {
+      throw Exception('In-app YouTube streaming is Android-only for now. Use an Android device.');
     }
-    if (_camera == null) {
-      throw Exception('Camera not ready');
+    if (!_androidCapture) {
+      throw Exception('Screen capture is not available on this device.');
     }
-    final url = cred.rtmpUrl.endsWith('/')
-        ? '${cred.rtmpUrl}${cred.streamKey}'
-        : '${cred.rtmpUrl}/${cred.streamKey}';
-    await _camera!.startVideoStreaming(url);
+    await RtmpPlatform.startStream(
+      rtmpUrl: cred.rtmpUrl,
+      streamKey: cred.streamKey,
+      overlayUrl: cred.overlayEmbedUrl,
+    );
   }
 
   Future<void> _stopEncoder() async {
-    if (_androidCapture) {
+    if (Platform.isAndroid && _androidCapture) {
       await RtmpPlatform.stopStream();
-      return;
-    }
-    if (_camera != null && _camera!.value.isStreamingVideoRtmp) {
-      await _camera!.stopVideoStreaming();
     }
   }
 
