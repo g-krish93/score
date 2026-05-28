@@ -170,6 +170,10 @@ def _youtube_error_message(exc: requests.HTTPError) -> str:
 
 def verify_live_streaming_access(access_token: str) -> dict[str, Any]:
     """Confirm token can call YouTube Live APIs (not just read channel name)."""
+    studio_hint = (
+        "Enable live streaming on your channel: open YouTube Studio → Create → Go live, "
+        "or visit https://www.youtube.com/live_dashboard (first time may take up to 24 hours). "
+    )
     try:
         youtube_get(
             access_token,
@@ -179,14 +183,18 @@ def verify_live_streaming_access(access_token: str) -> dict[str, Any]:
         return {"ok": True, "message": ""}
     except requests.HTTPError as exc:
         msg = _youtube_error_message(exc)
+        low = msg.lower()
+        if "livestreamingnotenabled" in low or "live streaming" in low and "not enabled" in low:
+            return {"ok": False, "message": f"{msg}. {studio_hint}"}
         hint = (
-            "Disconnect YouTube in the app, revoke CricRelay at "
-            "https://myaccount.google.com/permissions, then Connect YouTube again. "
-            "On Google's screen, allow access to manage your YouTube account (live streaming)."
+            "Revoke CricRelay at https://myaccount.google.com/permissions, reconnect, "
+            'and allow "Manage your YouTube account". '
         )
         if exc.response is not None and exc.response.status_code == 403:
-            return {"ok": False, "message": f"{msg}. {hint}"}
-        return {"ok": False, "message": msg or hint}
+            if "insufficient" in low or "scope" in low:
+                return {"ok": False, "message": f"{msg}. {hint}"}
+            return {"ok": False, "message": f"{msg}. {studio_hint}{hint}"}
+        return {"ok": False, "message": msg or studio_hint}
 
 
 def create_live_broadcast(access_token: str, title: str, description: str = "") -> dict[str, Any]:

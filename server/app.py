@@ -2210,17 +2210,26 @@ def dashboard_youtube_callback():
         live_ok = live_check.get("ok")
         live_msg = (live_check.get("message") or "").strip()
         extra = (
-            "<p style='color:#22c55e'>Live streaming access: OK</p>"
+            "<p style='color:#22c55e'>Live streaming API: OK — you can use Go Live from the app.</p>"
             if live_ok
-            else f"<p style='color:#f97316'>Live streaming access: not granted.<br>{live_msg}</p>"
-            "<p>Revoke CricRelay at <a href='https://myaccount.google.com/permissions'>Google permissions</a>, "
-            "then tap Connect YouTube again and allow <b>manage your YouTube account</b>.</p>"
+            else (
+                f"<p style='color:#f97316'>Live streaming API: not ready yet.</p>"
+                f"<p>{live_msg}</p>"
+                "<p><b>Enable live on your channel:</b> "
+                "<a href='https://studio.youtube.com/channel/UC/livestreaming'>YouTube Studio → Go live</a> "
+                "(phone verification; up to 24h wait for new channels).</p>"
+                "<p>Then revoke CricRelay at "
+                "<a href='https://myaccount.google.com/permissions'>Google permissions</a> "
+                "and connect again, allowing <b>Manage your YouTube account</b>.</p>"
+            )
         )
         return (
-            "<!DOCTYPE html><html><body style='font-family:sans-serif;padding:2rem'>"
-            f"<h2>YouTube connected</h2><p>{ch_title}</p>"
+            "<!DOCTYPE html><html><body style='font-family:sans-serif;padding:2rem;max-width:36rem'>"
+            f"<h2>YouTube connected</h2><p><b>{ch_title}</b></p>"
             f"{extra}"
-            "<p>Return to the CricRelay Live app.</p></body></html>"
+            "<p><b>Next:</b> switch back to the <b>CricRelay Live</b> app "
+            "(it will refresh). Or use <b>Custom RTMP</b> in the broadcast screen "
+            "with a stream key from YouTube Studio.</p></body></html>"
         )
     return redirect(url_for("dashboard"))
 

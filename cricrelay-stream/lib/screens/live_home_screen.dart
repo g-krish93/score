@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/api.dart';
 import 'broadcast_screen.dart';
 import 'create_stream_screen.dart';
 import 'login_screen.dart';
-import 'youtube_connect_screen.dart';
 
 /// Club home: streams list, YouTube connect, one-tap go live (Prism-style entry).
 class LiveHomeScreen extends StatefulWidget {
@@ -16,7 +16,7 @@ class LiveHomeScreen extends StatefulWidget {
   State<LiveHomeScreen> createState() => _LiveHomeScreenState();
 }
 
-class _LiveHomeScreenState extends State<LiveHomeScreen> {
+class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObserver {
   List<StreamMatch> _streams = [];
   bool _loading = true;
   String? _error;
@@ -29,7 +29,21 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refresh();
+    }
   }
 
   Future<void> _refresh() async {
@@ -93,10 +107,38 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> {
     try {
       final url = await widget.api.youtubeAuthorizeUrl();
       if (!mounted) return;
-      final ok = await Navigator.of(context).push<bool>(
-        MaterialPageRoute(builder: (_) => YoutubeConnectScreen(authorizeUrl: url)),
+      if (url.isEmpty) {
+        throw Exception('No authorize URL from server');
+      }
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Connect in browser'),
+          content: const Text(
+            'Google does not allow sign-in inside the app window.\n\n'
+            'We will open Chrome (or your browser). Sign in, allow '
+            '"Manage your YouTube account", then switch back to CricRelay Live.\n\n'
+            'The app refreshes automatically when you return.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Open browser')),
+          ],
+        ),
       );
-      if (ok == true) await _refresh();
+      if (proceed != true || !mounted) return;
+      final uri = Uri.parse(url);
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) {
+        throw Exception('Could not open browser. Copy link from dashboard on cricrelay.co.uk');
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Complete sign-in in the browser, then return here.'),
+          duration: Duration(seconds: 6),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
