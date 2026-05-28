@@ -36,15 +36,8 @@ jobs:
         run: |
           rm -rf android ios
           flutter create . --platforms=android,ios --org uk.co.cricrelay --project-name stream
-          cp -r android-custom/uk android/app/src/main/kotlin/
-          cp android-custom/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-          cp android-custom/app_build.gradle android/app/build.gradle
-          if [ -f android/settings.gradle ]; then
-            grep -q jitpack.io android/settings.gradle || sed -i '/mavenCentral()/a\        maven { url "https://jitpack.io" }' android/settings.gradle
-          fi
-          if [ -f android/settings.gradle.kts ]; then
-            grep -q jitpack.io android/settings.gradle.kts || sed -i '/mavenCentral()/a\        maven { url = uri("https://jitpack.io") }' android/settings.gradle.kts
-          fi
+          chmod +x android-custom/apply_android_overlay.sh
+          bash android-custom/apply_android_overlay.sh
 
       - name: Build release APK
         working-directory: cricrelay-stream
