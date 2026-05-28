@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/api.dart';
-import 'streams_screen.dart';
+import 'live_home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.api});
@@ -38,7 +38,7 @@ class _LoginScreenState extends State<LoginScreen> {
       await api.login(_emailCtrl.text.trim(), _passCtrl.text);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => StreamsScreen(api: api)),
+        MaterialPageRoute(builder: (_) => LiveHomeScreen(api: api)),
       );
     } catch (e) {
       setState(() => _error = e.toString());
@@ -50,7 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('CricRelay Stream')),
+      appBar: AppBar(title: const Text('CricRelay Live')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -97,7 +97,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: 16),
           const Text(
-            'Connect YouTube once in the CricRelay dashboard (Streams → Stream to YouTube).',
+            'New club? Register at cricrelay.co.uk first, then log in here with the same email and password.',
             style: TextStyle(color: Colors.white70, fontSize: 13),
           ),
         ],

@@ -58,6 +58,32 @@ def stream_api_auth_required(view: Callable):
     return wrapped
 
 
+def _youtube_oauth_serializer():
+    from flask import current_app
+
+    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="cricrelay-youtube-oauth")
+
+
+def issue_youtube_oauth_state(org_id: str) -> str:
+    return _youtube_oauth_serializer().dumps({"oid": org_id})
+
+
+def org_id_from_youtube_oauth_state(state: str) -> str | None:
+    try:
+        payload = _youtube_oauth_serializer().loads(state, max_age=900)
+    except (SignatureExpired, BadSignature):
+        return None
+    oid = str((payload or {}).get("oid") or "").strip()
+    return oid or None
+
+
+def relay_match_for_org(org: Organization, match_slug: str) -> RelayMatch | None:
+    slug = (match_slug or "").strip()
+    if not slug:
+        return None
+    return RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
+
+
 def relay_matches_for_org(org: Organization) -> list[dict[str, Any]]:
     rows = (
         RelayMatch.query.filter_by(organization_id=org.id)

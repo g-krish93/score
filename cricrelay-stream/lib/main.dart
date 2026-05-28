@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'screens/live_home_screen.dart';
 import 'screens/login_screen.dart';
-import 'screens/streams_screen.dart';
 import 'services/api.dart';
 
 void main() {
@@ -21,7 +21,7 @@ class CricRelayStreamApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'CricRelay Stream',
+      title: 'CricRelay Live',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF22D3A8),
@@ -55,7 +55,7 @@ class _BootstrapState extends State<_Bootstrap> {
     if (!mounted) return;
     setState(() {
       _home = api.hasToken
-          ? StreamsScreen(api: api)
+          ? LiveHomeScreen(api: api)
           : LoginScreen(api: api);
     });
   }

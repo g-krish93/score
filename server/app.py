@@ -55,6 +55,9 @@ from .scraper_worker import get_live_snapshot, register_relay_worker
 from .stream_api import (
     bearer_org_from_request,
     issue_stream_token,
+    issue_youtube_oauth_state,
+    org_id_from_youtube_oauth_state,
+    relay_match_for_org,
     relay_matches_for_org,
     stream_api_auth_required,
 )
@@ -1145,49 +1148,47 @@ def download_pcs_relay_apk():
     )
 
 
-@app.post("/dashboard/matches")
-@login_required
-def dashboard_add_match():
-    org = _org_from_session()
-    relay_source = (request.form.get("relay_source") or "scraper").strip().lower()
-    if relay_source not in {"scraper", "pcs_ble"}:
-        relay_source = "scraper"
-    if relay_source == "pcs_ble":
-        return dashboard_add_pcs_ble_match(org)
+def _stream_slot_error(org: Organization) -> str | None:
     n_relays = RelayMatch.query.filter_by(organization_id=org.id).count()
     if n_relays >= MAX_LIVE_STREAMS_PER_CLUB:
-        flash(
-            f"You can run up to {MAX_LIVE_STREAMS_PER_CLUB} live streams per club. Pause or remove one to add another.",
-            "error",
+        return (
+            f"You can run up to {MAX_LIVE_STREAMS_PER_CLUB} live streams per club. "
+            "Pause or remove one to add another."
         )
-        return redirect(url_for("dashboard"))
-    mid = (request.form.get("play_cricket_match_id") or "").strip()
+    return None
+
+
+def _create_play_cricket_stream_org(
+    org: Organization,
+    play_cricket_match_id: str,
+    label: str = "",
+    play_cricket_base_url: str = "",
+) -> tuple[RelayMatch | None, str | None]:
+    slot_err = _stream_slot_error(org)
+    if slot_err:
+        return None, slot_err
+    mid = (play_cricket_match_id or "").strip()
     if not mid or not re.fullmatch(r"\d+", mid):
-        flash(
-            "Match ID must be the numeric fixture id (from …/website/results/7560599 or …match_details?id=7560599).",
-            "error",
+        return None, (
+            "Match ID must be the numeric fixture id "
+            "(from …/website/results/7560599 or …match_details?id=7560599)."
         )
-        return redirect(url_for("dashboard"))
-    base_override_raw = (request.form.get("play_cricket_base_url") or "").strip()
+    base_override_raw = (play_cricket_base_url or "").strip()
     if base_override_raw:
         base = normalize_play_cricket_club_root(base_override_raw)
         if not base:
-            flash(
-                "That Play-Cricket club code was not recognised. Use letters and numbers only, "
-                "like bmacc for https://bmacc.play-cricket.com.",
-                "error",
+            return None, (
+                "That Play-Cricket club code was not recognised. "
+                "Use letters and numbers only, like bmacc for https://bmacc.play-cricket.com."
             )
-            return redirect(url_for("dashboard"))
     else:
         base = _org_play_cricket_root(org)
     if "play-cricket.com" not in base.lower():
-        flash("Play-Cricket club site must be on play-cricket.com.", "error")
-        return redirect(url_for("dashboard"))
+        return None, "Play-Cricket club site must be on play-cricket.com."
     full_url = canonicalize_play_cricket_scrape_url(build_play_cricket_scrape_url(base, mid))
     existing = RelayMatch.query.filter_by(organization_id=org.id, play_cricket_match_id=mid).first()
     if existing:
-        flash("This Play-Cricket match is already linked for your club.", "error")
-        return redirect(url_for("dashboard"))
+        return None, "This Play-Cricket match is already linked for your club."
     base_slug = sanitize_match_id(f"{org.slug}-{mid}")
     score_slug = base_slug
     for _ in range(16):
@@ -1195,7 +1196,7 @@ def dashboard_add_match():
         if not taken:
             break
         score_slug = sanitize_match_id(f"{org.slug}-{mid}-{secrets.token_hex(3)}")
-    stream_label = (request.form.get("stream_label") or "").strip()[:120]
+    stream_label = (label or "").strip()[:120]
     row = RelayMatch(
         organization_id=org.id,
         play_cricket_match_id=mid,
@@ -1210,25 +1211,18 @@ def dashboard_add_match():
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
-        flash("Could not create that relay (duplicate or conflict).", "error")
-        return redirect(url_for("dashboard"))
+        return None, "Could not create that stream (duplicate or conflict)."
     apply_relay_to_score_match(score_slug, full_url)
-    flash("Stream ready — copy your overlay URL into Prism or OBS.", "success")
-    return redirect(url_for("dashboard"))
+    return row, None
 
 
-def dashboard_add_pcs_ble_match(org: Organization):
-    n_relays = RelayMatch.query.filter_by(organization_id=org.id).count()
-    if n_relays >= MAX_LIVE_STREAMS_PER_CLUB:
-        flash(
-            f"You can run up to {MAX_LIVE_STREAMS_PER_CLUB} live streams per club. Pause or remove one to add another.",
-            "error",
-        )
-        return redirect(url_for("dashboard"))
-    stream_label = (request.form.get("stream_label") or "").strip()[:120]
+def _create_pcs_ble_stream_org(org: Organization, label: str) -> tuple[RelayMatch | None, str | None]:
+    slot_err = _stream_slot_error(org)
+    if slot_err:
+        return None, slot_err
+    stream_label = (label or "").strip()[:120]
     if not stream_label:
-        flash("Label is required for a PCS BLE stream (e.g. 1st XI vs Rivals).", "error")
-        return redirect(url_for("dashboard"))
+        return None, "Label is required for a PCS BLE stream (e.g. 1st XI vs Rivals)."
     mid = f"ble-{secrets.token_hex(4)}"
     base_slug = sanitize_match_id(f"{org.slug}-pcs-{mid}")
     score_slug = base_slug
@@ -1251,9 +1245,38 @@ def dashboard_add_pcs_ble_match(org: Organization):
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
-        flash("Could not create PCS BLE stream.", "error")
-        return redirect(url_for("dashboard"))
+        return None, "Could not create PCS BLE stream."
     apply_pcs_ble_to_score_match(score_slug, ingest_token, label=stream_label)
+    return row, None
+
+
+@app.post("/dashboard/matches")
+@login_required
+def dashboard_add_match():
+    org = _org_from_session()
+    relay_source = (request.form.get("relay_source") or "scraper").strip().lower()
+    if relay_source not in {"scraper", "pcs_ble"}:
+        relay_source = "scraper"
+    if relay_source == "pcs_ble":
+        return dashboard_add_pcs_ble_match(org)
+    row, err = _create_play_cricket_stream_org(
+        org,
+        request.form.get("play_cricket_match_id") or "",
+        request.form.get("stream_label") or "",
+        request.form.get("play_cricket_base_url") or "",
+    )
+    if err:
+        flash(err, "error")
+        return redirect(url_for("dashboard"))
+    flash("Stream ready — copy your overlay URL into Prism or OBS.", "success")
+    return redirect(url_for("dashboard"))
+
+
+def dashboard_add_pcs_ble_match(org: Organization):
+    row, err = _create_pcs_ble_stream_org(org, request.form.get("stream_label") or "")
+    if err:
+        flash(err, "error")
+        return redirect(url_for("dashboard"))
     flash(
         "PCS BLE stream ready (R&D) — install the relay APK, paste ingest URL + token, then copy the overlay URL.",
         "success",
@@ -2097,19 +2120,28 @@ def dashboard_youtube_connect():
 
 
 @app.get("/dashboard/youtube/callback")
-@login_required
 def dashboard_youtube_callback():
     org = _org_from_session()
+    state = request.args.get("state") or ""
+    if org is None:
+        mobile_oid = org_id_from_youtube_oauth_state(state)
+        if mobile_oid:
+            org = db.session.get(Organization, mobile_oid)
+    if org is None:
+        flash("Sign in to the dashboard, then connect YouTube.", "error")
+        return redirect(url_for("cricrelay_login"))
     err = request.args.get("error")
     if err:
         flash(f"YouTube authorization failed: {err}", "error")
         return redirect(url_for("dashboard"))
-    state = request.args.get("state") or ""
-    if state != session.pop("youtube_oauth_state", None):
+    web_state = session.pop("youtube_oauth_state", None)
+    web_oid = session.pop("youtube_oauth_org_id", None)
+    if web_state is not None:
+        if state != web_state or web_oid != org.id:
+            flash("Invalid OAuth state. Try connecting YouTube again.", "error")
+            return redirect(url_for("dashboard"))
+    elif org_id_from_youtube_oauth_state(state) != org.id:
         flash("Invalid OAuth state. Try connecting YouTube again.", "error")
-        return redirect(url_for("dashboard"))
-    if session.pop("youtube_oauth_org_id", None) != org.id:
-        flash("Session mismatch. Try again.", "error")
         return redirect(url_for("dashboard"))
     code = request.args.get("code")
     if not code:
@@ -2132,6 +2164,13 @@ def dashboard_youtube_callback():
         flash(f"YouTube connected: {ch_title}", "success")
     except Exception as exc:
         flash(f"Could not connect YouTube: {exc}", "error")
+        return redirect(url_for("dashboard"))
+    if web_state is None:
+        return (
+            "<!DOCTYPE html><html><body style='font-family:sans-serif;padding:2rem'>"
+            f"<h2>YouTube connected</h2><p>{ch_title}</p>"
+            "<p>Return to the CricRelay Live app.</p></body></html>"
+        )
     return redirect(url_for("dashboard"))
 
 
@@ -2176,6 +2215,143 @@ def api_stream_login():
 @stream_api_auth_required
 def api_list_streams(org: Organization):
     return jsonify({"ok": True, "streams": relay_matches_for_org(org)})
+
+
+@app.get("/api/fixtures")
+@stream_api_auth_required
+def api_fixtures(org: Organization):
+    ctx = _dashboard_fixture_data(org)
+    fixtures = []
+    for f in ctx.get("fixtures") or []:
+        if not isinstance(f, dict):
+            continue
+        mid = str(f.get("match_id") or f.get("id") or "").strip()
+        if not mid:
+            continue
+        fixtures.append(
+            {
+                "match_id": mid,
+                "title": (f.get("title") or f.get("label") or "").strip(),
+                "url": (f.get("url") or "").strip(),
+            }
+        )
+    return jsonify(
+        {
+            "ok": True,
+            "fixtures": fixtures,
+            "active_match_ids": sorted(ctx.get("active_ids") or []),
+            "fixture_source_url": ctx.get("fixture_source_url") or "",
+            "error": ctx.get("fixtures_error"),
+            "slots_used": ctx.get("stream_slots_used"),
+            "slots_total": ctx.get("stream_slots_total"),
+        }
+    )
+
+
+@app.post("/api/streams")
+@stream_api_auth_required
+def api_create_stream(org: Organization):
+    data = request.get_json(silent=True) or {}
+    kind = str(data.get("type") or "play_cricket").strip().lower()
+    if kind in {"pcs_ble", "ble"}:
+        row, err = _create_pcs_ble_stream_org(org, str(data.get("label") or ""))
+    else:
+        row, err = _create_play_cricket_stream_org(
+            org,
+            str(data.get("play_cricket_match_id") or ""),
+            str(data.get("label") or ""),
+            str(data.get("play_cricket_base_url") or ""),
+        )
+    if err:
+        return jsonify({"error": err}), 400
+    slug = row.score_match_slug
+    base = _public_base_url().rstrip("/")
+    stream = {
+        "slug": slug,
+        "label": row.label or row.play_cricket_match_id,
+        "play_cricket_match_id": row.play_cricket_match_id,
+        "relay_source": getattr(row, "relay_source", None) or "scraper",
+        "overlay_embed_url": f"{base}/m/{slug}/stream?embed=1" if base else f"/m/{slug}/stream?embed=1",
+    }
+    return jsonify({"ok": True, "stream": stream})
+
+
+@app.get("/api/stream/youtube/authorize")
+@stream_api_auth_required
+def api_youtube_authorize(org: Organization):
+    if not yt.oauth_configured():
+        return jsonify({"error": "YouTube OAuth is not configured on this server"}), 503
+    redirect_uri = _youtube_redirect_uri()
+    if not redirect_uri:
+        return jsonify({"error": "Set PUBLIC_BASE_URL or YOUTUBE_REDIRECT_URI"}), 503
+    state = issue_youtube_oauth_state(org.id)
+    return jsonify(
+        {
+            "ok": True,
+            "authorize_url": yt.build_authorize_url(redirect_uri, state),
+        }
+    )
+
+
+@app.get("/api/match/<match_slug>/scoring")
+@stream_api_auth_required
+def api_get_scoring(org: Organization, match_slug: str):
+    slug = sanitize_match_id(match_slug)
+    row = relay_match_for_org(org, slug)
+    if not row:
+        return jsonify({"error": "unknown stream"}), 404
+    with match_context(slug):
+        merge_missing_state_keys(state)
+        relay_mode = (state.get("relay_mode") or "manual").strip().lower()
+        pcs_token = (state.get("pcs_ingest_token") or "").strip()
+    mode_map = {"play_cricket": "auto", "manual": "manual", "pcs_ble": "ble"}
+    app_mode = mode_map.get(relay_mode, "manual")
+    base = _public_base_url().rstrip("/")
+    pcs_ingest_url = f"{base}/relay/pcs-ingest?match={slug}" if base else f"/relay/pcs-ingest?match={slug}"
+    return jsonify(
+        {
+            "ok": True,
+            "mode": app_mode,
+            "relay_mode": relay_mode,
+            "relay_source": getattr(row, "relay_source", None) or "scraper",
+            "manual_input_url": f"{base}/m/{slug}/input" if base else f"/m/{slug}/input",
+            "overlay_embed_url": f"{base}/m/{slug}/stream?embed=1" if base else f"/m/{slug}/stream?embed=1",
+            "pcs_ingest_url": pcs_ingest_url,
+            "pcs_ingest_token": pcs_token,
+            "pcs_relay_apk_url": f"{base}/download/pcs-relay.apk" if base else "/download/pcs-relay.apk",
+        }
+    )
+
+
+@app.post("/api/match/<match_slug>/scoring")
+@stream_api_auth_required
+def api_set_scoring(org: Organization, match_slug: str):
+    slug = sanitize_match_id(match_slug)
+    row = relay_match_for_org(org, slug)
+    if not row:
+        return jsonify({"error": "unknown stream"}), 404
+    data = request.get_json(silent=True) or {}
+    mode = str(data.get("mode") or "").strip().lower()
+    if mode not in {"auto", "manual", "ble"}:
+        return jsonify({"error": "mode must be auto, manual, or ble"}), 400
+    if mode == "auto":
+        apply_relay_to_score_match(slug, row.full_scrape_url)
+        row.relay_source = "scraper"
+    elif mode == "manual":
+        with match_context(slug):
+            merge_missing_state_keys(state)
+            state["relay_mode"] = "manual"
+            state["relay_wrapper"] = None
+            state["relay_last_error"] = None
+            save_state()
+    else:
+        with match_context(slug):
+            merge_missing_state_keys(state)
+            token = (state.get("pcs_ingest_token") or "").strip() or secrets.token_urlsafe(24)
+        apply_pcs_ble_to_score_match(slug, token, row.label or "")
+        row.relay_source = "pcs_ble"
+    db.session.commit()
+    return api_get_scoring(org, slug)
 
 
 @app.get("/api/stream/youtube-status")
