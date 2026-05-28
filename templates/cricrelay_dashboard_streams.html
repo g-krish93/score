@@ -43,10 +43,18 @@
       <a class="cr-btn cr-btn-primary cr-btn-sm" href="{{ url_for('dashboard_youtube_connect') }}">Connect YouTube</a>
       {% endif %}
       {% if stream_apk_available %}
-      <a class="cr-btn cr-btn-primary cr-btn-sm" href="{{ stream_apk_download_url }}">Download Stream app (APK)</a>
+      <a class="cr-btn cr-btn-primary cr-btn-sm" href="{{ stream_apk_download_url }}">Download Android (APK)</a>
+      {% endif %}
+      {% if stream_ipa_available %}
+      <a class="cr-btn cr-btn-primary cr-btn-sm" href="{{ stream_ios_ota_install_url }}">Install on iPhone (Safari)</a>
+      <a class="cr-btn cr-btn-secondary cr-btn-sm" href="{{ stream_ipa_download_url }}">Download IPA</a>
       {% endif %}
     </div>
-    <p class="cr-help" style="margin:10px 0 0;">iOS: build from <code class="cr-code">cricrelay-stream/</code> via TestFlight (see README).</p>
+    {% if stream_ipa_available %}
+    <p class="cr-help" style="margin:10px 0 0;">iPhone: use <strong>Install on iPhone</strong> in Safari, then trust the developer in Settings → General → VPN &amp; Device Management.</p>
+    {% elif not stream_apk_available %}
+    <p class="cr-help" style="margin:10px 0 0;">App builds appear here after GitHub Actions runs (Android always; iOS needs Apple signing secrets).</p>
+    {% endif %}
   </div>
 
   <div class="cr-card">

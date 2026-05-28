@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/api.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_download_card.dart';
 import '../widgets/ui_kit.dart';
 import 'broadcast_screen.dart';
 import 'create_stream_screen.dart';
@@ -215,6 +216,7 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
                 padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, 100),
                 children: [
                   const SizedBox(height: AppSpacing.sm),
+                  AppDownloadCard(api: widget.api),
                   const CrInfoBanner(
                     title: 'Volunteer streaming',
                     body:

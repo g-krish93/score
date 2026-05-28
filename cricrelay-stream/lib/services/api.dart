@@ -99,6 +99,18 @@ class CricRelayApi {
     return body;
   }
 
+  Future<StreamAppBuilds> getAppBuilds() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/stream/app-builds'),
+      headers: _headers,
+    );
+    final body = _parseJsonResponse(res, fallback: 'Failed to load app downloads');
+    if (res.statusCode != 200) {
+      throw Exception(body['error']?.toString() ?? 'Failed to load app downloads');
+    }
+    return StreamAppBuilds.fromJson(body);
+  }
+
   Future<List<StreamMatch>> listStreams() async {
     final res = await http.get(
       Uri.parse('$baseUrl/api/streams'),
@@ -397,6 +409,59 @@ class GoLiveResult {
         watchUrl: (j['watch_url'] ?? '').toString(),
         overlayEmbedUrl: (j['overlay_embed_url'] ?? '').toString(),
       );
+}
+
+class StreamAppBuilds {
+  StreamAppBuilds({
+    required this.version,
+    required this.android,
+    required this.ios,
+  });
+
+  final String version;
+  final StreamAppPlatformBuild android;
+  final StreamAppPlatformBuild ios;
+
+  factory StreamAppBuilds.fromJson(Map<String, dynamic> j) {
+    return StreamAppBuilds(
+      version: (j['version'] ?? '').toString(),
+      android: StreamAppPlatformBuild.fromJson(
+        Map<String, dynamic>.from(j['android'] as Map? ?? {}),
+      ),
+      ios: StreamAppPlatformBuild.fromJson(
+        Map<String, dynamic>.from(j['ios'] as Map? ?? {}),
+      ),
+    );
+  }
+}
+
+class StreamAppPlatformBuild {
+  StreamAppPlatformBuild({
+    required this.available,
+    this.url,
+    this.otaInstallUrl,
+    this.label = '',
+    this.installNote = '',
+    this.streamingNote = '',
+  });
+
+  final bool available;
+  final String? url;
+  final String? otaInstallUrl;
+  final String label;
+  final String installNote;
+  final String streamingNote;
+
+  factory StreamAppPlatformBuild.fromJson(Map<String, dynamic> j) {
+    return StreamAppPlatformBuild(
+      available: j['available'] == true,
+      url: j['url']?.toString(),
+      otaInstallUrl: j['ota_install_url']?.toString(),
+      label: (j['label'] ?? '').toString(),
+      installNote: (j['install_note'] ?? '').toString(),
+      streamingNote: (j['streaming_note'] ?? '').toString(),
+    );
+  }
 }
 
 class ScoringConfig {

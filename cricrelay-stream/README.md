@@ -22,7 +22,11 @@ On Android, **Go Live** streams the **rear camera** plus a **scoreboard overlay*
 
 ## iOS
 
-Uses `rtmp_broadcaster` camera RTMP; overlay appears in preview. Full window capture (burn-in) is Android-first; use landscape + score WebView at bottom of preview.
+GitHub Actions builds iOS on `macos-14` when [Apple signing secrets](docs/IOS_CI_SETUP.md) are set. The IPA is served at `/download/cricrelay-stream.ipa` with an OTA install link for Safari.
+
+After login, the app and dashboard show **Android (APK)** and **iPhone (install)** links from `/api/stream/app-builds`.
+
+Live camera + burned-in scoreboard RTMP is **Android-first** on iOS; volunteers can still sign in and use stream-key RTMP where supported.
 
 ## API
 

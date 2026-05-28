@@ -584,6 +584,57 @@ def _stream_apk_path() -> Path:
     return static / "cricrelay-stream.apk"
 
 
+def _stream_ipa_path() -> Path:
+    custom = (os.getenv("STREAM_APP_IPA_PATH") or "").strip()
+    if custom:
+        return Path(custom).expanduser()
+    static = Path(app.static_folder or "../static")
+    for candidate in (static / "cricrelay-stream.ipa", static / "cricrelay-stream" / "cricrelay-stream.ipa"):
+        if candidate.is_file():
+            return candidate
+    return static / "cricrelay-stream.ipa"
+
+
+def _stream_app_version_label() -> str:
+    return (os.getenv("STREAM_APP_VERSION") or "1.1.0").strip() or "1.1.0"
+
+
+def _stream_app_builds_payload() -> dict:
+    base = _public_base_url().rstrip("/")
+    apk = _stream_apk_path()
+    ipa = _stream_ipa_path()
+    version = _stream_app_version_label()
+    ota_manifest = f"{base}/download/cricrelay-stream-ota.plist" if base else "/download/cricrelay-stream-ota.plist"
+    return {
+        "ok": True,
+        "version": version,
+        "android": {
+            "available": apk.is_file(),
+            "url": f"{base}/download/cricrelay-stream.apk" if apk.is_file() and base else None,
+            "label": "Android (APK)",
+        },
+        "ios": {
+            "available": ipa.is_file(),
+            "url": f"{base}/download/cricrelay-stream.ipa" if ipa.is_file() and base else None,
+            "ota_install_url": (
+                f"itms-services://?action=download-manifest&url={ota_manifest}"
+                if ipa.is_file()
+                else None
+            ),
+            "ota_manifest_url": ota_manifest if ipa.is_file() else None,
+            "label": "iPhone (install)",
+            "install_note": (
+                "Open the install link in Safari on your iPhone. "
+                "After install: Settings → General → VPN & Device Management → trust the developer."
+            ),
+            "streaming_note": (
+                "Live camera + scoreboard burn-in is optimized for Android. "
+                "On iPhone you can sign in, manage streams, and use stream-key RTMP where supported."
+            ),
+        },
+    }
+
+
 def _apk_download_response(path: Path, filename: str):
     """Stream APK from disk with Range support (resume) — do not read_bytes() large APKs."""
     return send_file(
@@ -1185,6 +1236,10 @@ def _dashboard_fixture_data(org):
         "pcs_apk_download_url": url_for("download_pcs_relay_apk"),
         "stream_apk_available": _stream_apk_path().is_file(),
         "stream_apk_download_url": url_for("download_stream_apk"),
+        "stream_ipa_available": _stream_ipa_path().is_file(),
+        "stream_ipa_download_url": url_for("download_stream_ipa"),
+        "stream_ios_ota_install_url": (_stream_app_builds_payload().get("ios") or {}).get("ota_install_url")
+        or "",
         "youtube_connected": youtube_connected,
         "youtube_channel_title": org.youtube_channel_title or "",
         "youtube_oauth_configured": yt.oauth_configured(),
@@ -1228,6 +1283,71 @@ def download_stream_apk():
         )
         return redirect(url_for("dashboard"))
     return _apk_download_response(path, "cricrelay-stream.apk")
+
+
+@app.get("/download/cricrelay-stream.ipa")
+def download_stream_ipa():
+    path = _stream_ipa_path()
+    if not path.is_file():
+        flash(
+            "Stream app for iPhone is not on the server yet. Add Apple signing secrets to GitHub Actions "
+            "(see cricrelay-stream/docs/IOS_CI_SETUP.md).",
+            "error",
+        )
+        return redirect(url_for("dashboard"))
+    return send_file(
+        path,
+        mimetype="application/octet-stream",
+        as_attachment=True,
+        download_name="cricrelay-stream.ipa",
+        conditional=True,
+        etag=True,
+        max_age=0,
+    )
+
+
+@app.get("/download/cricrelay-stream-ota.plist")
+def download_stream_ios_ota_manifest():
+    """Over-the-air install manifest (open via itms-services:// from Safari on iPhone)."""
+    if not _stream_ipa_path().is_file():
+        return Response("IPA not available", status=404, mimetype="text/plain")
+    base = _public_base_url().rstrip("/")
+    ipa_url = f"{base}/download/cricrelay-stream.ipa"
+    version = _stream_app_version_label()
+    bundle_id = (os.getenv("STREAM_APP_IOS_BUNDLE_ID") or "uk.co.cricrelay.stream").strip()
+    plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>items</key>
+  <array>
+    <dict>
+      <key>assets</key>
+      <array>
+        <dict>
+          <key>kind</key>
+          <string>software-package</string>
+          <key>url</key>
+          <string>{ipa_url}</string>
+        </dict>
+      </array>
+      <key>metadata</key>
+      <dict>
+        <key>bundle-identifier</key>
+        <string>{bundle_id}</string>
+        <key>bundle-version</key>
+        <string>{version}</string>
+        <key>kind</key>
+        <string>software</string>
+        <key>title</key>
+        <string>CricRelay Live</string>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>
+"""
+    return Response(plist, mimetype="application/xml")
 
 
 @app.get("/download/pcs-relay.apk")
@@ -2443,6 +2563,13 @@ def api_stream_login():
 @stream_api_auth_required
 def api_list_streams(org: Organization):
     return jsonify({"ok": True, "streams": relay_matches_for_org(org)})
+
+
+@app.get("/api/stream/app-builds")
+@stream_api_auth_required
+def api_stream_app_builds(org: Organization):
+    """Authenticated app download links (Android APK, iOS OTA) for volunteers after login."""
+    return jsonify(_stream_app_builds_payload())
 
 
 @app.get("/api/fixtures")
