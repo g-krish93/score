@@ -26,9 +26,13 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses || true
 
+      - name: Install Android SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      # 3.27+ exposes flutter.* to plugin subprojects; 3.24 + package_info_plus 9.x fails Gradle.
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.24.5"
+          flutter-version: "3.27.4"
           channel: stable
           cache: true
 
@@ -37,7 +41,6 @@ jobs:
         run: |
           rm -rf android ios
           flutter create . --platforms=android,ios --org uk.co.cricrelay --project-name stream
-          # Strip CRLF if checked out on Windows (bash: pipefail\r is invalid).
           sed -i 's/\r$//' android-custom/apply_android_overlay.sh
           chmod +x android-custom/apply_android_overlay.sh
           bash android-custom/apply_android_overlay.sh
@@ -55,24 +58,16 @@ jobs:
           set -o pipefail
           : > ../stream-apk-build.log
           flutter --version
+          flutter pub get
+          flutter build apk --release 2>&1 | tee ../stream-apk-build.log
           APK="build/app/outputs/flutter-apk/app-release.apk"
-          if (set -o pipefail; flutter build apk --release 2>&1 | tee ../stream-apk-build.log); then
-            echo "flutter build apk succeeded"
-          else
-            echo "flutter build apk failed; trying gradlew"
-            cd android
-            chmod +x gradlew
-            ./gradlew :app:assembleRelease --no-daemon 2>&1 | tee -a ../../stream-apk-build.log
-            cd ..
-            APK=""
-          fi
-          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
-            APK="$(find android/app/build build/app/outputs -type f \( -name 'app-release.apk' -o -name 'app-release-unsigned.apk' \) 2>/dev/null | head -1)"
+          if [ ! -f "$APK" ]; then
+            APK="$(find android/app/build build/app/outputs -type f -name 'app-release.apk' 2>/dev/null | head -1)"
           fi
           if [ -z "$APK" ] || [ ! -f "$APK" ]; then
             echo "No release APK found:"
             find android build -type f -name '*.apk' 2>/dev/null || true
-            tail -n 100 ../stream-apk-build.log || true
+            tail -n 120 ../stream-apk-build.log || true
             exit 1
           fi
           mkdir -p build/app/outputs/flutter-apk
@@ -90,7 +85,7 @@ jobs:
         run: |
           APK="cricrelay-stream/build/app/outputs/flutter-apk/app-release.apk"
           if [ ! -f "$APK" ]; then
-            APK="$(find cricrelay-stream/android/app/build cricrelay-stream/build -type f \( -name 'app-release.apk' -o -name 'app-release-unsigned.apk' \) 2>/dev/null | head -1)"
+            APK="$(find cricrelay-stream/android/app/build cricrelay-stream/build -type f -name 'app-release.apk' 2>/dev/null | head -1)"
           fi
           if [ -z "$APK" ] || [ ! -f "$APK" ]; then
             echo "No APK found:"

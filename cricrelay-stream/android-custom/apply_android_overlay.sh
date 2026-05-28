@@ -22,21 +22,7 @@ rm -f "$ANDROID/build.gradle.kts"
 
 python3 "$CUSTOM/patch_android_gradle.py" "$ANDROID"
 
-# Root build.gradle: JitPack for app dependencies (no evaluationDependsOn).
-cat > "$ANDROID/build.gradle" <<'EOF'
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-        maven { url "https://jitpack.io" }
-    }
-}
-
-rootProject.buildDir = "../build"
-subprojects {
-    project.buildDir = "${rootProject.buildDir}/${project.name}"
-}
-EOF
+cp "$CUSTOM/root_build.gradle" "$ANDROID/build.gradle"
 
 echo "=== Gradle wrapper ==="
 grep distributionUrl "$ANDROID/gradle/wrapper/gradle-wrapper.properties"
