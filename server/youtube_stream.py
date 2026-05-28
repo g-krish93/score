@@ -53,16 +53,29 @@ def decrypt_token(cipher: str) -> str:
         return ""
 
 
+def _client_id() -> str:
+    for key in ("YOUTUBE_CLIENT_ID", "GOOGLE_CLIENT_ID", "OAUTH_CLIENT_ID"):
+        val = (os.getenv(key) or "").strip()
+        if val:
+            return val
+    return ""
+
+
+def _client_secret() -> str:
+    for key in ("YOUTUBE_CLIENT_SECRET", "GOOGLE_CLIENT_SECRET", "OAUTH_CLIENT_SECRET"):
+        val = (os.getenv(key) or "").strip()
+        if val:
+            return val
+    return ""
+
+
 def oauth_configured() -> bool:
-    return bool(
-        (os.getenv("YOUTUBE_CLIENT_ID") or "").strip()
-        and (os.getenv("YOUTUBE_CLIENT_SECRET") or "").strip()
-    )
+    return bool(_client_id() and _client_secret())
 
 
 def build_authorize_url(redirect_uri: str, state: str) -> str:
     params = {
-        "client_id": os.getenv("YOUTUBE_CLIENT_ID", "").strip(),
+        "client_id": _client_id(),
         "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": SCOPES,
@@ -78,8 +91,8 @@ def exchange_code(code: str, redirect_uri: str) -> dict[str, Any]:
         YOUTUBE_TOKEN_URL,
         data={
             "code": code,
-            "client_id": os.getenv("YOUTUBE_CLIENT_ID", "").strip(),
-            "client_secret": os.getenv("YOUTUBE_CLIENT_SECRET", "").strip(),
+            "client_id": _client_id(),
+            "client_secret": _client_secret(),
             "redirect_uri": redirect_uri,
             "grant_type": "authorization_code",
         },
@@ -93,8 +106,8 @@ def refresh_access_token(refresh_token: str) -> dict[str, Any]:
     resp = requests.post(
         YOUTUBE_TOKEN_URL,
         data={
-            "client_id": os.getenv("YOUTUBE_CLIENT_ID", "").strip(),
-            "client_secret": os.getenv("YOUTUBE_CLIENT_SECRET", "").strip(),
+            "client_id": _client_id(),
+            "client_secret": _client_secret(),
             "refresh_token": refresh_token,
             "grant_type": "refresh_token",
         },

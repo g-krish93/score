@@ -360,6 +360,36 @@ def _org_play_cricket_root(org: Organization) -> str:
     return normalize_play_cricket_club_root(raw) or raw.rstrip("/")
 
 
+def _org_fixture_roots(org: Organization, matches: list[RelayMatch] | None = None) -> list[str]:
+    """Candidate Play-Cricket roots for fixture scraping.
+
+    Legacy orgs may have no saved base URL, but existing relay rows often contain
+    full scrape URLs with enough info to recover the club host.
+    """
+    roots: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: str) -> None:
+        base = normalize_play_cricket_club_root(raw) or (raw or "").strip().rstrip("/")
+        if not base or "play-cricket.com" not in base.lower():
+            return
+        key = base.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        roots.append(base)
+
+    add(_org_play_cricket_root(org))
+    for row in matches or []:
+        src = (getattr(row, "full_scrape_url", None) or "").strip()
+        if not src:
+            continue
+        parsed = urlparse(src)
+        if parsed.scheme and parsed.netloc:
+            add(f"{parsed.scheme}://{parsed.netloc}")
+    return roots
+
+
 def _fixture_candidate_urls(base_url: str) -> list[str]:
     """Play-Cricket fixture pages to try, in priority order.
 
@@ -1021,15 +1051,18 @@ def _dashboard_fixture_data(org):
     fixtures_error = None
     fixture_source_url = ""
     probe_errors = []
-    for candidate in _fixture_candidate_urls(_org_play_cricket_root(org)):
-        try:
-            rows = scrape_fixtures(candidate, limit=36)
-            if rows:
-                fixtures = rows
-                fixture_source_url = candidate
-                break
-        except Exception as exc:
-            probe_errors.append(f"{candidate}: {exc}")
+    for root in _org_fixture_roots(org, matches):
+        for candidate in _fixture_candidate_urls(root):
+            try:
+                rows = scrape_fixtures(candidate, limit=36)
+                if rows:
+                    fixtures = rows
+                    fixture_source_url = candidate
+                    break
+            except Exception as exc:
+                probe_errors.append(f"{candidate}: {exc}")
+        if fixtures:
+            break
     if not fixtures and probe_errors:
         fixtures_error = probe_errors[0]
     if not fixture_source_url:
@@ -2280,7 +2313,18 @@ def api_create_stream(org: Organization):
 @stream_api_auth_required
 def api_youtube_authorize(org: Organization):
     if not yt.oauth_configured():
-        return jsonify({"error": "YouTube OAuth is not configured on this server"}), 503
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "YouTube OAuth is not configured on this server. "
+                        "Set YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET "
+                        "(or GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET)."
+                    )
+                }
+            ),
+            503,
+        )
     redirect_uri = _youtube_redirect_uri()
     if not redirect_uri:
         return jsonify({"error": "Set PUBLIC_BASE_URL or YOUTUBE_REDIRECT_URI"}), 503

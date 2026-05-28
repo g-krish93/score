@@ -190,6 +190,8 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   @override
   Widget build(BuildContext context) {
     final camReady = _camera?.value.isInitialized ?? false;
+    final orient = MediaQuery.of(context).orientation;
+    final isLandscape = orient == Orientation.landscape;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -208,85 +210,165 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
+      body: isLandscape
+          ? Row(
               children: [
-                if (camReady) CameraPreview(_camera!),
-                if (_web != null)
-                  Positioned(
-                    left: 8,
-                    right: 8,
-                    bottom: 8,
-                    height: _androidCapture ? 140 : 110,
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: const Color(0xFF22D3A8), width: 2),
-                          borderRadius: BorderRadius.circular(8),
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (camReady) CameraPreview(_camera!),
+                      if (_web != null)
+                        Positioned(
+                          left: 8,
+                          right: 8,
+                          bottom: 8,
+                          height: _androidCapture ? 120 : 96,
+                          child: IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                border: Border.all(color: const Color(0xFF22D3A8), width: 2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: WebViewWidget(controller: _web!),
+                              ),
+                            ),
+                          ),
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: WebViewWidget(controller: _web!),
+                      if (_live)
+                        const Positioned(
+                          top: 12,
+                          left: 12,
+                          child: _LiveBadge(),
                         ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 270,
+                  child: Material(
+                    color: Colors.black87,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: _ControlPanel(
+                        status: _status,
+                        live: _live,
+                        busy: _busy,
+                        camReady: camReady,
+                        onOpenScoring: _openScoringMenu,
+                        onGoLive: _goLive,
+                        onStop: _stop,
                       ),
                     ),
                   ),
-                if (_live)
-                  const Positioned(
-                    top: 12,
-                    left: 12,
-                    child: _LiveBadge(),
-                  ),
+                ),
               ],
-            ),
-          ),
-          Material(
-            color: Colors.black87,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (_status != null)
-                    Text(_status!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13)),
-                  const SizedBox(height: 8),
-                  Row(
+            )
+          : Column(
+              children: [
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
                     children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _openScoringMenu,
-                          icon: const Icon(Icons.scoreboard),
-                          label: const Text('Scoring'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        flex: 2,
-                        child: !_live
-                            ? FilledButton.icon(
-                                onPressed: (_busy || !camReady) ? null : _goLive,
-                                icon: const Icon(Icons.play_arrow),
-                                label: const Text('Go Live'),
-                              )
-                            : FilledButton.tonal(
-                                onPressed: _busy ? null : _stop,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: Colors.red.shade800,
-                                ),
-                                child: const Text('Stop'),
+                      if (camReady) CameraPreview(_camera!),
+                      if (_web != null)
+                        Positioned(
+                          left: 8,
+                          right: 8,
+                          bottom: 8,
+                          height: _androidCapture ? 140 : 110,
+                          child: IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                border: Border.all(color: const Color(0xFF22D3A8), width: 2),
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                      ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: WebViewWidget(controller: _web!),
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (_live)
+                        const Positioned(
+                          top: 12,
+                          left: 12,
+                          child: _LiveBadge(),
+                        ),
                     ],
                   ),
-                ],
-              ),
+                ),
+                Material(
+                  color: Colors.black87,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: _ControlPanel(
+                      status: _status,
+                      live: _live,
+                      busy: _busy,
+                      camReady: camReady,
+                      onOpenScoring: _openScoringMenu,
+                      onGoLive: _goLive,
+                      onStop: _stop,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
+    );
+  }
+}
+
+class _ControlPanel extends StatelessWidget {
+  const _ControlPanel({
+    required this.status,
+    required this.live,
+    required this.busy,
+    required this.camReady,
+    required this.onOpenScoring,
+    required this.onGoLive,
+    required this.onStop,
+  });
+
+  final String? status;
+  final bool live;
+  final bool busy;
+  final bool camReady;
+  final VoidCallback onOpenScoring;
+  final Future<void> Function() onGoLive;
+  final Future<void> Function() onStop;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (status != null)
+          Text(status!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13)),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: onOpenScoring,
+          icon: const Icon(Icons.scoreboard),
+          label: const Text('Scoring'),
+        ),
+        const SizedBox(height: 8),
+        !live
+            ? FilledButton.icon(
+                onPressed: (busy || !camReady) ? null : onGoLive,
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Go Live'),
+              )
+            : FilledButton.tonal(
+                onPressed: busy ? null : onStop,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.red.shade800,
+                ),
+                child: const Text('Stop'),
+              ),
+      ],
     );
   }
 }
