@@ -103,7 +103,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     await [Permission.camera, Permission.microphone].request();
     _quality = await loadStreamQualityProfile();
     await _loadSavedRtmp();
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid || Platform.isIOS) {
       _nativeCamera = await RtmpPlatform.isCaptureSupported;
     }
     if (_nativeCamera) {
@@ -331,12 +331,14 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   }
 
   Future<void> _startEncoder(GoLiveResult cred) async {
-    if (!Platform.isAndroid) {
-      throw Exception('In-app YouTube streaming is Android-only for now. Use an Android device.');
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      throw Exception('In-app streaming requires the CricRelay Stream mobile app.');
     }
     if (!_nativeCamera) {
       throw Exception(
-        'This APK cannot stream yet. Install the latest CricRelay Stream APK from cricrelay.co.uk',
+        Platform.isIOS
+            ? 'This build cannot stream yet. Install the latest CricRelay Stream IPA from cricrelay.co.uk'
+            : 'This APK cannot stream yet. Install the latest CricRelay Stream APK from cricrelay.co.uk',
       );
     }
     final overlayUrl = _overlayStore.embedUrl(widget.match.overlayEmbedUrl, _overlayPrefs);
@@ -360,7 +362,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   }
 
   Future<void> _stopEncoder() async {
-    if (Platform.isAndroid && _nativeCamera) {
+    if ((Platform.isAndroid || Platform.isIOS) && _nativeCamera) {
       await RtmpPlatform.stopStream();
     }
   }
@@ -589,10 +591,15 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       fit: StackFit.expand,
       children: [
         if (camReady && _nativeCamera)
-          const AndroidView(
-            viewType: 'cricrelay-camera-preview',
-            layoutDirection: TextDirection.ltr,
-          )
+          Platform.isAndroid
+              ? const AndroidView(
+                  viewType: 'cricrelay-camera-preview',
+                  layoutDirection: TextDirection.ltr,
+                )
+              : const UiKitView(
+                  viewType: 'cricrelay-camera-preview',
+                  layoutDirection: TextDirection.ltr,
+                )
         else if (camReady && _camera != null) ...[
           CameraPreview(_camera!),
           if (_web != null) _buildFlutterOverlayPreview(),

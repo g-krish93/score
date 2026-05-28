@@ -132,7 +132,7 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Regenerate iOS project
+      - name: Regenerate iOS and apply native streaming overlay
         working-directory: cricrelay-stream
         run: |
           rm -rf ios
@@ -140,6 +140,10 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName CricRelay Live" ios/Runner/Info.plist
           /usr/libexec/PlistBuddy -c "Set :NSCameraUsageDescription Camera is used to stream live cricket." ios/Runner/Info.plist
           /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription Microphone audio is included in your live stream." ios/Runner/Info.plist
+          sed -i '' 's/\r$//' ios-custom/apply_ios_overlay.sh
+          chmod +x ios-custom/apply_ios_overlay.sh
+          bash ios-custom/apply_ios_overlay.sh
+          cd ios && pod install --repo-update
 
       - name: Dart analyze
         working-directory: cricrelay-stream
