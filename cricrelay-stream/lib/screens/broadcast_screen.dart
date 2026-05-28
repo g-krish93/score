@@ -109,6 +109,11 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     if (_nativeCamera) {
       _nativeCameraReady = true;
       WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await RtmpPlatform.prepareCamera(
+          width: _quality.width,
+          height: _quality.height,
+          fps: _quality.fps,
+        );
         await _syncNativeOverlay();
         await _initZoomLevels();
       });
@@ -342,6 +347,11 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       );
     }
     final overlayUrl = _overlayStore.embedUrl(widget.match.overlayEmbedUrl, _overlayPrefs);
+    await RtmpPlatform.prepareCamera(
+      width: _quality.width,
+      height: _quality.height,
+      fps: _quality.fps,
+    );
     final connected = RtmpPlatform.waitForConnected();
     await RtmpPlatform.startStream(
       rtmpUrl: cred.rtmpUrl,
