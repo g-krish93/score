@@ -37,6 +37,8 @@ jobs:
         run: |
           rm -rf android ios
           flutter create . --platforms=android,ios --org uk.co.cricrelay --project-name stream
+          # Strip CRLF if checked out on Windows (bash: pipefail\r is invalid).
+          sed -i 's/\r$//' android-custom/apply_android_overlay.sh
           chmod +x android-custom/apply_android_overlay.sh
           bash android-custom/apply_android_overlay.sh
 
@@ -49,7 +51,9 @@ jobs:
       - name: Build release APK
         working-directory: cricrelay-stream
         run: |
-          set -euo pipefail
+          set -eu
+          set -o pipefail
+          : > ../stream-apk-build.log
           flutter --version
           APK="build/app/outputs/flutter-apk/app-release.apk"
           if (set -o pipefail; flutter build apk --release 2>&1 | tee ../stream-apk-build.log); then
