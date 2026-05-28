@@ -48,7 +48,8 @@ else
 fi
 
 echo "--- pip (same as CI: root, site-packages) ---"
-pip3 install --ignore-installed -r "$APP/requirements.txt"
+bash "$APP/deploy/ec2-disk-cleanup.sh" 2>/dev/null || true
+pip3 install --no-cache-dir --ignore-installed -r "$APP/requirements.txt"
 
 if [[ -f "$APP/deploy/nginx-cricrelay.conf" ]]; then
   install -m 644 "$APP/deploy/nginx-cricrelay.conf" /etc/nginx/conf.d/cricrelay.conf

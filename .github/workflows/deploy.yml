@@ -31,6 +31,7 @@ jobs:
             set -e
             cd /app
             git pull origin main
+            sudo bash deploy/ec2-disk-cleanup.sh
             # Keep systemd unit in sync with repo (python3 -m gunicorn, optional .env).
             if [ -f deploy/cricket.service ]; then
               sudo install -m 644 deploy/cricket.service /etc/systemd/system/cricket.service
@@ -43,7 +44,15 @@ jobs:
             fi
             # Gunicorn runs as root and loads /usr/local/... site-packages; user pip would install under ~/.local and the worker would crash on import (exit status 3).
             # Amazon Linux often ships requests via rpm — pip cannot uninstall it; --ignore-installed lays down wheels in site-packages without removing the RPM.
-            sudo pip3 install --ignore-installed -r requirements.txt
+            # --no-cache-dir avoids filling the disk during install; skip pip when requirements.txt unchanged.
+            REQ_HASH=$(sha256sum requirements.txt | awk '{print $1}')
+            REQ_STAMP=/var/lib/cricrelay-requirements.sha256
+            if [ -f "$REQ_STAMP" ] && [ "$(cat "$REQ_STAMP")" = "$REQ_HASH" ]; then
+              echo "requirements.txt unchanged — skipping pip install"
+            else
+              sudo pip3 install --no-cache-dir --ignore-installed -r requirements.txt
+              echo "$REQ_HASH" | sudo tee "$REQ_STAMP" > /dev/null
+            fi
             if [ -f deploy/persist-auth-env.sh ]; then
               sudo bash deploy/persist-auth-env.sh
             fi
