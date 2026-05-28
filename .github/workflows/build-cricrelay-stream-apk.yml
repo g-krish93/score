@@ -32,6 +32,8 @@ jobs:
 
       - name: Apply custom Stream plugin (keep flutter create assets)
         run: |
+          # Legacy root build.gradle breaks Gradle 8+ (evaluationDependsOn); Flutter uses settings.gradle only.
+          rm -f cricrelay-stream/android/build.gradle
           cp -r cricrelay-stream/android-custom/uk cricrelay-stream/android/app/src/main/kotlin/
 
       - name: Build release APK
