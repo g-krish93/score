@@ -48,18 +48,21 @@ GitHub Actions needs **5 secrets** to build an installable iPhone app (IPA). Wit
 
 ## Part 4 — Register iPhones (Ad Hoc only)
 
-Ad Hoc installs only work on devices you register.
+Ad Hoc installs only work on devices you register. **No Mac required.**
 
-**On each volunteer iPhone:**
+### Easiest: register from the iPhone itself (Safari)
 
-1. Connect to a Mac with Finder/iTunes, or use a site your org trusts to read UDID, or install a profile from the developer portal.
-2. Apple’s way: on the phone open the link from **Devices** → **+** in the developer portal (Apple can email a registration link), or copy UDID from Finder (select phone → click serial until UDID shows).
+1. On a **Windows PC** (or iPad), open [developer.apple.com/account](https://developer.apple.com/account) and sign in.
+2. **Devices** → **+** → register a device.
+3. Choose **Register a single device** and follow Apple’s steps to open a link **on the iPhone** (Safari).
+4. The phone installs a small profile, reports its **UDID** to Apple, and the device appears in your list.
+5. Repeat for each volunteer phone (or use TestFlight instead — see end of doc).
 
-**In the portal:**
+### Manual UDID (if you already have it)
 
-1. **Devices** → **+** → **iPhone**.
-2. Name it (e.g. `Volunteer John`) → paste **UDID** → Continue → Register.
-3. Repeat for every phone that should install the app (max 100 per year on standard accounts).
+**Devices** → **+** → **iPhone** → name + paste UDID → Register.
+
+On Windows 11 you can also install the free **Apple Devices** app from Microsoft Store, connect an iPhone by cable, and view device info (if shown).
 
 ---
 
@@ -81,9 +84,67 @@ You need a **Apple Distribution** certificate (used for Ad Hoc and App Store).
 8. Format: **Personal Information Exchange (.p12)** → save as `CricRelay_Distribution.p12`.
 9. Set an **export password** (remember it — this is `APPLE_CERTIFICATE_PASSWORD`).
 
-### Option B — No Mac
+### Option B — Windows only (OpenSSL, no Mac)
 
-Use a Mac in the cloud (MacStadium, borrow a Mac, or GitHub’s macOS runner only helps *after* you have the files). Apple requires a CSR from Keychain or Xcode to create the distribution cert the usual way.
+You can create the distribution certificate and `.p12` entirely on Windows. The Apple Developer website works in any browser.
+
+#### B1. Install OpenSSL on Windows
+
+Pick one:
+
+- **Git for Windows** (if installed): use **Git Bash** — it includes `openssl`.
+- Or: `winget install ShiningLight.OpenSSL.Light` then use **PowerShell** (new window).
+
+#### B2. Create private key + CSR
+
+In PowerShell or Git Bash, `cd` to a folder where you will keep these files (back them up securely):
+
+```bash
+openssl genrsa -out distribution.key 2048
+
+openssl req -new -key distribution.key -out distribution.csr \
+  -subj "/CN=CricRelay Distribution/email=YOUR_EMAIL@example.com"
+```
+
+(PowerShell one line: use the same commands; for `req` you can use `-subj "/CN=CricRelay Distribution/email=you@club.com"`.)
+
+#### B3. Upload CSR in Apple Developer portal
+
+1. **Certificates** → **+** → **Apple Distribution** → Continue.
+2. Upload **`distribution.csr`** → Continue → **Download** the certificate (e.g. `distribution.cer`).
+
+#### B4. Build `.p12` on Windows
+
+Still in the same folder (with `distribution.key` and downloaded `distribution.cer`):
+
+```bash
+openssl x509 -in distribution.cer -inform DER -out distribution.pem -outform PEM
+
+openssl pkcs12 -export -out CricRelay_Distribution.p12 \
+  -inkey distribution.key -in distribution.pem \
+  -passout pass:CHOOSE_A_STRONG_PASSWORD
+```
+
+`CHOOSE_A_STRONG_PASSWORD` → GitHub secret **`APPLE_CERTIFICATE_PASSWORD`**.
+
+Keep **`distribution.key`** and **`CricRelay_Distribution.p12`** private. Never commit them to git.
+
+#### B5. Base64 the `.p12` (PowerShell)
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\CricRelay_Distribution.p12")) | Set-Clipboard
+```
+
+Paste into GitHub → **`APPLE_CERTIFICATE_BASE64`**.
+
+### Option C — Rent a cloud Mac (optional)
+
+If OpenSSL steps fail, rent one hour on [MacinCloud](https://www.macincloud.com/) or similar and use Option A (Keychain). Usually not needed if Option B works.
+
+### What you cannot do without *some* macOS
+
+- **Building the IPA** in CI is already on GitHub’s **macOS** runners — you do not need your own Mac for that once secrets are set.
+- Running Xcode locally on Windows is not possible.
 
 ---
 
@@ -175,15 +236,37 @@ If install is blocked, the phone’s UDID is probably not on the Ad Hoc profile.
 
 ---
 
-## Easier alternative: TestFlight
+## Easier alternative: TestFlight (best for many volunteers, still no Mac)
 
-If Ad Hoc UDIDs are too painful for a large club:
+| | Ad Hoc + OTA | TestFlight |
+|---|--------------|------------|
+| Mac needed? | No (Windows + OpenSSL) | No for day-to-day |
+| Per-phone UDID? | Yes | No — invite by email |
+| Install | Safari link from your site | TestFlight app |
+| First-time setup | 5 GitHub secrets | App Store Connect app record + first upload |
 
-1. Build IPA locally or from Actions artifact.
-2. Upload to [App Store Connect](https://appstoreconnect.apple.com) → your app → **TestFlight**.
-3. Add testers by email (no UDID list). Apple reviews each build (often 24–48 h first time).
+**TestFlight path on Windows:**
 
-TestFlight is usually better for **many volunteers**; Ad Hoc + OTA is better for **a few fixed club phones**.
+1. Create the app in [App Store Connect](https://appstoreconnect.apple.com) (browser, Windows OK).
+2. Still create distribution cert + profile as above **or** let the first upload create them (App Store distribution profile).
+3. After GitHub Actions produces an IPA (once secrets work), download the IPA artifact from Actions.
+4. Install **Transporter** from the [Microsoft Store](https://apps.microsoft.com/detail/9p5zmbj36f6m) on Windows and upload the IPA to App Store Connect.
+5. Add testers by email in TestFlight — they install Apple’s **TestFlight** app on iPhone/iPad.
+
+TestFlight is usually better for **many rotating volunteers**. Ad Hoc is better for **a few club phones** without App Store review wait.
+
+---
+
+## Quick answer: Windows vs iPhone/iPad
+
+| Task | Windows PC | iPhone / iPad |
+|------|------------|----------------|
+| Developer portal (Team ID, App ID, cert, profile) | Yes — browser | Yes — Safari (portal) |
+| Create `.p12` | Yes — OpenSSL | No |
+| Register device UDID | Yes — portal | Yes — portal link on phone (easiest) |
+| Add GitHub secrets | Yes | Awkward — use PC |
+| Install app for testing | No | Yes — Safari (Ad Hoc) or TestFlight app |
+| Build IPA | No — GitHub Actions does this | No |
 
 ---
 
