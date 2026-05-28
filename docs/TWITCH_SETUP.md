@@ -7,6 +7,7 @@ Connect a club Twitch channel so volunteers can **Go Live** from the CricRelay a
 1. Log in at [Twitch Developer Console](https://dev.twitch.tv/console) with the **club’s Twitch account** (or an admin account that manages the channel).
 2. **Register Your Application** → create an app, for example:
    - **Name:** `CricRelay Stream`
+   - **Client type:** **Confidential** (required — **Public** apps have no Client Secret; CricRelay runs OAuth on the server like YouTube)
    - **OAuth redirect URLs:** add exactly:
      ```
      https://cricrelay.co.uk/dashboard/twitch/callback
