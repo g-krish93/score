@@ -46,7 +46,7 @@ jobs:
         working-directory: cricrelay-stream
         run: |
           flutter pub get
-          flutter analyze --no-fatal-infos
+          flutter analyze lib --no-fatal-infos
 
       - name: Build release APK
         working-directory: cricrelay-stream

@@ -13,6 +13,10 @@ cp "$CUSTOM/gradle.properties" "$ANDROID/gradle.properties"
 mkdir -p "$ANDROID/gradle/wrapper"
 cp "$CUSTOM/gradle-wrapper.properties" "$ANDROID/gradle/wrapper/gradle-wrapper.properties"
 
+# flutter create --project-name stream generates a broken default test (package:stream).
+mkdir -p "$ROOT/test"
+cp "$CUSTOM/widget_test.dart" "$ROOT/test/widget_test.dart"
+
 # Avoid "Both build.gradle and build.gradle.kts exist" + duplicate Gradle watchers.
 rm -f "$ANDROID/build.gradle.kts"
 

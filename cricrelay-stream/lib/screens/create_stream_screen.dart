@@ -172,7 +172,7 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
                       child: Text(fx!.error!, style: const TextStyle(color: Colors.orangeAccent)),
                     ),
                   ...?fx?.fixtures.map((f) {
-                    final linked = fx!.activeMatchIds.contains(f.matchId);
+                    final linked = fx?.activeMatchIds.contains(f.matchId) ?? false;
                     return Card(
                       child: ListTile(
                         title: Text(f.title.isEmpty ? 'Match ${f.matchId}' : f.title),
