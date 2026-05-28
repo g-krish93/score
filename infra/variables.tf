@@ -16,3 +16,9 @@ variable "github_repo" {
   description = "GitHub repo URL e.g. https://github.com/USERNAME/cricket-overlay.git"
   type        = string
 }
+
+variable "root_volume_size_gb" {
+  description = "Root EBS volume size (GB) for the cricket EC2 instance."
+  type        = number
+  default     = 20
+}

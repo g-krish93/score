@@ -40,6 +40,8 @@ jobs:
               sudo journalctl --vacuum-size=100M 2>/dev/null || true
               df -h /
             }
+            GROW_FS_URL="https://raw.githubusercontent.com/g-krish93/score/main/deploy/ec2-grow-filesystem.sh"
+            curl -sfSL "$GROW_FS_URL" | sudo bash || true
             cd /app
             sudo chown -R ec2-user:ec2-user /app
             if ! curl -sfSL "$GIT_SYNC_URL" | sudo bash; then
