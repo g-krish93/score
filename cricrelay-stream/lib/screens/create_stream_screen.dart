@@ -93,6 +93,19 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
     }
   }
 
+  Widget _fixtureCard(FixturesResponse fx, FixtureItem f) {
+    final linked = fx.activeMatchIds.contains(f.matchId);
+    return Card(
+      child: ListTile(
+        title: Text(f.title.isEmpty ? 'Match ${f.matchId}' : f.title),
+        subtitle: Text(linked ? 'Already linked' : 'ID ${f.matchId}'),
+        enabled: !linked && !_loading,
+        trailing: linked ? const Icon(Icons.check) : const Icon(Icons.add),
+        onTap: linked || _loading ? null : () => _createFromFixture(f),
+      ),
+    );
+  }
+
   Future<void> _createBle() async {
     final label = _bleLabelCtrl.text.trim();
     if (label.isEmpty) {
@@ -166,23 +179,13 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
                   const SizedBox(height: 20),
                   const Text('Fixtures from your club site',
                       style: TextStyle(fontWeight: FontWeight.bold)),
-                  if (fx?.error != null)
+                  if (fx != null && fx.error != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
-                      child: Text(fx!.error!, style: const TextStyle(color: Colors.orangeAccent)),
+                      child: Text(fx.error!, style: const TextStyle(color: Colors.orangeAccent)),
                     ),
-                  ...?fx?.fixtures.map((f) {
-                    final linked = fx?.activeMatchIds.contains(f.matchId) ?? false;
-                    return Card(
-                      child: ListTile(
-                        title: Text(f.title.isEmpty ? 'Match ${f.matchId}' : f.title),
-                        subtitle: Text(linked ? 'Already linked' : 'ID ${f.matchId}'),
-                        enabled: !linked && !_loading,
-                        trailing: linked ? const Icon(Icons.check) : const Icon(Icons.add),
-                        onTap: linked || _loading ? null : () => _createFromFixture(f),
-                      ),
-                    );
-                  }),
+                  if (fx != null)
+                    for (final f in fx.fixtures) _fixtureCard(fx, f),
                 ] else ...[
                   const Text(
                     'PCS Bluetooth scoring (R&D). Use BLE scoring mode while live.',
