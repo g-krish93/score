@@ -109,7 +109,9 @@ jobs:
             exit 0
           fi
           git commit -m "chore: update CricRelay Stream APK [skip deploy]"
-          git push
+          # Main can move while this job is running; rebase to avoid non-fast-forward push failures.
+          git pull --rebase origin main
+          git push origin HEAD:main
 
       - name: Sync APK to EC2
         if: success()
