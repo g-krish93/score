@@ -1,0 +1,24 @@
+# Manual: pull latest main on EC2 so static/cricrelay-stream.apk is current.
+name: Sync Stream APK to EC2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull latest on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            set -e
+            cd /app
+            git fetch origin main
+            git reset --hard origin/main
+            test -f static/cricrelay-stream.apk
+            ls -la static/cricrelay-stream.apk
+            sha256sum static/cricrelay-stream.apk | head -1
