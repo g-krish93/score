@@ -6,11 +6,12 @@ import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
 
-class CricrelayCameraViewFactory(
-    private val activity: Activity,
-) : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
+class CricrelayCameraViewFactory : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
 
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView {
-        return CricrelayCameraPlatformView(context, activity)
+        val act = StreamRtmpPlugin.activity
+            ?: (context as? Activity)
+            ?: throw IllegalStateException("Activity not available for camera preview")
+        return CricrelayCameraPlatformView(context, act)
     }
 }

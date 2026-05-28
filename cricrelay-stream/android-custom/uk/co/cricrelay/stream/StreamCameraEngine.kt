@@ -46,9 +46,7 @@ object StreamCameraEngine : ConnectChecker {
         openGlView = view
         activity = act
         if (camera == null) {
-            camera = RtmpCamera2(view, this).apply {
-                glInterface.autoHandleOrientation = true
-            }
+            camera = RtmpCamera2(view, this)
         }
         if (overlayCapture == null) {
             overlayCapture = OverlayWebViewCapture(act)

@@ -17,7 +17,13 @@ import io.flutter.plugin.common.MethodChannel
 
 class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware, EventChannel.StreamHandler {
 
-    private var activity: Activity? = null
+    companion object {
+        @Volatile
+        var activity: Activity? = null
+            private set
+    }
+
+    private var pluginActivity: Activity? = null
     private var appContext: Context? = null
     private var channel: MethodChannel? = null
     private var eventChannel: EventChannel? = null
@@ -51,6 +57,10 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
         eventChannel = EventChannel(binding.binaryMessenger, "uk.co.cricrelay.stream/rtmp_events")
         eventChannel?.setStreamHandler(this)
         StreamCameraEngine.setStatusListener(engineStatusListener)
+        binding.platformViewRegistry.registerViewFactory(
+            "cricrelay-camera-preview",
+            CricrelayCameraViewFactory(),
+        )
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -154,7 +164,7 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                     result.error("camera", "Camera preview not ready yet", null)
                     return
                 }
-                val act = activity
+                val act = pluginActivity
                 if (act == null) {
                     result.error("activity", "No activity", null)
                     return
@@ -182,7 +192,7 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                 }
             }
             "stopStream" -> {
-                val act = activity
+                val act = pluginActivity
                 StreamCameraEngine.stopStream()
                 if (act != null) {
                     act.stopService(Intent(act, StreamCaptureService::class.java))
@@ -195,26 +205,22 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        pluginActivity = binding.activity
         activity = binding.activity
-        binding.platformViewRegistry.registerViewFactory(
-            "cricrelay-camera-preview",
-            CricrelayCameraViewFactory(binding.activity),
-        )
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
+        pluginActivity = null
         activity = null
     }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        pluginActivity = binding.activity
         activity = binding.activity
-        binding.platformViewRegistry.registerViewFactory(
-            "cricrelay-camera-preview",
-            CricrelayCameraViewFactory(binding.activity),
-        )
     }
 
     override fun onDetachedFromActivity() {
+        pluginActivity = null
         activity = null
         unregisterStatusReceiver()
     }
