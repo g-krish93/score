@@ -1,6 +1,6 @@
 # iOS build on GitHub Actions
 
-The workflow builds a signed **IPA** when Apple signing secrets are configured. Without them, CI only verifies the iOS project compiles.
+The workflow builds a signed **IPA** when all Apple signing secrets below are set. Without them, CI only verifies the iOS project compiles (`flutter build ios --no-codesign`).
 
 ## Requirements
 
