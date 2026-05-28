@@ -18,7 +18,7 @@ Copy APK to `static/cricrelay-stream.apk` for dashboard download (optional).
 
 ## Android burn-in
 
-On Android, **Go Live** requests screen capture permission and streams the **entire app window** (camera preview + WebView scoreboard) to YouTube via RTMP.
+On Android, **Go Live** streams the **rear camera** plus a **scoreboard overlay** composited in hardware (OpenGL). App buttons and settings are **not** sent to YouTube — only camera + overlay.
 
 ## iOS
 

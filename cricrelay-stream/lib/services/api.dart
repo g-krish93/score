@@ -1,7 +1,10 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/overlay_layout_prefs.dart';
+import '../utils/url_validator.dart';
+import 'secure_session.dart';
 
 class CricRelayApi {
   CricRelayApi(this.baseUrl);
@@ -11,28 +14,26 @@ class CricRelayApi {
 
   bool get hasToken => (_token ?? '').isNotEmpty;
 
-  static const _kToken = 'stream_api_token';
-  static const _kBase = 'stream_api_base';
-
   static Future<CricRelayApi> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final base = (prefs.getString(_kBase) ?? 'https://cricrelay.co.uk').trim();
-    final api = CricRelayApi(base.replaceAll(RegExp(r'/+$'), ''));
-    api._token = prefs.getString(_kToken);
+    final base = normalizeApiBaseUrl(await SecureSession.readBaseUrl());
+    final api = CricRelayApi(base);
+    api._token = await SecureSession.readToken();
     return api;
   }
 
   Future<void> saveSession(String base, String token) async {
+    final normalized = normalizeApiBaseUrl(base);
+    if (!isAllowedApiBaseUrl(normalized)) {
+      throw Exception('Server URL must use HTTPS (http only for local testing).');
+    }
     _token = token;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kBase, base.replaceAll(RegExp(r'/+$'), ''));
-    await prefs.setString(_kToken, token);
+    await SecureSession.writeBaseUrl(normalized);
+    await SecureSession.writeToken(token);
   }
 
   Future<void> clearSession() async {
     _token = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_kToken);
+    await SecureSession.clearToken();
   }
 
   Map<String, String> get _headers => {
@@ -81,6 +82,9 @@ class CricRelayApi {
   }
 
   Future<Map<String, dynamic>> login(String email, String password) async {
+    if (!isAllowedApiBaseUrl(baseUrl)) {
+      throw Exception('Server URL must use HTTPS (http only for local testing).');
+    }
     final res = await http.post(
       Uri.parse('$baseUrl/api/auth/login'),
       headers: {'Content-Type': 'application/json'},
@@ -258,6 +262,31 @@ class CricRelayApi {
     }
     final s = body['stream'] as Map<String, dynamic>;
     return StreamMatch.fromJson(s, baseUrl);
+  }
+
+  Future<Map<String, dynamic>> getOverlayPrefs(String matchSlug) async {
+    final res = await http.get(
+      _matchApiUri(matchSlug, 'overlay'),
+      headers: _headers,
+    );
+    final body = _parseJsonResponse(res, fallback: 'Failed to load overlay settings');
+    if (res.statusCode != 200) {
+      throw Exception(body['error']?.toString() ?? 'Failed to load overlay settings');
+    }
+    return body;
+  }
+
+  Future<Map<String, dynamic>> setOverlayPrefs(String matchSlug, OverlayLayoutPrefs prefs) async {
+    final res = await http.post(
+      _matchApiUri(matchSlug, 'overlay'),
+      headers: _headers,
+      body: jsonEncode(prefs.toServerJson()),
+    );
+    final body = _parseJsonResponse(res, fallback: 'Failed to save overlay settings');
+    if (res.statusCode != 200) {
+      throw Exception(body['error']?.toString() ?? 'Failed to save overlay settings');
+    }
+    return body;
   }
 
   Future<ScoringConfig> setScoring(String matchSlug, String mode) async {

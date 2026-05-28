@@ -1,0 +1,69 @@
+/// On-phone overlay frame + server scoreboard styling (size/theme).
+class OverlayLayoutPrefs {
+  const OverlayLayoutPrefs({
+    this.size = 3,
+    this.theme = 'classic',
+    this.density = 'expanded',
+    this.heightFraction = 0.22,
+    this.bottomMargin = 8,
+    this.horizontalInset = 8,
+    this.keepScreenOn = false,
+  });
+
+  /// Server overlay preset 1 (smallest) … 5 (largest).
+  final int size;
+  final String theme;
+  final String density;
+  /// Fraction of preview height for the scoreboard strip (0.12–0.45).
+  final double heightFraction;
+  final double bottomMargin;
+  final double horizontalInset;
+  /// If false, phone may sleep; Android capture service keeps CPU awake.
+  final bool keepScreenOn;
+
+  OverlayLayoutPrefs copyWith({
+    int? size,
+    String? theme,
+    String? density,
+    double? heightFraction,
+    double? bottomMargin,
+    double? horizontalInset,
+    bool? keepScreenOn,
+  }) {
+    return OverlayLayoutPrefs(
+      size: size ?? this.size,
+      theme: theme ?? this.theme,
+      density: density ?? this.density,
+      heightFraction: heightFraction ?? this.heightFraction,
+      bottomMargin: bottomMargin ?? this.bottomMargin,
+      horizontalInset: horizontalInset ?? this.horizontalInset,
+      keepScreenOn: keepScreenOn ?? this.keepScreenOn,
+    );
+  }
+
+  static OverlayLayoutPrefs fromJson(Map<String, dynamic> j) {
+    return OverlayLayoutPrefs(
+      size: (int.tryParse('${j['overlay_size']}') ?? 3).clamp(1, 5),
+      theme: (j['theme'] ?? 'classic').toString(),
+      density: (j['overlay_density'] ?? 'expanded').toString(),
+      heightFraction: (double.tryParse('${j['height_fraction']}') ?? 0.22).clamp(0.12, 0.45),
+      bottomMargin: (double.tryParse('${j['bottom_margin']}') ?? 8).clamp(0, 48),
+      horizontalInset: (double.tryParse('${j['horizontal_inset']}') ?? 8).clamp(0, 80),
+      keepScreenOn: j['keep_screen_on'] == true,
+    );
+  }
+
+  Map<String, dynamic> toServerJson() => {
+        'overlay_size': size,
+        'theme': theme,
+        'overlay_density': density,
+      };
+
+  Map<String, dynamic> toLocalJson() => {
+        ...toServerJson(),
+        'height_fraction': heightFraction,
+        'bottom_margin': bottomMargin,
+        'horizontal_inset': horizontalInset,
+        'keep_screen_on': keepScreenOn,
+      };
+}

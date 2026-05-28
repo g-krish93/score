@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'screens/live_home_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/api.dart';
+import 'theme/app_theme.dart';
+import 'widgets/ui_kit.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,6 +14,12 @@ void main() {
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+    ),
+  );
   runApp(const CricRelayStreamApp());
 }
 
@@ -20,15 +28,11 @@ class CricRelayStreamApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = buildAppTheme();
     return MaterialApp(
       title: 'CricRelay Live',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF22D3A8),
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
+      debugShowCheckedModeBanner: false,
+      theme: theme.copyWith(textTheme: appTextTheme),
       home: const _Bootstrap(),
     );
   }
@@ -62,11 +66,6 @@ class _BootstrapState extends State<_Bootstrap> {
 
   @override
   Widget build(BuildContext context) {
-    if (_home == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-    return _home!;
+    return _home ?? const CrBootstrapLoading();
   }
 }

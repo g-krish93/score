@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
-/// Native RTMP with display capture (Android MediaProjection).
+/// Native RTMP: camera feed + scoreboard overlay (not screen capture).
 class RtmpPlatform {
   static const _ch = MethodChannel('uk.co.cricrelay.stream/rtmp');
   static const _events = EventChannel('uk.co.cricrelay.stream/rtmp_events');
@@ -29,11 +29,54 @@ class RtmpPlatform {
     }
   }
 
-  /// Starts capture + RTMP. Returns after screen-capture permission; use [waitForConnected] for YouTube ingest.
+  static Future<void> prepareCamera({
+    int width = 1280,
+    int height = 720,
+    int fps = 30,
+  }) async {
+    await _ch.invokeMethod('prepareCamera', {
+      'width': width,
+      'height': height,
+      'fps': fps,
+    });
+  }
+
+  static Future<ZoomRange> getZoomRange() async {
+    final raw = await _ch.invokeMethod<Map>('getZoomRange');
+    final m = Map<String, dynamic>.from(raw ?? {});
+    return ZoomRange(
+      min: (m['min'] as num?)?.toDouble() ?? 1,
+      max: (m['max'] as num?)?.toDouble() ?? 1,
+      current: (m['current'] as num?)?.toDouble() ?? 1,
+    );
+  }
+
+  static Future<void> setZoom(double level) async {
+    await _ch.invokeMethod('setZoom', {'level': level});
+  }
+
+  static Future<void> updateOverlay({
+    required String overlayUrl,
+    double overlayHeightFraction = 0.22,
+    double overlayBottomMargin = 8,
+    double overlayHorizontalInset = 8,
+  }) async {
+    await _ch.invokeMethod('updateOverlay', {
+      'overlayUrl': overlayUrl,
+      'overlayHeightFraction': overlayHeightFraction,
+      'overlayBottomMargin': overlayBottomMargin,
+      'overlayHorizontalInset': overlayHorizontalInset,
+    });
+  }
+
+  /// Starts camera RTMP + overlay. Use [waitForConnected] before showing Live.
   static Future<void> startStream({
     required String rtmpUrl,
     required String streamKey,
     String? overlayUrl,
+    double overlayHeightFraction = 0.22,
+    double overlayBottomMargin = 8,
+    double overlayHorizontalInset = 8,
     int width = 1280,
     int height = 720,
     int bitrateBps = 2500000,
@@ -43,6 +86,9 @@ class RtmpPlatform {
       'rtmpUrl': rtmpUrl,
       'streamKey': streamKey,
       'overlayUrl': overlayUrl,
+      'overlayHeightFraction': overlayHeightFraction,
+      'overlayBottomMargin': overlayBottomMargin,
+      'overlayHorizontalInset': overlayHorizontalInset,
       'width': width,
       'height': height,
       'bitrateBps': bitrateBps,
@@ -54,7 +100,6 @@ class RtmpPlatform {
     await _ch.invokeMethod('stopStream');
   }
 
-  /// Wait until RTMP connects or fails (YouTube Studio must be live first).
   static Future<void> waitForConnected({
     Duration timeout = const Duration(seconds: 25),
   }) async {
@@ -98,6 +143,13 @@ class RtmpPlatform {
       timer?.cancel();
     }
   }
+}
+
+class ZoomRange {
+  const ZoomRange({required this.min, required this.max, required this.current});
+  final double min;
+  final double max;
+  final double current;
 }
 
 class RtmpStreamEvent {

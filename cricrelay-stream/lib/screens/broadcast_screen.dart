@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:camera/camera.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
@@ -11,12 +12,18 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../services/api.dart';
+import '../services/overlay_layout_store.dart';
 import '../services/rtmp_platform.dart';
+import '../models/overlay_layout_prefs.dart';
 import '../models/stream_destination.dart';
 import '../models/stream_quality.dart';
 import '../utils/rtmp_endpoint.dart';
+import '../theme/app_theme.dart';
+import '../widgets/broadcast_control_dock.dart';
+import '../widgets/overlay_layout_sheet.dart';
 import '../widgets/scoring_mode_sheet.dart';
 import '../widgets/stream_settings_sheet.dart';
+import '../widgets/ui_kit.dart';
 
 /// Live broadcast: in-app RTMP to YouTube + overlay + scoring menu.
 class BroadcastScreen extends StatefulWidget {
@@ -38,7 +45,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   String? _watchUrl;
   ScoringConfig? _scoring;
   String _scoringLabel = 'Scoring';
-  bool _androidCapture = false;
+  /// Native camera + GL overlay (not screen capture).
+  bool _nativeCamera = false;
+  bool _nativeCameraReady = false;
   /// Default: volunteer stream key (no OAuth on phone).
   StreamDestination _destination = StreamDestination.custom;
   bool _liveManagedByApi = false;
@@ -51,6 +60,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   double _maxZoom = 1.0;
   double _pinchBaseZoom = 1.0;
   StreamQualityProfile _quality = StreamQualityProfile.high;
+  late final OverlayLayoutStore _overlayStore;
+  OverlayLayoutPrefs _overlayPrefs = const OverlayLayoutPrefs();
+  bool _overlayLocked = false;
 
   @override
   void initState() {
@@ -87,59 +99,167 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   }
 
   Future<void> _init() async {
+    _overlayStore = OverlayLayoutStore(widget.api, widget.match.slug);
     await [Permission.camera, Permission.microphone].request();
     _quality = await loadStreamQualityProfile();
     await _loadSavedRtmp();
     if (Platform.isAndroid) {
-      _androidCapture = await RtmpPlatform.isCaptureSupported;
+      _nativeCamera = await RtmpPlatform.isCaptureSupported;
     }
-    final cams = await availableCameras();
-    if (cams.isNotEmpty) {
-      final back = cams.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.back,
-        orElse: () => cams.first,
-      );
-      _camera = CameraController(back, ResolutionPreset.high, enableAudio: true);
-      await _camera!.initialize();
-      await _initZoomLevels();
+    if (_nativeCamera) {
+      _nativeCameraReady = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await _syncNativeOverlay();
+        await _initZoomLevels();
+      });
+    } else {
+      final cams = await availableCameras();
+      if (cams.isNotEmpty) {
+        final back = cams.firstWhere(
+          (c) => c.lensDirection == CameraLensDirection.back,
+          orElse: () => cams.first,
+        );
+        _camera = CameraController(back, ResolutionPreset.high, enableAudio: true);
+        await _camera!.initialize();
+        await _initZoomLevels();
+      }
     }
     try {
       final cfg = await widget.api.getScoring(widget.match.slug);
       if (mounted) _applyScoringLabel(cfg);
     } catch (_) {}
-    final overlay = widget.match.overlayEmbedUrl.contains('embed=1')
-        ? widget.match.overlayEmbedUrl
-        : '${widget.match.overlayEmbedUrl}${widget.match.overlayEmbedUrl.contains('?') ? '&' : '?'}embed=1';
-    final web = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0x00000000));
+    try {
+      _overlayPrefs = await _overlayStore.load();
+    } catch (_) {}
+    if (!_nativeCamera) {
+      await _loadOverlayWebView();
+    }
+  }
+
+  Future<void> _syncNativeOverlay() async {
+    if (!_nativeCamera) return;
+    final url = _overlayStore.embedUrl(widget.match.overlayEmbedUrl, _overlayPrefs);
+    await RtmpPlatform.updateOverlay(
+      overlayUrl: url,
+      overlayHeightFraction: _overlayPrefs.heightFraction,
+      overlayBottomMargin: _overlayPrefs.bottomMargin,
+      overlayHorizontalInset: _overlayPrefs.horizontalInset,
+    );
+  }
+
+  Future<void> _loadOverlayWebView() async {
+    final url = _overlayStore.embedUrl(widget.match.overlayEmbedUrl, _overlayPrefs);
+    final web = _web ??
+        (WebViewController()
+          ..setJavaScriptMode(JavaScriptMode.unrestricted)
+          ..setBackgroundColor(const Color(0x00000000)));
     if (web.platform is AndroidWebViewController) {
       (web.platform as AndroidWebViewController).setMediaPlaybackRequiresUserGesture(false);
     }
-    await web.loadRequest(Uri.parse(overlay));
+    await web.loadRequest(Uri.parse(url));
     if (!mounted) return;
     setState(() => _web = web);
   }
 
-  Future<void> _initZoomLevels() async {
-    final cam = _camera;
-    if (cam == null || !cam.value.isInitialized) return;
+  Future<void> _applyWakelock() async {
+    if (_live && _overlayPrefs.keepScreenOn) {
+      await WakelockPlus.enable();
+    } else {
+      await WakelockPlus.disable();
+    }
+  }
+
+  Future<void> _openOverlayLayout() async {
+    if (_overlayLocked) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unlock overlay to change size or design')),
+      );
+      return;
+    }
+    final next = await showOverlayLayoutSheet(context: context, initial: _overlayPrefs);
+    if (next == null || !mounted) return;
+    setState(() => _busy = true);
     try {
-      _minZoom = await cam.getMinZoomLevel();
-      _maxZoom = await cam.getMaxZoomLevel();
-      _zoom = _minZoom;
-    } catch (_) {
-      _minZoom = 1.0;
-      _maxZoom = 1.0;
-      _zoom = 1.0;
+      final synced = await _overlayStore.saveAndSync(next);
+      _overlayPrefs = synced;
+      if (_nativeCamera) {
+        await _syncNativeOverlay();
+      } else {
+        await _reloadOverlayWebView();
+      }
+      await _applyWakelock();
+      if (mounted) {
+        setState(() => _status = 'Overlay updated — lock before going live');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _reloadOverlayWebView() async {
+    final url = _overlayStore.embedUrl(widget.match.overlayEmbedUrl, _overlayPrefs);
+    final web = _web;
+    if (web == null) {
+      await _loadOverlayWebView();
+      return;
+    }
+    await web.loadRequest(Uri.parse(url));
+    if (mounted) setState(() {});
+  }
+
+  void _toggleOverlayLock() {
+    setState(() {
+      _overlayLocked = !_overlayLocked;
+      _status = _overlayLocked
+          ? 'Overlay locked — preview touches ignored'
+          : 'Overlay unlocked — adjust layout, then lock';
+    });
+  }
+
+  Future<void> _initZoomLevels() async {
+    if (_nativeCamera) {
+      try {
+        final range = await RtmpPlatform.getZoomRange();
+        _minZoom = range.min;
+        _maxZoom = range.max;
+        _zoom = range.current;
+      } catch (_) {
+        _minZoom = 1.0;
+        _maxZoom = 1.0;
+        _zoom = 1.0;
+      }
+    } else {
+      final cam = _camera;
+      if (cam == null || !cam.value.isInitialized) return;
+      try {
+        _minZoom = await cam.getMinZoomLevel();
+        _maxZoom = await cam.getMaxZoomLevel();
+        _zoom = _minZoom;
+      } catch (_) {
+        _minZoom = 1.0;
+        _maxZoom = 1.0;
+        _zoom = 1.0;
+      }
     }
     if (mounted) setState(() {});
   }
 
   Future<void> _setZoom(double level) async {
+    final clamped = level.clamp(_minZoom, _maxZoom);
+    if (_nativeCamera) {
+      try {
+        await RtmpPlatform.setZoom(clamped);
+        if (mounted) setState(() => _zoom = clamped);
+      } catch (_) {}
+      return;
+    }
     final cam = _camera;
     if (cam == null || !cam.value.isInitialized) return;
-    final clamped = level.clamp(_minZoom, _maxZoom);
     try {
       await cam.setZoomLevel(clamped);
       if (mounted) setState(() => _zoom = clamped);
@@ -155,12 +275,19 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     await showStreamSettingsSheet(
       context: context,
       initial: _quality,
-      onChanged: (p) {
+      onChanged: (p) async {
         if (mounted) {
           setState(() {
             _quality = p;
             _status = 'Stream quality: ${p.label} (${p.width}×${p.height})';
           });
+          if (_nativeCamera && !_live) {
+            await RtmpPlatform.prepareCamera(
+              width: p.width,
+              height: p.height,
+              fps: p.fps,
+            );
+          }
         }
       },
     );
@@ -207,16 +334,20 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     if (!Platform.isAndroid) {
       throw Exception('In-app YouTube streaming is Android-only for now. Use an Android device.');
     }
-    if (!_androidCapture) {
+    if (!_nativeCamera) {
       throw Exception(
         'This APK cannot stream yet. Install the latest CricRelay Stream APK from cricrelay.co.uk',
       );
     }
+    final overlayUrl = _overlayStore.embedUrl(widget.match.overlayEmbedUrl, _overlayPrefs);
     final connected = RtmpPlatform.waitForConnected();
     await RtmpPlatform.startStream(
       rtmpUrl: cred.rtmpUrl,
       streamKey: cred.streamKey,
-      overlayUrl: cred.overlayEmbedUrl,
+      overlayUrl: overlayUrl,
+      overlayHeightFraction: _overlayPrefs.heightFraction,
+      overlayBottomMargin: _overlayPrefs.bottomMargin,
+      overlayHorizontalInset: _overlayPrefs.horizontalInset,
       width: _quality.width,
       height: _quality.height,
       bitrateBps: _quality.bitrateBps,
@@ -229,7 +360,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   }
 
   Future<void> _stopEncoder() async {
-    if (Platform.isAndroid && _androidCapture) {
+    if (Platform.isAndroid && _nativeCamera) {
       await RtmpPlatform.stopStream();
     }
   }
@@ -270,7 +401,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         cred = await widget.api.goLive(widget.match.slug, platform: platform);
         _livePlatform = platform;
       }
-      await WakelockPlus.enable();
+      setState(() => _overlayLocked = true);
       await _startEncoder(cred);
       if (!mounted) return;
       setState(() {
@@ -280,11 +411,15 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         _status = switch (_destination) {
           StreamDestination.custom => 'Live on custom RTMP',
           StreamDestination.twitch => 'Live on Twitch',
-          StreamDestination.youtube => _androidCapture
-              ? 'Live on YouTube — scoreboard burned in'
+          StreamDestination.youtube => _nativeCamera
+              ? 'Live on YouTube — camera + scoreboard only'
               : 'Live on YouTube',
         };
+        if (!_overlayPrefs.keepScreenOn) {
+          _status = '$_status — you can turn the screen off to save battery';
+        }
       });
+      await _applyWakelock();
     } catch (e) {
       await _stopEncoder();
       if (mounted) setState(() => _status = e.toString());
@@ -447,9 +582,71 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   }
 
   Widget _buildPreviewStack() {
-    final camReady = _camera?.value.isInitialized ?? false;
-    final portrait = MediaQuery.of(context).orientation == Orientation.portrait;
-    final overlayH = _androidCapture ? (portrait ? 140.0 : 120.0) : (portrait ? 110.0 : 96.0);
+    final camReady =
+        _nativeCamera ? _nativeCameraReady : (_camera?.value.isInitialized ?? false);
+
+    Widget stack = Stack(
+      fit: StackFit.expand,
+      children: [
+        if (camReady && _nativeCamera)
+          const AndroidView(
+            viewType: 'cricrelay-camera-preview',
+            layoutDirection: TextDirection.ltr,
+          )
+        else if (camReady && _camera != null) ...[
+          CameraPreview(_camera!),
+          if (_web != null) _buildFlutterOverlayPreview(),
+        ],
+        if (_nativeCamera && camReady)
+          Positioned(
+            left: _overlayPrefs.horizontalInset,
+            right: _overlayPrefs.horizontalInset,
+            bottom: _overlayPrefs.bottomMargin,
+            height: MediaQuery.of(context).size.height * _overlayPrefs.heightFraction,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: _overlayLocked ? Colors.white24 : AppColors.accentGreen,
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        if (_overlayLocked)
+          const Positioned(
+            top: 48,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: _OverlayLockedChip(),
+            ),
+          ),
+        if (_live) const Positioned(top: 12, left: 12, child: CrLiveBadge()),
+        if (camReady && _maxZoom > _minZoom && !_overlayLocked)
+          Positioned(
+            top: 12,
+            right: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                '${_zoomDisplayFactor.toStringAsFixed(1)}×',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+      ],
+    );
+
+    if (_overlayLocked) {
+      return AbsorbPointer(child: stack);
+    }
     return GestureDetector(
       onScaleStart: (_) => _pinchBaseZoom = _zoom,
       onScaleUpdate: (d) => _setZoom(_pinchBaseZoom * d.scale),
@@ -459,47 +656,34 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
             _setZoom(_zoom + event.scrollDelta.dy * -0.002);
           }
         },
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (camReady) CameraPreview(_camera!),
-            if (_web != null)
-              Positioned(
-                left: 8,
-                right: 8,
-                bottom: 8,
-                height: overlayH,
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: const Color(0xFF22D3A8), width: 2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: WebViewWidget(controller: _web!),
-                    ),
-                  ),
-                ),
-              ),
-            if (_live) const Positioned(top: 12, left: 12, child: _LiveBadge()),
-            if (camReady && _maxZoom > _minZoom)
-              Positioned(
-                top: 12,
-                right: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    '${_zoomDisplayFactor.toStringAsFixed(1)}×',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-          ],
+        child: stack,
+      ),
+    );
+  }
+
+  Widget _buildFlutterOverlayPreview() {
+    final mq = MediaQuery.of(context);
+    final overlayH = mq.size.height * _overlayPrefs.heightFraction;
+    final inset = _overlayPrefs.horizontalInset;
+    final bottom = _overlayPrefs.bottomMargin;
+    return Positioned(
+      left: inset,
+      right: inset,
+      bottom: bottom,
+      height: overlayH,
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: _overlayLocked ? Colors.white24 : const Color(0xFF22D3A8),
+              width: 2,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: WebViewWidget(controller: _web!),
+          ),
         ),
       ),
     );
@@ -507,39 +691,27 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final camReady = _camera?.value.isInitialized ?? false;
+    final camReady =
+        _nativeCamera ? _nativeCameraReady : (_camera?.value.isInitialized ?? false);
     final orient = MediaQuery.of(context).orientation;
     final isLandscape = orient == Orientation.landscape;
     return Scaffold(
       backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(widget.match.label),
-        backgroundColor: Colors.black87,
+        title: Text(
+          widget.match.label,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: Colors.black54,
+        elevation: 0,
         actions: [
           if (_watchUrl != null)
             IconButton(
               icon: const Icon(Icons.open_in_new),
               onPressed: _openWatchUrl,
-              tooltip: 'Open YouTube',
+              tooltip: 'Watch stream',
             ),
-          IconButton(
-            icon: const Icon(Icons.hd),
-            onPressed: _openStreamSettings,
-            tooltip: 'Stream quality (${_quality.label})',
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_input_antenna),
-            onPressed: _chooseDestination,
-            tooltip: switch (_destination) {
-              StreamDestination.custom => 'Volunteer stream key',
-              StreamDestination.youtube => 'Club YouTube OAuth',
-              StreamDestination.twitch => 'Club Twitch OAuth',
-            },
-          ),
-          TextButton(
-            onPressed: _openScoringMenu,
-            child: Text(_scoringLabel, style: const TextStyle(fontSize: 12)),
-          ),
         ],
       ),
       body: isLandscape
@@ -547,28 +719,26 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
               children: [
                 Expanded(child: _buildPreviewStack()),
                 SizedBox(
-                  width: 270,
-                  child: Material(
-                    color: Colors.black87,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: _ControlPanel(
-                        status: _status,
-                        live: _live,
-                        busy: _busy,
-                        camReady: camReady,
-                        qualityLabel: _quality.label,
-                        zoom: _zoom,
-                        minZoom: _minZoom,
-                        maxZoom: _maxZoom,
-                        zoomDisplay: _zoomDisplayFactor,
-                        onZoomChanged: _setZoom,
-                        onOpenQuality: _openStreamSettings,
-                        onOpenScoring: _openScoringMenu,
-                        onGoLive: _goLive,
-                        onStop: _stop,
-                      ),
-                    ),
+                  width: 300,
+                  child: BroadcastControlDock(
+                    status: _status,
+                    live: _live,
+                    busy: _busy,
+                    camReady: camReady,
+                    qualityLabel: _quality.label,
+                    zoom: _zoom,
+                    minZoom: _minZoom,
+                    maxZoom: _maxZoom,
+                    zoomDisplay: _zoomDisplayFactor,
+                    onZoomChanged: _setZoom,
+                    onOpenQuality: _openStreamSettings,
+                    onOpenScoring: _openScoringMenu,
+                    onOpenOverlay: _openOverlayLayout,
+                    onToggleOverlayLock: _toggleOverlayLock,
+                    onOpenDestination: _chooseDestination,
+                    overlayLocked: _overlayLocked,
+                    onGoLive: _goLive,
+                    onStop: _stop,
                   ),
                 ),
               ],
@@ -576,27 +746,25 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
           : Column(
               children: [
                 Expanded(child: _buildPreviewStack()),
-                Material(
-                  color: Colors.black87,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: _ControlPanel(
-                      status: _status,
-                      live: _live,
-                      busy: _busy,
-                      camReady: camReady,
-                      qualityLabel: _quality.label,
-                      zoom: _zoom,
-                      minZoom: _minZoom,
-                      maxZoom: _maxZoom,
-                      zoomDisplay: _zoomDisplayFactor,
-                      onZoomChanged: _setZoom,
-                      onOpenQuality: _openStreamSettings,
-                      onOpenScoring: _openScoringMenu,
-                      onGoLive: _goLive,
-                      onStop: _stop,
-                    ),
-                  ),
+                BroadcastControlDock(
+                  status: _status,
+                  live: _live,
+                  busy: _busy,
+                  camReady: camReady,
+                  qualityLabel: _quality.label,
+                  zoom: _zoom,
+                  minZoom: _minZoom,
+                  maxZoom: _maxZoom,
+                  zoomDisplay: _zoomDisplayFactor,
+                  onZoomChanged: _setZoom,
+                  onOpenQuality: _openStreamSettings,
+                  onOpenScoring: _openScoringMenu,
+                  onOpenOverlay: _openOverlayLayout,
+                  onToggleOverlayLock: _toggleOverlayLock,
+                  onOpenDestination: _chooseDestination,
+                  overlayLocked: _overlayLocked,
+                  onGoLive: _goLive,
+                  onStop: _stop,
                 ),
               ],
             ),
@@ -604,110 +772,26 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   }
 }
 
-class _ControlPanel extends StatelessWidget {
-  const _ControlPanel({
-    required this.status,
-    required this.live,
-    required this.busy,
-    required this.camReady,
-    required this.qualityLabel,
-    required this.zoom,
-    required this.minZoom,
-    required this.maxZoom,
-    required this.zoomDisplay,
-    required this.onZoomChanged,
-    required this.onOpenQuality,
-    required this.onOpenScoring,
-    required this.onGoLive,
-    required this.onStop,
-  });
-
-  final String? status;
-  final bool live;
-  final bool busy;
-  final bool camReady;
-  final String qualityLabel;
-  final double zoom;
-  final double minZoom;
-  final double maxZoom;
-  final double zoomDisplay;
-  final ValueChanged<double> onZoomChanged;
-  final VoidCallback onOpenQuality;
-  final VoidCallback onOpenScoring;
-  final Future<void> Function() onGoLive;
-  final Future<void> Function() onStop;
-
-  @override
-  Widget build(BuildContext context) {
-    final canZoom = camReady && maxZoom > minZoom;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (status != null)
-          Text(status!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13)),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: onOpenQuality,
-          icon: const Icon(Icons.hd),
-          label: Text('Quality: $qualityLabel'),
-        ),
-        if (canZoom) ...[
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              const Icon(Icons.zoom_out, size: 18),
-              Expanded(
-                child: Slider(
-                  value: zoom,
-                  min: minZoom,
-                  max: maxZoom,
-                  onChanged: onZoomChanged,
-                ),
-              ),
-              const Icon(Icons.zoom_in, size: 18),
-              Text('${zoomDisplay.toStringAsFixed(1)}×', style: const TextStyle(fontSize: 12)),
-            ],
-          ),
-          const Text(
-            'Pinch on preview to zoom (uses full camera range)',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: Colors.white54),
-          ),
-        ],
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: onOpenScoring,
-          icon: const Icon(Icons.scoreboard),
-          label: const Text('Scoring'),
-        ),
-        const SizedBox(height: 8),
-        !live
-            ? FilledButton.icon(
-                onPressed: (busy || !camReady) ? null : onGoLive,
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Go Live'),
-              )
-            : FilledButton.tonal(
-                onPressed: busy ? null : onStop,
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.red.shade800,
-                ),
-                child: const Text('Stop'),
-              ),
-      ],
-    );
-  }
-}
-
-class _LiveBadge extends StatelessWidget {
-  const _LiveBadge();
+class _OverlayLockedChip extends StatelessWidget {
+  const _OverlayLockedChip();
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      color: Colors.red,
-      child: const Text('LIVE', style: TextStyle(fontWeight: FontWeight.bold)),
+      decoration: BoxDecoration(
+        color: Colors.black87,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.lock, size: 14),
+          SizedBox(width: 6),
+          Text('Overlay locked', style: TextStyle(fontSize: 12)),
+        ],
+      ),
     );
   }
 }

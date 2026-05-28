@@ -8,6 +8,8 @@ ANDROID="$ROOT/android"
 
 cp -r "$CUSTOM/uk" "$ANDROID/app/src/main/kotlin/"
 cp "$CUSTOM/AndroidManifest.xml" "$ANDROID/app/src/main/AndroidManifest.xml"
+mkdir -p "$ANDROID/app/src/main/res/xml"
+cp "$CUSTOM/res/xml/network_security_config.xml" "$ANDROID/app/src/main/res/xml/network_security_config.xml"
 cp "$CUSTOM/app_build.gradle" "$ANDROID/app/build.gradle"
 cp "$CUSTOM/gradle.properties" "$ANDROID/gradle.properties"
 mkdir -p "$ANDROID/gradle/wrapper"

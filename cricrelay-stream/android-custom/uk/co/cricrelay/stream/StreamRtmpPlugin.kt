@@ -5,7 +5,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -23,15 +22,7 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
     private var channel: MethodChannel? = null
     private var eventChannel: EventChannel? = null
     private var eventSink: EventChannel.EventSink? = null
-    private var pendingResult: MethodChannel.Result? = null
-    private var pendingRtmpUrl: String? = null
-    private var pendingStreamKey: String? = null
-    private var pendingWidth: Int = 1280
-    private var pendingHeight: Int = 720
-    private var pendingBitrate: Int = 2_500_000
-    private var pendingFps: Int = 30
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var statusReceiverRegistered = false
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -44,15 +35,26 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
         }
     }
 
+    private var statusReceiverRegistered = false
+
+    private val engineStatusListener: (String, String) -> Unit = { event, message ->
+        mainHandler.post {
+            eventSink?.success(mapOf("event" to event, "message" to message))
+            broadcastStatus(event, message)
+        }
+    }
+
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
         channel = MethodChannel(binding.binaryMessenger, "uk.co.cricrelay.stream/rtmp")
         channel?.setMethodCallHandler(this)
         eventChannel = EventChannel(binding.binaryMessenger, "uk.co.cricrelay.stream/rtmp_events")
         eventChannel?.setStreamHandler(this)
+        StreamCameraEngine.setStatusListener(engineStatusListener)
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        StreamCameraEngine.setStatusListener(null)
         unregisterStatusReceiver()
         channel?.setMethodCallHandler(null)
         channel = null
@@ -91,14 +93,65 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
         statusReceiverRegistered = false
     }
 
+    private fun broadcastStatus(event: String, message: String) {
+        val ctx = appContext ?: return
+        ctx.sendBroadcast(
+            Intent(StreamCaptureService.ACTION_STATUS).apply {
+                setPackage(ctx.packageName)
+                putExtra(StreamCaptureService.EXTRA_EVENT, event)
+                putExtra(StreamCaptureService.EXTRA_MESSAGE, message)
+            },
+        )
+    }
+
+    private fun overlayLayoutFromCall(call: MethodCall): StreamCameraEngine.OverlayLayout {
+        return StreamCameraEngine.OverlayLayout(
+            heightFraction = (call.argument<Double>("overlayHeightFraction") ?: 0.22).toFloat(),
+            bottomMarginFraction = (call.argument<Double>("overlayBottomMargin") ?: 8.0).toFloat() / 400f,
+            horizontalInsetFraction = (call.argument<Double>("overlayHorizontalInset") ?: 8.0).toFloat() / 400f,
+        )
+    }
+
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "isCaptureSupported" -> result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
+            "prepareCamera" -> {
+                val width = call.argument<Int>("width") ?: 1280
+                val height = call.argument<Int>("height") ?: 720
+                val fps = call.argument<Int>("fps") ?: 30
+                StreamCameraEngine.preparePreview(width, height, fps)
+                result.success(true)
+            }
+            "getZoomRange" -> {
+                result.success(
+                    mapOf(
+                        "min" to StreamCameraEngine.minZoom().toDouble(),
+                        "max" to StreamCameraEngine.maxZoom().toDouble(),
+                        "current" to StreamCameraEngine.currentZoom().toDouble(),
+                    ),
+                )
+            }
+            "setZoom" -> {
+                val level = (call.argument<Double>("level") ?: 1.0).toFloat()
+                StreamCameraEngine.setZoom(level)
+                result.success(null)
+            }
+            "updateOverlay" -> {
+                val url = call.argument<String>("overlayUrl") ?: ""
+                if (url.isNotEmpty()) {
+                    StreamCameraEngine.updateOverlay(url, overlayLayoutFromCall(call))
+                }
+                result.success(null)
+            }
             "startStream" -> {
                 val url = call.argument<String>("rtmpUrl") ?: ""
                 val key = call.argument<String>("streamKey") ?: ""
                 if (url.isBlank() || key.isBlank()) {
                     result.error("args", "rtmpUrl and streamKey required", null)
+                    return
+                }
+                if (!StreamCameraEngine.isViewAttached) {
+                    result.error("camera", "Camera preview not ready yet", null)
                     return
                 }
                 val act = activity
@@ -107,18 +160,30 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                     return
                 }
                 registerStatusReceiver()
-                pendingRtmpUrl = url
-                pendingStreamKey = key
-                pendingWidth = call.argument<Int>("width") ?: 1280
-                pendingHeight = call.argument<Int>("height") ?: 720
-                pendingBitrate = call.argument<Int>("bitrateBps") ?: 2_500_000
-                pendingFps = call.argument<Int>("fps") ?: 30
-                pendingResult = result
-                val mgr = act.getSystemService(Activity.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                act.startActivityForResult(mgr.createScreenCaptureIntent(), REQ_CAPTURE)
+                val overlayUrl = call.argument<String>("overlayUrl") ?: ""
+                val width = call.argument<Int>("width") ?: 1280
+                val height = call.argument<Int>("height") ?: 720
+                val bitrate = call.argument<Int>("bitrateBps") ?: 2_500_000
+                val fps = call.argument<Int>("fps") ?: 30
+                val layout = overlayLayoutFromCall(call)
+                val fg = Intent(act, StreamCaptureService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    act.startForegroundService(fg)
+                } else {
+                    act.startService(fg)
+                }
+                try {
+                    StreamCameraEngine.startStream(url, key, overlayUrl, width, height, bitrate, fps, layout)
+                    val endpoint = StreamCaptureService.buildEndpoint(url, key)
+                    result.success(mapOf("endpoint" to endpoint))
+                } catch (e: Exception) {
+                    act.stopService(fg)
+                    result.error("stream", e.message, null)
+                }
             }
             "stopStream" -> {
                 val act = activity
+                StreamCameraEngine.stopStream()
                 if (act != null) {
                     act.stopService(Intent(act, StreamCaptureService::class.java))
                 }
@@ -129,49 +194,12 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
         }
     }
 
-    fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode != REQ_CAPTURE) return
-        val res = pendingResult
-        pendingResult = null
-        val act = activity
-        val url = pendingRtmpUrl
-        val key = pendingStreamKey
-        val width = pendingWidth
-        val height = pendingHeight
-        val bitrate = pendingBitrate
-        val fps = pendingFps
-        pendingRtmpUrl = null
-        pendingStreamKey = null
-        if (res == null || act == null || url == null || key == null) return
-        if (resultCode != Activity.RESULT_OK || data == null) {
-            res.error("capture", "Screen capture permission denied", null)
-            return
-        }
-        val endpoint = StreamCaptureService.buildEndpoint(url, key)
-        val intent = Intent(act, StreamCaptureService::class.java).apply {
-            putExtra(StreamCaptureService.EXTRA_RESULT_CODE, resultCode)
-            putExtra(StreamCaptureService.EXTRA_DATA, data)
-            putExtra(StreamCaptureService.EXTRA_RTMP_URL, url)
-            putExtra(StreamCaptureService.EXTRA_STREAM_KEY, key)
-            putExtra(StreamCaptureService.EXTRA_WIDTH, width)
-            putExtra(StreamCaptureService.EXTRA_HEIGHT, height)
-            putExtra(StreamCaptureService.EXTRA_BITRATE, bitrate)
-            putExtra(StreamCaptureService.EXTRA_FPS, fps)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            act.startForegroundService(intent)
-        } else {
-            act.startService(intent)
-        }
-        res.success(mapOf("endpoint" to endpoint))
-    }
-
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activity = binding.activity
-        binding.addActivityResultListener { requestCode, resultCode, data ->
-            onActivityResult(requestCode, resultCode, data)
-            true
-        }
+        binding.platformViewRegistry.registerViewFactory(
+            "cricrelay-camera-preview",
+            CricrelayCameraViewFactory(binding.activity),
+        )
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
@@ -180,18 +208,14 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
         activity = binding.activity
-        binding.addActivityResultListener { requestCode, resultCode, data ->
-            onActivityResult(requestCode, resultCode, data)
-            true
-        }
+        binding.platformViewRegistry.registerViewFactory(
+            "cricrelay-camera-preview",
+            CricrelayCameraViewFactory(binding.activity),
+        )
     }
 
     override fun onDetachedFromActivity() {
         activity = null
         unregisterStatusReceiver()
-    }
-
-    companion object {
-        const val REQ_CAPTURE = 9912
     }
 }

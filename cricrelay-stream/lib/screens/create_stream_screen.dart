@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../services/api.dart';
+import '../theme/app_theme.dart';
+import '../widgets/ui_kit.dart';
 import 'broadcast_screen.dart';
 
 class CreateStreamScreen extends StatefulWidget {
@@ -43,7 +45,7 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
     try {
       _fixtures = await widget.api.listFixtures();
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceFirst('Exception: ', '');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -52,9 +54,7 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
   Future<void> _createAndOpen(StreamMatch match) async {
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => BroadcastScreen(api: widget.api, match: match),
-      ),
+      MaterialPageRoute(builder: (_) => BroadcastScreen(api: widget.api, match: match)),
     );
   }
 
@@ -67,7 +67,7 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
       );
       await _createAndOpen(m);
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -87,23 +87,10 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
       );
       await _createAndOpen(m);
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-  }
-
-  Widget _fixtureCard(FixturesResponse fx, FixtureItem f) {
-    final linked = fx.activeMatchIds.contains(f.matchId);
-    return Card(
-      child: ListTile(
-        title: Text(f.title.isEmpty ? 'Match ${f.matchId}' : f.title),
-        subtitle: Text(linked ? 'Already linked' : 'ID ${f.matchId}'),
-        enabled: !linked && !_loading,
-        trailing: linked ? const Icon(Icons.check) : const Icon(Icons.add),
-        onTap: linked || _loading ? null : () => _createFromFixture(f),
-      ),
-    );
   }
 
   Future<void> _createBle() async {
@@ -117,7 +104,7 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
       final m = await widget.api.createPcsBleStream(label: label);
       await _createAndOpen(m);
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -131,75 +118,93 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
       body: _loading && fx == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppSpacing.md),
               children: [
                 SegmentedButton<int>(
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                  ),
                   segments: const [
-                    ButtonSegment(value: 0, label: Text('Play-Cricket')),
-                    ButtonSegment(value: 1, label: Text('PCS BLE')),
+                    ButtonSegment(value: 0, label: Text('Play-Cricket'), icon: Icon(Icons.sports_cricket)),
+                    ButtonSegment(value: 1, label: Text('PCS BLE'), icon: Icon(Icons.bluetooth)),
                   ],
                   selected: {_tab},
                   onSelectionChanged: (s) => setState(() => _tab = s.first),
                 ),
                 if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+                  const SizedBox(height: AppSpacing.md),
+                  CrErrorBanner(message: _error!),
                 ],
                 if (fx != null)
                   Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.only(top: AppSpacing.md),
                     child: Text(
-                      'Streams ${fx.slotsUsed}/${fx.slotsTotal}',
-                      style: const TextStyle(color: Colors.white70),
+                      'Stream slots ${fx.slotsUsed} / ${fx.slotsTotal}',
+                      style: appTextTheme.bodySmall,
                     ),
                   ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.lg),
                 if (_tab == 0) ...[
                   TextField(
                     controller: _labelCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Stream label (optional)',
-                      hintText: 'e.g. 1st XI vs Rivals',
+                      labelText: 'Stream title (optional)',
+                      hintText: '1st XI vs Rivals',
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.md),
                   TextField(
                     controller: _matchIdCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Or enter match ID manually',
+                      labelText: 'Play-Cricket match ID',
                       hintText: '7560599',
                     ),
                     keyboardType: TextInputType.number,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.md),
                   FilledButton(
                     onPressed: _loading ? null : _createManualId,
                     child: const Text('Create from match ID'),
                   ),
-                  const SizedBox(height: 20),
-                  const Text('Fixtures from your club site',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: AppSpacing.lg),
+                  const CrSectionLabel('Club fixtures'),
                   if (fx != null && fx.error != null)
                     Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(fx.error!, style: const TextStyle(color: Colors.orangeAccent)),
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: Text(fx.error!, style: const TextStyle(color: AppColors.warning, fontSize: 13)),
                     ),
                   if (fx != null)
-                    for (final f in fx.fixtures) _fixtureCard(fx, f),
+                    for (final f in fx.fixtures)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                        child: Opacity(
+                          opacity: fx.activeMatchIds.contains(f.matchId) || _loading ? 0.45 : 1,
+                          child: CrStreamTile(
+                            title: f.title.isEmpty ? 'Match ${f.matchId}' : f.title,
+                            subtitle: fx.activeMatchIds.contains(f.matchId)
+                                ? 'Already linked'
+                                : 'ID ${f.matchId}',
+                            onTap: fx.activeMatchIds.contains(f.matchId) || _loading
+                                ? () {}
+                                : () => _createFromFixture(f),
+                          ),
+                        ),
+                      ),
                 ] else ...[
-                  const Text(
-                    'PCS Bluetooth scoring (R&D). Use BLE scoring mode while live.',
-                    style: TextStyle(color: Colors.white70),
+                  const CrInfoBanner(
+                    title: 'PCS Bluetooth scoring',
+                    body: 'Experimental BLE scoring. Choose BLE mode while live on the broadcast screen.',
+                    icon: Icons.bluetooth,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.md),
                   TextField(
                     controller: _bleLabelCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Stream label',
+                      labelText: 'Stream title',
                       hintText: '1st XI vs Rivals',
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.md),
                   FilledButton(
                     onPressed: _loading ? null : _createBle,
                     child: const Text('Create BLE stream'),

@@ -2564,6 +2564,58 @@ def api_get_scoring(org: Organization, match_slug: str):
     )
 
 
+def _overlay_prefs_json(slug: str) -> dict:
+    with match_context(slug):
+        merge_missing_state_keys(state)
+        size = normalize_overlay_size(state.get("overlay_size"), state.get("overlay_scale"))
+        theme = str(state.get("theme") or "classic").strip().lower()
+        if theme not in {"classic", "neon", "minimal"}:
+            theme = "classic"
+        density = str(state.get("overlay_density") or "expanded").strip().lower()
+        if density not in {"compact", "expanded"}:
+            density = "expanded"
+        return {
+            "ok": True,
+            "overlay_size": size,
+            "overlay_scale": float(state.get("overlay_scale") or 1.0),
+            "theme": theme,
+            "overlay_density": density,
+        }
+
+
+@app.get("/api/match/<match_slug>/overlay")
+@stream_api_auth_required
+def api_get_overlay(org: Organization, match_slug: str):
+    slug = sanitize_match_id(match_slug)
+    if not relay_match_for_org(org, slug):
+        return jsonify({"error": "unknown stream"}), 404
+    return jsonify(_overlay_prefs_json(slug))
+
+
+@app.post("/api/match/<match_slug>/overlay")
+@stream_api_auth_required
+def api_set_overlay(org: Organization, match_slug: str):
+    slug = sanitize_match_id(match_slug)
+    if not relay_match_for_org(org, slug):
+        return jsonify({"error": "unknown stream"}), 404
+    data = request.get_json(silent=True) or {}
+    with match_context(slug):
+        merge_missing_state_keys(state)
+        if "overlay_size" in data:
+            state["overlay_size"] = normalize_overlay_size(
+                data.get("overlay_size"), data.get("overlay_scale")
+            )
+            state["overlay_scale"] = round(0.8 + (state["overlay_size"] - 1) * 0.25, 2)
+        if "theme" in data:
+            theme = str(data.get("theme") or "classic").strip().lower()
+            state["theme"] = theme if theme in {"classic", "neon", "minimal"} else "classic"
+        if "overlay_density" in data:
+            density = str(data.get("overlay_density") or "expanded").strip().lower()
+            state["overlay_density"] = density if density in {"compact", "expanded"} else "expanded"
+        save_state()
+    return jsonify(_overlay_prefs_json(slug))
+
+
 @app.post("/api/match/<match_slug>/scoring")
 @stream_api_auth_required
 def api_set_scoring(org: Organization, match_slug: str):
