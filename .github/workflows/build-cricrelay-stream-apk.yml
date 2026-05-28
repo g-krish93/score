@@ -69,3 +69,18 @@ jobs:
           fi
           git commit -m "chore: update CricRelay Stream APK [skip deploy]"
           git push
+
+      # Bot pushes do not trigger deploy.yml; pull APK onto EC2 here.
+      - name: Sync APK to EC2
+        if: success()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            set -e
+            cd /app
+            git pull origin main
+            test -f static/cricrelay-stream.apk
+            ls -la static/cricrelay-stream.apk
