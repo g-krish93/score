@@ -2404,6 +2404,7 @@ def api_youtube_status(org: Organization):
     return jsonify(
         {
             "ok": True,
+            "oauth_configured": yt.oauth_configured(),
             "connected": bool((org.youtube_refresh_token_enc or "").strip()),
             "channel_title": org.youtube_channel_title or "",
             "live_active": bool(org.youtube_active_broadcast_id),

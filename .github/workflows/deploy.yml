@@ -14,11 +14,16 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          YOUTUBE_REDIRECT_URI: ${{ secrets.YOUTUBE_REDIRECT_URI }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_KEY }}
-          envs: SMTP_PASSWORD
+          envs: SMTP_PASSWORD,YOUTUBE_CLIENT_ID,YOUTUBE_CLIENT_SECRET,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,YOUTUBE_REDIRECT_URI
           script: |
             set -e
             cd /app

@@ -21,6 +21,7 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> {
   bool _loading = true;
   String? _error;
   bool _youtubeOk = false;
+  bool _youtubeOauthConfigured = true;
   String _channelTitle = '';
 
   @override
@@ -51,6 +52,7 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> {
       }
       setState(() {
         _streams = list;
+        _youtubeOauthConfigured = yt['oauth_configured'] != false;
         _youtubeOk = yt['connected'] == true;
         _channelTitle = (yt['channel_title'] ?? '').toString();
       });
@@ -124,7 +126,9 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> {
                           Text(
                             _youtubeOk
                                 ? 'Connected: $_channelTitle'
-                                : 'Connect your club channel to stream',
+                                : (_youtubeOauthConfigured
+                                    ? 'Connect your club channel to stream'
+                                    : 'YouTube OAuth is not configured on server'),
                             style: TextStyle(
                               color: _youtubeOk ? Colors.greenAccent : Colors.orangeAccent,
                             ),

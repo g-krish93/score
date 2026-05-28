@@ -36,6 +36,11 @@ upsert "SECRET_KEY" "$SECRET_VAL"
 grep -q "^PORT=" "$ENV_FILE" || upsert "PORT" "5000"
 grep -q "^PUBLIC_BASE_URL=" "$ENV_FILE" || upsert "PUBLIC_BASE_URL" "https://cricrelay.co.uk"
 grep -q "^RELAY_AUTO_POLL=" "$ENV_FILE" || upsert "RELAY_AUTO_POLL" "1"
+if [[ -n "${YOUTUBE_CLIENT_ID:-}" ]]; then upsert "YOUTUBE_CLIENT_ID" "$YOUTUBE_CLIENT_ID"; fi
+if [[ -n "${YOUTUBE_CLIENT_SECRET:-}" ]]; then upsert "YOUTUBE_CLIENT_SECRET" "$YOUTUBE_CLIENT_SECRET"; fi
+if [[ -n "${GOOGLE_CLIENT_ID:-}" ]]; then upsert "GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_ID"; fi
+if [[ -n "${GOOGLE_CLIENT_SECRET:-}" ]]; then upsert "GOOGLE_CLIENT_SECRET" "$GOOGLE_CLIENT_SECRET"; fi
+if [[ -n "${YOUTUBE_REDIRECT_URI:-}" ]]; then upsert "YOUTUBE_REDIRECT_URI" "$YOUTUBE_REDIRECT_URI"; fi
 
 chown ec2-user:ec2-user "$ENV_FILE" 2>/dev/null || true
 
