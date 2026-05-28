@@ -12,7 +12,8 @@ fi
 
 chown -R "${OWNER}:${OWNER}" "$APP"
 
-runuser -u "$OWNER" -- git -C "$APP" fetch origin main
-runuser -u "$OWNER" -- git -C "$APP" reset --hard origin/main
+# Shallow fetch uses far less RAM than a full fetch on t3.micro (~1 GB).
+runuser -u "$OWNER" -- git -C "$APP" fetch --depth=1 origin main
+runuser -u "$OWNER" -- git -C "$APP" reset --hard FETCH_HEAD
 
 echo "=== synced to $(runuser -u "$OWNER" -- git -C "$APP" rev-parse --short HEAD) ==="
