@@ -68,6 +68,11 @@ resource "aws_instance" "cricket" {
   vpc_security_group_ids = [aws_security_group.cricket_sg.id]
   user_data              = templatefile("user_data.sh", { github_repo = var.github_repo })
   tags                   = { Name = "cricket-overlay" }
+
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+  }
 }
 
 resource "aws_eip" "cricket_ip" {

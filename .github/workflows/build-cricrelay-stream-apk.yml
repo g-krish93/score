@@ -117,12 +117,9 @@ jobs:
           script: |
             set -e
             EMERGENCY_URL="https://raw.githubusercontent.com/g-krish93/score/main/deploy/ec2-emergency-cleanup.sh"
+            GIT_SYNC_URL="https://raw.githubusercontent.com/g-krish93/score/main/deploy/ec2-git-sync.sh"
             curl -sfSL "$EMERGENCY_URL" | sudo bash || true
-            cd /app
-            if ! git pull origin main; then
-              curl -sfSL "$EMERGENCY_URL" | sudo bash || true
-              git pull origin main
-            fi
+            curl -sfSL "$GIT_SYNC_URL" | sudo bash
             test -f static/cricrelay-stream.apk
             ls -la static/cricrelay-stream.apk
 
@@ -258,12 +255,9 @@ jobs:
           script: |
             set -e
             EMERGENCY_URL="https://raw.githubusercontent.com/g-krish93/score/main/deploy/ec2-emergency-cleanup.sh"
+            GIT_SYNC_URL="https://raw.githubusercontent.com/g-krish93/score/main/deploy/ec2-git-sync.sh"
             curl -sfSL "$EMERGENCY_URL" | sudo bash || true
-            cd /app
-            if ! git pull origin main; then
-              curl -sfSL "$EMERGENCY_URL" | sudo bash || true
-              git pull origin main
-            fi
+            curl -sfSL "$GIT_SYNC_URL" | sudo bash
             test -f static/cricrelay-stream.apk
             ls -la static/cricrelay-stream.apk
             if [ -f static/cricrelay-stream.ipa ]; then ls -la static/cricrelay-stream.ipa; fi

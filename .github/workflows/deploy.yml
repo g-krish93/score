@@ -31,6 +31,7 @@ jobs:
           script: |
             set -e
             EMERGENCY_URL="https://raw.githubusercontent.com/g-krish93/score/main/deploy/ec2-emergency-cleanup.sh"
+            GIT_SYNC_URL="https://raw.githubusercontent.com/g-krish93/score/main/deploy/ec2-git-sync.sh"
             # Must free disk BEFORE git pull — pull fails with "No space left on device" otherwise.
             curl -sfSL "$EMERGENCY_URL" | sudo bash || {
               echo "curl emergency cleanup failed — minimal inline fallback"
@@ -40,10 +41,12 @@ jobs:
               df -h /
             }
             cd /app
-            if ! git pull origin main; then
-              echo "git pull failed — retry after second cleanup"
+            sudo chown -R ec2-user:ec2-user /app
+            if ! curl -sfSL "$GIT_SYNC_URL" | sudo bash; then
+              echo "git sync failed — retry after second cleanup"
               curl -sfSL "$EMERGENCY_URL" | sudo bash || true
-              git pull origin main
+              sudo chown -R ec2-user:ec2-user /app
+              curl -sfSL "$GIT_SYNC_URL" | sudo bash
             fi
             if [ -f deploy/ec2-disk-cleanup.sh ]; then
               sudo bash deploy/ec2-disk-cleanup.sh

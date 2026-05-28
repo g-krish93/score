@@ -25,7 +25,8 @@ find /tmp -mindepth 1 -maxdepth 1 -mtime +1 -exec rm -rf {} + 2>/dev/null || tru
 
 # Compact git objects in /app (APK commits bloat .git over time).
 if [[ -d /app/.git ]]; then
-  git -C /app gc --prune=now 2>/dev/null || true
+  chown -R ec2-user:ec2-user /app 2>/dev/null || true
+  runuser -u ec2-user -- git -C /app gc --prune=now 2>/dev/null || true
 fi
 
 echo "=== Disk after cleanup ==="

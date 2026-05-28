@@ -17,13 +17,9 @@ jobs:
           script: |
             set -e
             EMERGENCY_URL="https://raw.githubusercontent.com/g-krish93/score/main/deploy/ec2-emergency-cleanup.sh"
+            GIT_SYNC_URL="https://raw.githubusercontent.com/g-krish93/score/main/deploy/ec2-git-sync.sh"
             curl -sfSL "$EMERGENCY_URL" | sudo bash || true
-            cd /app
-            if ! git fetch origin main; then
-              curl -sfSL "$EMERGENCY_URL" | sudo bash || true
-              git fetch origin main
-            fi
-            git reset --hard origin/main
+            curl -sfSL "$GIT_SYNC_URL" | sudo bash
             test -f static/cricrelay-stream.apk
             ls -la static/cricrelay-stream.apk
             sha256sum static/cricrelay-stream.apk | head -1
