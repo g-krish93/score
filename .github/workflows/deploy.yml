@@ -39,6 +39,18 @@ jobs:
             if [ -f deploy/persist-auth-env.sh ]; then
               sudo bash deploy/persist-auth-env.sh
             fi
+            if [ -f deploy/configure-youtube-env.sh ]; then
+              sudo mkdir -p /app/secrets
+              if [ -n "${YOUTUBE_CLIENT_ID:-}${GOOGLE_CLIENT_ID:-}" ]; then
+                printf '%s' "${YOUTUBE_CLIENT_ID:-$GOOGLE_CLIENT_ID}" | sudo tee /app/secrets/youtube_client_id > /dev/null
+                sudo chmod 600 /app/secrets/youtube_client_id
+              fi
+              if [ -n "${YOUTUBE_CLIENT_SECRET:-}${GOOGLE_CLIENT_SECRET:-}" ]; then
+                printf '%s' "${YOUTUBE_CLIENT_SECRET:-$GOOGLE_CLIENT_SECRET}" | sudo tee /app/secrets/youtube_client_secret > /dev/null
+                sudo chmod 600 /app/secrets/youtube_client_secret
+              fi
+              sudo -E bash deploy/configure-youtube-env.sh
+            fi
             if [ -f deploy/configure-smtp-env.sh ]; then
               if [ -n "${SMTP_PASSWORD:-}" ]; then
                 sudo mkdir -p /app/secrets

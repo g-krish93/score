@@ -44,6 +44,10 @@ if [[ -n "${YOUTUBE_REDIRECT_URI:-}" ]]; then upsert "YOUTUBE_REDIRECT_URI" "$YO
 
 chown ec2-user:ec2-user "$ENV_FILE" 2>/dev/null || true
 
+if [[ -f "$APP/deploy/configure-youtube-env.sh" ]]; then
+  bash "$APP/deploy/configure-youtube-env.sh"
+fi
+
 if [[ -f "$APP/deploy/configure-smtp-env.sh" ]]; then
   bash "$APP/deploy/configure-smtp-env.sh"
 fi

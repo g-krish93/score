@@ -2502,6 +2502,20 @@ def health():
         )
 
 
+@app.get("/api/stream/setup")
+def api_stream_setup():
+    """Public setup check for mobile app (no secrets exposed)."""
+    redirect_uri = _youtube_redirect_uri()
+    return jsonify(
+        {
+            "ok": True,
+            "youtube_oauth_configured": yt.oauth_configured(),
+            "youtube_redirect_uri": redirect_uri,
+            "public_base_url": _public_base_url(),
+        }
+    )
+
+
 from .relay_poller import start_relay_poller
 
 register_relay_worker(app, apply_relay_ingest_payload)

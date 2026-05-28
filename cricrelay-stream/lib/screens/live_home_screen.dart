@@ -64,6 +64,20 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> {
   }
 
   Future<void> _connectYoutube() async {
+    if (!_youtubeOauthConfigured) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'YouTube sign-in is not set up on the server yet. '
+            'Use Custom RTMP in the broadcast screen (antenna icon), or ask your admin to add '
+            'YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET on cricrelay.co.uk.',
+          ),
+          duration: Duration(seconds: 8),
+        ),
+      );
+      return;
+    }
     try {
       final url = await widget.api.youtubeAuthorizeUrl();
       if (!mounted) return;
