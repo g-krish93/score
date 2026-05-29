@@ -64,6 +64,7 @@ Future<bool> showGoLivePreflightSheet({
     cameraReady: cameraReady,
     probe: resolveCameraReady,
   );
+  if (!context.mounted) return false;
 
   final result = await showModalBottomSheet<bool>(
     context: context,
