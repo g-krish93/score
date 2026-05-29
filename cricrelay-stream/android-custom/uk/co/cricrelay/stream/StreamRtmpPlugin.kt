@@ -163,6 +163,24 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                 }
                 result.success(null)
             }
+            "showNativePreview" -> {
+                val act = pluginActivity
+                if (act == null) {
+                    result.error("activity", "No activity", null)
+                    return
+                }
+                CameraPreviewHost.show(act)
+                result.success(null)
+            }
+            "hideNativePreview" -> {
+                val act = pluginActivity
+                if (act != null) {
+                    CameraPreviewHost.hide(act)
+                } else {
+                    CameraPreviewHost.hideCurrent()
+                }
+                result.success(null)
+            }
             "startStream" -> {
                 val url = call.argument<String>("rtmpUrl") ?: ""
                 val key = call.argument<String>("streamKey") ?: ""
@@ -186,26 +204,12 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                 val bitrate = call.argument<Int>("bitrateBps") ?: 2_500_000
                 val fps = call.argument<Int>("fps") ?: 30
                 val layout = overlayLayoutFromCall(call)
-                val fg = Intent(act, StreamCaptureService::class.java)
-                try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        act.startForegroundService(fg)
-                    } else {
-                        act.startService(fg)
-                    }
-                } catch (e: Exception) {
-                    result.error("service", e.message ?: "Could not start stream service", null)
-                    return
-                }
                 try {
                     StreamCameraEngine.startStream(url, key, overlayUrl, width, height, bitrate, fps, layout)
+                    startStreamServiceSafely(act)
                     val endpoint = StreamCaptureService.buildEndpoint(url, key)
                     result.success(mapOf("endpoint" to endpoint))
                 } catch (e: Exception) {
-                    try {
-                        act.stopService(fg)
-                    } catch (_: Exception) {
-                    }
                     StreamCameraEngine.stopStream()
                     result.error("stream", e.message, null)
                 }
@@ -213,13 +217,32 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
             "stopStream" -> {
                 val act = pluginActivity
                 StreamCameraEngine.stopStream()
-                if (act != null) {
-                    act.stopService(Intent(act, StreamCaptureService::class.java))
-                }
+                stopStreamServiceSafely(act)
                 unregisterStatusReceiver()
                 result.success(null)
             }
             else -> result.notImplemented()
+        }
+    }
+
+    private fun startStreamServiceSafely(act: Activity) {
+        try {
+            val fg = Intent(act, StreamCaptureService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                act.startForegroundService(fg)
+            } else {
+                act.startService(fg)
+            }
+        } catch (_: Exception) {
+            // Stream can continue; Flutter wakelock keeps the device awake.
+        }
+    }
+
+    private fun stopStreamServiceSafely(act: Activity?) {
+        if (act == null) return
+        try {
+            act.stopService(Intent(act, StreamCaptureService::class.java))
+        } catch (_: Exception) {
         }
     }
 

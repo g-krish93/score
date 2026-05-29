@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 
@@ -81,6 +82,19 @@ class RtmpPlatform {
     });
   }
 
+  /// Activity-level camera surface (Android). Avoids PlatformView GL crashes on Go Live.
+  static Future<void> showNativePreview() async {
+    if (!Platform.isAndroid) return;
+    await _ch.invokeMethod('showNativePreview');
+  }
+
+  static Future<void> hideNativePreview() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _ch.invokeMethod('hideNativePreview');
+    } catch (_) {}
+  }
+
   /// Starts camera RTMP + overlay. Use [waitForConnected] before showing Live.
   static Future<void> startStream({
     required String rtmpUrl,
@@ -94,18 +108,22 @@ class RtmpPlatform {
     int bitrateBps = 2500000,
     int fps = 30,
   }) async {
-    await _ch.invokeMethod('startStream', {
-      'rtmpUrl': rtmpUrl,
-      'streamKey': streamKey,
-      'overlayUrl': overlayUrl,
-      'overlayHeightFraction': overlayHeightFraction,
-      'overlayBottomMargin': overlayBottomMargin,
-      'overlayHorizontalInset': overlayHorizontalInset,
-      'width': width,
-      'height': height,
-      'bitrateBps': bitrateBps,
-      'fps': fps,
-    });
+    try {
+      await _ch.invokeMethod('startStream', {
+        'rtmpUrl': rtmpUrl,
+        'streamKey': streamKey,
+        'overlayUrl': overlayUrl,
+        'overlayHeightFraction': overlayHeightFraction,
+        'overlayBottomMargin': overlayBottomMargin,
+        'overlayHorizontalInset': overlayHorizontalInset,
+        'width': width,
+        'height': height,
+        'bitrateBps': bitrateBps,
+        'fps': fps,
+      });
+    } on PlatformException catch (e) {
+      throw Exception(e.message ?? e.details?.toString() ?? 'Stream failed to start');
+    }
   }
 
   static Future<void> stopStream() async {

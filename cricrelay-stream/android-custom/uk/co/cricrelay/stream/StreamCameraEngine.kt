@@ -240,6 +240,7 @@ object StreamCameraEngine : ConnectChecker {
             camera?.stopStream()
         } catch (_: Exception) {
         }
+        openGlView?.keepScreenOn = false
         ensurePreviewRunning()
     }
 
@@ -302,12 +303,9 @@ object StreamCameraEngine : ConnectChecker {
         layout: OverlayLayout,
     ) {
         val cam = ensureCamera() ?: throw IllegalStateException("Camera preview not ready — wait for preview")
-        if (!cam.isOnPreview) {
-            ensureEncoderPrepared(cam, width, height, fps, bitrate, reconfigurePreview = false)
-            ensurePreviewRunning()
-        }
         overlayLayout = layout
         overlayUrl = url
+        pendingOverlayAfterConnect = url.isNotEmpty()
 
         val endpoint = StreamCaptureService.buildEndpoint(rtmpUrl, streamKey)
         if (!endpoint.startsWith("rtmp://")) {
@@ -315,31 +313,47 @@ object StreamCameraEngine : ConnectChecker {
             throw IllegalArgumentException("Invalid RTMP URL")
         }
 
-        emit(StreamCaptureService.EVENT_PREPARING, endpoint)
-
-        // Prepare once; never stopPreview here — that causes a black screen while "live".
-        ensureEncoderPrepared(cam, width, height, fps, bitrate, reconfigurePreview = false)
-        ensurePreviewRunning()
-
-        pendingOverlayAfterConnect = url.isNotEmpty()
-        if (url.isNotEmpty()) {
-            ensureOverlayCapture()?.loadUrl(url)
+        if (!cam.isOnPreview) {
+            ensureEncoderPrepared(cam, width, height, fps, bitrate, reconfigurePreview = false)
+            ensurePreviewRunning(required = true)
         }
 
-        if (!cam.isStreaming) {
+        if (!cam.isOnPreview) {
+            throw IllegalStateException("Camera preview is not running — wait for preview before Go Live")
+        }
+
+        emit(StreamCaptureService.EVENT_PREPARING, "Starting stream…")
+
+        ensureEncoderPrepared(cam, width, height, fps, bitrate, reconfigurePreview = false)
+
+        if (cam.isStreaming) return
+
+        try {
+            openGlView?.keepScreenOn = true
             cam.startStream(endpoint)
+        } catch (t: Throwable) {
+            openGlView?.keepScreenOn = false
+            throw IllegalStateException(
+                "RTMP encoder failed: ${t.message ?: t.javaClass.simpleName}",
+                t,
+            )
         }
     }
 
     private fun attachOverlayAfterConnect() {
         if (!pendingOverlayAfterConnect) return
         pendingOverlayAfterConnect = false
-        try {
-            ensureOverlayFilter()
-            startOverlayRefresh()
-        } catch (_: Exception) {
-            stopOverlayRefresh()
-        }
+        mainHandler.postDelayed({
+            try {
+                if (overlayUrl.isNotEmpty()) {
+                    ensureOverlayCapture()?.loadUrl(overlayUrl)
+                }
+                ensureOverlayFilter()
+                startOverlayRefresh()
+            } catch (e: Exception) {
+                emit(StreamCaptureService.EVENT_ERROR, "Scoreboard overlay failed: ${e.message}")
+            }
+        }, 2000)
     }
 
     /**
@@ -400,13 +414,19 @@ object StreamCameraEngine : ConnectChecker {
         encoderPrepared = true
     }
 
-    private fun ensurePreviewRunning() {
+    private fun ensurePreviewRunning(required: Boolean = false) {
         val cam = camera ?: return
         if (cam.isOnPreview) return
         try {
             cam.startPreview()
         } catch (e: Exception) {
             emit(StreamCaptureService.EVENT_ERROR, "Camera preview failed: ${e.message}")
+            if (required) {
+                throw IllegalStateException("Camera preview failed: ${e.message}")
+            }
+        }
+        if (required && !cam.isOnPreview) {
+            throw IllegalStateException("Camera preview failed to start")
         }
     }
 
@@ -427,11 +447,16 @@ object StreamCameraEngine : ConnectChecker {
             applyOverlaySprite()
             return
         }
-        val filter = ImageObjectFilterRender()
-        filter.setPosition(TranslateTo.BOTTOM)
-        cam.glInterface.addFilter(filter)
-        imageFilter = filter
-        applyOverlaySprite()
+        if (!cam.isStreaming) return
+        try {
+            val filter = ImageObjectFilterRender()
+            filter.setPosition(TranslateTo.BOTTOM)
+            cam.glInterface.addFilter(filter)
+            imageFilter = filter
+            applyOverlaySprite()
+        } catch (e: Exception) {
+            emit(StreamCaptureService.EVENT_ERROR, "Overlay filter failed: ${e.message}")
+        }
     }
 
     private fun applyOverlaySprite() {

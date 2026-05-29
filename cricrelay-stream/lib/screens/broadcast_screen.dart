@@ -170,6 +170,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       }
       if (_nativeCamera) {
         _rtmpStatusSub = RtmpPlatform.statusEvents.listen(_onRtmpStatus);
+        if (Platform.isAndroid) {
+          await RtmpPlatform.showNativePreview();
+        }
         if (mounted) setState(() {});
         WidgetsBinding.instance.addPostFrameCallback((_) {
           unawaited(_ensureNativeCameraReady());
@@ -449,6 +452,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     if (_live && _nativeCamera) {
       unawaited(RtmpPlatform.stopStream());
     }
+    if (_nativeCamera && Platform.isAndroid) {
+      unawaited(RtmpPlatform.hideNativePreview());
+    }
     _camera?.dispose();
     super.dispose();
   }
@@ -500,6 +506,11 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     if (mounted) {
       setState(() => _status = 'Connecting to stream…');
     }
+    final streamW = _quality.width > 1280 ? 1280 : _quality.width;
+    final streamH = _quality.height > 720 ? 720 : _quality.height;
+    final streamBitrate = _quality.width > 1280 || _quality.height > 720
+        ? (_quality.bitrateBps * 0.75).round()
+        : _quality.bitrateBps;
     await RtmpPlatform.startStream(
       rtmpUrl: cred.rtmpUrl,
       streamKey: cred.streamKey,
@@ -507,9 +518,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       overlayHeightFraction: _overlayPrefs.heightFraction,
       overlayBottomMargin: _overlayPrefs.bottomMargin,
       overlayHorizontalInset: _overlayPrefs.horizontalInset,
-      width: _quality.width,
-      height: _quality.height,
-      bitrateBps: _quality.bitrateBps,
+      width: streamW,
+      height: streamH,
+      bitrateBps: streamBitrate,
       fps: _quality.fps,
     );
     await connected;
@@ -795,16 +806,13 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     Widget stack = Stack(
       fit: StackFit.expand,
       children: [
-        if (_nativeCamera && _avPermissionsGranted)
-          Platform.isAndroid
-              ? const AndroidView(
-                  viewType: 'cricrelay-camera-preview',
-                  layoutDirection: TextDirection.ltr,
-                )
-              : const UiKitView(
-                  viewType: 'cricrelay-camera-preview',
-                  layoutDirection: TextDirection.ltr,
-                )
+        if (_nativeCamera && _avPermissionsGranted && Platform.isAndroid)
+          const SizedBox.expand()
+        else if (_nativeCamera && _avPermissionsGranted && Platform.isIOS)
+          const UiKitView(
+            viewType: 'cricrelay-camera-preview',
+            layoutDirection: TextDirection.ltr,
+          )
         else if (!_avPermissionsGranted)
           Center(
             child: Padding(
@@ -930,7 +938,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     final orient = MediaQuery.of(context).orientation;
     final isLandscape = orient == Orientation.landscape;
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: (_nativeCamera && Platform.isAndroid) ? Colors.transparent : Colors.black,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
