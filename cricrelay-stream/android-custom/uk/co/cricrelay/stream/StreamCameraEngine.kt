@@ -60,6 +60,15 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     fun attachView(view: OpenGlView, act: Activity) {
+        DebugTrace.log(
+            "StreamCameraEngine.attachView",
+            "enter",
+            "H1",
+            mapOf(
+                "sameView" to (openGlView === view),
+                "hasCamera" to (camera != null),
+            ),
+        )
         activity = act
         if (openGlView === view && camera != null) return
         if (openGlView !== view) {
@@ -68,8 +77,16 @@ object StreamCameraEngine : ConnectChecker {
         openGlView = view
         if (camera == null) {
             camera = try {
-                RtmpCamera2(view, this)
+                RtmpCamera2(view, this).also {
+                    DebugTrace.log("StreamCameraEngine.attachView", "RtmpCamera2 created", "H1")
+                }
             } catch (e: Exception) {
+                DebugTrace.log(
+                    "StreamCameraEngine.attachView",
+                    "RtmpCamera2 failed",
+                    "H1",
+                    mapOf("error" to (e.message ?: e.javaClass.simpleName)),
+                )
                 emit(StreamCaptureService.EVENT_ERROR, "Camera init failed: ${e.message ?: "unknown"}")
                 null
             }
@@ -206,6 +223,12 @@ object StreamCameraEngine : ConnectChecker {
         }
 
         return try {
+            DebugTrace.log(
+                "StreamCameraEngine.preparePreviewOnMain",
+                "preparing encoder",
+                "H2",
+                mapOf("w" to streamWidth, "h" to streamHeight, "viewW" to view.width, "viewH" to view.height),
+            )
             val audioOk = cam.prepareAudio(128 * 1024, 32_000, true, false, false)
             var videoOk = cam.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, 0)
             if (!videoOk) {
@@ -222,10 +245,31 @@ object StreamCameraEngine : ConnectChecker {
             if (!cam.isOnPreview) {
                 cam.startPreview()
             }
+            DebugTrace.log(
+                "StreamCameraEngine.preparePreviewOnMain",
+                "preview started",
+                "H2",
+                mapOf("onPreview" to cam.isOnPreview),
+            )
             cam.isOnPreview
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            DebugTrace.log(
+                "StreamCameraEngine.preparePreviewOnMain",
+                "failed",
+                "H2",
+                mapOf("error" to (e.message ?: e.javaClass.simpleName)),
+            )
             encoderPrepared = false
             false
+        } catch (t: Throwable) {
+            DebugTrace.log(
+                "StreamCameraEngine.preparePreviewOnMain",
+                "throwable",
+                "H2",
+                mapOf("error" to (t.message ?: t.javaClass.simpleName)),
+            )
+            encoderPrepared = false
+            throw t
         }
     }
 

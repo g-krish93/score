@@ -10,6 +10,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+import '../debug/debug_trace.dart';
 import '../services/api.dart';
 import '../services/app_analytics.dart';
 import '../services/overlay_layout_store.dart';
@@ -75,6 +76,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   @override
   void initState() {
     super.initState();
+    // #region agent log
+    DebugTrace.log('broadcast_screen.initState', 'screen opened', hypothesisId: 'H3', data: {'slug': widget.match.slug});
+    // #endregion
     _rtmpStore = RtmpCredentialsStore(widget.match.slug);
     _init();
   }
@@ -159,9 +163,15 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
 
   Future<void> _init() async {
     try {
+      // #region agent log
+      DebugTrace.log('broadcast_screen._init', 'start', hypothesisId: 'H3');
+      // #endregion
       _overlayStore = OverlayLayoutStore(widget.api, widget.match.slug);
       final avOk = await _requestAvPermissions();
       _avPermissionsGranted = avOk;
+      // #region agent log
+      DebugTrace.log('broadcast_screen._init', 'permissions', hypothesisId: 'H3', data: {'avOk': avOk});
+      // #endregion
       if (!avOk && mounted) {
         setState(() => _status = 'Camera or microphone permission denied');
       }
@@ -171,9 +181,20 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       if ((Platform.isAndroid || Platform.isIOS) && avOk) {
         _nativeCamera = await RtmpPlatform.isCaptureSupported;
       }
+      // #region agent log
+      DebugTrace.log(
+        'broadcast_screen._init',
+        'native probe',
+        hypothesisId: 'H5',
+        data: {'nativeCamera': _nativeCamera, 'avOk': avOk},
+      );
+      // #endregion
       if (_nativeCamera) {
         _rtmpStatusSub = RtmpPlatform.statusEvents.listen(_onRtmpStatus);
         if (mounted) setState(() {});
+        // #region agent log
+        DebugTrace.log('broadcast_screen._init', 'mounting AndroidView next frame', hypothesisId: 'H1');
+        // #endregion
         WidgetsBinding.instance.addPostFrameCallback((_) {
           // Wait an extra frame so AndroidView PlatformView has layout before prepareCamera.
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -217,7 +238,15 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         await _loadOverlayWebView();
       }
       if (mounted) setState(() {});
-    } catch (e) {
+    } catch (e, st) {
+      // #region agent log
+      DebugTrace.log(
+        'broadcast_screen._init',
+        'dart catch',
+        hypothesisId: 'H4',
+        data: {'error': e.toString(), 'type': e.runtimeType.toString()},
+      );
+      // #endregion
       if (mounted) {
         setState(() {
           _initError = StreamErrorMessages.fromObject(e);

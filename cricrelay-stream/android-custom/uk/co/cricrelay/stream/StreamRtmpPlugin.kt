@@ -42,6 +42,7 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
     }
 
     private var statusReceiverRegistered = false
+    private var debugChannel: MethodChannel? = null
 
     private val engineStatusListener: (String, String) -> Unit = { event, message ->
         mainHandler.post {
@@ -52,10 +53,25 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
+        DebugTrace.init(binding.applicationContext)
         channel = MethodChannel(binding.binaryMessenger, "uk.co.cricrelay.stream/rtmp")
         channel?.setMethodCallHandler(this)
         eventChannel = EventChannel(binding.binaryMessenger, "uk.co.cricrelay.stream/rtmp_events")
         eventChannel?.setStreamHandler(this)
+        debugChannel = MethodChannel(binding.binaryMessenger, "uk.co.cricrelay.stream/debug")
+        debugChannel?.setMethodCallHandler { call, result ->
+            if (call.method == "log") {
+                val loc = call.argument<String>("location") ?: "?"
+                val msg = call.argument<String>("message") ?: ""
+                val hid = call.argument<String>("hypothesisId") ?: "?"
+                @Suppress("UNCHECKED_CAST")
+                val data = call.argument<Map<String, Any?>>("data") ?: emptyMap()
+                DebugTrace.log(loc, msg, hid, data)
+                result.success(null)
+            } else {
+                result.notImplemented()
+            }
+        }
         StreamCameraEngine.setStatusListener(engineStatusListener)
         binding.platformViewRegistry.registerViewFactory(
             "cricrelay-camera-preview",
@@ -70,6 +86,8 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
         channel = null
         eventChannel?.setStreamHandler(null)
         eventChannel = null
+        debugChannel?.setMethodCallHandler(null)
+        debugChannel = null
         appContext = null
     }
 
