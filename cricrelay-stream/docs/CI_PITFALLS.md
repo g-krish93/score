@@ -62,7 +62,19 @@ bash cricrelay-stream/scripts/ci_validate.sh
 
 ---
 
-### 4. Pushing without running validate
+### 4. RootEncoder preview before GL surface ready
+
+**Symptom:** App closes on broadcast screen; device log shows `getSurfaceTexture(...) must not be null` in `preparePreviewOnMain`.
+
+**Cause:** Calling `prepareVideo` / `startPreview` from layout size callbacks before `OpenGlView` `SurfaceHolder.surfaceChanged` (RootEncoder requires a valid surface).
+
+**Fix:** Register `openGlView.holder.addCallback` and call `preparePreview` only when `holder.surface.isValid`. Guard with `isPreviewSurfaceValid()`; do not hammer `prepareCamera` in a Dart loop.
+
+**Date:** 2026-05 — Pixel 9 broadcast-screen crash (session 0ad848).
+
+---
+
+### 5. Pushing without running validate
 
 **Symptom:** Users install an old APK; fixes never reach cricrelay.co.uk.
 

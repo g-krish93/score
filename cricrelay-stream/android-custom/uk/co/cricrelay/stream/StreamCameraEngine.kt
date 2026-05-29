@@ -51,6 +51,7 @@ object StreamCameraEngine : ConnectChecker {
     private var encoderPrepared = false
     private var lastOverlayBitmap: Bitmap? = null
     private var pendingOverlayAfterConnect = false
+    private var prepareInFlight = false
 
     val isPreviewReady: Boolean
         get() = camera != null && openGlView != null && encoderPrepared && (camera?.isOnPreview == true)
@@ -112,10 +113,21 @@ object StreamCameraEngine : ConnectChecker {
         return ok
     }
 
-    fun onPreviewViewSized() {
+    /** Called from OpenGlView SurfaceHolder.Callback when holder.surface is valid. */
+    fun onPreviewSurfaceReady() {
         runOnMain {
             val view = openGlView ?: return@runOnMain
             if (view.width < 64 || view.height < 64) return@runOnMain
+            if (!isPreviewSurfaceValid(view)) {
+                DebugTrace.log(
+                    "StreamCameraEngine.onPreviewSurfaceReady",
+                    "defer - surface not valid yet",
+                    "H2",
+                    mapOf("viewW" to view.width, "viewH" to view.height),
+                )
+                view.post { onPreviewSurfaceReady() }
+                return@runOnMain
+            }
             preparePreviewOnMain()
         }
     }
@@ -202,16 +214,36 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
+    private fun isPreviewSurfaceValid(view: OpenGlView): Boolean {
+        return try {
+            val surface = view.holder.surface
+            surface != null && surface.isValid
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     /** Prepare encoder + preview once. Never call stopPreview here while streaming. */
     private fun preparePreviewOnMain(): Boolean {
         val cam = camera ?: return false
         val view = openGlView ?: return false
         if (view.width < 64 || view.height < 64) {
-            view.post { preparePreviewOnMain() }
+            view.post { onPreviewSurfaceReady() }
+            return false
+        }
+        if (!isPreviewSurfaceValid(view)) {
+            DebugTrace.log(
+                "StreamCameraEngine.preparePreviewOnMain",
+                "defer - surface not valid",
+                "H2",
+                mapOf("viewW" to view.width, "viewH" to view.height),
+            )
+            view.post { onPreviewSurfaceReady() }
             return false
         }
         if (encoderPrepared && cam.isOnPreview) return true
         if (cam.isStreaming) return true
+        if (prepareInFlight) return false
 
         if (encoderPrepared && !cam.isOnPreview) {
             return try {
@@ -222,6 +254,7 @@ object StreamCameraEngine : ConnectChecker {
             }
         }
 
+        prepareInFlight = true
         return try {
             DebugTrace.log(
                 "StreamCameraEngine.preparePreviewOnMain",
@@ -270,6 +303,8 @@ object StreamCameraEngine : ConnectChecker {
             )
             encoderPrepared = false
             throw t
+        } finally {
+            prepareInFlight = false
         }
     }
 

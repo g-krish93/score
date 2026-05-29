@@ -262,13 +262,13 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
 
   Future<void> _ensureNativeCameraReady() async {
     if (!_nativeCamera || !mounted) return;
+    await RtmpPlatform.prepareCamera(
+      width: _nativeProfile.width,
+      height: _nativeProfile.height,
+      fps: _nativeProfile.fps,
+      bitrateBps: _nativeProfile.bitrateBps,
+    );
     for (var attempt = 0; attempt < 40; attempt++) {
-      await RtmpPlatform.prepareCamera(
-        width: _nativeProfile.width,
-        height: _nativeProfile.height,
-        fps: _nativeProfile.fps,
-        bitrateBps: _nativeProfile.bitrateBps,
-      );
       if (await RtmpPlatform.isCameraReady) {
         if (!mounted) return;
         setState(() => _nativeCameraReady = true);
