@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
@@ -63,6 +64,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   late final OverlayLayoutStore _overlayStore;
   OverlayLayoutPrefs _overlayPrefs = const OverlayLayoutPrefs();
   bool _overlayLocked = false;
+  StreamSubscription<RtmpStreamEvent>? _rtmpStatusSub;
 
   @override
   void initState() {
@@ -108,11 +110,13 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     }
     if (_nativeCamera) {
       _nativeCameraReady = true;
+      _rtmpStatusSub = RtmpPlatform.statusEvents.listen(_onRtmpStatus);
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await RtmpPlatform.prepareCamera(
           width: _quality.width,
           height: _quality.height,
           fps: _quality.fps,
+          bitrateBps: _quality.bitrateBps,
         );
         await _syncNativeOverlay();
         await _initZoomLevels();
@@ -291,6 +295,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
               width: p.width,
               height: p.height,
               fps: p.fps,
+              bitrateBps: p.bitrateBps,
             );
           }
         }
@@ -307,8 +312,40 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     };
   }
 
+  void _onRtmpStatus(RtmpStreamEvent e) {
+    if (!mounted) return;
+    if (e.event == 'error') {
+      final msg = e.message.isNotEmpty ? e.message : 'Stream failed';
+      if (_live || _busy) {
+        unawaited(_handleStreamFailure(msg));
+      } else if (_status != null && _status!.contains('Connecting')) {
+        setState(() => _status = msg);
+      }
+    }
+  }
+
+  Future<void> _handleStreamFailure(String msg) async {
+    await _stopEncoder();
+    if (_liveManagedByApi) {
+      try {
+        await widget.api.stopLive(platform: _livePlatform);
+      } catch (_) {}
+    }
+    await WakelockPlus.disable();
+    if (!mounted) return;
+    setState(() {
+      _live = false;
+      _overlayLocked = false;
+      _liveManagedByApi = false;
+      _livePlatform = null;
+      _busy = false;
+      _status = msg;
+    });
+  }
+
   @override
   void dispose() {
+    _rtmpStatusSub?.cancel();
     _stopInternal();
     _camera?.dispose();
     super.dispose();
@@ -351,8 +388,12 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       width: _quality.width,
       height: _quality.height,
       fps: _quality.fps,
+      bitrateBps: _quality.bitrateBps,
     );
     final connected = RtmpPlatform.waitForConnected();
+    if (mounted) {
+      setState(() => _status = 'Connecting to stream…');
+    }
     await RtmpPlatform.startStream(
       rtmpUrl: cred.rtmpUrl,
       streamKey: cred.streamKey,
@@ -365,9 +406,6 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       bitrateBps: _quality.bitrateBps,
       fps: _quality.fps,
     );
-    if (mounted) {
-      setState(() => _status = 'Connecting to YouTube… (Studio must be live)');
-    }
     await connected;
   }
 
@@ -413,10 +451,10 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         cred = await widget.api.goLive(widget.match.slug, platform: platform);
         _livePlatform = platform;
       }
-      setState(() => _overlayLocked = true);
       await _startEncoder(cred);
       if (!mounted) return;
       setState(() {
+        _overlayLocked = true;
         _liveManagedByApi = _destination != StreamDestination.custom;
         _watchUrl = cred.watchUrl;
         _live = true;
@@ -434,7 +472,13 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       await _applyWakelock();
     } catch (e) {
       await _stopEncoder();
-      if (mounted) setState(() => _status = e.toString());
+      if (mounted) {
+        setState(() {
+          _overlayLocked = false;
+          _live = false;
+          _status = e.toString();
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -450,9 +494,14 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       }
     } catch (_) {}
     await WakelockPlus.disable();
-    _live = false;
-    _liveManagedByApi = false;
-    _livePlatform = null;
+    if (mounted) {
+      setState(() {
+        _live = false;
+        _overlayLocked = false;
+        _liveManagedByApi = false;
+        _livePlatform = null;
+      });
+    }
   }
 
   Future<void> _stop() async {

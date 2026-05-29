@@ -129,7 +129,8 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                 val width = call.argument<Int>("width") ?: 1280
                 val height = call.argument<Int>("height") ?: 720
                 val fps = call.argument<Int>("fps") ?: 30
-                StreamCameraEngine.preparePreview(width, height, fps)
+                val bitrate = call.argument<Int>("bitrateBps") ?: 2_500_000
+                StreamCameraEngine.preparePreview(width, height, fps, bitrate)
                 result.success(true)
             }
             "getZoomRange" -> {

@@ -33,11 +33,13 @@ class RtmpPlatform {
     int width = 1280,
     int height = 720,
     int fps = 30,
+    int bitrateBps = 2500000,
   }) async {
     await _ch.invokeMethod('prepareCamera', {
       'width': width,
       'height': height,
       'fps': fps,
+      'bitrateBps': bitrateBps,
     });
   }
 
