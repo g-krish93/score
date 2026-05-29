@@ -6,7 +6,7 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
-/** Placeholder until RootEncoder screen capture is enabled in CI builds. */
+/** Placeholder — native camera plugin missing. Reinstall APK from cricrelay.co.uk. */
 class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
 
     private var channel: MethodChannel? = null
@@ -26,7 +26,7 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
             "isCaptureSupported" -> result.success(false)
             "startStream", "stopStream" -> result.error(
                 "capture",
-                "Screen capture RTMP is not in this APK yet; use camera mode.",
+                "Native camera streaming is not in this build. Install the latest APK from cricrelay.co.uk.",
                 null,
             )
             else -> result.notImplemented()

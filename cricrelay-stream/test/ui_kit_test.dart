@@ -12,6 +12,13 @@ void main() {
   }
 
   group('CrGoLiveButton pre-flight disabled states', () {
+    Finder goLiveFilledButton() {
+      return find.descendant(
+        of: find.byType(CrGoLiveButton),
+        matching: find.byType(FilledButton),
+      );
+    }
+
     testWidgets('Go live button disabled when checks fail', (tester) async {
       var tapped = false;
       await tester.pumpWidget(
@@ -26,7 +33,7 @@ void main() {
         ),
       );
 
-      expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed, isNull);
+      expect(tester.widget<FilledButton>(goLiveFilledButton()).onPressed, isNull);
       await tester.tap(find.text('Go live'));
       await tester.pump();
       expect(tapped, isFalse);
@@ -45,7 +52,7 @@ void main() {
         ),
       );
 
-      expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed, isNull);
+      expect(tester.widget<FilledButton>(goLiveFilledButton()).onPressed, isNull);
       expect(find.text('Starting…'), findsOneWidget);
     });
   });

@@ -41,6 +41,7 @@ object StreamCameraEngine : ConnectChecker {
     private var statusListener: ((String, String) -> Unit)? = null
     private var encoderPrepared = false
     private var lastOverlayBitmap: Bitmap? = null
+    private var pendingOverlayAfterConnect = false
 
     val isViewAttached: Boolean
         get() = openGlView != null && camera != null
@@ -200,6 +201,7 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     private fun stopStreamInternal() {
+        pendingOverlayAfterConnect = false
         stopOverlayRefresh()
         clearOverlayFilter()
         recycleOverlayBitmap()
@@ -286,19 +288,24 @@ object StreamCameraEngine : ConnectChecker {
         ensureEncoderPrepared(cam, width, height, fps, bitrate, reconfigurePreview = false)
         ensurePreviewRunning()
 
+        pendingOverlayAfterConnect = url.isNotEmpty()
         if (url.isNotEmpty()) {
             overlayCapture?.loadUrl(url)
         }
 
+        if (!cam.isStreaming) {
+            cam.startStream(endpoint)
+        }
+    }
+
+    private fun attachOverlayAfterConnect() {
+        if (!pendingOverlayAfterConnect) return
+        pendingOverlayAfterConnect = false
         try {
             ensureOverlayFilter()
             startOverlayRefresh()
         } catch (_: Exception) {
             stopOverlayRefresh()
-        }
-
-        if (!cam.isStreaming) {
-            cam.startStream(endpoint)
         }
     }
 
@@ -439,20 +446,24 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     override fun onConnectionSuccess() {
+        attachOverlayAfterConnect()
         emit(StreamCaptureService.EVENT_CONNECTED, "")
     }
 
     override fun onConnectionFailed(reason: String) {
+        pendingOverlayAfterConnect = false
         emit(StreamCaptureService.EVENT_ERROR, reason.ifBlank { "RTMP connection failed" })
     }
 
     override fun onNewBitrate(bitrate: Long) {}
 
     override fun onDisconnect() {
+        pendingOverlayAfterConnect = false
         emit(StreamCaptureService.EVENT_DISCONNECTED, "")
     }
 
     override fun onAuthError() {
+        pendingOverlayAfterConnect = false
         emit(
             StreamCaptureService.EVENT_ERROR,
             "Stream key rejected. Start the live event in Studio/dashboard first, then try again.",

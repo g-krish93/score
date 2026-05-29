@@ -16,6 +16,7 @@ abstract final class StreamErrorMessages {
     }
     if (low.contains('offline') ||
         low.contains('no internet') ||
+        low.contains('network unavailable') ||
         low.contains('network is unreachable') ||
         low.contains('failed host lookup')) {
       return offline;

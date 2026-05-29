@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 
@@ -21,30 +23,47 @@ class GoLivePreflightResult {
   bool get canGoLive => cameraReady && streamKeySet && networkOk;
 }
 
+Future<bool> _checkNetworkAvailable() async {
+  try {
+    final results = await Connectivity().checkConnectivity();
+    return results.any((r) => r != ConnectivityResult.none);
+  } catch (_) {
+    return true;
+  }
+}
+
+Future<bool> _resolveCameraReady({
+  required bool cameraReady,
+  Future<bool> Function()? probe,
+}) async {
+  if (cameraReady) return true;
+  if (probe != null) {
+    try {
+      return await probe();
+    } catch (_) {}
+  }
+  try {
+    return await RtmpPlatform.isCameraReady;
+  } catch (_) {
+    return false;
+  }
+}
+
 /// Pre-flight checklist before starting RTMP (connectivity, camera, stream key).
 Future<bool> showGoLivePreflightSheet({
   required BuildContext context,
   required bool cameraReady,
   required bool streamKeySet,
   required bool overlayLocked,
+  Future<bool> Function()? resolveCameraReady,
 }) async {
-  final connectivity = Connectivity();
-  var networkOk = false;
-  try {
-    final results = await connectivity.checkConnectivity();
-    networkOk = results.any((r) => r != ConnectivityResult.none);
-  } catch (_) {
-    networkOk = true;
-  }
-
+  final networkOk = await _checkNetworkAvailable();
   if (!context.mounted) return false;
 
-  var nativeReady = cameraReady;
-  if (!nativeReady) {
-    try {
-      nativeReady = await RtmpPlatform.isCameraReady;
-    } catch (_) {}
-  }
+  final nativeReady = await _resolveCameraReady(
+    cameraReady: cameraReady,
+    probe: resolveCameraReady,
+  );
 
   final result = await showModalBottomSheet<bool>(
     context: context,
@@ -54,33 +73,41 @@ Future<bool> showGoLivePreflightSheet({
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppSpacing.radiusXl)),
     ),
     builder: (ctx) {
-      return _GoLivePreflightBody(
+      return GoLivePreflightSheetContent(
         initial: GoLivePreflightResult(
           cameraReady: nativeReady,
           streamKeySet: streamKeySet,
           networkOk: networkOk,
           overlayLocked: overlayLocked,
         ),
+        resolveCameraReady: resolveCameraReady,
       );
     },
   );
   return result == true;
 }
 
-class _GoLivePreflightBody extends StatefulWidget {
-  const _GoLivePreflightBody({required this.initial});
+/// Checklist body (public for widget tests).
+class GoLivePreflightSheetContent extends StatefulWidget {
+  const GoLivePreflightSheetContent({
+    super.key,
+    required this.initial,
+    this.resolveCameraReady,
+  });
 
   final GoLivePreflightResult initial;
+  final Future<bool> Function()? resolveCameraReady;
 
   @override
-  State<_GoLivePreflightBody> createState() => _GoLivePreflightBodyState();
+  State<GoLivePreflightSheetContent> createState() => _GoLivePreflightSheetContentState();
 }
 
-class _GoLivePreflightBodyState extends State<_GoLivePreflightBody> {
+class _GoLivePreflightSheetContentState extends State<GoLivePreflightSheetContent> {
   late bool _cameraReady;
   late bool _streamKeySet;
   late bool _networkOk;
   late bool _overlayLocked;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -89,6 +116,28 @@ class _GoLivePreflightBodyState extends State<_GoLivePreflightBody> {
     _streamKeySet = widget.initial.streamKeySet;
     _networkOk = widget.initial.networkOk;
     _overlayLocked = widget.initial.overlayLocked;
+    _refreshTimer = Timer.periodic(const Duration(seconds: 1), (_) => unawaited(_refreshChecks()));
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshChecks() async {
+    final networkOk = await _checkNetworkAvailable();
+    final cameraReady = await _resolveCameraReady(
+      cameraReady: false,
+      probe: widget.resolveCameraReady,
+    );
+    if (!mounted) return;
+    if (networkOk != _networkOk || cameraReady != _cameraReady) {
+      setState(() {
+        _networkOk = networkOk;
+        _cameraReady = cameraReady;
+      });
+    }
   }
 
   bool get _canGoLive => _cameraReady && _streamKeySet && _networkOk;

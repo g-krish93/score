@@ -274,7 +274,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(StreamErrorMessages.fromObject(e))),
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -430,7 +432,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       cfg = _scoring ?? await widget.api.getScoring(widget.match.slug);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(StreamErrorMessages.fromObject(e))),
+      );
       return;
     }
     if (!mounted) return;
@@ -463,12 +467,8 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       throw Exception(StreamErrorMessages.previewNotReady);
     }
     final overlayUrl = _overlayStore.embedUrl(widget.match.overlayEmbedUrl, _overlayPrefs);
-    await RtmpPlatform.prepareCamera(
-      width: _quality.width,
-      height: _quality.height,
-      fps: _quality.fps,
-      bitrateBps: _quality.bitrateBps,
-    );
+    // Do not call prepareCamera here — preview is already running; re-preparing can stopPreview and crash GL.
+    AppAnalytics.logBreadcrumb('go_live_start_stream');
     final connected = RtmpPlatform.waitForConnected();
     if (mounted) {
       setState(() => _status = 'Connecting to stream…');
@@ -486,6 +486,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       fps: _quality.fps,
     );
     await connected;
+    AppAnalytics.logBreadcrumb('go_live_connected');
   }
 
   Future<void> _stopEncoder() async {
@@ -513,6 +514,12 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       cameraReady: camReady,
       streamKeySet: _hasStreamKey,
       overlayLocked: _overlayLocked,
+      resolveCameraReady: () async {
+        if (_nativeCamera) {
+          return _nativeCameraReady || await RtmpPlatform.isCameraReady;
+        }
+        return _camera?.value.isInitialized ?? false;
+      },
     );
     if (!proceed || !mounted) return;
     await _performGoLive();

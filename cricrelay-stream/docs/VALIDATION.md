@@ -36,6 +36,14 @@ Requires: Flutter 3.27.x, Java 17, Android SDK 35 (same as GitHub Actions).
 2. Run `ci_validate.sh` before pushing Kotlin changes.
 3. Do not assign to read-only properties in `OpenGlView` / View (use methods like `setOpaque` only if the API supports it).
 
+## Go Live (volunteer test on device)
+
+1. Camera preview visible before tapping Go Live.
+2. Pre-flight sheet: camera, stream key, network all OK.
+3. Tap Go Live — app must **not** close; status shows Connecting then Live.
+4. Scoreboard overlay may appear on stream 1–2s after connect (by design).
+5. Stop stream confirms before ending.
+
 ## If CI still fails
 
 1. Open the failed job log.

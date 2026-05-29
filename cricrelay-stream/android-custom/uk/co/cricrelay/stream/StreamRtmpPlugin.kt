@@ -162,7 +162,7 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                     result.error("args", "rtmpUrl and streamKey required", null)
                     return
                 }
-                if (!StreamCameraEngine.isViewAttached) {
+                if (!StreamCameraEngine.isPreviewReady) {
                     result.error("camera", "Camera preview not ready yet", null)
                     return
                 }
@@ -179,17 +179,26 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                 val fps = call.argument<Int>("fps") ?: 30
                 val layout = overlayLayoutFromCall(call)
                 val fg = Intent(act, StreamCaptureService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    act.startForegroundService(fg)
-                } else {
-                    act.startService(fg)
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        act.startForegroundService(fg)
+                    } else {
+                        act.startService(fg)
+                    }
+                } catch (e: Exception) {
+                    result.error("service", e.message ?: "Could not start stream service", null)
+                    return
                 }
                 try {
                     StreamCameraEngine.startStream(url, key, overlayUrl, width, height, bitrate, fps, layout)
                     val endpoint = StreamCaptureService.buildEndpoint(url, key)
                     result.success(mapOf("endpoint" to endpoint))
                 } catch (e: Exception) {
-                    act.stopService(fg)
+                    try {
+                        act.stopService(fg)
+                    } catch (_: Exception) {
+                    }
+                    StreamCameraEngine.stopStream()
                     result.error("stream", e.message, null)
                 }
             }
