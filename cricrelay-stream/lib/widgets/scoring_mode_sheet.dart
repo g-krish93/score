@@ -151,7 +151,7 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
             Text(
               'Install PCS Relay APK, paste ingest URL + token in Settings, '
               'advertise as scoreboard near the iPad.',
-              style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13),
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
             ),
             const SizedBox(height: 8),
             SelectableText(

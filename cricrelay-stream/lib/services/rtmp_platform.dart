@@ -142,7 +142,7 @@ class RtmpPlatform {
       await completer.future;
     } finally {
       await sub.cancel();
-      timer?.cancel();
+      timer.cancel();
     }
   }
 }

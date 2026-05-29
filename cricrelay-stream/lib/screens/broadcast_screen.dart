@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:camera/camera.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
@@ -45,7 +44,6 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   String? _status;
   String? _watchUrl;
   ScoringConfig? _scoring;
-  String _scoringLabel = 'Scoring';
   /// Native camera + GL overlay (not screen capture).
   bool _nativeCamera = false;
   bool _nativeCameraReady = false;
@@ -305,11 +303,6 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
 
   void _applyScoringLabel(ScoringConfig cfg) {
     _scoring = cfg;
-    _scoringLabel = switch (cfg.mode) {
-      'auto' => 'Scoring: Auto',
-      'ble' => 'Scoring: BLE',
-      _ => 'Scoring: Manual',
-    };
   }
 
   void _onRtmpStatus(RtmpStreamEvent e) {

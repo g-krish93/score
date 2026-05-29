@@ -3,7 +3,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/api.dart';
 import '../theme/app_theme.dart';
-import 'ui_kit.dart';
 
 /// Shown after login: install / update links for Android and iOS builds from the server.
 class AppDownloadCard extends StatefulWidget {
