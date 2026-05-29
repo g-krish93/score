@@ -3,6 +3,7 @@ package uk.co.cricrelay.stream
 import android.app.Activity
 import android.os.Handler
 import android.os.Looper
+import android.view.SurfaceHolder
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import com.pedro.library.view.OpenGlView
@@ -23,7 +24,7 @@ object CameraPreviewHost {
     fun show(activity: Activity) {
         runOnMain {
             if (openGlView != null && hostActivity === activity) {
-                StreamCameraEngine.onPreviewViewSized()
+                StreamCameraEngine.onPreviewSurfaceReady()
                 return@runOnMain
             }
             hide(activity)
