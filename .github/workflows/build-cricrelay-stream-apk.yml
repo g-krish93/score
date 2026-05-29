@@ -120,6 +120,7 @@ jobs:
             GIT_SYNC_URL="https://raw.githubusercontent.com/g-krish93/score/main/deploy/ec2-git-sync.sh"
             curl -sfSL "$EMERGENCY_URL" | sudo bash || true
             curl -sfSL "$GIT_SYNC_URL" | sudo bash
+            cd /app
             test -f static/cricrelay-stream.apk
             ls -la static/cricrelay-stream.apk
 
@@ -258,6 +259,7 @@ jobs:
             GIT_SYNC_URL="https://raw.githubusercontent.com/g-krish93/score/main/deploy/ec2-git-sync.sh"
             curl -sfSL "$EMERGENCY_URL" | sudo bash || true
             curl -sfSL "$GIT_SYNC_URL" | sudo bash
+            cd /app
             test -f static/cricrelay-stream.apk
             ls -la static/cricrelay-stream.apk
             if [ -f static/cricrelay-stream.ipa ]; then ls -la static/cricrelay-stream.ipa; fi
