@@ -1,7 +1,7 @@
 name: cricrelay_stream
 description: CricRelay Stream — one-phone YouTube live with burned-in score overlay.
 publish_to: "none"
-version: 1.2.4+7
+version: 1.2.5+8
 
 environment:
   sdk: ">=3.2.0 <4.0.0"

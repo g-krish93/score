@@ -154,9 +154,7 @@ class RtmpPlatform {
         case 'error':
           finishErr(e.message.isNotEmpty ? e.message : 'Stream connection failed');
         case 'disconnected':
-          if (!completer.isCompleted) {
-            finishErr('Stream disconnected before going live');
-          }
+          break;
       }
     });
 

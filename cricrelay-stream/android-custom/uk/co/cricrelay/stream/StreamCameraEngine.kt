@@ -13,8 +13,13 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * Camera RTMP encoder — prepare once, start stream without re-preparing (Pixel-safe).
- * Scoreboard overlay is applied only after RTMP connects.
+ * Camera RTMP + scoreboard overlay (RootEncoder / RtmpCamera2).
+ *
+ * Golden path (do not deviate — re-preparing or stopPreview during Go Live crashes Pixel):
+ * 1. attachView + prepareAudio/prepareVideo once
+ * 2. startPreview
+ * 3. startStream(endpoint) on Go Live — no second prepareVideo
+ * 4. overlay WebView + GL filter only after RTMP connects
  */
 object StreamCameraEngine : ConnectChecker {
 
@@ -44,25 +49,21 @@ object StreamCameraEngine : ConnectChecker {
     private var overlayUrl: String = ""
     private var statusListener: ((String, String) -> Unit)? = null
     private var encoderPrepared = false
-    private var preparedWidth = 0
-    private var preparedHeight = 0
     private var lastOverlayBitmap: Bitmap? = null
     private var pendingOverlayAfterConnect = false
 
-    val isViewAttached: Boolean
-        get() = openGlView != null && camera != null
-
     val isPreviewReady: Boolean
-        get() = isViewAttached && encoderPrepared && (camera?.isOnPreview == true)
+        get() = camera != null && openGlView != null && encoderPrepared && (camera?.isOnPreview == true)
 
     fun setStatusListener(listener: ((String, String) -> Unit)?) {
         statusListener = listener
     }
 
     fun attachView(view: OpenGlView, act: Activity) {
-        openGlView = view
         activity = act
-        if (camera != null) return
+        if (openGlView === view && camera != null) return
+        releaseCamera()
+        openGlView = view
         camera = try {
             RtmpCamera2(view, this).apply {
                 glInterface.autoHandleOrientation = true
@@ -75,37 +76,26 @@ object StreamCameraEngine : ConnectChecker {
 
     fun detachView(view: OpenGlView) {
         if (openGlView !== view) return
-        runOnMainSync {
-            releaseCamera()
-        }
+        runOnMainSync { releaseCamera() }
     }
 
     fun preparePreview(width: Int, height: Int, fps: Int, bitrate: Int = streamBitrate): Boolean {
-        val w = width.coerceIn(640, MAX_WIDTH)
-        val h = height.coerceIn(360, MAX_HEIGHT)
-        val f = fps.coerceIn(24, 30)
-        val b = bitrate.coerceIn(800_000, 4_500_000)
-        streamWidth = w
-        streamHeight = h
-        streamFps = f
-        streamBitrate = b
-        var ok = false
-        try {
-            runOnMainSync {
-                ok = preparePreviewOnMain()
-            }
+        streamWidth = width.coerceIn(640, MAX_WIDTH)
+        streamHeight = height.coerceIn(360, MAX_HEIGHT)
+        streamFps = fps.coerceIn(24, 30)
+        streamBitrate = bitrate.coerceIn(800_000, 4_500_000)
+        return try {
+            runOnMainSync { preparePreviewOnMain() }
         } catch (_: Exception) {
-            ok = false
+            false
         }
-        return ok
     }
 
     fun onPreviewViewSized() {
         runOnMain {
-            if (openGlView == null || openGlView!!.width < 64 || openGlView!!.height < 64) return@runOnMain
-            if (!encoderPrepared) {
-                preparePreviewOnMain()
-            }
+            val view = openGlView ?: return@runOnMain
+            if (view.width < 64 || view.height < 64) return@runOnMain
+            preparePreviewOnMain()
         }
     }
 
@@ -191,43 +181,40 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
+    /** Prepare encoder + preview once. Never call stopPreview here while streaming. */
     private fun preparePreviewOnMain(): Boolean {
         val cam = camera ?: return false
         val view = openGlView ?: return false
-        if (view.width < 2 || view.height < 2) {
+        if (view.width < 64 || view.height < 64) {
             view.post { preparePreviewOnMain() }
             return false
         }
-        if (encoderPrepared && cam.isOnPreview &&
-            streamWidth == preparedWidth && streamHeight == preparedHeight
-        ) {
-            return true
-        }
-        if (encoderPrepared && !cam.isStreaming) {
-            try {
-                cam.stopPreview()
-            } catch (_: Exception) {
-            }
-            encoderPrepared = false
-        }
+        if (encoderPrepared && cam.isOnPreview) return true
         if (cam.isStreaming) return true
 
+        if (encoderPrepared && !cam.isOnPreview) {
+            return try {
+                cam.startPreview()
+                cam.isOnPreview
+            } catch (_: Exception) {
+                false
+            }
+        }
+
         return try {
-            val audioOk = cam.prepareAudio(128 * 1024, 44_100, false, true, true)
-            var videoOk = cam.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, 0, 320)
+            val audioOk = cam.prepareAudio(128 * 1024, 32_000, true, false, false)
+            var videoOk = cam.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, 0)
             if (!videoOk) {
                 streamWidth = MAX_WIDTH
                 streamHeight = MAX_HEIGHT
                 streamBitrate = DEFAULT_BITRATE
-                videoOk = cam.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, 0, 320)
+                videoOk = cam.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, 0)
             }
             if (!audioOk || !videoOk) {
                 encoderPrepared = false
                 return false
             }
             encoderPrepared = true
-            preparedWidth = streamWidth
-            preparedHeight = streamHeight
             if (!cam.isOnPreview) {
                 cam.startPreview()
             }
@@ -238,9 +225,7 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
-    /**
-     * Go Live: never call prepareVideo/prepareAudio again — that crashes many devices mid-preview.
-     */
+    /** Go Live: start RTMP only — encoder was prepared at preview time. */
     private fun startStreamOnMain(endpoint: String) {
         val cam = camera ?: throw IllegalStateException("Camera not initialized")
         if (!encoderPrepared || !cam.isOnPreview) {
@@ -273,6 +258,12 @@ object StreamCameraEngine : ConnectChecker {
         } catch (_: Exception) {
         }
         openGlView?.keepScreenOn = false
+        try {
+            if (camera?.isOnPreview != true && encoderPrepared) {
+                camera?.startPreview()
+            }
+        } catch (_: Exception) {
+        }
     }
 
     private fun releaseCamera() {
@@ -286,9 +277,9 @@ object StreamCameraEngine : ConnectChecker {
         camera = null
         openGlView = null
         encoderPrepared = false
-        preparedWidth = 0
-        preparedHeight = 0
     }
+
+    private fun ensureOverlayCapture(): OverlayWebViewCapture? {
         val act = activity ?: return null
         if (overlayCapture == null) {
             overlayCapture = OverlayWebViewCapture(act)
@@ -309,7 +300,7 @@ object StreamCameraEngine : ConnectChecker {
             } catch (e: Exception) {
                 emit(StreamCaptureService.EVENT_ERROR, "Scoreboard overlay failed: ${e.message}")
             }
-        }, 2500)
+        }, 2000)
     }
 
     private fun recycleOverlayBitmap() {
@@ -331,9 +322,12 @@ object StreamCameraEngine : ConnectChecker {
             return
         }
         val latch = CountDownLatch(1)
+        var thrown: Throwable? = null
         mainHandler.post {
             try {
                 block()
+            } catch (t: Throwable) {
+                thrown = t
             } finally {
                 latch.countDown()
             }
@@ -341,6 +335,7 @@ object StreamCameraEngine : ConnectChecker {
         if (!latch.await(25, TimeUnit.SECONDS)) {
             throw IllegalStateException("Camera operation timed out")
         }
+        thrown?.let { throw it }
     }
 
     private fun clearOverlayFilter() {
@@ -395,7 +390,7 @@ object StreamCameraEngine : ConnectChecker {
             }
         }
         overlayRunnable = runnable
-        mainHandler.postDelayed(runnable, 1500)
+        mainHandler.postDelayed(runnable, 1200)
     }
 
     private fun stopOverlayRefresh() {

@@ -62,7 +62,6 @@ class StreamCaptureService : Service() {
 
     override fun onDestroy() {
         releaseStreamWakeLock()
-        StreamCameraEngine.stopStreamFromService()
         super.onDestroy()
     }
 
