@@ -16,13 +16,18 @@ class RtmpCredentialsStore {
   String _legacyPrefsKey(String field) => 'rtmp_${field}_$matchSlug';
 
   Future<({String? server, String? key, String? watch})> load() async {
-    var server = await _storage.read(key: _fieldKey('server'));
-    var key = await _storage.read(key: _fieldKey('key'));
-    var watch = await _storage.read(key: _fieldKey('watch'));
+    String? server;
+    String? key;
+    String? watch;
+    try {
+      server = await _storage.read(key: _fieldKey('server'));
+      key = await _storage.read(key: _fieldKey('key'));
+      watch = await _storage.read(key: _fieldKey('watch'));
 
-    if ((server ?? '').isNotEmpty && (key ?? '').isNotEmpty) {
-      return (server: server, key: key, watch: watch);
-    }
+      if ((server ?? '').isNotEmpty && (key ?? '').isNotEmpty) {
+        return (server: server, key: key, watch: watch);
+      }
+    } catch (_) {}
 
     final prefs = await SharedPreferences.getInstance();
     server = prefs.getString(_legacyPrefsKey('server'));
@@ -38,13 +43,15 @@ class RtmpCredentialsStore {
   }
 
   Future<void> save({required String server, required String key, String? watch}) async {
-    await _storage.write(key: _fieldKey('server'), value: server);
-    await _storage.write(key: _fieldKey('key'), value: key);
-    if (watch != null && watch.isNotEmpty) {
-      await _storage.write(key: _fieldKey('watch'), value: watch);
-    } else {
-      await _storage.delete(key: _fieldKey('watch'));
-    }
+    try {
+      await _storage.write(key: _fieldKey('server'), value: server);
+      await _storage.write(key: _fieldKey('key'), value: key);
+      if (watch != null && watch.isNotEmpty) {
+        await _storage.write(key: _fieldKey('watch'), value: watch);
+      } else {
+        await _storage.delete(key: _fieldKey('watch'));
+      }
+    } catch (_) {}
   }
 
   Future<void> clear() async {

@@ -15,6 +15,8 @@ class CricrelayCameraPlatformView(
         setKeepScreenOn(false)
     }
 
+    private var attached = false
+
     private val layoutListener = View.OnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
         val w = right - left
         val h = bottom - top
@@ -24,12 +26,17 @@ class CricrelayCameraPlatformView(
     }
 
     init {
-        StreamCameraEngine.attachView(openGlView, activity)
-        openGlView.addOnLayoutChangeListener(layoutListener)
-        openGlView.post {
-            if (openGlView.width > 64 && openGlView.height > 64) {
-                StreamCameraEngine.onPreviewViewSized()
+        try {
+            StreamCameraEngine.attachView(openGlView, activity)
+            attached = true
+            openGlView.addOnLayoutChangeListener(layoutListener)
+            openGlView.post {
+                if (openGlView.width > 64 && openGlView.height > 64) {
+                    StreamCameraEngine.onPreviewViewSized()
+                }
             }
+        } catch (_: Exception) {
+            attached = false
         }
     }
 
@@ -37,6 +44,9 @@ class CricrelayCameraPlatformView(
 
     override fun dispose() {
         openGlView.removeOnLayoutChangeListener(layoutListener)
-        StreamCameraEngine.detachView(openGlView)
+        if (attached) {
+            StreamCameraEngine.detachView(openGlView)
+            attached = false
+        }
     }
 }

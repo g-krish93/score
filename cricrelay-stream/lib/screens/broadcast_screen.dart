@@ -161,7 +161,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     }
     _quality = await loadStreamQualityProfile();
     await _loadSavedRtmp();
-    if (Platform.isAndroid || Platform.isIOS) {
+    if ((Platform.isAndroid || Platform.isIOS) && avOk) {
       _nativeCamera = await RtmpPlatform.isCaptureSupported;
     }
     if (_nativeCamera) {
@@ -205,7 +205,6 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       if (await RtmpPlatform.isCameraReady) {
         if (!mounted) return;
         setState(() => _nativeCameraReady = true);
-        await _syncNativeOverlay();
         await _initZoomLevels();
         return;
       }
@@ -263,9 +262,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     try {
       final synced = await _overlayStore.saveAndSync(next);
       _overlayPrefs = synced;
-      if (_nativeCamera) {
+      if (_nativeCamera && _live) {
         await _syncNativeOverlay();
-      } else {
+      } else if (!_nativeCamera) {
         await _reloadOverlayWebView();
       }
       await _applyWakelock();

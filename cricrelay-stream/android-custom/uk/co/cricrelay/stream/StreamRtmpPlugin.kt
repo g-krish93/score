@@ -123,6 +123,14 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            handleMethodCall(call, result)
+        } catch (e: Exception) {
+            result.error("native", e.message ?: "Native error", null)
+        }
+    }
+
+    private fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "isCaptureSupported" -> result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
             "isCameraReady" -> result.success(StreamCameraEngine.isPreviewReady)

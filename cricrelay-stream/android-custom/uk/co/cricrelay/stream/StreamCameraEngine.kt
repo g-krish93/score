@@ -57,7 +57,7 @@ object StreamCameraEngine : ConnectChecker {
         val viewChanged = openGlView !== view
         openGlView = view
         activity = act
-        if (viewChanged || camera == null) {
+        if (viewChanged && camera != null) {
             if (camera?.isStreaming == true) {
                 return
             }
@@ -65,12 +65,32 @@ object StreamCameraEngine : ConnectChecker {
                 camera?.stopPreview()
             } catch (_: Exception) {
             }
-            camera = RtmpCamera2(view, this)
+            try {
+                camera?.stopStream()
+            } catch (_: Exception) {
+            }
+            camera = null
             encoderPrepared = false
         }
+    }
+
+    private fun ensureCamera(): RtmpCamera2? {
+        val view = openGlView ?: return null
+        if (camera != null) return camera
+        return try {
+            RtmpCamera2(view, this).also { camera = it }
+        } catch (e: Exception) {
+            emit(StreamCaptureService.EVENT_ERROR, "Camera init failed: ${e.message ?: "unknown"}")
+            null
+        }
+    }
+
+    private fun ensureOverlayCapture(): OverlayWebViewCapture? {
+        val act = activity ?: return null
         if (overlayCapture == null) {
             overlayCapture = OverlayWebViewCapture(act)
         }
+        return overlayCapture
     }
 
     fun detachView(view: OpenGlView) {
@@ -101,8 +121,12 @@ object StreamCameraEngine : ConnectChecker {
         streamFps = fps
         streamBitrate = bitrate
         var ok = false
-        runOnMainSync {
-            ok = preparePreviewOnMain(width, height, fps, bitrate)
+        try {
+            runOnMainSync {
+                ok = preparePreviewOnMain(width, height, fps, bitrate)
+            }
+        } catch (_: Exception) {
+            ok = false
         }
         return ok
     }
@@ -112,13 +136,18 @@ object StreamCameraEngine : ConnectChecker {
         runOnMain {
             val view = openGlView ?: return@runOnMain
             if (view.width < 64 || view.height < 64) return@runOnMain
-            val cam = camera ?: return@runOnMain
+            val cam = ensureCamera() ?: return@runOnMain
             if (!encoderPrepared) {
-                ensureEncoderPrepared(cam, streamWidth, streamHeight, streamFps, streamBitrate, reconfigurePreview = true)
+                try {
+                    ensureEncoderPrepared(cam, streamWidth, streamHeight, streamFps, streamBitrate, reconfigurePreview = false)
+                } catch (_: Exception) {
+                    encoderPrepared = false
+                    return@runOnMain
+                }
             }
-            ensurePreviewRunning()
-            if (overlayUrl.isNotEmpty()) {
-                overlayCapture?.loadUrl(overlayUrl)
+            try {
+                ensurePreviewRunning()
+            } catch (_: Exception) {
             }
         }
     }
@@ -127,7 +156,9 @@ object StreamCameraEngine : ConnectChecker {
         runOnMain {
             overlayUrl = url
             overlayLayout = layout
-            overlayCapture?.loadUrl(url)
+            if (url.isNotEmpty()) {
+                ensureOverlayCapture()?.loadUrl(url)
+            }
             applyOverlaySprite()
         }
     }
@@ -244,18 +275,20 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     private fun preparePreviewOnMain(width: Int, height: Int, fps: Int, bitrate: Int): Boolean {
-        val cam = camera ?: return false
+        val cam = ensureCamera() ?: return false
         val view = openGlView ?: return false
         if (view.width < 2 || view.height < 2) {
             view.post { preparePreviewOnMain(width, height, fps, bitrate) }
             return false
         }
-        ensureEncoderPrepared(cam, width, height, fps, bitrate, reconfigurePreview = true)
-        ensurePreviewRunning()
-        if (overlayUrl.isNotEmpty()) {
-            overlayCapture?.loadUrl(overlayUrl)
+        return try {
+            ensureEncoderPrepared(cam, width, height, fps, bitrate, reconfigurePreview = false)
+            ensurePreviewRunning()
+            true
+        } catch (_: Exception) {
+            encoderPrepared = false
+            false
         }
-        return true
     }
 
     private fun startStreamOnMain(
@@ -268,9 +301,9 @@ object StreamCameraEngine : ConnectChecker {
         fps: Int,
         layout: OverlayLayout,
     ) {
-        val cam = camera ?: throw IllegalStateException("Camera preview not ready — wait for preview")
+        val cam = ensureCamera() ?: throw IllegalStateException("Camera preview not ready — wait for preview")
         if (!cam.isOnPreview) {
-            ensureEncoderPrepared(cam, width, height, fps, bitrate, reconfigurePreview = true)
+            ensureEncoderPrepared(cam, width, height, fps, bitrate, reconfigurePreview = false)
             ensurePreviewRunning()
         }
         overlayLayout = layout
@@ -290,7 +323,7 @@ object StreamCameraEngine : ConnectChecker {
 
         pendingOverlayAfterConnect = url.isNotEmpty()
         if (url.isNotEmpty()) {
-            overlayCapture?.loadUrl(url)
+            ensureOverlayCapture()?.loadUrl(url)
         }
 
         if (!cam.isStreaming) {
@@ -351,7 +384,15 @@ object StreamCameraEngine : ConnectChecker {
         streamBitrate = bitrate
 
         val audioOk = cam.prepareAudio(128 * 1024, 32000, true, false, false)
-        val videoOk = cam.prepareVideo(width, height, fps, bitrate, 0)
+        var videoOk = cam.prepareVideo(width, height, fps, bitrate, 0)
+        if (!videoOk && (width > 1280 || height > 720)) {
+            videoOk = cam.prepareVideo(1280, 720, fps, (bitrate * 0.7).toInt(), 0)
+            if (videoOk) {
+                streamWidth = 1280
+                streamHeight = 720
+                streamBitrate = (bitrate * 0.7).toInt()
+            }
+        }
         if (!audioOk || !videoOk) {
             encoderPrepared = false
             throw IllegalStateException("Could not prepare camera/audio for stream")
@@ -366,7 +407,6 @@ object StreamCameraEngine : ConnectChecker {
             cam.startPreview()
         } catch (e: Exception) {
             emit(StreamCaptureService.EVENT_ERROR, "Camera preview failed: ${e.message}")
-            throw e
         }
     }
 
