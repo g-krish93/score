@@ -34,6 +34,7 @@ object CameraPreviewHost {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                 )
                 setKeepScreenOn(false)
+                setZOrderMediaOverlay(true)
             }
             root.addView(gl, 0)
             hostActivity = activity

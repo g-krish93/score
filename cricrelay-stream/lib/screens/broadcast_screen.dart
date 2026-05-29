@@ -19,6 +19,7 @@ import '../utils/stream_error_messages.dart';
 import '../models/overlay_layout_prefs.dart';
 import '../models/stream_destination.dart';
 import '../models/stream_quality.dart';
+import '../utils/native_encoder_profile.dart';
 import '../utils/rtmp_endpoint.dart';
 import '../theme/app_theme.dart';
 import '../widgets/broadcast_control_dock.dart';
@@ -64,6 +65,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   double _maxZoom = 1.0;
   double _pinchBaseZoom = 1.0;
   StreamQualityProfile _quality = StreamQualityProfile.high;
+  StreamQualityProfile _nativeProfile = StreamQualityProfile.high;
   late final OverlayLayoutStore _overlayStore;
   OverlayLayoutPrefs _overlayPrefs = const OverlayLayoutPrefs();
   bool _overlayLocked = false;
@@ -164,6 +166,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         setState(() => _status = 'Camera or microphone permission denied');
       }
       _quality = await loadStreamQualityProfile();
+      _nativeProfile = NativeEncoderProfile.forNative(_quality);
       await _loadSavedRtmp();
       if ((Platform.isAndroid || Platform.isIOS) && avOk) {
         _nativeCamera = await RtmpPlatform.isCaptureSupported;
@@ -228,10 +231,10 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     if (!_nativeCamera || !mounted) return;
     for (var attempt = 0; attempt < 40; attempt++) {
       await RtmpPlatform.prepareCamera(
-        width: _quality.width,
-        height: _quality.height,
-        fps: _quality.fps,
-        bitrateBps: _quality.bitrateBps,
+        width: _nativeProfile.width,
+        height: _nativeProfile.height,
+        fps: _nativeProfile.fps,
+        bitrateBps: _nativeProfile.bitrateBps,
       );
       if (await RtmpPlatform.isCameraReady) {
         if (!mounted) return;
@@ -391,15 +394,20 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         if (mounted) {
           setState(() {
             _quality = p;
-            _status = 'Stream quality: ${p.label} (${p.width}×${p.height})';
+            _nativeProfile = NativeEncoderProfile.forNative(p);
+            _status = 'Stream quality: ${p.label} (${_nativeProfile.width}×${_nativeProfile.height})';
           });
           if (_nativeCamera && !_live) {
+            setState(() => _nativeCameraReady = false);
             await RtmpPlatform.prepareCamera(
-              width: p.width,
-              height: p.height,
-              fps: p.fps,
-              bitrateBps: p.bitrateBps,
+              width: _nativeProfile.width,
+              height: _nativeProfile.height,
+              fps: _nativeProfile.fps,
+              bitrateBps: _nativeProfile.bitrateBps,
             );
+            if (mounted && await RtmpPlatform.isCameraReady) {
+              setState(() => _nativeCameraReady = true);
+            }
           }
         }
       },
@@ -506,11 +514,6 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     if (mounted) {
       setState(() => _status = 'Connecting to stream…');
     }
-    final streamW = _quality.width > 1280 ? 1280 : _quality.width;
-    final streamH = _quality.height > 720 ? 720 : _quality.height;
-    final streamBitrate = _quality.width > 1280 || _quality.height > 720
-        ? (_quality.bitrateBps * 0.75).round()
-        : _quality.bitrateBps;
     await RtmpPlatform.startStream(
       rtmpUrl: cred.rtmpUrl,
       streamKey: cred.streamKey,
@@ -518,10 +521,10 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       overlayHeightFraction: _overlayPrefs.heightFraction,
       overlayBottomMargin: _overlayPrefs.bottomMargin,
       overlayHorizontalInset: _overlayPrefs.horizontalInset,
-      width: streamW,
-      height: streamH,
-      bitrateBps: streamBitrate,
-      fps: _quality.fps,
+      width: _nativeProfile.width,
+      height: _nativeProfile.height,
+      bitrateBps: _nativeProfile.bitrateBps,
+      fps: _nativeProfile.fps,
     );
     await connected;
     AppAnalytics.logBreadcrumb('go_live_connected');
