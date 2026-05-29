@@ -244,7 +244,11 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         'broadcast_screen._init',
         'dart catch',
         hypothesisId: 'H4',
-        data: {'error': e.toString(), 'type': e.runtimeType.toString()},
+        data: {
+          'error': e.toString(),
+          'type': e.runtimeType.toString(),
+          'stack': st.toString().split('\n').take(2).join(' | '),
+        },
       );
       // #endregion
       if (mounted) {

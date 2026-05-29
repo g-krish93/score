@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Full pre-release validation — mirrors GitHub Actions before APK/deploy.
 # Run from repo: bash cricrelay-stream/scripts/ci_validate.sh
+# Known failure patterns: docs/CI_PITFALLS.md
 set -eu
 set -o pipefail
 
