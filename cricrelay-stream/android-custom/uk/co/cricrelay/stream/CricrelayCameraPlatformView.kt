@@ -13,7 +13,6 @@ class CricrelayCameraPlatformView(
 
     private val openGlView = OpenGlView(context).apply {
         setKeepScreenOn(false)
-        isOpaque = true
     }
 
     private val layoutListener = View.OnLayoutChangeListener { v, left, top, right, bottom, _, _, _, _ ->

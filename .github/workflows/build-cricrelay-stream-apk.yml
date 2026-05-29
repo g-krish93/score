@@ -7,12 +7,17 @@ on:
     paths:
       - "cricrelay-stream/**"
       - ".github/workflows/build-cricrelay-stream-apk.yml"
+      - ".github/workflows/validate-cricrelay-stream.yml"
 
 permissions:
   contents: write
 
 jobs:
+  validate:
+    uses: ./.github/workflows/validate-cricrelay-stream.yml
+
   build-android:
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,12 +48,6 @@ jobs:
           sed -i 's/\r$//' android-custom/apply_android_overlay.sh
           chmod +x android-custom/apply_android_overlay.sh
           bash android-custom/apply_android_overlay.sh
-
-      - name: Dart analyze
-        working-directory: cricrelay-stream
-        run: |
-          flutter pub get
-          flutter analyze lib --no-fatal-infos --no-fatal-warnings
 
       - name: Build release APK
         working-directory: cricrelay-stream
@@ -125,6 +124,7 @@ jobs:
             ls -la static/cricrelay-stream.apk
 
   build-ios:
+    needs: validate
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
