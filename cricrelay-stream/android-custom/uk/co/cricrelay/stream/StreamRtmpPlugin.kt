@@ -164,21 +164,10 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                 result.success(null)
             }
             "showNativePreview" -> {
-                val act = pluginActivity
-                if (act == null) {
-                    result.error("activity", "No activity", null)
-                    return
-                }
-                CameraPreviewHost.show(act)
+                // Preview is rendered via Flutter AndroidView (cricrelay-camera-preview).
                 result.success(null)
             }
             "hideNativePreview" -> {
-                val act = pluginActivity
-                if (act != null) {
-                    CameraPreviewHost.hide(act)
-                } else {
-                    CameraPreviewHost.hideCurrent()
-                }
                 result.success(null)
             }
             "startStream" -> {

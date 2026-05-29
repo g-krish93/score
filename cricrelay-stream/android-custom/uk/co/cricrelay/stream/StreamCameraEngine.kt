@@ -62,13 +62,17 @@ object StreamCameraEngine : ConnectChecker {
     fun attachView(view: OpenGlView, act: Activity) {
         activity = act
         if (openGlView === view && camera != null) return
-        releaseCamera()
+        if (openGlView !== view) {
+            releaseCamera()
+        }
         openGlView = view
-        camera = try {
-            RtmpCamera2(view, this)
-        } catch (e: Exception) {
-            emit(StreamCaptureService.EVENT_ERROR, "Camera init failed: ${e.message ?: "unknown"}")
-            null
+        if (camera == null) {
+            camera = try {
+                RtmpCamera2(view, this)
+            } catch (e: Exception) {
+                emit(StreamCaptureService.EVENT_ERROR, "Camera init failed: ${e.message ?: "unknown"}")
+                null
+            }
         }
     }
 

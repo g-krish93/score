@@ -173,12 +173,12 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       }
       if (_nativeCamera) {
         _rtmpStatusSub = RtmpPlatform.statusEvents.listen(_onRtmpStatus);
-        if (Platform.isAndroid) {
-          await RtmpPlatform.showNativePreview();
-        }
         if (mounted) setState(() {});
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          unawaited(_ensureNativeCameraReady());
+          // Wait an extra frame so AndroidView PlatformView has layout before prepareCamera.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            unawaited(_ensureNativeCameraReady());
+          });
         });
       } else if (avOk) {
         try {
@@ -460,9 +460,6 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     if (_live && _nativeCamera) {
       unawaited(RtmpPlatform.stopStream());
     }
-    if (_nativeCamera && Platform.isAndroid) {
-      unawaited(RtmpPlatform.hideNativePreview());
-    }
     _camera?.dispose();
     super.dispose();
   }
@@ -567,6 +564,17 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   }
 
   Future<void> _performGoLive() async {
+    if (_nativeCamera) {
+      if (!_nativeCameraReady) {
+        await _ensureNativeCameraReady();
+      }
+      if (!await RtmpPlatform.isCameraReady) {
+        if (mounted) {
+          setState(() => _status = StreamErrorMessages.previewNotReady);
+        }
+        return;
+      }
+    }
     await _requestNotificationPermission();
     await AppAnalytics.logEvent('go_live_started', {
       'destination': _destination.name,
@@ -809,13 +817,16 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     Widget stack = Stack(
       fit: StackFit.expand,
       children: [
-        if (_nativeCamera && _avPermissionsGranted && Platform.isAndroid)
-          const SizedBox.expand()
-        else if (_nativeCamera && _avPermissionsGranted && Platform.isIOS)
-          const UiKitView(
-            viewType: 'cricrelay-camera-preview',
-            layoutDirection: TextDirection.ltr,
-          )
+        if (_nativeCamera && _avPermissionsGranted)
+          Platform.isAndroid
+              ? const AndroidView(
+                  viewType: 'cricrelay-camera-preview',
+                  layoutDirection: TextDirection.ltr,
+                )
+              : const UiKitView(
+                  viewType: 'cricrelay-camera-preview',
+                  layoutDirection: TextDirection.ltr,
+                )
         else if (!_avPermissionsGranted)
           Center(
             child: Padding(
@@ -941,7 +952,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     final orient = MediaQuery.of(context).orientation;
     final isLandscape = orient == Orientation.landscape;
     return Scaffold(
-      backgroundColor: (_nativeCamera && Platform.isAndroid) ? Colors.transparent : Colors.black,
+      backgroundColor: Colors.black,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
