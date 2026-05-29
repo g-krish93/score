@@ -107,17 +107,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       _nativeCamera = await RtmpPlatform.isCaptureSupported;
     }
     if (_nativeCamera) {
-      _nativeCameraReady = true;
       _rtmpStatusSub = RtmpPlatform.statusEvents.listen(_onRtmpStatus);
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        await RtmpPlatform.prepareCamera(
-          width: _quality.width,
-          height: _quality.height,
-          fps: _quality.fps,
-          bitrateBps: _quality.bitrateBps,
-        );
-        await _syncNativeOverlay();
-        await _initZoomLevels();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_ensureNativeCameraReady());
       });
     } else {
       final cams = await availableCameras();
@@ -140,6 +132,29 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     } catch (_) {}
     if (!_nativeCamera) {
       await _loadOverlayWebView();
+    }
+  }
+
+  Future<void> _ensureNativeCameraReady() async {
+    if (!_nativeCamera || !mounted) return;
+    for (var attempt = 0; attempt < 40; attempt++) {
+      await RtmpPlatform.prepareCamera(
+        width: _quality.width,
+        height: _quality.height,
+        fps: _quality.fps,
+        bitrateBps: _quality.bitrateBps,
+      );
+      if (await RtmpPlatform.isCameraReady) {
+        if (!mounted) return;
+        setState(() => _nativeCameraReady = true);
+        await _syncNativeOverlay();
+        await _initZoomLevels();
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    if (mounted) {
+      setState(() => _status = 'Camera preview loading — wait a moment and try Go Live');
     }
   }
 
@@ -339,7 +354,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   @override
   void dispose() {
     _rtmpStatusSub?.cancel();
-    _stopInternal();
+    if (_live && _nativeCamera) {
+      unawaited(RtmpPlatform.stopStream());
+    }
     _camera?.dispose();
     super.dispose();
   }
@@ -375,6 +392,12 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
             ? 'This build cannot stream yet. Install the latest CricRelay Stream IPA from cricrelay.co.uk'
             : 'This APK cannot stream yet. Install the latest CricRelay Stream APK from cricrelay.co.uk',
       );
+    }
+    if (!_nativeCameraReady) {
+      await _ensureNativeCameraReady();
+    }
+    if (!await RtmpPlatform.isCameraReady) {
+      throw Exception('Camera preview not ready — wait for preview before going live');
     }
     final overlayUrl = _overlayStore.embedUrl(widget.match.overlayEmbedUrl, _overlayPrefs);
     await RtmpPlatform.prepareCamera(
@@ -642,7 +665,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     Widget stack = Stack(
       fit: StackFit.expand,
       children: [
-        if (camReady && _nativeCamera)
+        if (_nativeCamera)
           Platform.isAndroid
               ? const AndroidView(
                   viewType: 'cricrelay-camera-preview',
@@ -656,7 +679,11 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
           CameraPreview(_camera!),
           if (_web != null) _buildFlutterOverlayPreview(),
         ],
-        if (_nativeCamera && camReady)
+        if (_nativeCamera && !_nativeCameraReady)
+          const Center(
+            child: CircularProgressIndicator(color: AppColors.accentGreen),
+          ),
+        if (_nativeCamera && _nativeCameraReady)
           Positioned(
             left: _overlayPrefs.horizontalInset,
             right: _overlayPrefs.horizontalInset,

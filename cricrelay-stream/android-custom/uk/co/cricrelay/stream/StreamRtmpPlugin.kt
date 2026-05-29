@@ -125,13 +125,14 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "isCaptureSupported" -> result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
+            "isCameraReady" -> result.success(StreamCameraEngine.isPreviewReady)
             "prepareCamera" -> {
                 val width = call.argument<Int>("width") ?: 1280
                 val height = call.argument<Int>("height") ?: 720
                 val fps = call.argument<Int>("fps") ?: 30
                 val bitrate = call.argument<Int>("bitrateBps") ?: 2_500_000
-                StreamCameraEngine.preparePreview(width, height, fps, bitrate)
-                result.success(true)
+                val ok = StreamCameraEngine.preparePreview(width, height, fps, bitrate)
+                result.success(ok)
             }
             "getZoomRange" -> {
                 result.success(

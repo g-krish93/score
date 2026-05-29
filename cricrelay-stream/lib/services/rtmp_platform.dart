@@ -29,18 +29,28 @@ class RtmpPlatform {
     }
   }
 
-  static Future<void> prepareCamera({
+  static Future<bool> get isCameraReady async {
+    try {
+      final v = await _ch.invokeMethod<bool>('isCameraReady');
+      return v == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> prepareCamera({
     int width = 1280,
     int height = 720,
     int fps = 30,
     int bitrateBps = 2500000,
   }) async {
-    await _ch.invokeMethod('prepareCamera', {
+    final v = await _ch.invokeMethod<bool>('prepareCamera', {
       'width': width,
       'height': height,
       'fps': fps,
       'bitrateBps': bitrateBps,
     });
+    return v == true;
   }
 
   static Future<ZoomRange> getZoomRange() async {

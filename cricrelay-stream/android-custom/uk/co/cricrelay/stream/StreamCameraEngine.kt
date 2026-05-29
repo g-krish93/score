@@ -1,6 +1,7 @@
 package uk.co.cricrelay.stream
 
 import android.app.Activity
+import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -39,9 +40,13 @@ object StreamCameraEngine : ConnectChecker {
     private var overlayUrl: String = ""
     private var statusListener: ((String, String) -> Unit)? = null
     private var encoderPrepared = false
+    private var lastOverlayBitmap: Bitmap? = null
 
     val isViewAttached: Boolean
         get() = openGlView != null && camera != null
+
+    val isPreviewReady: Boolean
+        get() = isViewAttached && encoderPrepared && (camera?.isOnPreview == true)
 
     fun setStatusListener(listener: ((String, String) -> Unit)?) {
         statusListener = listener
@@ -52,6 +57,9 @@ object StreamCameraEngine : ConnectChecker {
         openGlView = view
         activity = act
         if (viewChanged || camera == null) {
+            if (camera?.isStreaming == true) {
+                return
+            }
             try {
                 camera?.stopPreview()
             } catch (_: Exception) {
@@ -66,9 +74,12 @@ object StreamCameraEngine : ConnectChecker {
 
     fun detachView(view: OpenGlView) {
         if (openGlView !== view) return
-        runOnMain {
+        runOnMainSync {
             stopOverlayRefresh()
             clearOverlayFilter()
+            recycleOverlayBitmap()
+            overlayCapture?.destroy()
+            overlayCapture = null
             try {
                 camera?.stopStream()
             } catch (_: Exception) {
@@ -83,9 +94,31 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
-    fun preparePreview(width: Int, height: Int, fps: Int, bitrate: Int = streamBitrate) {
+    fun preparePreview(width: Int, height: Int, fps: Int, bitrate: Int = streamBitrate): Boolean {
+        streamWidth = width
+        streamHeight = height
+        streamFps = fps
+        streamBitrate = bitrate
+        var ok = false
         runOnMainSync {
-            preparePreviewOnMain(width, height, fps, bitrate)
+            ok = preparePreviewOnMain(width, height, fps, bitrate)
+        }
+        return ok
+    }
+
+    /** Called when the platform view has a usable size — uses stored stream params, not hardcoded 720p. */
+    fun onPreviewViewSized() {
+        runOnMain {
+            val view = openGlView ?: return@runOnMain
+            if (view.width < 64 || view.height < 64) return@runOnMain
+            val cam = camera ?: return@runOnMain
+            if (!encoderPrepared) {
+                ensureEncoderPrepared(cam, streamWidth, streamHeight, streamFps, streamBitrate, reconfigurePreview = true)
+            }
+            ensurePreviewRunning()
+            if (overlayUrl.isNotEmpty()) {
+                overlayCapture?.loadUrl(overlayUrl)
+            }
         }
     }
 
@@ -108,6 +141,10 @@ object StreamCameraEngine : ConnectChecker {
         fps: Int,
         layout: OverlayLayout,
     ) {
+        streamWidth = width
+        streamHeight = height
+        streamFps = fps
+        streamBitrate = bitrate
         var error: Exception? = null
         runOnMainSync {
             try {
@@ -122,13 +159,14 @@ object StreamCameraEngine : ConnectChecker {
 
     fun stopStream() {
         runOnMainSync {
-            stopOverlayRefresh()
-            clearOverlayFilter()
-            try {
-                camera?.stopStream()
-            } catch (_: Exception) {
-            }
-            ensurePreviewRunning()
+            stopStreamInternal()
+        }
+    }
+
+    fun stopStreamFromService() {
+        runOnMainSync {
+            if (camera?.isStreaming != true) return@runOnMainSync
+            stopStreamInternal()
         }
     }
 
@@ -161,6 +199,22 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
+    private fun stopStreamInternal() {
+        stopOverlayRefresh()
+        clearOverlayFilter()
+        recycleOverlayBitmap()
+        try {
+            camera?.stopStream()
+        } catch (_: Exception) {
+        }
+        ensurePreviewRunning()
+    }
+
+    private fun recycleOverlayBitmap() {
+        lastOverlayBitmap?.takeIf { !it.isRecycled }?.recycle()
+        lastOverlayBitmap = null
+    }
+
     private fun runOnMain(block: () -> Unit) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             block()
@@ -187,18 +241,19 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
-    private fun preparePreviewOnMain(width: Int, height: Int, fps: Int, bitrate: Int) {
-        val cam = camera ?: return
-        val view = openGlView ?: return
+    private fun preparePreviewOnMain(width: Int, height: Int, fps: Int, bitrate: Int): Boolean {
+        val cam = camera ?: return false
+        val view = openGlView ?: return false
         if (view.width < 2 || view.height < 2) {
             view.post { preparePreviewOnMain(width, height, fps, bitrate) }
-            return
+            return false
         }
         ensureEncoderPrepared(cam, width, height, fps, bitrate, reconfigurePreview = true)
         ensurePreviewRunning()
         if (overlayUrl.isNotEmpty()) {
             overlayCapture?.loadUrl(overlayUrl)
         }
+        return true
     }
 
     private fun startStreamOnMain(
@@ -212,6 +267,10 @@ object StreamCameraEngine : ConnectChecker {
         layout: OverlayLayout,
     ) {
         val cam = camera ?: throw IllegalStateException("Camera preview not ready — wait for preview")
+        if (!cam.isOnPreview) {
+            ensureEncoderPrepared(cam, width, height, fps, bitrate, reconfigurePreview = true)
+            ensurePreviewRunning()
+        }
         overlayLayout = layout
         overlayUrl = url
 
@@ -266,6 +325,7 @@ object StreamCameraEngine : ConnectChecker {
         val wasOnPreview = cam.isOnPreview
         stopOverlayRefresh()
         clearOverlayFilter()
+        recycleOverlayBitmap()
         try {
             if (cam.isStreaming) cam.stopStream()
         } catch (_: Exception) {
@@ -363,6 +423,8 @@ object StreamCameraEngine : ConnectChecker {
         val w = (streamWidth * (1f - overlayLayout.horizontalInsetFraction * 2f)).toInt().coerceIn(320, 1920)
         val h = (streamHeight * overlayLayout.heightFraction).toInt().coerceIn(64, 500)
         val bmp = overlayCapture?.capture(w, h) ?: return
+        lastOverlayBitmap?.takeIf { !it.isRecycled }?.recycle()
+        lastOverlayBitmap = bmp
         filter.setImage(bmp)
         filter.setDefaultScale(streamWidth, streamHeight)
         applyOverlaySprite()

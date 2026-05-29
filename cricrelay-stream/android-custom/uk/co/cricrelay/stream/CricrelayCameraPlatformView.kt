@@ -15,11 +15,11 @@ class CricrelayCameraPlatformView(
         setKeepScreenOn(false)
     }
 
-    private val layoutListener = View.OnLayoutChangeListener { v, left, top, right, bottom, _, _, _, _ ->
+    private val layoutListener = View.OnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
         val w = right - left
         val h = bottom - top
         if (w > 64 && h > 64) {
-            StreamCameraEngine.preparePreview(1280, 720, 30)
+            StreamCameraEngine.onPreviewViewSized()
         }
     }
 
@@ -28,7 +28,7 @@ class CricrelayCameraPlatformView(
         openGlView.addOnLayoutChangeListener(layoutListener)
         openGlView.post {
             if (openGlView.width > 64 && openGlView.height > 64) {
-                StreamCameraEngine.preparePreview(1280, 720, 30)
+                StreamCameraEngine.onPreviewViewSized()
             }
         }
     }
