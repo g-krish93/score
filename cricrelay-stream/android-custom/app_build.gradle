@@ -4,6 +4,16 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+def keystoreBase64 = System.getenv("ANDROID_KEYSTORE_BASE64")
+def keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+def keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+def storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+
+def hasReleaseKeystore = keystoreBase64 != null && !keystoreBase64.isEmpty()
+        && keyAlias != null && !keyAlias.isEmpty()
+        && keyPassword != null && !keyPassword.isEmpty()
+        && storePassword != null && !storePassword.isEmpty()
+
 android {
     namespace = "uk.co.cricrelay.stream"
     compileSdk = 35
@@ -26,9 +36,29 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        release {
+            if (hasReleaseKeystore) {
+                def keystoreFile = new File(rootProject.projectDir, "app/release.keystore")
+                if (!keystoreFile.exists()) {
+                    keystoreFile.parentFile.mkdirs()
+                    keystoreFile.bytes = Base64.getDecoder().decode(keystoreBase64.trim())
+                }
+                storeFile keystoreFile
+                storePassword storePassword
+                keyAlias keyAlias
+                keyPassword keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
         }
     }
 }
@@ -39,4 +69,14 @@ flutter {
 
 dependencies {
     implementation "com.github.pedroSG94.RootEncoder:library:2.4.8"
+    if (file("google-services.json").exists()) {
+        implementation platform("com.google.firebase:firebase-bom:33.7.0")
+        implementation "com.google.firebase:firebase-crashlytics"
+        implementation "com.google.firebase:firebase-analytics"
+    }
+}
+
+if (file("google-services.json").exists()) {
+    apply plugin: "com.google.gms.google-services"
+    apply plugin: "com.google.firebase.crashlytics"
 }

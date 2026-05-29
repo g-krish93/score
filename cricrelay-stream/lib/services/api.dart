@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/overlay_layout_prefs.dart';
 import '../utils/url_validator.dart';
+import 'app_analytics.dart';
 import 'secure_session.dart';
 
 class CricRelayApi {
@@ -96,6 +97,7 @@ class CricRelayApi {
     }
     final token = body['token'] as String;
     await saveSession(baseUrl, token);
+    await AppAnalytics.logEvent('login_success');
     return body;
   }
 
@@ -259,7 +261,9 @@ class CricRelayApi {
       throw Exception(body['error']?.toString() ?? 'Could not create stream');
     }
     final s = body['stream'] as Map<String, dynamic>;
-    return StreamMatch.fromJson(s, baseUrl);
+    final match = StreamMatch.fromJson(s, baseUrl);
+    await AppAnalytics.logEvent('stream_created');
+    return match;
   }
 
   Future<StreamMatch> createPcsBleStream({required String label}) async {
@@ -273,7 +277,9 @@ class CricRelayApi {
       throw Exception(body['error']?.toString() ?? 'Could not create stream');
     }
     final s = body['stream'] as Map<String, dynamic>;
-    return StreamMatch.fromJson(s, baseUrl);
+    final match = StreamMatch.fromJson(s, baseUrl);
+    await AppAnalytics.logEvent('stream_created');
+    return match;
   }
 
   Future<Map<String, dynamic>> getOverlayPrefs(String matchSlug) async {
@@ -322,6 +328,7 @@ class StreamMatch {
     required this.overlayEmbedUrl,
     required this.relaySource,
     required this.paused,
+    this.isLive = false,
   });
 
   final String slug;
@@ -329,6 +336,8 @@ class StreamMatch {
   final String overlayEmbedUrl;
   final String relaySource;
   final bool paused;
+  /// True when the server reports an active broadcast for this stream (`is_live` in API).
+  final bool isLive;
 
   factory StreamMatch.fromJson(Map<String, dynamic> j, [String? baseUrl]) {
     var overlay = (j['overlay_embed_url'] ?? '').toString();
@@ -342,6 +351,7 @@ class StreamMatch {
       overlayEmbedUrl: overlay,
       relaySource: (j['relay_source'] ?? 'scraper').toString(),
       paused: j['paused'] == true,
+      isLive: j['is_live'] == true || j['live'] == true,
     );
   }
 }

@@ -49,8 +49,35 @@ jobs:
           chmod +x android-custom/apply_android_overlay.sh
           bash android-custom/apply_android_overlay.sh
 
-      - name: Build release APK
+      - name: Configure release signing and Firebase
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          FIREBASE_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          set -eu
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > cricrelay-stream/android/app/release.keystore
+            ls -la cricrelay-stream/android/app/release.keystore
+          else
+            echo "No ANDROID_KEYSTORE_BASE64 — release build will use debug signing"
+          fi
+          if [ -n "${FIREBASE_GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
+            echo "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > cricrelay-stream/android/app/google-services.json
+            echo "google-services.json configured"
+          else
+            echo "No FIREBASE_GOOGLE_SERVICES_JSON_BASE64 — Crashlytics/Analytics native plugins skipped"
+          fi
+
+      - name: Build release APK and AAB
         working-directory: cricrelay-stream
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
           set -eu
           set -o pipefail
@@ -58,6 +85,7 @@ jobs:
           flutter --version
           flutter pub get
           flutter build apk --release 2>&1 | tee ../stream-apk-build.log
+          flutter build appbundle --release 2>&1 | tee -a ../stream-apk-build.log
           APK="build/app/outputs/flutter-apk/app-release.apk"
           if [ ! -f "$APK" ]; then
             APK="$(find android/app/build build/app/outputs -type f -name 'app-release.apk' 2>/dev/null | head -1)"
@@ -69,6 +97,17 @@ jobs:
             exit 1
           fi
           ls -la "$APK"
+          AAB="build/app/outputs/bundle/release/app-release.aab"
+          if [ ! -f "$AAB" ]; then
+            AAB="$(find android/app/build build/app/outputs -type f -name 'app-release.aab' 2>/dev/null | head -1)"
+          fi
+          if [ -z "$AAB" ] || [ ! -f "$AAB" ]; then
+            echo "No release AAB found:"
+            find android build -type f -name '*.aab' 2>/dev/null || true
+            tail -n 120 ../stream-apk-build.log || true
+            exit 1
+          fi
+          ls -la "$AAB"
 
       - name: Upload build log on failure
         if: failure()
@@ -86,12 +125,25 @@ jobs:
           test -f "$APK"
           cp "$APK" static/cricrelay-stream.apk
           ls -la static/cricrelay-stream.apk
+          AAB="cricrelay-stream/build/app/outputs/bundle/release/app-release.aab"
+          if [ ! -f "$AAB" ]; then
+            AAB="$(find cricrelay-stream/android/app/build cricrelay-stream/build -type f -name 'app-release.aab' 2>/dev/null | head -1)"
+          fi
+          test -f "$AAB"
+          cp "$AAB" static/cricrelay-stream.aab
+          ls -la static/cricrelay-stream.aab
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: cricrelay-stream-apk
           path: static/cricrelay-stream.apk
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cricrelay-stream-aab
+          path: static/cricrelay-stream.aab
 
       - name: Commit APK for EC2 git pull
         run: |

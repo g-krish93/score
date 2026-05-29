@@ -1,14 +1,27 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'screens/live_home_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/api.dart';
+import 'services/app_analytics.dart';
 import 'theme/app_theme.dart';
 import 'widgets/ui_kit.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp();
+    await AppAnalytics.activate(
+      analytics: FirebaseAnalytics.instance,
+      crashlytics: FirebaseCrashlytics.instance,
+    );
+  } catch (_) {
+    // Optional when google-services.json is missing (local dev / CI without Firebase).
+  }
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.landscapeLeft,

@@ -24,6 +24,14 @@ def main() -> int:
         'id "com.android.application" version "8.7.3"',
         text,
     )
+    if "com.google.gms.google-services" not in text:
+        text = re.sub(
+            r'(id "org\.jetbrains\.kotlin\.android" version "[^"]+" apply false)',
+            r'\1\n    id "com.google.gms.google-services" version "4.4.2" apply false\n'
+            r'    id "com.google.firebase.crashlytics" version "3.0.2" apply false',
+            text,
+            count=1,
+        )
     if "jitpack.io" not in text:
 
         def add_jitpack(match: re.Match[str]) -> str:

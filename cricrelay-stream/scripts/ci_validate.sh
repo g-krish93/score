@@ -11,6 +11,7 @@ echo "=== Flutter ==="
 flutter --version
 flutter pub get
 flutter analyze lib
+flutter test
 
 echo "=== Android overlay + Kotlin compile (catches CI APK failures early) ==="
 rm -rf android

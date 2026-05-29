@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/api.dart';
 import '../theme/app_theme.dart';
 import '../utils/url_validator.dart';
 import '../widgets/ui_kit.dart';
 import 'live_home_screen.dart';
+import 'onboarding_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.api});
@@ -16,13 +18,45 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _baseCtrl = TextEditingController(text: 'https://cricrelay.co.uk');
+  late final TextEditingController _baseCtrl;
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
   bool _obscure = true;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final saved = widget.api.baseUrl.trim();
+    _baseCtrl = TextEditingController(
+      text: saved.isNotEmpty ? saved : 'https://cricrelay.co.uk',
+    );
+  }
+
+  Future<void> _openHome(CricRelayApi api) async {
+    final onboardingDone = await isOnboardingComplete();
+    if (!mounted) return;
+    if (!onboardingDone) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => OnboardingScreen(
+            onFinished: () {
+              if (!mounted) return;
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (_) => LiveHomeScreen(api: api)),
+              );
+            },
+          ),
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => LiveHomeScreen(api: api)),
+    );
+  }
 
   @override
   void dispose() {
@@ -46,13 +80,23 @@ class _LoginScreenState extends State<LoginScreen> {
       final api = CricRelayApi(base);
       await api.login(_emailCtrl.text.trim(), _passCtrl.text);
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => LiveHomeScreen(api: api)),
-      );
+      await _openHome(api);
     } catch (e) {
       setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _openLegal(String path) async {
+    final base = normalizeApiBaseUrl(_baseCtrl.text);
+    final uri = Uri.parse('$base$path');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open $uri')),
+        );
+      }
     }
   }
 
@@ -160,6 +204,22 @@ class _LoginScreenState extends State<LoginScreen> {
                       'New club? Register at cricrelay.co.uk, then sign in with the same email and password.',
                       style: appTextTheme.bodySmall,
                       textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        TextButton(
+                          onPressed: _busy ? null : () => _openLegal('/privacy'),
+                          child: const Text('Privacy Policy'),
+                        ),
+                        Text('·', style: appTextTheme.bodySmall),
+                        TextButton(
+                          onPressed: _busy ? null : () => _openLegal('/terms'),
+                          child: const Text('Terms of Service'),
+                        ),
+                      ],
                     ),
                   ],
                 ),

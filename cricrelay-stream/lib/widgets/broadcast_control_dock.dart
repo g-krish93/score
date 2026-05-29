@@ -46,6 +46,33 @@ class BroadcastControlDock extends StatelessWidget {
   final Future<void> Function() onGoLive;
   final Future<void> Function() onStop;
 
+  Future<void> _confirmStop(BuildContext context) async {
+    if (!live) {
+      await onStop();
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Stop stream?'),
+        content: Text(
+          'This ends the live broadcast. You can go live again after checking your stream key.',
+          style: appTextTheme.bodyMedium,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('Stop stream'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await onStop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final canZoom = camReady && maxZoom > minZoom;
@@ -91,7 +118,7 @@ class BroadcastControlDock extends StatelessWidget {
             busy: busy,
             enabled: camReady,
             onGoLive: () => onGoLive(),
-            onStop: () => onStop(),
+            onStop: () => _confirmStop(context),
           ),
           const SizedBox(height: AppSpacing.md),
           Row(

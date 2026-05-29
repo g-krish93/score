@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/api.dart';
@@ -70,6 +71,7 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
             'overlay_embed_url': '${widget.api.baseUrl}${m.overlayEmbedUrl}',
             'relay_source': m.relaySource,
             'paused': m.paused,
+            'is_live': m.isLive,
           }, widget.api.baseUrl);
         }
       }
@@ -170,6 +172,50 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
     );
   }
 
+  Future<void> _openLegal(String path) async {
+    final uri = Uri.parse('${widget.api.baseUrl}$path');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _snack('Could not open $uri');
+    }
+  }
+
+  Future<void> _showAbout() async {
+    final info = await PackageInfo.fromPlatform();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('About CricRelay Live'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Version ${info.version} (${info.buildNumber})', style: appTextTheme.bodyMedium),
+            const SizedBox(height: AppSpacing.md),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _openLegal('/privacy');
+              },
+              child: const Text('Privacy Policy'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _openLegal('/terms');
+              },
+              child: const Text('Terms of Service'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
   void _openStream(StreamMatch m) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => BroadcastScreen(api: widget.api, match: m)),
@@ -194,6 +240,7 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
             onSelected: (v) {
               if (v == 'logout') _logout();
               if (v == 'advanced') setState(() => _showAdvanced = !_showAdvanced);
+              if (v == 'about') _showAbout();
             },
             itemBuilder: (_) => [
               CheckedPopupMenuItem(
@@ -201,6 +248,7 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
                 checked: _showAdvanced,
                 child: const Text('Show club OAuth options'),
               ),
+              const PopupMenuItem(value: 'about', child: Text('About')),
               const PopupMenuDivider(),
               const PopupMenuItem(value: 'logout', child: Text('Sign out')),
             ],
@@ -257,7 +305,8 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
                   for (final m in _streams) ...[
                     CrStreamTile(
                       title: m.label,
-                      subtitle: m.slug,
+                      subtitle: m.isLive ? 'Live now · ${m.slug}' : m.slug,
+                      isLive: m.isLive,
                       onTap: () => _openStream(m),
                     ),
                     const SizedBox(height: AppSpacing.sm),

@@ -6,20 +6,23 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:camera/camera.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../services/api.dart';
+import '../services/app_analytics.dart';
 import '../services/overlay_layout_store.dart';
+import '../services/rtmp_credentials_store.dart';
 import '../services/rtmp_platform.dart';
+import '../utils/stream_error_messages.dart';
 import '../models/overlay_layout_prefs.dart';
 import '../models/stream_destination.dart';
 import '../models/stream_quality.dart';
 import '../utils/rtmp_endpoint.dart';
 import '../theme/app_theme.dart';
 import '../widgets/broadcast_control_dock.dart';
+import '../widgets/go_live_preflight_sheet.dart';
 import '../widgets/overlay_layout_sheet.dart';
 import '../widgets/scoring_mode_sheet.dart';
 import '../widgets/stream_settings_sheet.dart';
@@ -63,23 +66,21 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   OverlayLayoutPrefs _overlayPrefs = const OverlayLayoutPrefs();
   bool _overlayLocked = false;
   StreamSubscription<RtmpStreamEvent>? _rtmpStatusSub;
+  late final RtmpCredentialsStore _rtmpStore;
 
   @override
   void initState() {
     super.initState();
+    _rtmpStore = RtmpCredentialsStore(widget.match.slug);
     _init();
   }
 
-  String _rtmpPrefsKey(String field) => 'rtmp_${field}_${widget.match.slug}';
-
   Future<void> _loadSavedRtmp() async {
-    final prefs = await SharedPreferences.getInstance();
-    final server = prefs.getString(_rtmpPrefsKey('server'));
-    final key = prefs.getString(_rtmpPrefsKey('key'));
-    if (server != null && server.isNotEmpty && key != null && key.isNotEmpty) {
-      _customRtmpUrl = server;
-      _customStreamKey = key;
-      _customWatchUrl = prefs.getString(_rtmpPrefsKey('watch'));
+    final creds = await _rtmpStore.load();
+    if ((creds.server ?? '').isNotEmpty && (creds.key ?? '').isNotEmpty) {
+      _customRtmpUrl = creds.server;
+      _customStreamKey = creds.key;
+      _customWatchUrl = creds.watch;
       _destination = StreamDestination.custom;
       if (mounted) {
         setState(() => _status = 'Volunteer RTMP ready (saved for this stream)');
@@ -90,17 +91,74 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   }
 
   Future<void> _saveRtmpPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_rtmpPrefsKey('server'), _customRtmpUrl ?? '');
-    await prefs.setString(_rtmpPrefsKey('key'), _customStreamKey ?? '');
-    if (_customWatchUrl != null && _customWatchUrl!.isNotEmpty) {
-      await prefs.setString(_rtmpPrefsKey('watch'), _customWatchUrl!);
-    }
+    final server = _customRtmpUrl ?? '';
+    final key = _customStreamKey ?? '';
+    if (server.isEmpty || key.isEmpty) return;
+    await _rtmpStore.save(
+      server: server,
+      key: key,
+      watch: _customWatchUrl,
+    );
+  }
+
+  Future<void> _showPermissionSettingsDialog({
+    required String title,
+    required String message,
+  }) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              openAppSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _requestAvPermissions() async {
+    final statuses = await [Permission.camera, Permission.microphone].request();
+    final cam = statuses[Permission.camera] ?? PermissionStatus.denied;
+    final mic = statuses[Permission.microphone] ?? PermissionStatus.denied;
+    if (cam.isGranted && mic.isGranted) return true;
+    if (!mounted) return false;
+    await _showPermissionSettingsDialog(
+      title: 'Camera & microphone required',
+      message:
+          'CricRelay Live needs camera and microphone access to broadcast. '
+          'Enable them in Settings, then return to this screen.',
+    );
+    return false;
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    if (!Platform.isAndroid) return;
+    final status = await Permission.notification.request();
+    if (status.isGranted) return;
+    if (!mounted) return;
+    await _showPermissionSettingsDialog(
+      title: 'Notifications recommended',
+      message:
+          'Allow notifications so CricRelay can show a persistent alert while you are live. '
+          'You can enable this in Settings.',
+    );
   }
 
   Future<void> _init() async {
     _overlayStore = OverlayLayoutStore(widget.api, widget.match.slug);
-    await [Permission.camera, Permission.microphone].request();
+    final avOk = await _requestAvPermissions();
+    if (!avOk && mounted) {
+      setState(() => _status = 'Camera or microphone permission denied');
+    }
     _quality = await loadStreamQualityProfile();
     await _loadSavedRtmp();
     if (Platform.isAndroid || Platform.isIOS) {
@@ -323,12 +381,17 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   void _onRtmpStatus(RtmpStreamEvent e) {
     if (!mounted) return;
     if (e.event == 'error') {
-      final msg = e.message.isNotEmpty ? e.message : 'Stream failed';
+      AppAnalytics.logRtmpEvent('error', e.message);
+      final msg = StreamErrorMessages.fromRaw(
+        e.message.isNotEmpty ? e.message : StreamErrorMessages.genericFailure,
+      );
       if (_live || _busy) {
         unawaited(_handleStreamFailure(msg));
       } else if (_status != null && _status!.contains('Connecting')) {
         setState(() => _status = msg);
       }
+    } else if (e.event.isNotEmpty) {
+      AppAnalytics.logRtmpEvent(e.event, e.message);
     }
   }
 
@@ -397,7 +460,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       await _ensureNativeCameraReady();
     }
     if (!await RtmpPlatform.isCameraReady) {
-      throw Exception('Camera preview not ready — wait for preview before going live');
+      throw Exception(StreamErrorMessages.previewNotReady);
     }
     final overlayUrl = _overlayStore.embedUrl(widget.match.overlayEmbedUrl, _overlayPrefs);
     await RtmpPlatform.prepareCamera(
@@ -431,6 +494,11 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     }
   }
 
+  bool get _hasStreamKey {
+    if (_destination != StreamDestination.custom) return true;
+    return (_customRtmpUrl ?? '').isNotEmpty && (_customStreamKey ?? '').isNotEmpty;
+  }
+
   Future<void> _goLive() async {
     if (_destination == StreamDestination.custom &&
         ((_customRtmpUrl ?? '').isEmpty || (_customStreamKey ?? '').isEmpty)) {
@@ -438,6 +506,24 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       await _editCustomDestination();
       return;
     }
+    final camReady =
+        _nativeCamera ? _nativeCameraReady : (_camera?.value.isInitialized ?? false);
+    final proceed = await showGoLivePreflightSheet(
+      context: context,
+      cameraReady: camReady,
+      streamKeySet: _hasStreamKey,
+      overlayLocked: _overlayLocked,
+    );
+    if (!proceed || !mounted) return;
+    await _performGoLive();
+  }
+
+  Future<void> _performGoLive() async {
+    await _requestNotificationPermission();
+    await AppAnalytics.logEvent('go_live_started', {
+      'destination': _destination.name,
+      'quality': _quality.label,
+    });
     setState(() {
       _busy = true;
       _status = switch (_destination) {
@@ -469,6 +555,10 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       }
       await _startEncoder(cred);
       if (!mounted) return;
+      await AppAnalytics.logEvent('go_live_connected', {
+        'destination': _destination.name,
+        'quality': _quality.label,
+      });
       setState(() {
         _overlayLocked = true;
         _liveManagedByApi = _destination != StreamDestination.custom;
@@ -487,12 +577,15 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       });
       await _applyWakelock();
     } catch (e) {
+      await AppAnalytics.logEvent('go_live_failed', {
+        'destination': _destination.name,
+      });
       await _stopEncoder();
       if (mounted) {
         setState(() {
           _overlayLocked = false;
           _live = false;
-          _status = e.toString();
+          _status = StreamErrorMessages.fromObject(e);
         });
       }
     } finally {
@@ -503,6 +596,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   Future<void> _stopInternal() async {
     try {
       if (_live) {
+        await AppAnalytics.logEvent('stream_stopped', {
+          'destination': _destination.name,
+        });
         await _stopEncoder();
         if (_liveManagedByApi) {
           await widget.api.stopLive(platform: _livePlatform);

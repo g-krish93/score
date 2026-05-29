@@ -1,7 +1,9 @@
 """Mobile Stream app API helpers (session tokens)."""
 from __future__ import annotations
 
+import json
 import os
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Any, Callable
 
@@ -103,6 +105,32 @@ def relay_match_for_org(org: Organization, match_slug: str) -> RelayMatch | None
     return RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
 
 
+def _match_scoring_recently_active(slug: str, *, within_minutes: int = 8) -> bool:
+    """True when Play-Cricket relay has updated recently (proxy for an active match day)."""
+    try:
+        from .app import state_path_for
+
+        path = state_path_for(slug)
+        if not path.is_file():
+            return False
+        with path.open("r", encoding="utf-8") as fh:
+            state = json.load(fh)
+        ok_at = state.get("relay_last_ok_at")
+        if not ok_at:
+            return False
+        if isinstance(ok_at, str):
+            ts = datetime.fromisoformat(ok_at.replace("Z", "+00:00"))
+        elif isinstance(ok_at, datetime):
+            ts = ok_at if ok_at.tzinfo else ok_at.replace(tzinfo=timezone.utc)
+        else:
+            return False
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - ts <= timedelta(minutes=within_minutes)
+    except Exception:
+        return False
+
+
 def relay_matches_for_org(org: Organization) -> list[dict[str, Any]]:
     rows = (
         RelayMatch.query.filter_by(organization_id=org.id)
@@ -123,6 +151,7 @@ def relay_matches_for_org(org: Organization) -> list[dict[str, Any]]:
                 "relay_source": getattr(m, "relay_source", None) or "scraper",
                 "paused": bool(m.paused),
                 "overlay_embed_url": overlay,
+                "is_live": _match_scoring_recently_active(slug),
             }
         )
     return out

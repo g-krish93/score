@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/api.dart';
+import '../services/app_analytics.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ui_kit.dart';
 import 'broadcast_screen.dart';
@@ -52,6 +53,7 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
   }
 
   Future<void> _createAndOpen(StreamMatch match) async {
+    await AppAnalytics.logEvent('stream_created');
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => BroadcastScreen(api: widget.api, match: match)),
@@ -134,6 +136,17 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
                 if (_error != null) ...[
                   const SizedBox(height: AppSpacing.md),
                   CrErrorBanner(message: _error!),
+                  if (_fixtures == null) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: _loading ? null : _load,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Retry'),
+                      ),
+                    ),
+                  ],
                 ],
                 if (fx != null)
                   Padding(

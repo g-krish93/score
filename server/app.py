@@ -596,7 +596,7 @@ def _stream_ipa_path() -> Path:
 
 
 def _stream_app_version_label() -> str:
-    return (os.getenv("STREAM_APP_VERSION") or "1.1.0").strip() or "1.1.0"
+    return (os.getenv("STREAM_APP_VERSION") or "1.2.0").strip() or "1.2.0"
 
 
 def _stream_app_builds_payload() -> dict:

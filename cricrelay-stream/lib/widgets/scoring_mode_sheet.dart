@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../screens/manual_scoring_screen.dart';
 import '../services/api.dart';
+import '../theme/app_theme.dart';
+import 'ui_kit.dart';
 
 Future<void> showScoringModeSheet({
   required BuildContext context,
@@ -11,21 +13,14 @@ Future<void> showScoringModeSheet({
   required ScoringConfig initial,
   required void Function(ScoringConfig) onUpdated,
 }) async {
-  await showModalBottomSheet<void>(
+  await showCrBottomSheet<void>(
     context: context,
-    isScrollControlled: true,
-    backgroundColor: const Color(0xFF141b2e),
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    child: _ScoringModeBody(
+      api: api,
+      matchSlug: matchSlug,
+      initial: initial,
+      onUpdated: onUpdated,
     ),
-    builder: (ctx) {
-      return _ScoringModeBody(
-        api: api,
-        matchSlug: matchSlug,
-        initial: initial,
-        onUpdated: onUpdated,
-      );
-    },
   );
 }
 
@@ -84,106 +79,106 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 16,
-        bottom: 16 + MediaQuery.of(context).padding.bottom,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Scoring while live',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Choose how the scoreboard on your stream is updated.',
-            style: TextStyle(color: Colors.white70),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 8),
-            Text(_error!, style: const TextStyle(color: Colors.redAccent)),
-          ],
-          const SizedBox(height: 16),
-          _ModeTile(
-            title: 'Auto',
-            subtitle: 'Play-Cricket scraper (hands-off)',
-            selected: _cfg.mode == 'auto',
-            busy: _busy,
-            onTap: () => _pick('auto'),
-          ),
-          _ModeTile(
-            title: 'Manual',
-            subtitle: 'Over-by-over scoring in CricRelay',
-            selected: _cfg.mode == 'manual',
-            busy: _busy,
-            onTap: () => _pick('manual'),
-          ),
-          if (_cfg.mode == 'manual')
-            Padding(
-              padding: const EdgeInsets.only(left: 12, bottom: 8),
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ManualScoringScreen(inputUrl: _cfg.manualInputUrl),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.edit),
-                label: const Text('Open scorer'),
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: AppSpacing.md,
+          right: AppSpacing.md,
+          bottom: AppSpacing.md + MediaQuery.of(context).padding.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const CrBottomSheetHandle(),
+            const CrSheetHeader(
+              title: 'Scoring while live',
+              subtitle: 'Choose how the scoreboard on your stream is updated.',
+            ),
+            if (_error != null) ...[
+              CrErrorBanner(message: _error!),
+              const SizedBox(height: AppSpacing.sm),
+            ],
+            _ModeTile(
+              title: 'Auto',
+              subtitle: 'Play-Cricket scraper (hands-off)',
+              selected: _cfg.mode == 'auto',
+              busy: _busy,
+              onTap: () => _pick('auto'),
+            ),
+            _ModeTile(
+              title: 'Manual',
+              subtitle: 'Over-by-over scoring in CricRelay',
+              selected: _cfg.mode == 'manual',
+              busy: _busy,
+              onTap: () => _pick('manual'),
+            ),
+            if (_cfg.mode == 'manual')
+              Padding(
+                padding: const EdgeInsets.only(left: 12, bottom: 8),
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ManualScoringScreen(inputUrl: _cfg.manualInputUrl),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.edit),
+                  label: const Text('Open scorer'),
+                ),
               ),
+            _ModeTile(
+              title: 'BLE (R&D)',
+              subtitle: 'PCS Bluetooth relay from another phone',
+              selected: _cfg.mode == 'ble',
+              busy: _busy,
+              onTap: () => _pick('ble'),
             ),
-          _ModeTile(
-            title: 'BLE (R&D)',
-            subtitle: 'PCS Bluetooth relay from another phone',
-            selected: _cfg.mode == 'ble',
-            busy: _busy,
-            onTap: () => _pick('ble'),
-          ),
-          if (_cfg.mode == 'ble') ...[
-            const SizedBox(height: 8),
-            Text(
-              'Install PCS Relay APK, paste ingest URL + token in Settings, '
-              'advertise as scoreboard near the iPad.',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
-            ),
-            const SizedBox(height: 8),
-            SelectableText(
-              'Ingest: ${_cfg.pcsIngestUrl}\nToken: ${_cfg.pcsIngestToken}',
-              style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-            ),
-            Row(
-              children: [
-                TextButton(
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: _cfg.pcsIngestUrl));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Ingest URL copied')),
-                    );
-                  },
-                  child: const Text('Copy URL'),
+            if (_cfg.mode == 'ble') ...[
+              const SizedBox(height: 8),
+              Text(
+                'Install PCS Relay APK, paste ingest URL + token in Settings, '
+                'advertise as scoreboard near the iPad.',
+                style: appTextTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              SelectableText(
+                'Ingest: ${_cfg.pcsIngestUrl}\nToken: ${_cfg.pcsIngestToken}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  color: AppColors.onBackgroundMuted,
                 ),
-                TextButton(
-                  onPressed: () {
-                    Clipboard.setData(
-                      ClipboardData(text: 'Bearer ${_cfg.pcsIngestToken}'),
-                    );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Bearer token copied')),
-                    );
-                  },
-                  child: const Text('Copy token'),
-                ),
-              ],
-            ),
+              ),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: _cfg.pcsIngestUrl));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Ingest URL copied')),
+                      );
+                    },
+                    child: const Text('Copy URL'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Clipboard.setData(
+                        ClipboardData(text: 'Bearer ${_cfg.pcsIngestToken}'),
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Bearer token copied')),
+                      );
+                    },
+                    child: const Text('Copy token'),
+                  ),
+                ],
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -210,10 +205,10 @@ class _ModeTile extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       leading: Icon(
         selected ? Icons.radio_button_checked : Icons.radio_button_off,
-        color: selected ? const Color(0xFF22D3A8) : Colors.white54,
+        color: selected ? AppColors.accentGreen : AppColors.onBackgroundDim,
       ),
-      title: Text(title),
-      subtitle: Text(subtitle),
+      title: Text(title, style: const TextStyle(color: AppColors.onBackground)),
+      subtitle: Text(subtitle, style: appTextTheme.bodySmall),
       enabled: !busy,
       onTap: busy ? null : onTap,
     );
