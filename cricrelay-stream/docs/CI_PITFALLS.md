@@ -50,7 +50,7 @@ bash cricrelay-stream/scripts/ci_validate.sh
 
 ### 3. Kotlin syntax / API mismatches
 
-**Symptom:** `compileReleaseKotlin` fails (e.g. missing function body, wrong `prepareVideo` args, `autoHandleOrientation` missing in RootEncoder 2.4.8).
+**Symptom:** `compileReleaseKotlin` fails (e.g. missing function body, wrong `prepareVideo` args, `autoHandleOrientation` missing in RootEncoder 2.4.8, **`Unresolved reference`** after a rename).
 
 **Fix:** Always run the Kotlin compile step locally or wait for CI validate; edit files under `android-custom/` only (overlay copies into `android/` in CI).
 
@@ -59,6 +59,29 @@ bash cricrelay-stream/scripts/ci_validate.sh
 - Broken `ensureOverlayCapture()` body after refactor → compile error.
 - `prepareVideo(w, h, fps, bitrate, 0, 320)` — wrong overload (320 is not rotation).
 - `autoHandleOrientation` — not in RootEncoder 2.4.8.
+- Renamed `StreamCameraEngine.onPreviewViewSized` → `onPreviewSurfaceReady` but left old name in `CameraPreviewHost.kt` → CI Kotlin compile fail.
+
+---
+
+### 3b. Incomplete refactor across `android-custom/` (Dart green, Kotlin red)
+
+**Symptom:** `flutter analyze` and `flutter test` pass; **`compileReleaseKotlin` fails** with `Unresolved reference 'someMethod'`.
+
+**Cause:** Method renamed/removed in one Kotlin file but not all call sites updated. Easy to miss because Dart CI steps pass first and Kotlin compile runs last (~4+ min).
+
+**Fix before every push that touches native code:**
+
+```bash
+# From repo root — replace OldName with the symbol you removed/renamed
+grep -r "OldName" cricrelay-stream/android-custom/
+
+# Full gate (required — analyze + test alone is NOT enough)
+bash cricrelay-stream/scripts/ci_validate.sh
+```
+
+**Rule:** Never push `android-custom/` changes after only running `flutter analyze` / `flutter test`. The Kotlin compile step is mandatory.
+
+**Date:** 2026-05 — `onPreviewViewSized` left in `CameraPreviewHost.kt` blocked 1.2.7+12 APK.
 
 ---
 
@@ -87,6 +110,8 @@ bash cricrelay-stream/scripts/ci_validate.sh
 - [ ] `flutter analyze lib` — zero issues
 - [ ] `flutter test` — all green
 - [ ] If `android-custom/` changed: overlay script + Kotlin compile (or full `ci_validate.sh`)
+- [ ] After any Kotlin rename/remove: `grep -r OldSymbol cricrelay-stream/android-custom/` — zero hits
+- [ ] Do **not** push native changes validated with analyze/test only — Kotlin compile must pass
 - [ ] No `2_500_000`-style literals in Dart
 - [ ] No unused variables in `catch`, callbacks, or debug code
 - [ ] Bump `pubspec.yaml` version when shipping user-facing APK

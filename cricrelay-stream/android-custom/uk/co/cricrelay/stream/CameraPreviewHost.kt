@@ -40,18 +40,17 @@ object CameraPreviewHost {
             hostActivity = activity
             openGlView = gl
             StreamCameraEngine.attachView(gl, activity)
-            gl.addOnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
-                val w = right - left
-                val h = bottom - top
-                if (w > 64 && h > 64) {
-                    StreamCameraEngine.onPreviewViewSized()
+            gl.holder.addCallback(object : SurfaceHolder.Callback {
+                override fun surfaceCreated(holder: SurfaceHolder) {}
+
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                    if (width > 64 && height > 64 && holder.surface.isValid) {
+                        StreamCameraEngine.onPreviewSurfaceReady()
+                    }
                 }
-            }
-            gl.post {
-                if (gl.width > 64 && gl.height > 64) {
-                    StreamCameraEngine.onPreviewViewSized()
-                }
-            }
+
+                override fun surfaceDestroyed(holder: SurfaceHolder) {}
+            })
         }
     }
 

@@ -14,6 +14,12 @@ flutter pub get
 flutter analyze lib
 flutter test
 
+echo "=== android-custom consistency (catch incomplete Kotlin refactors) ==="
+if grep -R --include='*.kt' -n 'onPreviewViewSized' android-custom/ 2>/dev/null; then
+  echo "ERROR: onPreviewViewSized was removed — use onPreviewSurfaceReady (see docs/CI_PITFALLS.md §3b)"
+  exit 1
+fi
+
 echo "=== Android overlay + Kotlin compile (catches CI APK failures early) ==="
 rm -rf android
 flutter create . --platforms=android --org uk.co.cricrelay --project-name stream
