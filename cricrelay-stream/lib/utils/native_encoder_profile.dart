@@ -11,7 +11,7 @@ class NativeEncoderProfile {
   static StreamQualityProfile forNative(StreamQualityProfile selected) {
     if (selected.width <= maxWidth &&
         selected.height <= maxHeight &&
-        selected.bitrateBps <= 2_500_000) {
+        selected.bitrateBps <= 2500000) {
       return selected;
     }
     if (selected.width <= 854 && selected.height <= 480) {
