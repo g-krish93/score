@@ -31,7 +31,7 @@ object StreamCameraEngine : ConnectChecker {
 
     private const val MAX_WIDTH = 1280
     private const val MAX_HEIGHT = 720
-    private const val DEFAULT_BITRATE = 2_500_000
+    private const val DEFAULT_BITRATE = 2500000
     private const val DEFAULT_FPS = 30
 
     private var camera: RtmpCamera2? = null
@@ -65,9 +65,7 @@ object StreamCameraEngine : ConnectChecker {
         releaseCamera()
         openGlView = view
         camera = try {
-            RtmpCamera2(view, this).apply {
-                glInterface.autoHandleOrientation = true
-            }
+            RtmpCamera2(view, this)
         } catch (e: Exception) {
             emit(StreamCaptureService.EVENT_ERROR, "Camera init failed: ${e.message ?: "unknown"}")
             null
@@ -83,12 +81,14 @@ object StreamCameraEngine : ConnectChecker {
         streamWidth = width.coerceIn(640, MAX_WIDTH)
         streamHeight = height.coerceIn(360, MAX_HEIGHT)
         streamFps = fps.coerceIn(24, 30)
-        streamBitrate = bitrate.coerceIn(800_000, 4_500_000)
-        return try {
-            runOnMainSync { preparePreviewOnMain() }
+        streamBitrate = bitrate.coerceIn(800000, 4500000)
+        var ok = false
+        try {
+            runOnMainSync { ok = preparePreviewOnMain() }
         } catch (_: Exception) {
-            false
+            return false
         }
+        return ok
     }
 
     fun onPreviewViewSized() {
