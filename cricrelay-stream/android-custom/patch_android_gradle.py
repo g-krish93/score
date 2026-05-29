@@ -24,6 +24,11 @@ def main() -> int:
         'id "com.android.application" version "8.7.3"',
         text,
     )
+    text = re.sub(
+        r'id "org\.jetbrains\.kotlin\.android" version "[^"]+"',
+        'id "org.jetbrains.kotlin.android" version "2.1.0"',
+        text,
+    )
     if "com.google.gms.google-services" not in text:
         text = re.sub(
             r'(id "org\.jetbrains\.kotlin\.android" version "[^"]+" apply false)',
@@ -60,6 +65,8 @@ def main() -> int:
 
     settings.write_text(text, encoding="utf-8")
     print("patched", settings)
+    if "2.1.0" in text:
+        print("kotlin android plugin: 2.1.0")
     return 0
 
 
