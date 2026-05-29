@@ -6,8 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'firebase_options.dart';
 
-import 'screens/live_home_screen.dart';
-import 'screens/login_screen.dart';
+import 'navigation/app_entry.dart';
 import 'services/api.dart';
 import 'services/app_analytics.dart';
 import 'theme/app_theme.dart';
@@ -86,11 +85,9 @@ class _BootstrapState extends State<_Bootstrap> {
   Future<void> _load() async {
     final api = await CricRelayApi.load();
     if (!mounted) return;
-    setState(() {
-      _home = api.hasToken
-          ? LiveHomeScreen(api: api)
-          : LoginScreen(api: api);
-    });
+    final home = await bootstrapHome(api);
+    if (!mounted) return;
+    setState(() => _home = home);
   }
 
   @override

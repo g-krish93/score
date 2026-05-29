@@ -78,12 +78,19 @@ class _AppDownloadCardState extends State<AppDownloadCard> {
               ],
             ),
             const SizedBox(height: 10),
-            if (b.android.available)
+            if (b.android.available) ...[
               _PlatformRow(
                 icon: Icons.android,
                 label: b.android.label.isNotEmpty ? b.android.label : 'Android',
                 onTap: () => _open(b.android.url),
               ),
+              const SizedBox(height: 8),
+              Text(
+                'If Google Play Protect warns when sideloading, tap Install anyway — '
+                'or use the Play Store internal testing link when your club has one.',
+                style: appTextTheme.bodySmall,
+              ),
+            ],
             if (b.ios.available) ...[
               if (b.android.available) const SizedBox(height: 8),
               _PlatformRow(

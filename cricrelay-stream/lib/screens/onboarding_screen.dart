@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/api.dart';
 import '../theme/app_theme.dart';
+import 'live_home_screen.dart';
 
 const kOnboardingCompleteKey = 'stream_onboarding_complete_v1';
 
@@ -17,9 +19,9 @@ Future<void> markOnboardingComplete() async {
 
 /// First-run 3-step carousel for volunteers.
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({super.key, required this.onFinished});
+  const OnboardingScreen({super.key, required this.api});
 
-  final VoidCallback onFinished;
+  final CricRelayApi api;
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -28,6 +30,7 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final _pageCtrl = PageController();
   int _page = 0;
+  bool _finishing = false;
 
   static const _steps = [
     _OnboardingStep(
@@ -57,8 +60,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _finish() async {
-    await markOnboardingComplete();
-    widget.onFinished();
+    if (_finishing) return;
+    _finishing = true;
+    try {
+      await markOnboardingComplete();
+    } catch (_) {}
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => LiveHomeScreen(api: widget.api)),
+    );
   }
 
   void _next() {
@@ -82,7 +92,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
-                onPressed: _finish,
+                onPressed: _finishing ? null : _finish,
                 child: const Text('Skip'),
               ),
             ),
@@ -116,7 +126,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 width: double.infinity,
                 height: 48,
                 child: FilledButton(
-                  onPressed: _next,
+                  onPressed: _finishing ? null : _next,
                   child: Text(_page == _steps.length - 1 ? 'Get started' : 'Next'),
                 ),
               ),

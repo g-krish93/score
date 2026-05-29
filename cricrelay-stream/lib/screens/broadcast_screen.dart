@@ -50,6 +50,8 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   /// Native camera + GL overlay (not screen capture).
   bool _nativeCamera = false;
   bool _nativeCameraReady = false;
+  bool _avPermissionsGranted = false;
+  String? _initError;
   /// Default: volunteer stream key (no OAuth on phone).
   StreamDestination _destination = StreamDestination.custom;
   bool _liveManagedByApi = false;
@@ -154,42 +156,68 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   }
 
   Future<void> _init() async {
-    _overlayStore = OverlayLayoutStore(widget.api, widget.match.slug);
-    final avOk = await _requestAvPermissions();
-    if (!avOk && mounted) {
-      setState(() => _status = 'Camera or microphone permission denied');
-    }
-    _quality = await loadStreamQualityProfile();
-    await _loadSavedRtmp();
-    if ((Platform.isAndroid || Platform.isIOS) && avOk) {
-      _nativeCamera = await RtmpPlatform.isCaptureSupported;
-    }
-    if (_nativeCamera) {
-      _rtmpStatusSub = RtmpPlatform.statusEvents.listen(_onRtmpStatus);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_ensureNativeCameraReady());
-      });
-    } else {
-      final cams = await availableCameras();
-      if (cams.isNotEmpty) {
-        final back = cams.firstWhere(
-          (c) => c.lensDirection == CameraLensDirection.back,
-          orElse: () => cams.first,
-        );
-        _camera = CameraController(back, ResolutionPreset.high, enableAudio: true);
-        await _camera!.initialize();
-        await _initZoomLevels();
+    try {
+      _overlayStore = OverlayLayoutStore(widget.api, widget.match.slug);
+      final avOk = await _requestAvPermissions();
+      _avPermissionsGranted = avOk;
+      if (!avOk && mounted) {
+        setState(() => _status = 'Camera or microphone permission denied');
       }
-    }
-    try {
-      final cfg = await widget.api.getScoring(widget.match.slug);
-      if (mounted) _applyScoringLabel(cfg);
-    } catch (_) {}
-    try {
-      _overlayPrefs = await _overlayStore.load();
-    } catch (_) {}
-    if (!_nativeCamera) {
-      await _loadOverlayWebView();
+      _quality = await loadStreamQualityProfile();
+      await _loadSavedRtmp();
+      if ((Platform.isAndroid || Platform.isIOS) && avOk) {
+        _nativeCamera = await RtmpPlatform.isCaptureSupported;
+      }
+      if (_nativeCamera) {
+        _rtmpStatusSub = RtmpPlatform.statusEvents.listen(_onRtmpStatus);
+        if (mounted) setState(() {});
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          unawaited(_ensureNativeCameraReady());
+        });
+      } else if (avOk) {
+        try {
+          final cams = await availableCameras();
+          if (cams.isNotEmpty) {
+            final back = cams.firstWhere(
+              (c) => c.lensDirection == CameraLensDirection.back,
+              orElse: () => cams.first,
+            );
+            _camera = CameraController(back, ResolutionPreset.high, enableAudio: true);
+            await _camera!.initialize();
+            await _initZoomLevels();
+          } else if (mounted) {
+            setState(() => _status = 'No camera found on this device');
+          }
+        } catch (e) {
+          if (mounted) {
+            setState(() => _status = StreamErrorMessages.fromObject(e));
+          }
+        }
+      } else if (avOk && mounted) {
+        setState(() {
+          _initError = Platform.isAndroid
+              ? 'Streaming engine missing in this build. Reinstall the latest APK from cricrelay.co.uk'
+              : 'Streaming is not available in this iOS build yet.';
+        });
+      }
+      try {
+        final cfg = await widget.api.getScoring(widget.match.slug);
+        if (mounted) _applyScoringLabel(cfg);
+      } catch (_) {}
+      try {
+        _overlayPrefs = await _overlayStore.load();
+      } catch (_) {}
+      if (!_nativeCamera && avOk) {
+        await _loadOverlayWebView();
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _initError = StreamErrorMessages.fromObject(e);
+          _status = _initError;
+        });
+      }
     }
   }
 
@@ -767,7 +795,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     Widget stack = Stack(
       fit: StackFit.expand,
       children: [
-        if (_nativeCamera)
+        if (_nativeCamera && _avPermissionsGranted)
           Platform.isAndroid
               ? const AndroidView(
                   viewType: 'cricrelay-camera-preview',
@@ -777,11 +805,29 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
                   viewType: 'cricrelay-camera-preview',
                   layoutDirection: TextDirection.ltr,
                 )
+        else if (!_avPermissionsGranted)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Text(
+                _status ?? 'Allow camera and microphone to preview your stream.',
+                style: appTextTheme.bodyLarge,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
         else if (camReady && _camera != null) ...[
           CameraPreview(_camera!),
           if (_web != null) _buildFlutterOverlayPreview(),
         ],
-        if (_nativeCamera && !_nativeCameraReady)
+        if (_initError != null)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: CrErrorBanner(message: _initError!),
+            ),
+          ),
+        if (_nativeCamera && _avPermissionsGranted && !_nativeCameraReady && _initError == null)
           const Center(
             child: CircularProgressIndicator(color: AppColors.accentGreen),
           ),

@@ -5,8 +5,7 @@ import '../services/api.dart';
 import '../theme/app_theme.dart';
 import '../utils/url_validator.dart';
 import '../widgets/ui_kit.dart';
-import 'live_home_screen.dart';
-import 'onboarding_screen.dart';
+import '../navigation/app_entry.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.api});
@@ -36,26 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _openHome(CricRelayApi api) async {
-    final onboardingDone = await isOnboardingComplete();
-    if (!mounted) return;
-    if (!onboardingDone) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => OnboardingScreen(
-            onFinished: () {
-              if (!mounted) return;
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => LiveHomeScreen(api: api)),
-              );
-            },
-          ),
-        ),
-      );
-      return;
-    }
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => LiveHomeScreen(api: api)),
-    );
+    await openHomeOrOnboarding(context, api);
   }
 
   @override
