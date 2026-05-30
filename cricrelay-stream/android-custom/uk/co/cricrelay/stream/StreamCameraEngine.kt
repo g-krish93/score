@@ -3,11 +3,14 @@ package uk.co.cricrelay.stream
 import android.app.Activity
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.media.AudioManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
+import android.view.Surface
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.BlackFilterRender
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
@@ -162,6 +165,7 @@ object StreamCameraEngine : ConnectChecker {
             releaseCamera()
         }
         openGlView = view
+        view.setBackgroundColor(Color.BLACK)
         view.setAspectRatioMode(AspectRatioMode.Fill)
         if (camera == null) {
             camera = try {
@@ -219,6 +223,42 @@ object StreamCameraEngine : ConnectChecker {
             resetFocusState()
         }
         return preparePreview(width, height, fps, bitrate, rotation)
+    }
+
+    /** Fast path: rotate preview without tearing down encoder (before Go Live). */
+    fun updatePreviewRotation(rotation: Int): Boolean {
+        if (camera?.isStreaming == true) return false
+        streamRotation = rotation.coerceIn(0, 360)
+        streamIsPortrait = streamRotation == 90 || streamRotation == 270
+        var ok = false
+        runOnMainSync {
+            val view = openGlView ?: return@runOnMainSync
+            view.setAspectRatioMode(AspectRatioMode.Fill)
+            view.setStreamRotation(streamRotation)
+            try {
+                view.setRotation(streamRotation)
+                ok = camera?.isOnPreview == true
+            } catch (_: Exception) {
+                ok = false
+            }
+        }
+        if (ok) return true
+        return resetPreviewForOrientation(streamWidth, streamHeight, streamFps, streamBitrate, rotation)
+    }
+
+    fun displayRotationDegrees(act: Activity): Int {
+        @Suppress("DEPRECATION")
+        val rot = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            act.display?.rotation ?: Surface.ROTATION_0
+        } else {
+            act.windowManager.defaultDisplay.rotation
+        }
+        return when (rot) {
+            Surface.ROTATION_90 -> 90
+            Surface.ROTATION_180 -> 180
+            Surface.ROTATION_270 -> 270
+            else -> 0
+        }
     }
 
     fun isFocusLocked(): Boolean = focusLocked
@@ -486,6 +526,10 @@ object StreamCameraEngine : ConnectChecker {
         return try {
             openGlView?.setAspectRatioMode(AspectRatioMode.Fill)
             openGlView?.setStreamRotation(streamRotation)
+            try {
+                openGlView?.setRotation(streamRotation)
+            } catch (_: Exception) {
+            }
             val audioOk = cam.prepareAudio(128 * 1024, 32_000, true, false, false)
             if (!audioOk) {
                 encoderPrepared = false

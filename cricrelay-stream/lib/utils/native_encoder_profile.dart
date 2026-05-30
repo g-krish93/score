@@ -20,18 +20,29 @@ class NativeEncoderProfile {
     return StreamQualityProfile.high;
   }
 
-  /// Width, height, and RootEncoder rotation for landscape or portrait hold.
-  ///
-  /// RootEncoder expects landscape camera dimensions; [rotation] 90 rotates to portrait output.
+  /// RootEncoder expects landscape camera dimensions; [rotation] rotates output for preview + stream.
   static ({int width, int height, int rotation}) paramsForOrientation(
     StreamQualityProfile selected,
     bool isPortrait,
   ) {
+    return paramsFromDisplayRotation(selected, isPortrait ? 0 : 90);
+  }
+
+  /// Map Android display rotation (0/90/180/270) to RootEncoder prepareVideo rotation.
+  static ({int width, int height, int rotation}) paramsFromDisplayRotation(
+    StreamQualityProfile selected,
+    int displayRotationDegrees,
+  ) {
     final base = forNative(selected);
-    return (
-      width: base.width,
-      height: base.height,
-      rotation: isPortrait ? 90 : 0,
-    );
+    final encoderRot = switch (displayRotationDegrees) {
+      0 => 90,
+      90 => 0,
+      180 => 270,
+      270 => 180,
+      _ => displayRotationDegrees <= 45 || displayRotationDegrees >= 315
+          ? 90
+          : 0,
+    };
+    return (width: base.width, height: base.height, rotation: encoderRot);
   }
 }

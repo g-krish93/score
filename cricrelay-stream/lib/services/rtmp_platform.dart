@@ -73,6 +73,26 @@ class RtmpPlatform {
     return v == true;
   }
 
+  /// Lightweight GL rotation update (preferred on device rotate before Go Live).
+  static Future<bool> updatePreviewRotation(int rotation) async {
+    try {
+      final v = await _ch.invokeMethod<bool>('updatePreviewRotation', {'rotation': rotation});
+      return v == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Device display rotation in degrees: 0, 90, 180, or 270.
+  static Future<int> getDisplayRotation() async {
+    try {
+      final v = await _ch.invokeMethod<int>('getDisplayRotation');
+      return v ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   static Future<void> setKeepScreenOnDuringStream(bool enabled) async {
     await _ch.invokeMethod('setKeepScreenOnDuringStream', {'enabled': enabled});
   }

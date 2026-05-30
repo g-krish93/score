@@ -61,12 +61,12 @@ class CricRelayApi {
       }
       if (res.statusCode == 404) {
         throw Exception(
-          'Scoring API not found (404). Update the server or check the stream still exists.',
+          'API not found on $baseUrl (404). The server may need updating, or this stream no longer exists.',
         );
       }
       throw Exception(
-        'Server returned a web page instead of JSON (${res.statusCode}). '
-        'Try logging in again or contact your club admin.',
+        'Server returned a web page instead of JSON (${res.statusCode}) from $baseUrl. '
+        'Check the club server URL on the login screen and sign in again.',
       );
     }
 
@@ -320,16 +320,25 @@ class CricRelayApi {
   }
 
   Future<ScoringConfig> setScoring(String matchSlug, String mode) async {
-    final res = await http.post(
-      _matchApiUri(matchSlug, 'scoring'),
-      headers: _headers,
-      body: jsonEncode({'mode': mode}),
-    );
-    final body = _parseJsonResponse(res, fallback: 'Failed to set scoring mode');
-    if (res.statusCode != 200) {
-      throw Exception(body['error']?.toString() ?? 'Failed to set scoring mode');
+    try {
+      final res = await http.post(
+        _matchApiUri(matchSlug, 'scoring'),
+        headers: _headers,
+        body: jsonEncode({'mode': mode}),
+      );
+      final body = _parseJsonResponse(res, fallback: 'Failed to set scoring mode');
+      if (res.statusCode != 200) {
+        throw Exception(body['error']?.toString() ?? 'Failed to set scoring mode');
+      }
+      return ScoringConfig.fromJson(body, baseUrl);
+    } catch (e) {
+      final msg = e.toString();
+      final htmlLike = msg.contains('web page instead of JSON') || msg.contains('Invalid server response');
+      if (htmlLike && mode == 'manual') {
+        return ScoringConfig.localFallback(baseUrl, matchSlug, mode);
+      }
+      rethrow;
     }
-    return ScoringConfig.fromJson(body, baseUrl);
   }
 
   Future<MatchDayStatus> getMatchDayStatus(String matchSlug) async {
@@ -652,6 +661,20 @@ class ScoringConfig {
   final String pcsRelayApkUrl;
 
   String get scorerUrl => manualScorerUrl.isNotEmpty ? manualScorerUrl : manualInputUrl.replaceAll('/input', '/score');
+
+  /// When the scoring API is unreachable, still expose scorer URLs for manual mode.
+  factory ScoringConfig.localFallback(String baseUrl, String matchSlug, String mode) {
+    final b = baseUrl.replaceAll(RegExp(r'/+$'), '');
+    final slug = matchSlug.trim();
+    return ScoringConfig(
+      mode: mode,
+      manualInputUrl: '$b/m/$slug/input',
+      manualScorerUrl: '$b/m/$slug/score',
+      pcsIngestUrl: '$b/relay/pcs-ingest?match=$slug',
+      pcsIngestToken: '',
+      pcsRelayApkUrl: '$b/download/pcs-relay.apk',
+    );
+  }
 
   factory ScoringConfig.fromJson(Map<String, dynamic> j, String baseUrl) {
     String abs(String path) {

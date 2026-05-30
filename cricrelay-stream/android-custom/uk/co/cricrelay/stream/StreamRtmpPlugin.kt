@@ -176,6 +176,18 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                 val ok = StreamCameraEngine.resetPreviewForOrientation(width, height, fps, bitrate, rotation)
                 result.success(ok)
             }
+            "updatePreviewRotation" -> {
+                val rotation = call.argument<Int>("rotation") ?: 0
+                result.success(StreamCameraEngine.updatePreviewRotation(rotation))
+            }
+            "getDisplayRotation" -> {
+                val act = pluginActivity
+                if (act == null) {
+                    result.success(0)
+                } else {
+                    result.success(StreamCameraEngine.displayRotationDegrees(act))
+                }
+            }
             "setKeepScreenOnDuringStream" -> {
                 StreamCameraEngine.setKeepScreenOnDuringStream(call.argument<Boolean>("enabled") == true)
                 result.success(null)

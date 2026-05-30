@@ -2,6 +2,7 @@ package uk.co.cricrelay.stream
 
 import android.app.Activity
 import android.content.Context
+import android.graphics.Color
 import android.view.SurfaceHolder
 import com.pedro.encoder.utils.gl.AspectRatioMode
 import com.pedro.library.view.OpenGlView
@@ -14,6 +15,7 @@ class CricrelayCameraPlatformView(
 
     private val openGlView = OpenGlView(context).apply {
         setKeepScreenOn(false)
+        setBackgroundColor(Color.BLACK)
         setAspectRatioMode(AspectRatioMode.Fill)
     }
 

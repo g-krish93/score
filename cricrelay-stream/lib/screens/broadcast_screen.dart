@@ -84,7 +84,6 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
   bool _dockVisible = true;
   StreamSubscription<RtmpStreamEvent>? _rtmpStatusSub;
   late final RtmpCredentialsStore _rtmpStore;
-  Orientation? _preparedOrientation;
   DateTime? _liveStartedAt;
   String _liveStatusMessage = '';
   int _encoderWidth = 1280;
@@ -101,49 +100,51 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
   DeviceProfile? _deviceProfile;
   MatchDayStatus? _matchDay;
   Timer? _matchDayPoll;
+  int _displayRotation = 0;
+  int _preparedEncoderRotation = -1;
+
+  Future<void> _refreshDisplayRotation() async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+    _displayRotation = await RtmpPlatform.getDisplayRotation();
+  }
 
   ({int width, int height, int rotation}) _encoderParamsForContext() {
-    final portrait = StreamOrientationHelper.isPortrait(context);
-    final params = NativeEncoderProfile.paramsForOrientation(_nativeProfile, portrait);
-    return params;
+    return NativeEncoderProfile.paramsFromDisplayRotation(_nativeProfile, _displayRotation);
   }
 
-  bool get _orientationChangedSincePrepare {
-    if (_preparedOrientation == null || !_nativeCamera || _live) return false;
-    return MediaQuery.orientationOf(context) != _preparedOrientation;
-  }
-
-  Future<void> _applyNativeStreamPrefs() async {
-    if (!_nativeCamera) return;
-    await RtmpPlatform.setKeepScreenOnDuringStream(_overlayPrefs.keepScreenOn);
-    await RtmpPlatform.setVideoStabilization(_overlayPrefs.videoStabilization);
-  }
-
-  Future<void> _reprepareCameraForCurrentOrientation() async {
+  Future<void> _applyCameraOrientation() async {
     if (!_nativeCamera || _live || !mounted) return;
+    await _refreshDisplayRotation();
     final params = _encoderParamsForContext();
+    if (_preparedEncoderRotation == params.rotation && _nativeCameraReady) {
+      _applyOverlayLayoutForOrientation();
+      return;
+    }
     _encoderWidth = params.width;
     _encoderHeight = params.height;
     _applyOverlayLayoutForOrientation();
     _clearFocusUi();
-    final ok = await RtmpPlatform.resetCameraOrientation(
-      width: params.width,
-      height: params.height,
-      fps: _nativeProfile.fps,
-      bitrateBps: _nativeProfile.bitrateBps,
-      rotation: params.rotation,
-    );
+    var ok = await RtmpPlatform.updatePreviewRotation(params.rotation);
     if (!ok) {
-      await RtmpPlatform.prepareCamera(
+      ok = await RtmpPlatform.resetCameraOrientation(
         width: params.width,
         height: params.height,
         fps: _nativeProfile.fps,
         bitrateBps: _nativeProfile.bitrateBps,
         rotation: params.rotation,
       );
+      if (!ok) {
+        await RtmpPlatform.prepareCamera(
+          width: params.width,
+          height: params.height,
+          fps: _nativeProfile.fps,
+          bitrateBps: _nativeProfile.bitrateBps,
+          rotation: params.rotation,
+        );
+      }
     }
     if (!mounted) return;
-    _preparedOrientation = MediaQuery.orientationOf(context);
+    _preparedEncoderRotation = params.rotation;
     for (var i = 0; i < 40; i++) {
       if (await RtmpPlatform.isCameraReady) {
         if (mounted) setState(() => _nativeCameraReady = true);
@@ -159,6 +160,22 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
         _status = 'Camera preview loading — wait a moment and try Go Live';
       });
     }
+  }
+
+  bool get _orientationChangedSincePrepare {
+    if (!_nativeCamera || _live) return false;
+    final params = _encoderParamsForContext();
+    return _preparedEncoderRotation != params.rotation;
+  }
+
+  Future<void> _applyNativeStreamPrefs() async {
+    if (!_nativeCamera) return;
+    await RtmpPlatform.setKeepScreenOnDuringStream(_overlayPrefs.keepScreenOn);
+    await RtmpPlatform.setVideoStabilization(_overlayPrefs.videoStabilization);
+  }
+
+  Future<void> _reprepareCameraForCurrentOrientation() async {
+    await _applyCameraOrientation();
   }
 
   void _hideDock() {
@@ -457,7 +474,15 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
       try {
         final cfg = await widget.api.getScoring(widget.match.slug);
         if (mounted) _applyScoringLabel(cfg);
-      } catch (_) {}
+      } catch (_) {
+        if (mounted) {
+          _scoring = ScoringConfig.localFallback(
+            widget.api.baseUrl,
+            widget.match.slug,
+            'manual',
+          );
+        }
+      }
       try {
         _overlayPrefs = await _overlayStore.load();
         if (_deviceProfile != null && _deviceProfile!.isLowTier && _overlayPrefs.videoStabilization) {
@@ -498,6 +523,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
 
   Future<void> _ensureNativeCameraReady() async {
     if (!_nativeCamera || !mounted) return;
+    await _refreshDisplayRotation();
     final params = _encoderParamsForContext();
     _encoderWidth = params.width;
     _encoderHeight = params.height;
@@ -510,7 +536,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
       rotation: params.rotation,
     );
     if (!mounted) return;
-    _preparedOrientation = MediaQuery.orientationOf(context);
+    _preparedEncoderRotation = params.rotation;
     for (var attempt = 0; attempt < 40; attempt++) {
       if (await RtmpPlatform.isCameraReady) {
         if (!mounted) return;
@@ -534,20 +560,17 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
   void didChangeMetrics() {
     super.didChangeMetrics();
     if (!_nativeCamera || _live || !mounted) return;
-    if (!_orientationChangedSincePrepare) return;
     _orientationDebounce?.cancel();
-    _orientationDebounce = Timer(const Duration(milliseconds: 450), () {
-    if (mounted && _orientationChangedSincePrepare && !_live) {
-        unawaited(_reprepareCameraForCurrentOrientation().then((_) {
-          if (!mounted) return;
-          _applyOverlayLayoutForOrientation();
-          if (StreamOrientationHelper.isPortrait(context)) {
-            setState(() => _status = 'Rotate to landscape for cricket — then tap Go Live');
-          } else {
-            setState(() => _status = 'Landscape ready — tap Go Live when your destination is set');
-          }
-        }));
-      }
+    _orientationDebounce = Timer(const Duration(milliseconds: 180), () {
+      if (!mounted || _live || !_nativeCamera) return;
+      unawaited(_applyCameraOrientation().then((_) {
+        if (!mounted) return;
+        if (StreamOrientationHelper.isPortrait(context)) {
+          setState(() => _status = 'Rotate to landscape for cricket — then tap Go Live');
+        } else {
+          setState(() => _status = 'Landscape ready — tap Go Live when your destination is set');
+        }
+      }));
     });
   }
 
@@ -924,11 +947,16 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
     try {
       cfg = _scoring ?? await widget.api.getScoring(widget.match.slug);
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(StreamErrorMessages.fromObject(e))),
-      );
-      return;
+      cfg = ScoringConfig.localFallback(widget.api.baseUrl, widget.match.slug, _scoring?.mode ?? 'manual');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Using offline scorer link — ${StreamErrorMessages.fromObject(e)}',
+            ),
+          ),
+        );
+      }
     }
     if (!mounted) return;
     await showScoringModeSheet(
@@ -1340,17 +1368,20 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
         final stack = Stack(
       fit: StackFit.expand,
       children: [
-        if (_nativeCamera && _avPermissionsGranted)
-          Platform.isAndroid
-              ? const AndroidView(
-                  viewType: 'cricrelay-camera-preview',
-                  layoutDirection: TextDirection.ltr,
-                )
-              : const UiKitView(
-                  viewType: 'cricrelay-camera-preview',
-                  layoutDirection: TextDirection.ltr,
-                )
-        else if (!_avPermissionsGranted)
+        if (_nativeCamera && _avPermissionsGranted) ...[
+          const ColoredBox(color: AppColors.canvas),
+          Positioned.fill(
+            child: Platform.isAndroid
+                ? const AndroidView(
+                    viewType: 'cricrelay-camera-preview',
+                    layoutDirection: TextDirection.ltr,
+                  )
+                : const UiKitView(
+                    viewType: 'cricrelay-camera-preview',
+                    layoutDirection: TextDirection.ltr,
+                  ),
+          ),
+        ] else if (!_avPermissionsGranted)
           Center(
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
