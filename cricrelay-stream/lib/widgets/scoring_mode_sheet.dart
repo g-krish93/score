@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../screens/manual_scoring_screen.dart';
 import '../services/api.dart';
 import '../theme/app_theme.dart';
+import 'studio/studio_shell.dart';
 import 'ui_kit.dart';
 
 Future<void> showScoringModeSheet({
@@ -62,14 +63,6 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
       widget.onUpdated(next);
       if (!mounted) return;
       setState(() => _cfg = next);
-      if (mode == 'manual' && next.manualInputUrl.isNotEmpty) {
-        Navigator.pop(context);
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => ManualScoringScreen(inputUrl: next.manualInputUrl),
-          ),
-        );
-      }
     } catch (e) {
       setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
@@ -77,10 +70,32 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
     }
   }
 
+  void _copyManualLink() {
+    final url = _cfg.manualInputUrl;
+    if (url.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: url));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Scorer link copied — send it to a teammate (WhatsApp, SMS, etc.)'),
+      ),
+    );
+  }
+
+  void _openScorerOnThisPhone() {
+    final url = _cfg.manualInputUrl;
+    if (url.isEmpty) return;
+    Navigator.pop(context);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ManualScoringScreen(inputUrl: url),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: EdgeInsets.only(
           left: AppSpacing.md,
           right: AppSpacing.md,
@@ -108,27 +123,19 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
             ),
             _ModeTile(
               title: 'Manual',
-              subtitle: 'Over-by-over scoring in CricRelay',
+              subtitle: 'Teammate scores over-by-over in a browser',
               selected: _cfg.mode == 'manual',
               busy: _busy,
               onTap: () => _pick('manual'),
             ),
-            if (_cfg.mode == 'manual')
-              Padding(
-                padding: const EdgeInsets.only(left: 12, bottom: 8),
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => ManualScoringScreen(inputUrl: _cfg.manualInputUrl),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.edit),
-                  label: const Text('Open scorer'),
-                ),
+            if (_cfg.mode == 'manual') ...[
+              const SizedBox(height: AppSpacing.sm),
+              ManualScorerLinkCard(
+                url: _cfg.manualInputUrl,
+                onCopy: _copyManualLink,
+                onOpenHere: _openScorerOnThisPhone,
               ),
+            ],
             _ModeTile(
               title: 'BLE (R&D)',
               subtitle: 'PCS Bluetooth relay from another phone',
@@ -179,6 +186,83 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Shareable scorer URL — teammates open this on any phone browser.
+class ManualScorerLinkCard extends StatelessWidget {
+  const ManualScorerLinkCard({
+    super.key,
+    required this.url,
+    required this.onCopy,
+    required this.onOpenHere,
+  });
+
+  final String url;
+  final VoidCallback onCopy;
+  final VoidCallback onOpenHere;
+
+  @override
+  Widget build(BuildContext context) {
+    if (url.isEmpty) {
+      return const CrInfoBanner(
+        title: 'Scorer link unavailable',
+        body: 'Check your internet connection and try selecting Manual again.',
+        accentColor: AppColors.warning,
+      );
+    }
+    return CrGlassPanel(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      borderRadius: AppSpacing.radiusMd,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Scorer link for teammates',
+            style: appTextTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Copy this link and send it to a scorer on a 2nd or 3rd phone. '
+            'They open it in Chrome/Safari and enter ball-by-ball scores. '
+            'Scores save to your club server and update the live stream overlay automatically.',
+            style: appTextTheme.bodySmall?.copyWith(color: AppColors.onBackgroundMuted),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: AppColors.surfaceVariant.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+              border: Border.all(color: AppColors.glassBorder),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: SelectableText(
+                url,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontFamily: 'monospace',
+                  color: AppColors.accentGreen,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          FilledButton.icon(
+            onPressed: onCopy,
+            icon: const Icon(Icons.link_rounded),
+            label: const Text('Copy scorer link'),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          OutlinedButton.icon(
+            onPressed: onOpenHere,
+            icon: const Icon(Icons.phone_android_rounded),
+            label: const Text('Open scorer on this phone'),
+          ),
+        ],
       ),
     );
   }

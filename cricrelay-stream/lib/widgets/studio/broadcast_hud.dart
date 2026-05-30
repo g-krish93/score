@@ -11,6 +11,8 @@ class BroadcastPreviewHud extends StatelessWidget {
     required this.paused,
     required this.qualityLabel,
     required this.orientationLabel,
+    this.stabilizationOn = true,
+    this.focusLocked = false,
     this.zoomLabel,
     this.liveTimer,
   });
@@ -19,6 +21,8 @@ class BroadcastPreviewHud extends StatelessWidget {
   final bool paused;
   final String qualityLabel;
   final String orientationLabel;
+  final bool stabilizationOn;
+  final bool focusLocked;
   final String? zoomLabel;
   final Widget? liveTimer;
 
@@ -41,6 +45,15 @@ class BroadcastPreviewHud extends StatelessWidget {
             _HudMetric(label: 'QUAL', value: qualityLabel),
             const SizedBox(width: 10),
             _HudMetric(label: 'ORIENT', value: orientationLabel.toUpperCase()),
+            const SizedBox(width: 10),
+            _HudMetric(
+              label: 'STEADY',
+              value: stabilizationOn ? 'EIS ON' : 'OFF',
+            ),
+            if (focusLocked) ...[
+              const SizedBox(width: 10),
+              _HudMetric(label: 'FOCUS', value: 'LOCKED'),
+            ],
             if (zoomLabel != null) ...[
               const SizedBox(width: 10),
               _HudMetric(label: 'ZOOM', value: zoomLabel!),

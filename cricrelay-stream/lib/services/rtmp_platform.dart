@@ -201,6 +201,45 @@ class RtmpPlatform {
     }
   }
 
+  /// Tap preview at pixel [x],[y] (view-local). Tap again same spot quickly to lock AF.
+  static Future<({bool focused, bool locked})> tapToFocus({
+    required double x,
+    required double y,
+    required int viewWidth,
+    required int viewHeight,
+  }) async {
+    try {
+      final raw = await _ch.invokeMethod<Map>('tapToFocus', {
+        'x': x,
+        'y': y,
+        'viewWidth': viewWidth,
+        'viewHeight': viewHeight,
+      });
+      final m = Map<String, dynamic>.from(raw ?? {});
+      return (
+        focused: m['focused'] == true,
+        locked: m['locked'] == true,
+      );
+    } catch (_) {
+      return (focused: false, locked: false);
+    }
+  }
+
+  static Future<void> unlockFocus() async {
+    try {
+      await _ch.invokeMethod('unlockFocus');
+    } catch (_) {}
+  }
+
+  static Future<bool> get isFocusLocked async {
+    try {
+      final v = await _ch.invokeMethod<bool>('isFocusLocked');
+      return v == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<Map<String, dynamic>> getDeviceCapabilities() async {
     try {
       final raw = await _ch.invokeMethod<Map>('getDeviceCapabilities');

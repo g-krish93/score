@@ -33,6 +33,8 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
             "lockActivityOrientation",
             -> result.success(null)
             "isStreamPaused" -> result.success(false)
+            "tapToFocus" -> result.success(mapOf("focused" to false, "locked" to false))
+            "unlockFocus", "isFocusLocked" -> result.success(false)
             "getZoomRange" -> result.success(mapOf("min" to 1.0, "max" to 1.0, "current" to 1.0))
             "setZoom", "updateOverlay", "showNativePreview", "hideNativePreview" -> result.success(null)
             "startStream", "stopStream" -> result.error(

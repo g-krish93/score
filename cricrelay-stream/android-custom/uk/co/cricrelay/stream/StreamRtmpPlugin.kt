@@ -267,6 +267,15 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                 result.success(null)
             }
             "isStreamPaused" -> result.success(StreamCameraEngine.isStreamPaused)
+            "tapToFocus" -> {
+                val x = (call.argument<Double>("x") ?: 0.0).toFloat()
+                val y = (call.argument<Double>("y") ?: 0.0).toFloat()
+                val w = call.argument<Int>("viewWidth") ?: 0
+                val h = call.argument<Int>("viewHeight") ?: 0
+                result.success(StreamCameraEngine.tapToFocusAt(w, h, x, y))
+            }
+            "unlockFocus" -> result.success(StreamCameraEngine.unlockFocus())
+            "isFocusLocked" -> result.success(StreamCameraEngine.isFocusLocked())
             "getDeviceCapabilities" -> {
                 val ctx = appContext ?: pluginActivity?.applicationContext
                 if (ctx == null) {

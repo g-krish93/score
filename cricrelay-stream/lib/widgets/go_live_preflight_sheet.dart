@@ -24,7 +24,10 @@ class GoLivePreflightResult {
   final String orientationLabel;
   final bool orientationChanged;
 
-  bool get canGoLive => cameraReady && streamKeySet && networkOk;
+  bool get isLandscape => orientationLabel == 'landscape';
+
+  /// Cricket broadcasts require landscape; overlay lock is optional.
+  bool get canGoLive => cameraReady && streamKeySet && networkOk && isLandscape;
 }
 
 Future<bool> _checkNetworkAvailable() async {
@@ -153,7 +156,8 @@ class _GoLivePreflightSheetContentState extends State<GoLivePreflightSheetConten
     }
   }
 
-  bool get _canGoLive => _cameraReady && _streamKeySet && _networkOk;
+  bool get _canGoLive =>
+      _cameraReady && _streamKeySet && _networkOk && _orientationLabel == 'landscape';
 
   String get _goLiveButtonLabel {
     final mode = _orientationLabel.toUpperCase();
@@ -196,17 +200,26 @@ class _GoLivePreflightSheetContentState extends State<GoLivePreflightSheetConten
           _CheckRow(label: 'Stream key set', ok: _streamKeySet),
           _CheckRow(label: 'Internet connection', ok: _networkOk),
           _CheckRow(
-            label: 'Stream orientation: $_orientationLabel (locks after Go Live)',
+            label: 'Landscape orientation (required for cricket)',
+            ok: _orientationLabel == 'landscape',
+            hint: _orientationLabel == 'landscape'
+                ? 'Video will lock in this orientation when you go live'
+                : 'Rotate your phone sideways — portrait is not supported for match streaming',
+          ),
+          _CheckRow(
+            label: 'Stream orientation settled',
             ok: !_orientationChanged,
             hint: _orientationChanged
                 ? 'You rotated since preview started — hold the phone how you want to stream'
-                : 'Orientation cannot be changed once you are live',
+                : null,
           ),
           _CheckRow(
-            label: 'Overlay locked',
+            label: 'Scoreboard position locked',
             ok: _overlayLocked,
             optional: true,
-            hint: _overlayLocked ? null : 'Recommended — drag scoreboard on preview, then lock',
+            hint: _overlayLocked
+                ? null
+                : 'Optional — drag scoreboard on preview, then lock to avoid accidental moves',
           ),
           if (_orientationChanged) ...[
             const SizedBox(height: AppSpacing.sm),

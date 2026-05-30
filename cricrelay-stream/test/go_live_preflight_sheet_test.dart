@@ -31,7 +31,7 @@ void main() {
       expect(goLive.onPressed, isNull);
     });
 
-    testWidgets('Go Live enabled when critical checks pass', (tester) async {
+    testWidgets('Go Live disabled in portrait — cricket requires landscape', (tester) async {
       await tester.pumpWidget(
         wrap(
           GoLivePreflightSheetContent(
@@ -47,8 +47,8 @@ void main() {
       );
 
       final goLive = tester.widget<FilledButton>(find.byType(FilledButton));
-      expect(goLive.onPressed, isNotNull);
-      expect(find.text('Go Live in PORTRAIT'), findsOneWidget);
+      expect(goLive.onPressed, isNull);
+      expect(find.textContaining('Landscape orientation'), findsOneWidget);
     });
 
     testWidgets('overlay lock is optional and does not block Go Live', (tester) async {
@@ -66,7 +66,7 @@ void main() {
         ),
       );
 
-      expect(find.textContaining('Recommended'), findsOneWidget);
+      expect(find.textContaining('Optional'), findsOneWidget);
       expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed, isNotNull);
     });
   });

@@ -6,6 +6,8 @@ import android.graphics.Bitmap
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.view.MotionEvent
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.BlackFilterRender
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
@@ -13,6 +15,7 @@ import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.math.hypot
 
 /**
  * Camera RTMP + scoreboard overlay (RootEncoder / RtmpCamera2).
@@ -70,6 +73,10 @@ object StreamCameraEngine : ConnectChecker {
     private var maxOverlayCaptureWidth = 960
     private var surfaceValid = true
     private var overlayPausedForMemory = false
+    private var focusLocked = false
+    private var lastFocusTapX = -1f
+    private var lastFocusTapY = -1f
+    private var lastFocusTapAt = 0L
 
     val isStreaming: Boolean
         get() = camera?.isStreaming == true
@@ -212,8 +219,96 @@ object StreamCameraEngine : ConnectChecker {
             } catch (_: Exception) {
             }
             encoderPrepared = false
+            resetFocusState()
         }
         return preparePreview(width, height, fps, bitrate, rotation)
+    }
+
+    fun isFocusLocked(): Boolean = focusLocked
+
+    fun unlockFocus(): Boolean {
+        var ok = false
+        runOnMainSync {
+            focusLocked = false
+            lastFocusTapAt = 0L
+            try {
+                ok = camera?.enableAutoFocus() == true
+            } catch (_: Exception) {
+                ok = false
+            }
+        }
+        return ok
+    }
+
+    /**
+     * Tap once to focus; tap again on the same spot within ~900ms to lock focus (disable AF).
+     * If focus is locked, the next tap unlocks and focuses at the new point.
+     */
+    fun tapToFocusAt(viewWidth: Int, viewHeight: Int, x: Float, y: Float): Map<String, Any> {
+        var focused = false
+        var locked = focusLocked
+        runOnMainSync {
+            val cam = camera ?: return@runOnMainSync
+            val view = openGlView ?: return@runOnMainSync
+            val w = if (viewWidth > 0) viewWidth else view.width
+            val h = if (viewHeight > 0) viewHeight else view.height
+            if (w < 1 || h < 1) return@runOnMainSync
+
+            val px = x.coerceIn(0f, w.toFloat())
+            val py = y.coerceIn(0f, h.toFloat())
+            val now = System.currentTimeMillis()
+            val slop = 48f * view.context.resources.displayMetrics.density
+            val doubleTap = !focusLocked &&
+                now - lastFocusTapAt < 900 &&
+                lastFocusTapX >= 0f &&
+                hypot(px - lastFocusTapX, py - lastFocusTapY) < slop
+
+            if (focusLocked) {
+                try {
+                    cam.enableAutoFocus()
+                } catch (_: Exception) {
+                }
+                focusLocked = false
+            }
+
+            val event = MotionEvent.obtain(
+                SystemClock.uptimeMillis(),
+                SystemClock.uptimeMillis(),
+                MotionEvent.ACTION_UP,
+                px,
+                py,
+                0,
+            )
+            try {
+                focused = cam.tapToFocus(event)
+            } catch (_: Exception) {
+                focused = false
+            } finally {
+                event.recycle()
+            }
+
+            if (doubleTap && focused) {
+                try {
+                    if (cam.disableAutoFocus()) {
+                        focusLocked = true
+                    }
+                } catch (_: Exception) {
+                }
+            }
+
+            lastFocusTapX = px
+            lastFocusTapY = py
+            lastFocusTapAt = now
+            locked = focusLocked
+        }
+        return mapOf("focused" to focused, "locked" to locked)
+    }
+
+    private fun resetFocusState() {
+        focusLocked = false
+        lastFocusTapAt = 0L
+        lastFocusTapX = -1f
+        lastFocusTapY = -1f
     }
 
     /** Called from OpenGlView SurfaceHolder.Callback when holder.surface is valid. */
@@ -551,6 +646,7 @@ object StreamCameraEngine : ConnectChecker {
         stopStreamInternal()
         overlayCapture?.destroy()
         overlayCapture = null
+        resetFocusState()
         try {
             camera?.stopPreview()
         } catch (_: Exception) {
@@ -651,14 +747,12 @@ object StreamCameraEngine : ConnectChecker {
         val filter = imageFilter ?: return
         val wFrac = overlayLayout.widthFraction.coerceIn(0.25f, 0.95f)
         val hFrac = overlayLayout.heightFraction.coerceIn(0.12f, 0.45f)
-        val scaleX = (wFrac * 1.1f).coerceIn(0.35f, 1.2f)
-        val scaleY = (hFrac * 2.8f).coerceIn(0.25f, 1.2f)
-        filter.setScale(scaleX, scaleY)
+        val aspect = streamWidth.toFloat() / streamHeight.coerceAtLeast(1)
+        filter.setScale(wFrac.coerceIn(0.35f, 1.0f), (hFrac * aspect).coerceIn(0.12f, 0.55f))
         val ax = overlayLayout.anchorX.coerceIn(0.05f, 0.95f)
         val ay = overlayLayout.anchorY.coerceIn(0.05f, 0.95f)
-        val x = (ax - 0.5f) * 2f
-        val y = 1f - ay * 2f
-        filter.setPosition(x, y)
+        // Normalized anchor: 0,0 top-left → GL position with y up (+ = top).
+        filter.setPosition((ax - 0.5f) * 2f, (0.5f - ay) * 2f)
     }
 
     private fun startOverlayRefresh() {

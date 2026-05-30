@@ -14,6 +14,18 @@ class OverlayLayoutPrefs {
     this.videoStabilization = true,
   });
 
+  /// Cricket default: wide strip along bottom in landscape.
+  static const cricketLandscape = OverlayLayoutPrefs(
+    size: 3,
+    heightFraction: 0.20,
+    widthFraction: 0.92,
+    anchorX: 0.5,
+    anchorY: 0.88,
+    bottomMargin: 8,
+    horizontalInset: 8,
+    videoStabilization: true,
+  );
+
   /// Server overlay preset 1 (smallest) … 5 (largest).
   final int size;
   final String theme;

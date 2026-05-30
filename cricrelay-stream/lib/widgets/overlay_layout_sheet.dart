@@ -43,7 +43,7 @@ class _OverlayLayoutEditorState extends State<_OverlayLayoutEditor> {
           const CrSheetHeader(
             title: 'Scoreboard overlay',
             subtitle:
-                'Drag the scoreboard on the preview to move it. Resize from the corner handle, then lock before Go Live.',
+                'Drag the scoreboard on the preview to move it. Lock is optional — it only stops accidental drags. Go Live is separate.',
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),

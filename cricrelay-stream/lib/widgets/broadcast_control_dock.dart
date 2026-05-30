@@ -161,7 +161,7 @@ class BroadcastControlDock extends StatelessWidget {
                     ),
                     _StudioControl(
                       icon: overlayLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
-                      label: overlayLocked ? 'Locked' : 'Lock',
+                      label: overlayLocked ? 'Locked' : 'Lock board',
                       accent: overlayLocked ? AppColors.warning : AppColors.onBackgroundMuted,
                       onTap: onToggleOverlayLock,
                     ),
