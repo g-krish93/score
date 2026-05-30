@@ -21,6 +21,17 @@ class StreamOrientationHelper {
     return isPortrait(context) ? 'portrait' : 'landscape';
   }
 
+  /// Uses native display rotation (0/90/180/270) — matches camera preview, not just Flutter layout.
+  static String labelFromDisplayRotation(int displayRotationDegrees) {
+    return (displayRotationDegrees == 0 || displayRotationDegrees == 180)
+        ? 'portrait'
+        : 'landscape';
+  }
+
+  static bool isLandscapeDisplayRotation(int displayRotationDegrees) {
+    return displayRotationDegrees == 90 || displayRotationDegrees == 270;
+  }
+
   static String displayLabel(BuildContext context) {
     return isPortrait(context) ? 'PORTRAIT' : 'LANDSCAPE';
   }

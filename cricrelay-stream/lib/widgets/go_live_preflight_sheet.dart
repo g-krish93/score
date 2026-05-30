@@ -26,8 +26,8 @@ class GoLivePreflightResult {
 
   bool get isLandscape => orientationLabel == 'landscape';
 
-  /// Cricket broadcasts require landscape; overlay lock is optional.
-  bool get canGoLive => cameraReady && streamKeySet && networkOk && isLandscape;
+  /// Portrait and landscape are both allowed; checks are camera, key, and network.
+  bool get canGoLive => cameraReady && streamKeySet && networkOk;
 }
 
 Future<bool> _checkNetworkAvailable() async {
@@ -65,6 +65,7 @@ Future<bool> showGoLivePreflightSheet({
   required String orientationLabel,
   bool orientationChanged = false,
   Future<bool> Function()? resolveCameraReady,
+  String Function()? resolveOrientationLabel,
 }) async {
   final networkOk = await _checkNetworkAvailable();
   if (!context.mounted) return false;
@@ -93,6 +94,7 @@ Future<bool> showGoLivePreflightSheet({
           orientationChanged: orientationChanged,
         ),
         resolveCameraReady: resolveCameraReady,
+        resolveOrientationLabel: resolveOrientationLabel,
       );
     },
   );
@@ -105,10 +107,12 @@ class GoLivePreflightSheetContent extends StatefulWidget {
     super.key,
     required this.initial,
     this.resolveCameraReady,
+    this.resolveOrientationLabel,
   });
 
   final GoLivePreflightResult initial;
   final Future<bool> Function()? resolveCameraReady;
+  final String Function()? resolveOrientationLabel;
 
   @override
   State<GoLivePreflightSheetContent> createState() => _GoLivePreflightSheetContentState();
@@ -147,17 +151,20 @@ class _GoLivePreflightSheetContentState extends State<GoLivePreflightSheetConten
       cameraReady: false,
       probe: widget.resolveCameraReady,
     );
+    final orient = widget.resolveOrientationLabel?.call() ?? _orientationLabel;
     if (!mounted) return;
-    if (networkOk != _networkOk || cameraReady != _cameraReady) {
+    if (networkOk != _networkOk ||
+        cameraReady != _cameraReady ||
+        orient != _orientationLabel) {
       setState(() {
         _networkOk = networkOk;
         _cameraReady = cameraReady;
+        _orientationLabel = orient;
       });
     }
   }
 
-  bool get _canGoLive =>
-      _cameraReady && _streamKeySet && _networkOk && _orientationLabel == 'landscape';
+  bool get _canGoLive => _cameraReady && _streamKeySet && _networkOk;
 
   String get _goLiveButtonLabel {
     final mode = _orientationLabel.toUpperCase();
@@ -166,82 +173,90 @@ class _GoLivePreflightSheetContentState extends State<GoLivePreflightSheetConten
 
   @override
   Widget build(BuildContext context) {
+    final maxH = MediaQuery.sizeOf(context).height * 0.92;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         AppSpacing.md,
         AppSpacing.md,
         AppSpacing.md,
-        AppSpacing.md + MediaQuery.of(context).padding.bottom,
+        AppSpacing.md + MediaQuery.paddingOf(context).bottom,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceVariant,
-                borderRadius: BorderRadius.circular(2),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxH),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(height: AppSpacing.md),
+              Text('Ready to go live?', style: appTextTheme.headlineSmall, textAlign: TextAlign.center),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Check these before you start broadcasting.',
+                style: appTextTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              _CheckRow(label: 'Camera preview ready', ok: _cameraReady),
+              _CheckRow(label: 'Stream key set', ok: _streamKeySet),
+              _CheckRow(label: 'Internet connection', ok: _networkOk),
+              _CheckRow(
+                label: 'Landscape recommended for cricket',
+                ok: _orientationLabel == 'landscape',
+                optional: true,
+                hint: _orientationLabel == 'landscape'
+                    ? 'Good for wide pitch coverage — orientation locks when you go live'
+                    : 'Portrait works too — landscape is recommended for most club streams',
+              ),
+              _CheckRow(
+                label: 'Stream orientation settled',
+                ok: !_orientationChanged,
+                optional: true,
+                hint: _orientationChanged
+                    ? 'You rotated since preview started — hold the phone how you want to stream'
+                    : null,
+              ),
+              _CheckRow(
+                label: 'Scoreboard position locked',
+                ok: _overlayLocked,
+                optional: true,
+                hint: _overlayLocked
+                    ? null
+                    : 'Optional — drag scoreboard on preview, then lock to avoid accidental moves',
+              ),
+              if (_orientationChanged) ...[
+                const SizedBox(height: AppSpacing.sm),
+                CrInfoBanner(
+                  title: 'Set orientation',
+                  body:
+                      'Hold the phone how viewers should see the stream. '
+                      'It will lock when you tap Go Live.',
+                  accentColor: AppColors.warning,
+                ),
+              ],
+              const SizedBox(height: AppSpacing.lg),
+              FilledButton(
+                onPressed: _canGoLive ? () => Navigator.pop(context, true) : null,
+                child: Text(_goLiveButtonLabel),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+            ],
           ),
-          const SizedBox(height: AppSpacing.md),
-          Text('Ready to go live?', style: appTextTheme.headlineSmall, textAlign: TextAlign.center),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'Check these before you start broadcasting.',
-            style: appTextTheme.bodyMedium,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          _CheckRow(label: 'Camera preview ready', ok: _cameraReady),
-          _CheckRow(label: 'Stream key set', ok: _streamKeySet),
-          _CheckRow(label: 'Internet connection', ok: _networkOk),
-          _CheckRow(
-            label: 'Landscape orientation (required for cricket)',
-            ok: _orientationLabel == 'landscape',
-            hint: _orientationLabel == 'landscape'
-                ? 'Video will lock in this orientation when you go live'
-                : 'Rotate your phone sideways — portrait is not supported for match streaming',
-          ),
-          _CheckRow(
-            label: 'Stream orientation settled',
-            ok: !_orientationChanged,
-            hint: _orientationChanged
-                ? 'You rotated since preview started — hold the phone how you want to stream'
-                : null,
-          ),
-          _CheckRow(
-            label: 'Scoreboard position locked',
-            ok: _overlayLocked,
-            optional: true,
-            hint: _overlayLocked
-                ? null
-                : 'Optional — drag scoreboard on preview, then lock to avoid accidental moves',
-          ),
-          if (_orientationChanged) ...[
-            const SizedBox(height: AppSpacing.sm),
-            CrInfoBanner(
-              title: 'Rotate now',
-              body:
-                  'Hold the phone in the orientation you want viewers to see. '
-                  'It will lock when you tap Go Live.',
-              accentColor: AppColors.warning,
-            ),
-          ],
-          const SizedBox(height: AppSpacing.lg),
-          FilledButton(
-            onPressed: _canGoLive ? () => Navigator.pop(context, true) : null,
-            child: Text(_goLiveButtonLabel),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-        ],
+        ),
       ),
     );
   }

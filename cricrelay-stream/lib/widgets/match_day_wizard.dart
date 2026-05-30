@@ -68,7 +68,7 @@ class _MatchDayWizardBodyState extends State<_MatchDayWizardBody> {
   int _step = 0;
 
   static const _steps = [
-    ('Landscape', 'Hold the phone sideways for cricket. You can set up in portrait, but Go Live requires landscape.'),
+    ('Landscape', 'Hold the phone sideways for cricket — recommended, but portrait works too.'),
     ('Destination', 'Paste your YouTube or Twitch stream key, or use a connected club channel.'),
     ('Scoring', 'Pick Auto (Play-Cricket), Manual (teammate scorer link), or BLE (advanced).'),
     ('Overlay', 'Drag the scoreboard frame on the preview. Lock it when positioned.'),

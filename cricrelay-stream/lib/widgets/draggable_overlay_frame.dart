@@ -102,7 +102,7 @@ class _DraggableOverlayFrameState extends State<DraggableOverlayFrame> {
             onPanUpdate: (d) {
               final nx = ((left + w / 2 + d.delta.dx) / maxW).clamp(0.05, 0.95);
               final newTop = (top + d.delta.dy).clamp(0.0, maxH - h);
-              final newBottom = (maxH - newTop - h).clamp(0.0, maxH * 0.45);
+              final newBottom = (maxH - newTop - h).clamp(0.0, 48.0);
               _updateLocal(_local.copyWith(anchorX: nx, bottomMargin: newBottom));
             },
             child: frame,

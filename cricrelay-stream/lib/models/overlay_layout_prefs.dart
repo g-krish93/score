@@ -101,9 +101,32 @@ class OverlayLayoutPrefs {
     final h = (maxH * heightFraction).clamp(48.0, maxH * 0.55);
     final inset = horizontalInset.clamp(0.0, maxW * 0.3);
     final left = (anchorX * maxW - w / 2).clamp(inset, maxW - w - inset);
-    final top = (maxH - h - bottomMargin).clamp(0.0, maxH - h);
+    final margin = bottomMargin.clamp(0.0, 48.0);
+    final top = (maxH - h - margin).clamp(0.0, maxH - h);
     return (left: left, top: top, width: w, height: h);
   }
+
+  /// Reset strip to a visible bottom position (fixes stale drag data from older builds).
+  OverlayLayoutPrefs withVisibleBottomStrip({required bool landscape}) {
+    final base = landscape ? cricketLandscape : const OverlayLayoutPrefs(
+      heightFraction: 0.18,
+      widthFraction: 0.92,
+      anchorX: 0.5,
+      bottomMargin: 12,
+      horizontalInset: 8,
+    );
+    return base.copyWith(
+      size: size,
+      theme: theme,
+      density: density,
+      keepScreenOn: keepScreenOn,
+      videoStabilization: videoStabilization,
+    );
+  }
+
+  /// True when saved layout likely used legacy center-anchor coords (overlay off-screen).
+  bool get needsBottomStripReset =>
+      bottomMargin > 48 || anchorY < 0.55;
 
   Map<String, dynamic> toLocalJson() => {
         ...toServerJson(),

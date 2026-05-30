@@ -271,25 +271,31 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
 
   void _applyOverlayLayoutForOrientation() {
     if (!mounted) return;
-    if (StreamOrientationHelper.isPortrait(context)) {
+    final landscape = StreamOrientationHelper.isLandscapeDisplayRotation(_displayRotation) ||
+        !StreamOrientationHelper.isPortrait(context);
+    if (_overlayPrefs.needsBottomStripReset) {
+      _overlayPrefs = _overlayPrefs.withVisibleBottomStrip(landscape: landscape);
+    } else if (landscape) {
+      _overlayPrefs = OverlayLayoutPrefs.cricketLandscape.copyWith(
+        theme: _overlayPrefs.theme,
+        size: _overlayPrefs.size,
+        density: _overlayPrefs.density,
+        anchorX: _overlayPrefs.anchorX,
+        bottomMargin: _overlayPrefs.bottomMargin.clamp(0, 48),
+        keepScreenOn: _overlayPrefs.keepScreenOn,
+        videoStabilization: _overlayPrefs.videoStabilization,
+      );
+    } else {
       _overlayPrefs = OverlayLayoutPrefs(
         size: _overlayPrefs.size,
         theme: _overlayPrefs.theme,
         density: _overlayPrefs.density,
         heightFraction: 0.18,
         widthFraction: 0.92,
-        anchorX: 0.5,
+        anchorX: _overlayPrefs.anchorX,
         anchorY: 0.92,
-        bottomMargin: 12,
+        bottomMargin: _overlayPrefs.bottomMargin.clamp(0, 48),
         horizontalInset: 8,
-        keepScreenOn: _overlayPrefs.keepScreenOn,
-        videoStabilization: _overlayPrefs.videoStabilization,
-      );
-    } else {
-      _overlayPrefs = OverlayLayoutPrefs.cricketLandscape.copyWith(
-        theme: _overlayPrefs.theme,
-        size: _overlayPrefs.size,
-        density: _overlayPrefs.density,
         keepScreenOn: _overlayPrefs.keepScreenOn,
         videoStabilization: _overlayPrefs.videoStabilization,
       );
@@ -488,6 +494,10 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
         if (_deviceProfile != null && _deviceProfile!.isLowTier && _overlayPrefs.videoStabilization) {
           _overlayPrefs = _overlayPrefs.copyWith(videoStabilization: false);
         }
+        if (_overlayPrefs.needsBottomStripReset) {
+          _overlayPrefs = _overlayPrefs.withVisibleBottomStrip(landscape: false);
+          await _overlayStore.saveLocal(_overlayPrefs);
+        }
       } catch (_) {}
       if (avOk) {
         await _loadOverlayWebView();
@@ -545,7 +555,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
         await _loadOverlayWebView();
         await _syncNativeOverlay();
         if (mounted && StreamOrientationHelper.isPortrait(context)) {
-          setState(() => _status = 'Rotate to landscape for cricket — then tap Go Live');
+          setState(() => _status = 'Portrait mode — tap Go Live when ready (landscape recommended for cricket)');
         }
         return;
       }
@@ -566,7 +576,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
       unawaited(_applyCameraOrientation().then((_) {
         if (!mounted) return;
         if (StreamOrientationHelper.isPortrait(context)) {
-          setState(() => _status = 'Rotate to landscape for cricket — then tap Go Live');
+          setState(() => _status = 'Portrait mode — tap Go Live when ready (landscape recommended for cricket)');
         } else {
           setState(() => _status = 'Landscape ready — tap Go Live when your destination is set');
         }
@@ -1059,8 +1069,10 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
       cameraReady: camReady,
       streamKeySet: _hasStreamKey,
       overlayLocked: _overlayLocked,
-      orientationLabel: StreamOrientationHelper.labelFor(context),
+      orientationLabel: StreamOrientationHelper.labelFromDisplayRotation(_displayRotation),
       orientationChanged: _orientationChangedSincePrepare,
+      resolveOrientationLabel: () =>
+          StreamOrientationHelper.labelFromDisplayRotation(_displayRotation),
       resolveCameraReady: () async {
         if (_nativeCamera) {
           return _nativeCameraReady || await RtmpPlatform.isCameraReady;
@@ -1416,14 +1428,17 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
             onChanged: _onOverlayLayoutChanged,
             onDragEnd: _persistOverlayLayout,
           ),
-        if (StreamOrientationHelper.isPortrait(context) && !_live && camReady)
+        if (StreamOrientationHelper.isPortrait(context) &&
+            !_live &&
+            camReady &&
+            !StreamOrientationHelper.isLandscapeDisplayRotation(_displayRotation))
           Positioned(
             top: 72,
             left: 12,
             right: 12,
             child: CrInfoBanner(
-              title: 'Rotate to landscape',
-              body: 'Cricket match streams require landscape. Turn your phone sideways, then tap Go Live.',
+              title: 'Landscape recommended',
+              body: 'Most cricket streams look best in landscape. Portrait is fine if you prefer.',
               accentColor: AppColors.warning,
             ),
           ),
@@ -1477,7 +1492,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
             live: _live,
             paused: _streamPaused,
             qualityLabel: _quality.label.toUpperCase(),
-            orientationLabel: StreamOrientationHelper.isPortrait(context) ? 'Portrait' : 'Landscape',
+            orientationLabel: StreamOrientationHelper.labelFromDisplayRotation(_displayRotation),
             stabilizationOn: _overlayPrefs.videoStabilization,
             focusLocked: _focusLocked,
             scorerLabel: _scorerHudLabel,
