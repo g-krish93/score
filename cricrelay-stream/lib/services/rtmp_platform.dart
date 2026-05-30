@@ -132,6 +132,8 @@ class RtmpPlatform {
 
   static Future<void> waitForConnected({
     Duration timeout = const Duration(seconds: 25),
+    String timeoutMessage =
+        'Timed out connecting to the stream server. Check your destination and stream key, then try again.',
   }) async {
     final completer = Completer<void>();
     late StreamSubscription<RtmpStreamEvent> sub;
@@ -159,9 +161,7 @@ class RtmpPlatform {
     });
 
     timer = Timer(timeout, () {
-      finishErr(
-        'Timed out connecting to YouTube. Start the live in Studio first, then tap Go Live.',
-      );
+      finishErr(timeoutMessage);
     });
 
     try {

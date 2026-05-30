@@ -83,6 +83,64 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     _init();
   }
 
+  Future<void> _applyClubStreamDestination() async {
+    if ((_customRtmpUrl ?? '').isNotEmpty && (_customStreamKey ?? '').isNotEmpty) {
+      return;
+    }
+    try {
+      final tw = await widget.api.twitchStatus();
+      if (tw['connected'] == true) {
+        final name = (tw['display_name'] ?? tw['login'] ?? 'Twitch').toString();
+        final keyOk = tw['stream_key_ok'] == true;
+        _destination = StreamDestination.twitch;
+        // #region agent log
+        DebugTrace.log(
+          'broadcast_screen._applyClubStreamDestination',
+          'club twitch selected',
+          hypothesisId: 'H6',
+          data: {'displayName': name, 'streamKeyOk': keyOk},
+        );
+        // #endregion
+        if (!mounted) return;
+        setState(() {
+          _status = keyOk
+              ? 'Destination: Club Twitch ($name) — tap Go Live'
+              : 'Twitch connected ($name) but stream key check failed — reconnect on home screen';
+        });
+        return;
+      }
+      final yt = await widget.api.youtubeStatus();
+      if (yt['connected'] == true) {
+        final title = (yt['channel_title'] ?? 'YouTube').toString();
+        final liveOk = yt['live_streaming_ok'] == true;
+        _destination = StreamDestination.youtube;
+        // #region agent log
+        DebugTrace.log(
+          'broadcast_screen._applyClubStreamDestination',
+          'club youtube selected',
+          hypothesisId: 'H6',
+          data: {'channelTitle': title, 'liveStreamingOk': liveOk},
+        );
+        // #endregion
+        if (!mounted) return;
+        setState(() {
+          _status = liveOk
+              ? 'Destination: Club YouTube ($title) — tap Go Live'
+              : 'YouTube connected ($title) but live streaming check failed — reconnect on home screen';
+        });
+      }
+    } catch (e) {
+      // #region agent log
+      DebugTrace.log(
+        'broadcast_screen._applyClubStreamDestination',
+        'status fetch failed',
+        hypothesisId: 'H6',
+        data: {'error': e.toString()},
+      );
+      // #endregion
+    }
+  }
+
   Future<void> _loadSavedRtmp() async {
     final creds = await _rtmpStore.load();
     if ((creds.server ?? '').isNotEmpty && (creds.key ?? '').isNotEmpty) {
@@ -178,6 +236,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       _quality = await loadStreamQualityProfile();
       _nativeProfile = NativeEncoderProfile.forNative(_quality);
       await _loadSavedRtmp();
+      await _applyClubStreamDestination();
       if ((Platform.isAndroid || Platform.isIOS) && avOk) {
         _nativeCamera = await RtmpPlatform.isCaptureSupported;
       }
@@ -540,7 +599,13 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     final overlayUrl = _overlayStore.embedUrl(widget.match.overlayEmbedUrl, _overlayPrefs);
     // Do not call prepareCamera here — preview is already running; re-preparing can stopPreview and crash GL.
     AppAnalytics.logBreadcrumb('go_live_start_stream');
-    final connected = RtmpPlatform.waitForConnected();
+    final connected = RtmpPlatform.waitForConnected(
+      timeoutMessage: _destination == StreamDestination.twitch
+          ? 'Timed out connecting to Twitch. Check home screen Twitch status, then try again.'
+          : _destination == StreamDestination.youtube
+              ? 'Timed out connecting to YouTube. Start the live in Studio first, then tap Go Live.'
+              : 'Timed out connecting to RTMP. Check your stream URL and key, then try again.',
+    );
     if (mounted) {
       setState(() => _status = 'Connecting to stream…');
     }
@@ -641,6 +706,19 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         final platform = _destination == StreamDestination.twitch ? 'twitch' : 'youtube';
         cred = await widget.api.goLive(widget.match.slug, platform: platform);
         _livePlatform = platform;
+        // #region agent log
+        DebugTrace.log(
+          'broadcast_screen._performGoLive',
+          'api go-live ok',
+          hypothesisId: 'H6',
+          data: {
+            'platform': platform,
+            'rtmpHost': Uri.tryParse(cred.rtmpUrl)?.host ?? cred.rtmpUrl,
+            'watchUrl': cred.watchUrl,
+            'hasKey': cred.streamKey.isNotEmpty,
+          },
+        );
+        // #endregion
       }
       await _startEncoder(cred);
       if (!mounted) return;
@@ -764,7 +842,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     if (choice == 'twitch') {
       setState(() {
         _destination = StreamDestination.twitch;
-        _status = 'Destination: club Twitch (OAuth)';
+        _status = 'Destination: club Twitch (OAuth) — tap Go Live';
       });
       return;
     }
