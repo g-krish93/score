@@ -97,7 +97,17 @@ bash cricrelay-stream/scripts/ci_validate.sh
 
 ---
 
-### 5. Pushing without running validate
+### 6. EIS (video stabilization) device-dependent
+
+**Symptom:** Shaky stream outdoors; EIS toggle has no effect on some phones.
+
+**Cause:** `enableVideoStabilization()` returns false on unsupported OEMs.
+
+**Fix:** Test on target volunteer devices; do not enable OIS together with EIS (RootEncoder warns against both).
+
+---
+
+### 7. Pushing without running validate
 
 **Symptom:** Users install an old APK; fixes never reach cricrelay.co.uk.
 

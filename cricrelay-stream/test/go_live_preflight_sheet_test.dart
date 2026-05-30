@@ -21,14 +21,13 @@ void main() {
               streamKeySet: true,
               networkOk: true,
               overlayLocked: false,
+              orientationLabel: 'landscape',
             ),
           ),
         ),
       );
 
-      final goLive = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Go Live'),
-      );
+      final goLive = tester.widget<FilledButton>(find.byType(FilledButton));
       expect(goLive.onPressed, isNull);
     });
 
@@ -41,15 +40,15 @@ void main() {
               streamKeySet: true,
               networkOk: true,
               overlayLocked: false,
+              orientationLabel: 'portrait',
             ),
           ),
         ),
       );
 
-      final goLive = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Go Live'),
-      );
+      final goLive = tester.widget<FilledButton>(find.byType(FilledButton));
       expect(goLive.onPressed, isNotNull);
+      expect(find.text('Go Live in PORTRAIT'), findsOneWidget);
     });
 
     testWidgets('overlay lock is optional and does not block Go Live', (tester) async {
@@ -61,16 +60,14 @@ void main() {
               streamKeySet: true,
               networkOk: true,
               overlayLocked: false,
+              orientationLabel: 'landscape',
             ),
           ),
         ),
       );
 
       expect(find.textContaining('Recommended'), findsOneWidget);
-      expect(
-        tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Go Live')).onPressed,
-        isNotNull,
-      );
+      expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed, isNotNull);
     });
   });
 }

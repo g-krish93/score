@@ -10,17 +10,8 @@ import io.flutter.plugin.platform.PlatformViewFactory
 class CricrelayCameraViewFactory : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
 
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView {
-        DebugTrace.log(
-            "CricrelayCameraViewFactory.create",
-            "creating platform view",
-            "H5",
-            mapOf("viewId" to viewId, "hasPluginActivity" to (StreamRtmpPlugin.activity != null)),
-        )
         val act = resolveActivity(context)
-            ?: run {
-                DebugTrace.log("CricrelayCameraViewFactory.create", "no activity", "H5")
-                throw IllegalStateException("Activity not available for camera preview")
-            }
+            ?: throw IllegalStateException("Activity not available for camera preview")
         return CricrelayCameraPlatformView(context, act)
     }
 

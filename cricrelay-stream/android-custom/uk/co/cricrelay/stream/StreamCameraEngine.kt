@@ -1,12 +1,13 @@
 package uk.co.cricrelay.stream
 
 import android.app.Activity
+import android.content.Context
 import android.graphics.Bitmap
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
-import com.pedro.encoder.utils.gl.TranslateTo
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 import java.util.concurrent.CountDownLatch
@@ -25,6 +26,9 @@ object StreamCameraEngine : ConnectChecker {
 
     data class OverlayLayout(
         val heightFraction: Float = 0.22f,
+        val widthFraction: Float = 0.88f,
+        val anchorX: Float = 0.5f,
+        val anchorY: Float = 0.85f,
         val bottomMarginFraction: Float = 0.02f,
         val horizontalInsetFraction: Float = 0.02f,
     )
@@ -37,6 +41,7 @@ object StreamCameraEngine : ConnectChecker {
     private var camera: RtmpCamera2? = null
     private var openGlView: OpenGlView? = null
     private var activity: Activity? = null
+    private var appContext: Context? = null
     private var imageFilter: ImageObjectFilterRender? = null
     private var overlayCapture: OverlayWebViewCapture? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -45,6 +50,8 @@ object StreamCameraEngine : ConnectChecker {
     private var streamHeight = MAX_HEIGHT
     private var streamFps = DEFAULT_FPS
     private var streamBitrate = DEFAULT_BITRATE
+    private var streamRotation = 0
+    private var streamIsPortrait = false
     private var overlayLayout = OverlayLayout()
     private var overlayUrl: String = ""
     private var statusListener: ((String, String) -> Unit)? = null
@@ -52,6 +59,9 @@ object StreamCameraEngine : ConnectChecker {
     private var lastOverlayBitmap: Bitmap? = null
     private var pendingOverlayAfterConnect = false
     private var prepareInFlight = false
+    private var videoStabilizationEnabled = true
+    private var keepScreenOnDuringStream = false
+    private var audioManager: AudioManager? = null
 
     val isPreviewReady: Boolean
         get() = camera != null && openGlView != null && encoderPrepared && (camera?.isOnPreview == true)
@@ -60,16 +70,27 @@ object StreamCameraEngine : ConnectChecker {
         statusListener = listener
     }
 
+    fun setKeepScreenOnDuringStream(enabled: Boolean) {
+        keepScreenOnDuringStream = enabled
+    }
+
+    fun setVideoStabilization(enabled: Boolean) {
+        videoStabilizationEnabled = enabled
+        val cam = camera ?: return
+        if (cam.isStreaming) return
+        runOnMain {
+            try {
+                if (enabled) {
+                    cam.enableVideoStabilization()
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     fun attachView(view: OpenGlView, act: Activity) {
-        DebugTrace.log(
-            "StreamCameraEngine.attachView",
-            "enter",
-            "H1",
-            mapOf(
-                "sameView" to (openGlView === view),
-                "hasCamera" to (camera != null),
-            ),
-        )
+        appContext = act.applicationContext
+        audioManager = act.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         activity = act
         if (openGlView === view && camera != null) return
         if (openGlView !== view) {
@@ -78,16 +99,8 @@ object StreamCameraEngine : ConnectChecker {
         openGlView = view
         if (camera == null) {
             camera = try {
-                RtmpCamera2(view, this).also {
-                    DebugTrace.log("StreamCameraEngine.attachView", "RtmpCamera2 created", "H1")
-                }
+                RtmpCamera2(view, this)
             } catch (e: Exception) {
-                DebugTrace.log(
-                    "StreamCameraEngine.attachView",
-                    "RtmpCamera2 failed",
-                    "H1",
-                    mapOf("error" to (e.message ?: e.javaClass.simpleName)),
-                )
                 emit(StreamCaptureService.EVENT_ERROR, "Camera init failed: ${e.message ?: "unknown"}")
                 null
             }
@@ -99,9 +112,22 @@ object StreamCameraEngine : ConnectChecker {
         runOnMainSync { releaseCamera() }
     }
 
-    fun preparePreview(width: Int, height: Int, fps: Int, bitrate: Int = streamBitrate): Boolean {
-        streamWidth = width.coerceIn(640, MAX_WIDTH)
-        streamHeight = height.coerceIn(360, MAX_HEIGHT)
+    fun preparePreview(
+        width: Int,
+        height: Int,
+        fps: Int,
+        bitrate: Int = streamBitrate,
+        rotation: Int = 0,
+    ): Boolean {
+        streamIsPortrait = height > width
+        streamRotation = rotation.coerceIn(0, 360)
+        if (streamIsPortrait) {
+            streamWidth = width.coerceIn(360, MAX_HEIGHT)
+            streamHeight = height.coerceIn(640, MAX_WIDTH)
+        } else {
+            streamWidth = width.coerceIn(640, MAX_WIDTH)
+            streamHeight = height.coerceIn(360, MAX_HEIGHT)
+        }
         streamFps = fps.coerceIn(24, 30)
         streamBitrate = bitrate.coerceIn(800000, 4500000)
         var ok = false
@@ -113,18 +139,31 @@ object StreamCameraEngine : ConnectChecker {
         return ok
     }
 
+    /** Re-prepare encoder when orientation changes before Go Live (not while streaming). */
+    fun resetPreviewForOrientation(
+        width: Int,
+        height: Int,
+        fps: Int,
+        bitrate: Int,
+        rotation: Int,
+    ): Boolean {
+        if (camera?.isStreaming == true) return false
+        runOnMainSync {
+            try {
+                camera?.stopPreview()
+            } catch (_: Exception) {
+            }
+            encoderPrepared = false
+        }
+        return preparePreview(width, height, fps, bitrate, rotation)
+    }
+
     /** Called from OpenGlView SurfaceHolder.Callback when holder.surface is valid. */
     fun onPreviewSurfaceReady() {
         runOnMain {
             val view = openGlView ?: return@runOnMain
             if (view.width < 64 || view.height < 64) return@runOnMain
             if (!isPreviewSurfaceValid(view)) {
-                DebugTrace.log(
-                    "StreamCameraEngine.onPreviewSurfaceReady",
-                    "defer - surface not valid yet",
-                    "H2",
-                    mapOf("viewW" to view.width, "viewH" to view.height),
-                )
                 view.post { onPreviewSurfaceReady() }
                 return@runOnMain
             }
@@ -134,10 +173,14 @@ object StreamCameraEngine : ConnectChecker {
 
     fun updateOverlay(url: String, layout: OverlayLayout) {
         runOnMain {
-            overlayUrl = url
+            if (url.isNotEmpty()) {
+                overlayUrl = url
+            }
             overlayLayout = layout
-            if (url.isNotEmpty() && camera?.isStreaming == true) {
-                ensureOverlayCapture()?.loadUrl(url)
+            if (overlayUrl.isNotEmpty() && camera?.isStreaming == true) {
+                ensureOverlayCapture()?.loadUrl(overlayUrl)
+                applyOverlaySprite()
+            } else if (imageFilter != null) {
                 applyOverlaySprite()
             }
         }
@@ -165,6 +208,7 @@ object StreamCameraEngine : ConnectChecker {
         var error: Exception? = null
         runOnMainSync {
             try {
+                requestStreamAudioFocus()
                 startStreamOnMain(endpoint)
             } catch (e: Exception) {
                 error = e
@@ -214,12 +258,27 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
+    fun updateNotificationElapsed(elapsedLabel: String) {
+        StreamCaptureService.updateElapsed(appContext, elapsedLabel)
+    }
+
     private fun isPreviewSurfaceValid(view: OpenGlView): Boolean {
         return try {
             val surface = view.holder.surface
             surface != null && surface.isValid
         } catch (_: Exception) {
             false
+        }
+    }
+
+    private fun requestStreamAudioFocus() {
+        try {
+            audioManager?.requestAudioFocus(
+                null,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN,
+            )
+        } catch (_: Exception) {
         }
     }
 
@@ -232,12 +291,6 @@ object StreamCameraEngine : ConnectChecker {
             return false
         }
         if (!isPreviewSurfaceValid(view)) {
-            DebugTrace.log(
-                "StreamCameraEngine.preparePreviewOnMain",
-                "defer - surface not valid",
-                "H2",
-                mapOf("viewW" to view.width, "viewH" to view.height),
-            )
             view.post { onPreviewSurfaceReady() }
             return false
         }
@@ -256,53 +309,37 @@ object StreamCameraEngine : ConnectChecker {
 
         prepareInFlight = true
         return try {
-            DebugTrace.log(
-                "StreamCameraEngine.preparePreviewOnMain",
-                "preparing encoder",
-                "H2",
-                mapOf("w" to streamWidth, "h" to streamHeight, "viewW" to view.width, "viewH" to view.height),
-            )
             val audioOk = cam.prepareAudio(128 * 1024, 32_000, true, false, false)
-            var videoOk = cam.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, 0)
+            var videoOk = cam.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, streamRotation)
             if (!videoOk) {
-                streamWidth = MAX_WIDTH
-                streamHeight = MAX_HEIGHT
+                if (streamIsPortrait) {
+                    streamWidth = MAX_HEIGHT
+                    streamHeight = MAX_WIDTH
+                } else {
+                    streamWidth = MAX_WIDTH
+                    streamHeight = MAX_HEIGHT
+                }
                 streamBitrate = DEFAULT_BITRATE
-                videoOk = cam.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, 0)
+                videoOk = cam.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, streamRotation)
             }
             if (!audioOk || !videoOk) {
                 encoderPrepared = false
                 return false
             }
+            if (videoStabilizationEnabled) {
+                try {
+                    cam.enableVideoStabilization()
+                } catch (_: Exception) {
+                }
+            }
             encoderPrepared = true
             if (!cam.isOnPreview) {
                 cam.startPreview()
             }
-            DebugTrace.log(
-                "StreamCameraEngine.preparePreviewOnMain",
-                "preview started",
-                "H2",
-                mapOf("onPreview" to cam.isOnPreview),
-            )
             cam.isOnPreview
-        } catch (e: Exception) {
-            DebugTrace.log(
-                "StreamCameraEngine.preparePreviewOnMain",
-                "failed",
-                "H2",
-                mapOf("error" to (e.message ?: e.javaClass.simpleName)),
-            )
+        } catch (_: Exception) {
             encoderPrepared = false
             false
-        } catch (t: Throwable) {
-            DebugTrace.log(
-                "StreamCameraEngine.preparePreviewOnMain",
-                "throwable",
-                "H2",
-                mapOf("error" to (t.message ?: t.javaClass.simpleName)),
-            )
-            encoderPrepared = false
-            throw t
         } finally {
             prepareInFlight = false
         }
@@ -319,7 +356,9 @@ object StreamCameraEngine : ConnectChecker {
         if (cam.isStreaming) return
 
         emit(StreamCaptureService.EVENT_PREPARING, "Starting stream…")
-        openGlView?.keepScreenOn = true
+        if (keepScreenOnDuringStream) {
+            openGlView?.keepScreenOn = true
+        }
         try {
             cam.startStream(endpoint)
         } catch (t: Throwable) {
@@ -441,7 +480,6 @@ object StreamCameraEngine : ConnectChecker {
         if (!cam.isStreaming) return
         try {
             val filter = ImageObjectFilterRender()
-            filter.setPosition(TranslateTo.BOTTOM)
             cam.glInterface.addFilter(filter)
             imageFilter = filter
             applyOverlaySprite()
@@ -452,13 +490,16 @@ object StreamCameraEngine : ConnectChecker {
 
     private fun applyOverlaySprite() {
         val filter = imageFilter ?: return
-        val inset = overlayLayout.horizontalInsetFraction.coerceIn(0f, 0.2f)
+        val wFrac = overlayLayout.widthFraction.coerceIn(0.25f, 0.95f)
         val hFrac = overlayLayout.heightFraction.coerceIn(0.12f, 0.45f)
-        val scaleX = (1f - inset * 2f).coerceIn(0.5f, 1f)
+        val scaleX = (wFrac * 1.1f).coerceIn(0.35f, 1.2f)
         val scaleY = (hFrac * 2.8f).coerceIn(0.25f, 1.2f)
         filter.setScale(scaleX, scaleY)
-        val y = -1f + overlayLayout.bottomMarginFraction.coerceIn(0f, 0.15f) * 4f
-        filter.setPosition(-inset * 0.5f, y)
+        val ax = overlayLayout.anchorX.coerceIn(0.05f, 0.95f)
+        val ay = overlayLayout.anchorY.coerceIn(0.05f, 0.95f)
+        val x = (ax - 0.5f) * 2f
+        val y = 1f - ay * 2f
+        filter.setPosition(x, y)
     }
 
     private fun startOverlayRefresh() {
@@ -483,7 +524,8 @@ object StreamCameraEngine : ConnectChecker {
 
     private fun captureAndApplyOverlay() {
         val filter = imageFilter ?: return
-        val w = (streamWidth * (1f - overlayLayout.horizontalInsetFraction * 2f)).toInt().coerceIn(320, 1920)
+        val wFrac = overlayLayout.widthFraction.coerceIn(0.25f, 0.95f)
+        val w = (streamWidth * wFrac).toInt().coerceIn(320, 1920)
         val h = (streamHeight * overlayLayout.heightFraction).toInt().coerceIn(64, 500)
         val bmp = overlayCapture?.capture(w, h) ?: return
         lastOverlayBitmap?.takeIf { !it.isRecycled }?.recycle()

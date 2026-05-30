@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:camera/camera.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
@@ -10,13 +11,13 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
-import '../debug/debug_trace.dart';
 import '../services/api.dart';
 import '../services/app_analytics.dart';
 import '../services/overlay_layout_store.dart';
 import '../services/rtmp_credentials_store.dart';
 import '../services/rtmp_platform.dart';
 import '../utils/stream_error_messages.dart';
+import '../utils/stream_orientation.dart';
 import '../models/overlay_layout_prefs.dart';
 import '../models/stream_destination.dart';
 import '../models/stream_quality.dart';
@@ -24,6 +25,7 @@ import '../utils/native_encoder_profile.dart';
 import '../utils/rtmp_endpoint.dart';
 import '../theme/app_theme.dart';
 import '../widgets/broadcast_control_dock.dart';
+import '../widgets/draggable_overlay_frame.dart';
 import '../widgets/go_live_preflight_sheet.dart';
 import '../widgets/overlay_layout_sheet.dart';
 import '../widgets/scoring_mode_sheet.dart';
@@ -41,7 +43,7 @@ class BroadcastScreen extends StatefulWidget {
   State<BroadcastScreen> createState() => _BroadcastScreenState();
 }
 
-class _BroadcastScreenState extends State<BroadcastScreen> {
+class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingObserver {
   CameraController? _camera;
   WebViewController? _web;
   bool _live = false;
@@ -72,13 +74,66 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   bool _overlayLocked = false;
   StreamSubscription<RtmpStreamEvent>? _rtmpStatusSub;
   late final RtmpCredentialsStore _rtmpStore;
+  Orientation? _preparedOrientation;
+  DateTime? _liveStartedAt;
+  int _encoderWidth = 1280;
+  int _encoderHeight = 720;
+  int _encoderRotation = 0;
+
+  ({int width, int height, int rotation}) _encoderParamsForContext() {
+    final portrait = StreamOrientationHelper.isPortrait(context);
+    final params = NativeEncoderProfile.paramsForOrientation(_nativeProfile, portrait);
+    return params;
+  }
+
+  bool get _orientationChangedSincePrepare {
+    if (_preparedOrientation == null || !_nativeCamera || _live) return false;
+    return MediaQuery.orientationOf(context) != _preparedOrientation;
+  }
+
+  Future<void> _applyNativeStreamPrefs() async {
+    if (!_nativeCamera) return;
+    await RtmpPlatform.setKeepScreenOnDuringStream(_overlayPrefs.keepScreenOn);
+    await RtmpPlatform.setVideoStabilization(_overlayPrefs.videoStabilization);
+  }
+
+  Future<void> _reprepareCameraForCurrentOrientation() async {
+    if (!_nativeCamera || _live || !mounted) return;
+    final params = _encoderParamsForContext();
+    _encoderWidth = params.width;
+    _encoderHeight = params.height;
+    _encoderRotation = params.rotation;
+    setState(() => _nativeCameraReady = false);
+    final ok = await RtmpPlatform.resetCameraOrientation(
+      width: params.width,
+      height: params.height,
+      fps: _nativeProfile.fps,
+      bitrateBps: _nativeProfile.bitrateBps,
+      rotation: params.rotation,
+    );
+    if (!ok) {
+      await RtmpPlatform.prepareCamera(
+        width: params.width,
+        height: params.height,
+        fps: _nativeProfile.fps,
+        bitrateBps: _nativeProfile.bitrateBps,
+        rotation: params.rotation,
+      );
+    }
+    _preparedOrientation = MediaQuery.orientationOf(context);
+    for (var i = 0; i < 40; i++) {
+      if (await RtmpPlatform.isCameraReady) {
+        if (mounted) setState(() => _nativeCameraReady = true);
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    // #region agent log
-    DebugTrace.log('broadcast_screen.initState', 'screen opened', hypothesisId: 'H3', data: {'slug': widget.match.slug});
-    // #endregion
+    WidgetsBinding.instance.addObserver(this);
     _rtmpStore = RtmpCredentialsStore(widget.match.slug);
     _init();
   }
@@ -93,14 +148,6 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         final name = (tw['display_name'] ?? tw['login'] ?? 'Twitch').toString();
         final keyOk = tw['stream_key_ok'] == true;
         _destination = StreamDestination.twitch;
-        // #region agent log
-        DebugTrace.log(
-          'broadcast_screen._applyClubStreamDestination',
-          'club twitch selected',
-          hypothesisId: 'H6',
-          data: {'displayName': name, 'streamKeyOk': keyOk},
-        );
-        // #endregion
         if (!mounted) return;
         setState(() {
           _status = keyOk
@@ -114,14 +161,6 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         final title = (yt['channel_title'] ?? 'YouTube').toString();
         final liveOk = yt['live_streaming_ok'] == true;
         _destination = StreamDestination.youtube;
-        // #region agent log
-        DebugTrace.log(
-          'broadcast_screen._applyClubStreamDestination',
-          'club youtube selected',
-          hypothesisId: 'H6',
-          data: {'channelTitle': title, 'liveStreamingOk': liveOk},
-        );
-        // #endregion
         if (!mounted) return;
         setState(() {
           _status = liveOk
@@ -129,16 +168,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
               : 'YouTube connected ($title) but live streaming check failed — reconnect on home screen';
         });
       }
-    } catch (e) {
-      // #region agent log
-      DebugTrace.log(
-        'broadcast_screen._applyClubStreamDestination',
-        'status fetch failed',
-        hypothesisId: 'H6',
-        data: {'error': e.toString()},
-      );
-      // #endregion
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadSavedRtmp() async {
@@ -221,15 +251,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
 
   Future<void> _init() async {
     try {
-      // #region agent log
-      DebugTrace.log('broadcast_screen._init', 'start', hypothesisId: 'H3');
-      // #endregion
       _overlayStore = OverlayLayoutStore(widget.api, widget.match.slug);
       final avOk = await _requestAvPermissions();
       _avPermissionsGranted = avOk;
-      // #region agent log
-      DebugTrace.log('broadcast_screen._init', 'permissions', hypothesisId: 'H3', data: {'avOk': avOk});
-      // #endregion
       if (!avOk && mounted) {
         setState(() => _status = 'Camera or microphone permission denied');
       }
@@ -240,22 +264,10 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       if ((Platform.isAndroid || Platform.isIOS) && avOk) {
         _nativeCamera = await RtmpPlatform.isCaptureSupported;
       }
-      // #region agent log
-      DebugTrace.log(
-        'broadcast_screen._init',
-        'native probe',
-        hypothesisId: 'H5',
-        data: {'nativeCamera': _nativeCamera, 'avOk': avOk},
-      );
-      // #endregion
       if (_nativeCamera) {
         _rtmpStatusSub = RtmpPlatform.statusEvents.listen(_onRtmpStatus);
         if (mounted) setState(() {});
-        // #region agent log
-        DebugTrace.log('broadcast_screen._init', 'mounting AndroidView next frame', hypothesisId: 'H1');
-        // #endregion
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          // Wait an extra frame so AndroidView PlatformView has layout before prepareCamera.
           WidgetsBinding.instance.addPostFrameCallback((_) {
             unawaited(_ensureNativeCameraReady());
           });
@@ -297,19 +309,8 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         await _loadOverlayWebView();
       }
       if (mounted) setState(() {});
-    } catch (e, st) {
-      // #region agent log
-      DebugTrace.log(
-        'broadcast_screen._init',
-        'dart catch',
-        hypothesisId: 'H4',
-        data: {
-          'error': e.toString(),
-          'type': e.runtimeType.toString(),
-          'stack': st.toString().split('\n').take(2).join(' | '),
-        },
-      );
-      // #endregion
+      await _applyNativeStreamPrefs();
+    } catch (e) {
       if (mounted) {
         setState(() {
           _initError = StreamErrorMessages.fromObject(e);
@@ -321,12 +322,19 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
 
   Future<void> _ensureNativeCameraReady() async {
     if (!_nativeCamera || !mounted) return;
+    final params = _encoderParamsForContext();
+    _encoderWidth = params.width;
+    _encoderHeight = params.height;
+    _encoderRotation = params.rotation;
+    await _applyNativeStreamPrefs();
     await RtmpPlatform.prepareCamera(
-      width: _nativeProfile.width,
-      height: _nativeProfile.height,
+      width: params.width,
+      height: params.height,
       fps: _nativeProfile.fps,
       bitrateBps: _nativeProfile.bitrateBps,
+      rotation: params.rotation,
     );
+    _preparedOrientation = MediaQuery.orientationOf(context);
     for (var attempt = 0; attempt < 40; attempt++) {
       if (await RtmpPlatform.isCameraReady) {
         if (!mounted) return;
@@ -341,15 +349,47 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     }
   }
 
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (!_nativeCamera || _live || !mounted) return;
+    if (_orientationChangedSincePrepare) {
+      unawaited(_reprepareCameraForCurrentOrientation());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_live && state == AppLifecycleState.paused && Platform.isAndroid) {
+      unawaited(RtmpPlatform.setPipWhenLive(true));
+    }
+  }
+
   Future<void> _syncNativeOverlay() async {
     if (!_nativeCamera) return;
     final url = _overlayStore.embedUrl(widget.match.overlayEmbedUrl, _overlayPrefs);
     await RtmpPlatform.updateOverlay(
       overlayUrl: url,
       overlayHeightFraction: _overlayPrefs.heightFraction,
+      overlayWidthFraction: _overlayPrefs.widthFraction,
+      overlayAnchorX: _overlayPrefs.anchorX,
+      overlayAnchorY: _overlayPrefs.anchorY,
       overlayBottomMargin: _overlayPrefs.bottomMargin,
       overlayHorizontalInset: _overlayPrefs.horizontalInset,
     );
+  }
+
+  void _onOverlayLayoutChanged(OverlayLayoutPrefs prefs) {
+    setState(() => _overlayPrefs = prefs);
+  }
+
+  Future<void> _persistOverlayLayout() async {
+    try {
+      await _overlayStore.saveLocal(_overlayPrefs);
+      if (_nativeCamera && _live) {
+        await _syncNativeOverlay();
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadOverlayWebView() async {
@@ -388,6 +428,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     try {
       final synced = await _overlayStore.saveAndSync(next);
       _overlayPrefs = synced;
+      await _applyNativeStreamPrefs();
       if (_nativeCamera && _live) {
         await _syncNativeOverlay();
       } else if (!_nativeCamera) {
@@ -491,11 +532,13 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
           });
           if (_nativeCamera && !_live) {
             setState(() => _nativeCameraReady = false);
+            final params = _encoderParamsForContext();
             await RtmpPlatform.prepareCamera(
-              width: _nativeProfile.width,
-              height: _nativeProfile.height,
+              width: params.width,
+              height: params.height,
               fps: _nativeProfile.fps,
               bitrateBps: _nativeProfile.bitrateBps,
+              rotation: params.rotation,
             );
             if (mounted && await RtmpPlatform.isCameraReady) {
               setState(() => _nativeCameraReady = true);
@@ -535,9 +578,12 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       } catch (_) {}
     }
     await WakelockPlus.disable();
+    await StreamOrientationHelper.restoreDefaultOrientations();
+    await RtmpPlatform.setPipWhenLive(false);
     if (!mounted) return;
     setState(() {
       _live = false;
+      _liveStartedAt = null;
       _overlayLocked = false;
       _liveManagedByApi = false;
       _livePlatform = null;
@@ -548,10 +594,13 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _rtmpStatusSub?.cancel();
     if (_live && _nativeCamera) {
       unawaited(RtmpPlatform.stopStream());
     }
+    unawaited(StreamOrientationHelper.restoreDefaultOrientations());
+    unawaited(RtmpPlatform.setPipWhenLive(false));
     _camera?.dispose();
     super.dispose();
   }
@@ -596,8 +645,10 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     if (!await RtmpPlatform.isCameraReady) {
       throw Exception(StreamErrorMessages.previewNotReady);
     }
+    if (_orientationChangedSincePrepare) {
+      await _reprepareCameraForCurrentOrientation();
+    }
     final overlayUrl = _overlayStore.embedUrl(widget.match.overlayEmbedUrl, _overlayPrefs);
-    // Do not call prepareCamera here — preview is already running; re-preparing can stopPreview and crash GL.
     AppAnalytics.logBreadcrumb('go_live_start_stream');
     final connected = RtmpPlatform.waitForConnected(
       timeoutMessage: _destination == StreamDestination.twitch
@@ -614,10 +665,13 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       streamKey: cred.streamKey,
       overlayUrl: overlayUrl,
       overlayHeightFraction: _overlayPrefs.heightFraction,
+      overlayWidthFraction: _overlayPrefs.widthFraction,
+      overlayAnchorX: _overlayPrefs.anchorX,
+      overlayAnchorY: _overlayPrefs.anchorY,
       overlayBottomMargin: _overlayPrefs.bottomMargin,
       overlayHorizontalInset: _overlayPrefs.horizontalInset,
-      width: _nativeProfile.width,
-      height: _nativeProfile.height,
+      width: _encoderWidth,
+      height: _encoderHeight,
       bitrateBps: _nativeProfile.bitrateBps,
       fps: _nativeProfile.fps,
     );
@@ -650,6 +704,8 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       cameraReady: camReady,
       streamKeySet: _hasStreamKey,
       overlayLocked: _overlayLocked,
+      orientationLabel: StreamOrientationHelper.labelFor(context),
+      orientationChanged: _orientationChangedSincePrepare,
       resolveCameraReady: () async {
         if (_nativeCamera) {
           return _nativeCameraReady || await RtmpPlatform.isCameraReady;
@@ -658,6 +714,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       },
     );
     if (!proceed || !mounted) return;
+    if (_orientationChangedSincePrepare) {
+      await _reprepareCameraForCurrentOrientation();
+    }
     await _performGoLive();
   }
 
@@ -706,22 +765,11 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         final platform = _destination == StreamDestination.twitch ? 'twitch' : 'youtube';
         cred = await widget.api.goLive(widget.match.slug, platform: platform);
         _livePlatform = platform;
-        // #region agent log
-        DebugTrace.log(
-          'broadcast_screen._performGoLive',
-          'api go-live ok',
-          hypothesisId: 'H6',
-          data: {
-            'platform': platform,
-            'rtmpHost': Uri.tryParse(cred.rtmpUrl)?.host ?? cred.rtmpUrl,
-            'watchUrl': cred.watchUrl,
-            'hasKey': cred.streamKey.isNotEmpty,
-          },
-        );
-        // #endregion
       }
       await _startEncoder(cred);
       if (!mounted) return;
+      await StreamOrientationHelper.lockCurrentOrientation(context);
+      await RtmpPlatform.setPipWhenLive(true);
       await AppAnalytics.logEvent('go_live_connected', {
         'destination': _destination.name,
         'quality': _quality.label,
@@ -731,6 +779,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         _liveManagedByApi = _destination != StreamDestination.custom;
         _watchUrl = cred.watchUrl;
         _live = true;
+        _liveStartedAt = DateTime.now();
         _status = switch (_destination) {
           StreamDestination.custom => 'Live on custom RTMP',
           StreamDestination.twitch => 'Live on Twitch',
@@ -748,10 +797,13 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         'destination': _destination.name,
       });
       await _stopEncoder();
+      await StreamOrientationHelper.restoreDefaultOrientations();
+      await RtmpPlatform.setPipWhenLive(false);
       if (mounted) {
         setState(() {
           _overlayLocked = false;
           _live = false;
+          _liveStartedAt = null;
           _status = StreamErrorMessages.fromObject(e);
         });
       }
@@ -773,9 +825,12 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       }
     } catch (_) {}
     await WakelockPlus.disable();
+    await StreamOrientationHelper.restoreDefaultOrientations();
+    await RtmpPlatform.setPipWhenLive(false);
     if (mounted) {
       setState(() {
         _live = false;
+        _liveStartedAt = null;
         _overlayLocked = false;
         _liveManagedByApi = false;
         _livePlatform = null;
@@ -965,21 +1020,21 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
             child: CircularProgressIndicator(color: AppColors.accentGreen),
           ),
         if (_nativeCamera && _nativeCameraReady)
-          Positioned(
-            left: _overlayPrefs.horizontalInset,
-            right: _overlayPrefs.horizontalInset,
-            bottom: _overlayPrefs.bottomMargin,
-            height: MediaQuery.of(context).size.height * _overlayPrefs.heightFraction,
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: _overlayLocked ? Colors.white24 : AppColors.accentGreen,
-                    width: 2,
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
+          DraggableOverlayFrame(
+            prefs: _overlayPrefs,
+            locked: _overlayLocked,
+            onChanged: _onOverlayLayoutChanged,
+            onDragEnd: _persistOverlayLayout,
+          ),
+        if (_orientationChangedSincePrepare && !_live && _nativeCameraReady)
+          const Positioned(
+            top: 48,
+            left: 12,
+            right: 12,
+            child: CrInfoBanner(
+              title: 'Rotate now',
+              body: 'Orientation locks when you go live. Hold the phone how viewers should see the stream.',
+              accentColor: AppColors.warning,
             ),
           ),
         if (_overlayLocked)
@@ -991,7 +1046,23 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
               child: _OverlayLockedChip(),
             ),
           ),
-        if (_live) const Positioned(top: 12, left: 12, child: CrLiveBadge()),
+        if (_live)
+          Positioned(
+            top: 12,
+            left: 12,
+            child: CrLiveTimerBadge(
+              startedAt: _liveStartedAt,
+              onTick: (d) {
+                if (Platform.isAndroid) {
+                  final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+                  final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+                  final h = d.inHours;
+                  final label = h > 0 ? '$h:$m:$s' : '$m:$s';
+                  unawaited(RtmpPlatform.updateStreamNotification(label));
+                }
+              },
+            ),
+          ),
         if (camReady && _maxZoom > _minZoom && !_overlayLocked)
           Positioned(
             top: 12,

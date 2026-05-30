@@ -13,12 +13,16 @@ class GoLivePreflightResult {
     required this.streamKeySet,
     required this.networkOk,
     required this.overlayLocked,
+    required this.orientationLabel,
+    this.orientationChanged = false,
   });
 
   final bool cameraReady;
   final bool streamKeySet;
   final bool networkOk;
   final bool overlayLocked;
+  final String orientationLabel;
+  final bool orientationChanged;
 
   bool get canGoLive => cameraReady && streamKeySet && networkOk;
 }
@@ -55,6 +59,8 @@ Future<bool> showGoLivePreflightSheet({
   required bool cameraReady,
   required bool streamKeySet,
   required bool overlayLocked,
+  required String orientationLabel,
+  bool orientationChanged = false,
   Future<bool> Function()? resolveCameraReady,
 }) async {
   final networkOk = await _checkNetworkAvailable();
@@ -80,6 +86,8 @@ Future<bool> showGoLivePreflightSheet({
           streamKeySet: streamKeySet,
           networkOk: networkOk,
           overlayLocked: overlayLocked,
+          orientationLabel: orientationLabel,
+          orientationChanged: orientationChanged,
         ),
         resolveCameraReady: resolveCameraReady,
       );
@@ -108,6 +116,8 @@ class _GoLivePreflightSheetContentState extends State<GoLivePreflightSheetConten
   late bool _streamKeySet;
   late bool _networkOk;
   late bool _overlayLocked;
+  late String _orientationLabel;
+  late bool _orientationChanged;
   Timer? _refreshTimer;
 
   @override
@@ -117,6 +127,8 @@ class _GoLivePreflightSheetContentState extends State<GoLivePreflightSheetConten
     _streamKeySet = widget.initial.streamKeySet;
     _networkOk = widget.initial.networkOk;
     _overlayLocked = widget.initial.overlayLocked;
+    _orientationLabel = widget.initial.orientationLabel;
+    _orientationChanged = widget.initial.orientationChanged;
     _refreshTimer = Timer.periodic(const Duration(seconds: 1), (_) => unawaited(_refreshChecks()));
   }
 
@@ -142,6 +154,11 @@ class _GoLivePreflightSheetContentState extends State<GoLivePreflightSheetConten
   }
 
   bool get _canGoLive => _cameraReady && _streamKeySet && _networkOk;
+
+  String get _goLiveButtonLabel {
+    final mode = _orientationLabel.toUpperCase();
+    return 'Go Live in $mode';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -179,15 +196,32 @@ class _GoLivePreflightSheetContentState extends State<GoLivePreflightSheetConten
           _CheckRow(label: 'Stream key set', ok: _streamKeySet),
           _CheckRow(label: 'Internet connection', ok: _networkOk),
           _CheckRow(
+            label: 'Stream orientation: $_orientationLabel (locks after Go Live)',
+            ok: !_orientationChanged,
+            hint: _orientationChanged
+                ? 'You rotated since preview started — hold the phone how you want to stream'
+                : 'Orientation cannot be changed once you are live',
+          ),
+          _CheckRow(
             label: 'Overlay locked',
             ok: _overlayLocked,
             optional: true,
-            hint: _overlayLocked ? null : 'Recommended — lock overlay to avoid accidental taps',
+            hint: _overlayLocked ? null : 'Recommended — drag scoreboard on preview, then lock',
           ),
+          if (_orientationChanged) ...[
+            const SizedBox(height: AppSpacing.sm),
+            CrInfoBanner(
+              title: 'Rotate now',
+              body:
+                  'Hold the phone in the orientation you want viewers to see. '
+                  'It will lock when you tap Go Live.',
+              accentColor: AppColors.warning,
+            ),
+          ],
           const SizedBox(height: AppSpacing.lg),
           FilledButton(
             onPressed: _canGoLive ? () => Navigator.pop(context, true) : null,
-            child: const Text('Go Live'),
+            child: Text(_goLiveButtonLabel),
           ),
           const SizedBox(height: AppSpacing.sm),
           TextButton(

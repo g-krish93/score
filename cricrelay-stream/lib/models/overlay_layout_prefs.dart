@@ -5,9 +5,13 @@ class OverlayLayoutPrefs {
     this.theme = 'classic',
     this.density = 'expanded',
     this.heightFraction = 0.22,
+    this.widthFraction = 0.88,
+    this.anchorX = 0.5,
+    this.anchorY = 0.85,
     this.bottomMargin = 8,
     this.horizontalInset = 8,
     this.keepScreenOn = false,
+    this.videoStabilization = true,
   });
 
   /// Server overlay preset 1 (smallest) … 5 (largest).
@@ -16,28 +20,44 @@ class OverlayLayoutPrefs {
   final String density;
   /// Fraction of preview height for the scoreboard strip (0.12–0.45).
   final double heightFraction;
+  /// Fraction of preview width for overlay frame (0.25–0.95).
+  final double widthFraction;
+  /// Normalized horizontal center (0 = left, 1 = right).
+  final double anchorX;
+  /// Normalized vertical center (0 = top, 1 = bottom).
+  final double anchorY;
   final double bottomMargin;
   final double horizontalInset;
   /// If false, phone may sleep; Android capture service keeps CPU awake.
   final bool keepScreenOn;
+  /// Electronic image stabilization (EIS) when supported on device.
+  final bool videoStabilization;
 
   OverlayLayoutPrefs copyWith({
     int? size,
     String? theme,
     String? density,
     double? heightFraction,
+    double? widthFraction,
+    double? anchorX,
+    double? anchorY,
     double? bottomMargin,
     double? horizontalInset,
     bool? keepScreenOn,
+    bool? videoStabilization,
   }) {
     return OverlayLayoutPrefs(
       size: size ?? this.size,
       theme: theme ?? this.theme,
       density: density ?? this.density,
       heightFraction: heightFraction ?? this.heightFraction,
+      widthFraction: widthFraction ?? this.widthFraction,
+      anchorX: anchorX ?? this.anchorX,
+      anchorY: anchorY ?? this.anchorY,
       bottomMargin: bottomMargin ?? this.bottomMargin,
       horizontalInset: horizontalInset ?? this.horizontalInset,
       keepScreenOn: keepScreenOn ?? this.keepScreenOn,
+      videoStabilization: videoStabilization ?? this.videoStabilization,
     );
   }
 
@@ -47,9 +67,13 @@ class OverlayLayoutPrefs {
       theme: (j['theme'] ?? 'classic').toString(),
       density: (j['overlay_density'] ?? 'expanded').toString(),
       heightFraction: (double.tryParse('${j['height_fraction']}') ?? 0.22).clamp(0.12, 0.45),
+      widthFraction: (double.tryParse('${j['width_fraction']}') ?? 0.88).clamp(0.25, 0.95),
+      anchorX: (double.tryParse('${j['anchor_x']}') ?? 0.5).clamp(0.05, 0.95),
+      anchorY: (double.tryParse('${j['anchor_y']}') ?? 0.85).clamp(0.05, 0.95),
       bottomMargin: (double.tryParse('${j['bottom_margin']}') ?? 8).clamp(0, 48),
       horizontalInset: (double.tryParse('${j['horizontal_inset']}') ?? 8).clamp(0, 80),
       keepScreenOn: j['keep_screen_on'] == true,
+      videoStabilization: j['video_stabilization'] != false,
     );
   }
 
@@ -62,8 +86,12 @@ class OverlayLayoutPrefs {
   Map<String, dynamic> toLocalJson() => {
         ...toServerJson(),
         'height_fraction': heightFraction,
+        'width_fraction': widthFraction,
+        'anchor_x': anchorX,
+        'anchor_y': anchorY,
         'bottom_margin': bottomMargin,
         'horizontal_inset': horizontalInset,
         'keep_screen_on': keepScreenOn,
+        'video_stabilization': videoStabilization,
       };
 }

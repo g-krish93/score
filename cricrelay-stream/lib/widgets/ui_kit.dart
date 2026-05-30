@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -308,8 +310,57 @@ class CrGoLiveButton extends StatelessWidget {
   }
 }
 
-class CrLiveBadge extends StatelessWidget {
-  const CrLiveBadge({super.key});
+class CrLiveTimerBadge extends StatefulWidget {
+  const CrLiveTimerBadge({super.key, this.startedAt, this.onTick});
+
+  final DateTime? startedAt;
+  final ValueChanged<Duration>? onTick;
+
+  @override
+  State<CrLiveTimerBadge> createState() => _CrLiveTimerBadgeState();
+}
+
+class _CrLiveTimerBadgeState extends State<CrLiveTimerBadge> {
+  Timer? _timer;
+  Duration _elapsed = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncElapsed();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _syncElapsed());
+  }
+
+  @override
+  void didUpdateWidget(covariant CrLiveTimerBadge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.startedAt != widget.startedAt) {
+      _syncElapsed();
+    }
+  }
+
+  void _syncElapsed() {
+    final start = widget.startedAt;
+    if (start == null) return;
+    final next = DateTime.now().difference(start);
+    if (!mounted) return;
+    setState(() => _elapsed = next);
+    widget.onTick?.call(next);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String _format(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (h > 0) return '$h:$m:$s';
+    return '$m:$s';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -322,15 +373,27 @@ class CrLiveBadge extends StatelessWidget {
           BoxShadow(color: AppColors.live.withValues(alpha: 0.4), blurRadius: 8),
         ],
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.circle, size: 8, color: Colors.white),
-          SizedBox(width: 6),
-          Text('LIVE', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 0.8)),
+          const Icon(Icons.circle, size: 8, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            'LIVE · ${_format(_elapsed)}',
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 0.5),
+          ),
         ],
       ),
     );
+  }
+}
+
+class CrLiveBadge extends StatelessWidget {
+  const CrLiveBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const CrLiveTimerBadge();
   }
 }
 

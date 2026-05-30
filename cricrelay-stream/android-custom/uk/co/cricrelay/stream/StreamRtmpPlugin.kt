@@ -21,6 +21,12 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
         @Volatile
         var activity: Activity? = null
             private set
+
+        @Volatile
+        var pipWhenLive: Boolean = false
+
+        @Volatile
+        var pipActive: Boolean = false
     }
 
     private var pluginActivity: Activity? = null
@@ -42,7 +48,6 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
     }
 
     private var statusReceiverRegistered = false
-    private var debugChannel: MethodChannel? = null
 
     private val engineStatusListener: (String, String) -> Unit = { event, message ->
         mainHandler.post {
@@ -53,25 +58,10 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
-        DebugTrace.init(binding.applicationContext)
         channel = MethodChannel(binding.binaryMessenger, "uk.co.cricrelay.stream/rtmp")
         channel?.setMethodCallHandler(this)
         eventChannel = EventChannel(binding.binaryMessenger, "uk.co.cricrelay.stream/rtmp_events")
         eventChannel?.setStreamHandler(this)
-        debugChannel = MethodChannel(binding.binaryMessenger, "uk.co.cricrelay.stream/debug")
-        debugChannel?.setMethodCallHandler { call, result ->
-            if (call.method == "log") {
-                val loc = call.argument<String>("location") ?: "?"
-                val msg = call.argument<String>("message") ?: ""
-                val hid = call.argument<String>("hypothesisId") ?: "?"
-                @Suppress("UNCHECKED_CAST")
-                val data = call.argument<Map<String, Any?>>("data") ?: emptyMap()
-                DebugTrace.log(loc, msg, hid, data)
-                result.success(null)
-            } else {
-                result.notImplemented()
-            }
-        }
         StreamCameraEngine.setStatusListener(engineStatusListener)
         binding.platformViewRegistry.registerViewFactory(
             "cricrelay-camera-preview",
@@ -86,8 +76,6 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
         channel = null
         eventChannel?.setStreamHandler(null)
         eventChannel = null
-        debugChannel?.setMethodCallHandler(null)
-        debugChannel = null
         appContext = null
     }
 
@@ -135,6 +123,9 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
     private fun overlayLayoutFromCall(call: MethodCall): StreamCameraEngine.OverlayLayout {
         return StreamCameraEngine.OverlayLayout(
             heightFraction = (call.argument<Double>("overlayHeightFraction") ?: 0.22).toFloat(),
+            widthFraction = (call.argument<Double>("overlayWidthFraction") ?: 0.88).toFloat(),
+            anchorX = (call.argument<Double>("overlayAnchorX") ?: 0.5).toFloat(),
+            anchorY = (call.argument<Double>("overlayAnchorY") ?: 0.85).toFloat(),
             bottomMarginFraction = (call.argument<Double>("overlayBottomMargin") ?: 8.0).toFloat() / 400f,
             horizontalInsetFraction = (call.argument<Double>("overlayHorizontalInset") ?: 8.0).toFloat() / 400f,
         )
@@ -157,8 +148,39 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                 val height = call.argument<Int>("height") ?: 720
                 val fps = call.argument<Int>("fps") ?: 30
                 val bitrate = call.argument<Int>("bitrateBps") ?: 2_500_000
-                val ok = StreamCameraEngine.preparePreview(width, height, fps, bitrate)
+                val rotation = call.argument<Int>("rotation") ?: 0
+                val ok = StreamCameraEngine.preparePreview(width, height, fps, bitrate, rotation)
                 result.success(ok)
+            }
+            "resetCameraOrientation" -> {
+                val width = call.argument<Int>("width") ?: 1280
+                val height = call.argument<Int>("height") ?: 720
+                val fps = call.argument<Int>("fps") ?: 30
+                val bitrate = call.argument<Int>("bitrateBps") ?: 2_500_000
+                val rotation = call.argument<Int>("rotation") ?: 0
+                val ok = StreamCameraEngine.resetPreviewForOrientation(width, height, fps, bitrate, rotation)
+                result.success(ok)
+            }
+            "setKeepScreenOnDuringStream" -> {
+                StreamCameraEngine.setKeepScreenOnDuringStream(call.argument<Boolean>("enabled") == true)
+                result.success(null)
+            }
+            "setVideoStabilization" -> {
+                StreamCameraEngine.setVideoStabilization(call.argument<Boolean>("enabled") != false)
+                result.success(null)
+            }
+            "lockActivityOrientation" -> {
+                val mode = call.argument<String>("mode") ?: "unspecified"
+                (pluginActivity as? MainActivity)?.lockOrientation(mode)
+                result.success(null)
+            }
+            "setPipWhenLive" -> {
+                pipWhenLive = call.argument<Boolean>("enabled") == true
+                result.success(null)
+            }
+            "updateStreamNotification" -> {
+                StreamCameraEngine.updateNotificationElapsed(call.argument<String>("elapsed") ?: "")
+                result.success(null)
             }
             "getZoomRange" -> {
                 result.success(
@@ -176,18 +198,11 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
             }
             "updateOverlay" -> {
                 val url = call.argument<String>("overlayUrl") ?: ""
-                if (url.isNotEmpty()) {
-                    StreamCameraEngine.updateOverlay(url, overlayLayoutFromCall(call))
-                }
+                StreamCameraEngine.updateOverlay(url, overlayLayoutFromCall(call))
                 result.success(null)
             }
-            "showNativePreview" -> {
-                // Preview is rendered via Flutter AndroidView (cricrelay-camera-preview).
-                result.success(null)
-            }
-            "hideNativePreview" -> {
-                result.success(null)
-            }
+            "showNativePreview" -> result.success(null)
+            "hideNativePreview" -> result.success(null)
             "startStream" -> {
                 val url = call.argument<String>("rtmpUrl") ?: ""
                 val key = call.argument<String>("streamKey") ?: ""
@@ -225,6 +240,7 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                 val act = pluginActivity
                 StreamCameraEngine.stopStream()
                 stopStreamServiceSafely(act)
+                pipWhenLive = false
                 unregisterStatusReceiver()
                 result.success(null)
             }
@@ -241,7 +257,6 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                 act.startService(fg)
             }
         } catch (_: Exception) {
-            // Stream can continue; Flutter wakelock keeps the device awake.
         }
     }
 

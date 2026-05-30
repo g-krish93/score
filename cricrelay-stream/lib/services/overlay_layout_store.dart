@@ -33,9 +33,13 @@ class OverlayLayoutStore {
         theme: (remote['theme'] ?? local.theme).toString(),
         density: (remote['overlay_density'] ?? local.density).toString(),
         heightFraction: local.heightFraction,
+        widthFraction: local.widthFraction,
+        anchorX: local.anchorX,
+        anchorY: local.anchorY,
         bottomMargin: local.bottomMargin,
         horizontalInset: local.horizontalInset,
         keepScreenOn: local.keepScreenOn,
+        videoStabilization: local.videoStabilization,
       );
     } catch (_) {
       return local;
@@ -55,9 +59,13 @@ class OverlayLayoutStore {
       theme: (remote['theme'] ?? p.theme).toString(),
       density: (remote['overlay_density'] ?? p.density).toString(),
       heightFraction: p.heightFraction,
+      widthFraction: p.widthFraction,
+      anchorX: p.anchorX,
+      anchorY: p.anchorY,
       bottomMargin: p.bottomMargin,
       horizontalInset: p.horizontalInset,
       keepScreenOn: p.keepScreenOn,
+      videoStabilization: p.videoStabilization,
     );
   }
 

@@ -14,4 +14,10 @@ void main() {
     expect(capped.width, 854);
     expect(capped.height, 480);
   });
+
+  test('paramsForOrientation swaps dimensions for portrait', () {
+    final p = NativeEncoderProfile.paramsForOrientation(StreamQualityProfile.high, true);
+    expect(p.width, lessThanOrEqualTo(p.height));
+    expect(p.rotation, 90);
+  });
 }

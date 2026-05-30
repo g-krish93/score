@@ -23,12 +23,6 @@ class CricrelayCameraPlatformView(
 
         override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
             if (width > 64 && height > 64 && holder.surface.isValid) {
-                DebugTrace.log(
-                    "CricrelayCameraPlatformView.surfaceChanged",
-                    "GL surface ready",
-                    "H2",
-                    mapOf("w" to width, "h" to height),
-                )
                 StreamCameraEngine.onPreviewSurfaceReady()
             }
         }
@@ -37,33 +31,14 @@ class CricrelayCameraPlatformView(
     }
 
     init {
-        DebugTrace.log(
-            "CricrelayCameraPlatformView.init",
-            "PlatformView creating OpenGlView",
-            "H1",
-            mapOf("activity" to activity.javaClass.simpleName),
-        )
         try {
             StreamCameraEngine.attachView(openGlView, activity)
             attached = true
-            DebugTrace.log("CricrelayCameraPlatformView.init", "attachView ok", "H1")
             openGlView.holder.addCallback(surfaceCallback)
         } catch (e: Exception) {
             attached = false
-            DebugTrace.log(
-                "CricrelayCameraPlatformView.init",
-                "attachView failed",
-                "H1",
-                mapOf("error" to (e.message ?: e.javaClass.simpleName)),
-            )
         } catch (t: Throwable) {
             attached = false
-            DebugTrace.log(
-                "CricrelayCameraPlatformView.init",
-                "attachView throwable",
-                "H1",
-                mapOf("error" to (t.message ?: t.javaClass.simpleName)),
-            )
             throw t
         }
     }

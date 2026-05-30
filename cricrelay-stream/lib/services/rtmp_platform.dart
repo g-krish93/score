@@ -44,14 +44,56 @@ class RtmpPlatform {
     int height = 720,
     int fps = 30,
     int bitrateBps = 2500000,
+    int rotation = 0,
   }) async {
     final v = await _ch.invokeMethod<bool>('prepareCamera', {
       'width': width,
       'height': height,
       'fps': fps,
       'bitrateBps': bitrateBps,
+      'rotation': rotation,
     });
     return v == true;
+  }
+
+  static Future<bool> resetCameraOrientation({
+    required int width,
+    required int height,
+    int fps = 30,
+    int bitrateBps = 2500000,
+    int rotation = 0,
+  }) async {
+    final v = await _ch.invokeMethod<bool>('resetCameraOrientation', {
+      'width': width,
+      'height': height,
+      'fps': fps,
+      'bitrateBps': bitrateBps,
+      'rotation': rotation,
+    });
+    return v == true;
+  }
+
+  static Future<void> setKeepScreenOnDuringStream(bool enabled) async {
+    await _ch.invokeMethod('setKeepScreenOnDuringStream', {'enabled': enabled});
+  }
+
+  static Future<void> setVideoStabilization(bool enabled) async {
+    await _ch.invokeMethod('setVideoStabilization', {'enabled': enabled});
+  }
+
+  static Future<void> lockActivityOrientation(String mode) async {
+    if (!Platform.isAndroid) return;
+    await _ch.invokeMethod('lockActivityOrientation', {'mode': mode});
+  }
+
+  static Future<void> setPipWhenLive(bool enabled) async {
+    if (!Platform.isAndroid) return;
+    await _ch.invokeMethod('setPipWhenLive', {'enabled': enabled});
+  }
+
+  static Future<void> updateStreamNotification(String elapsed) async {
+    if (!Platform.isAndroid) return;
+    await _ch.invokeMethod('updateStreamNotification', {'elapsed': elapsed});
   }
 
   static Future<ZoomRange> getZoomRange() async {
@@ -71,18 +113,23 @@ class RtmpPlatform {
   static Future<void> updateOverlay({
     required String overlayUrl,
     double overlayHeightFraction = 0.22,
+    double overlayWidthFraction = 0.88,
+    double overlayAnchorX = 0.5,
+    double overlayAnchorY = 0.85,
     double overlayBottomMargin = 8,
     double overlayHorizontalInset = 8,
   }) async {
     await _ch.invokeMethod('updateOverlay', {
       'overlayUrl': overlayUrl,
       'overlayHeightFraction': overlayHeightFraction,
+      'overlayWidthFraction': overlayWidthFraction,
+      'overlayAnchorX': overlayAnchorX,
+      'overlayAnchorY': overlayAnchorY,
       'overlayBottomMargin': overlayBottomMargin,
       'overlayHorizontalInset': overlayHorizontalInset,
     });
   }
 
-  /// Activity-level camera surface (Android). Avoids PlatformView GL crashes on Go Live.
   static Future<void> showNativePreview() async {
     if (!Platform.isAndroid) return;
     await _ch.invokeMethod('showNativePreview');
@@ -95,12 +142,14 @@ class RtmpPlatform {
     } catch (_) {}
   }
 
-  /// Starts camera RTMP + overlay. Use [waitForConnected] before showing Live.
   static Future<void> startStream({
     required String rtmpUrl,
     required String streamKey,
     String? overlayUrl,
     double overlayHeightFraction = 0.22,
+    double overlayWidthFraction = 0.88,
+    double overlayAnchorX = 0.5,
+    double overlayAnchorY = 0.85,
     double overlayBottomMargin = 8,
     double overlayHorizontalInset = 8,
     int width = 1280,
@@ -114,6 +163,9 @@ class RtmpPlatform {
         'streamKey': streamKey,
         'overlayUrl': overlayUrl,
         'overlayHeightFraction': overlayHeightFraction,
+        'overlayWidthFraction': overlayWidthFraction,
+        'overlayAnchorX': overlayAnchorX,
+        'overlayAnchorY': overlayAnchorY,
         'overlayBottomMargin': overlayBottomMargin,
         'overlayHorizontalInset': overlayHorizontalInset,
         'width': width,

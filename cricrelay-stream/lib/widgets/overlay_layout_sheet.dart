@@ -43,7 +43,7 @@ class _OverlayLayoutEditorState extends State<_OverlayLayoutEditor> {
           const CrSheetHeader(
             title: 'Scoreboard overlay',
             subtitle:
-                'Adjust size and style, then lock before going live so touches do not move it.',
+                'Drag the scoreboard on the preview to move it. Resize from the corner handle, then lock before Go Live.',
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -83,6 +83,24 @@ class _OverlayLayoutEditorState extends State<_OverlayLayoutEditor> {
                         onSelected: (_) => setState(() => _p = _p.copyWith(theme: t)),
                       ),
                   ],
+                ),
+                Text(
+                  'Preview width: ${(_p.widthFraction * 100).round()}%',
+                  style: appTextTheme.labelLarge,
+                ),
+                Slider(
+                  min: 0.25,
+                  max: 0.95,
+                  divisions: 14,
+                  onChanged: (v) => setState(() => _p = _p.copyWith(widthFraction: v)),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Steady stream (EIS)'),
+                  subtitle: const Text('Digital stabilization for windy conditions — device support varies.'),
+                  value: _p.videoStabilization,
+                  onChanged: (v) => setState(() => _p = _p.copyWith(videoStabilization: v)),
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
