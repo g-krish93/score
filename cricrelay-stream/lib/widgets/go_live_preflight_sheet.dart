@@ -75,7 +75,7 @@ Future<bool> showGoLivePreflightSheet({
   final result = await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppColors.surface,
+    backgroundColor: AppColors.surfaceElevated,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppSpacing.radiusXl)),
     ),

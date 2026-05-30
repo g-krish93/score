@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import com.pedro.common.ConnectChecker
+import com.pedro.encoder.input.gl.render.filters.BlackFilterRender
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
@@ -62,6 +63,19 @@ object StreamCameraEngine : ConnectChecker {
     private var videoStabilizationEnabled = true
     private var keepScreenOnDuringStream = false
     private var audioManager: AudioManager? = null
+    private var pauseBlackFilter: BlackFilterRender? = null
+    private var streamPaused = false
+    private var deviceTier = DeviceCapabilities.Tier.HIGH
+    private var overlayRefreshMs = 500L
+    private var maxOverlayCaptureWidth = 960
+    private var surfaceValid = true
+    private var overlayPausedForMemory = false
+
+    val isStreaming: Boolean
+        get() = camera?.isStreaming == true
+
+    val isStreamPaused: Boolean
+        get() = streamPaused && isStreaming
 
     val isPreviewReady: Boolean
         get() = camera != null && openGlView != null && encoderPrepared && (camera?.isOnPreview == true)
@@ -82,13 +96,56 @@ object StreamCameraEngine : ConnectChecker {
             try {
                 if (enabled) {
                     cam.enableVideoStabilization()
+                } else {
+                    cam.disableVideoStabilization()
                 }
             } catch (_: Exception) {
             }
         }
     }
 
+    /** Surface lost (rotation, PiP) — wait for surfaceChanged before prepare again. */
+    fun onPreviewSurfaceLost() {
+        runOnMain {
+            surfaceValid = false
+            if (camera?.isStreaming == true) {
+                stopOverlayRefresh()
+                return@runOnMain
+            }
+            encoderPrepared = false
+        }
+    }
+
+    /** System low memory — pause expensive overlay capture until restored. */
+    fun onMemoryPressure() {
+        runOnMain {
+            overlayPausedForMemory = true
+            stopOverlayRefresh()
+            recycleOverlayBitmap()
+        }
+    }
+
+    fun onMemoryRestored() {
+        runOnMain {
+            if (!overlayPausedForMemory) return@runOnMain
+            overlayPausedForMemory = false
+            if (camera?.isStreaming == true && !streamPaused && overlayUrl.isNotEmpty()) {
+                startOverlayRefresh()
+            }
+        }
+    }
+
+    private fun refreshDeviceTier(context: Context) {
+        deviceTier = DeviceCapabilities.tier(context)
+        overlayRefreshMs = DeviceCapabilities.overlayRefreshMs(deviceTier)
+        maxOverlayCaptureWidth = DeviceCapabilities.maxOverlayCaptureWidth(deviceTier)
+        if (DeviceCapabilities.isPowerSaveMode(context) || DeviceCapabilities.isThermalStressed(context)) {
+            overlayRefreshMs = (overlayRefreshMs * 1.5).toLong().coerceAtMost(2500L)
+        }
+    }
+
     fun attachView(view: OpenGlView, act: Activity) {
+        refreshDeviceTier(act.applicationContext)
         appContext = act.applicationContext
         audioManager = act.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         activity = act
@@ -119,6 +176,7 @@ object StreamCameraEngine : ConnectChecker {
         bitrate: Int = streamBitrate,
         rotation: Int = 0,
     ): Boolean {
+        if (camera?.isStreaming == true) return isPreviewReady
         streamIsPortrait = height > width
         streamRotation = rotation.coerceIn(0, 360)
         if (streamIsPortrait) {
@@ -161,13 +219,18 @@ object StreamCameraEngine : ConnectChecker {
     /** Called from OpenGlView SurfaceHolder.Callback when holder.surface is valid. */
     fun onPreviewSurfaceReady() {
         runOnMain {
+            surfaceValid = true
+            overlayPausedForMemory = false
             val view = openGlView ?: return@runOnMain
             if (view.width < 64 || view.height < 64) return@runOnMain
             if (!isPreviewSurfaceValid(view)) {
                 view.post { onPreviewSurfaceReady() }
                 return@runOnMain
             }
-            preparePreviewOnMain()
+            val ok = preparePreviewOnMain()
+            if (ok) {
+                emit(StreamCaptureService.EVENT_PREVIEW_READY, "${streamWidth}x${streamHeight}")
+            }
         }
     }
 
@@ -220,6 +283,16 @@ object StreamCameraEngine : ConnectChecker {
 
     fun stopStream() {
         runOnMainSync { stopStreamInternal() }
+    }
+
+    /** Pause RTMP output (black video + muted audio) while keeping the connection alive. */
+    fun pauseStream() {
+        runOnMainSync { pauseStreamInternal() }
+    }
+
+    /** Resume RTMP output after [pauseStream]. */
+    fun resumeStream() {
+        runOnMainSync { resumeStreamInternal() }
     }
 
     fun stopStreamFromService() {
@@ -282,6 +355,13 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
+    private fun abandonStreamAudioFocus() {
+        try {
+            audioManager?.abandonAudioFocus(null)
+        } catch (_: Exception) {
+        }
+    }
+
     /** Prepare encoder + preview once. Never call stopPreview here while streaming. */
     private fun preparePreviewOnMain(): Boolean {
         val cam = camera ?: return false
@@ -296,7 +376,10 @@ object StreamCameraEngine : ConnectChecker {
         }
         if (encoderPrepared && cam.isOnPreview) return true
         if (cam.isStreaming) return true
-        if (prepareInFlight) return false
+        if (prepareInFlight) {
+            view.postDelayed({ onPreviewSurfaceReady() }, 120)
+            return false
+        }
 
         if (encoderPrepared && !cam.isOnPreview) {
             return try {
@@ -310,23 +393,24 @@ object StreamCameraEngine : ConnectChecker {
         prepareInFlight = true
         return try {
             val audioOk = cam.prepareAudio(128 * 1024, 32_000, true, false, false)
-            var videoOk = cam.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, streamRotation)
-            if (!videoOk) {
-                if (streamIsPortrait) {
-                    streamWidth = MAX_HEIGHT
-                    streamHeight = MAX_WIDTH
-                } else {
-                    streamWidth = MAX_WIDTH
-                    streamHeight = MAX_HEIGHT
-                }
-                streamBitrate = DEFAULT_BITRATE
-                videoOk = cam.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, streamRotation)
-            }
-            if (!audioOk || !videoOk) {
+            if (!audioOk) {
                 encoderPrepared = false
                 return false
             }
-            if (videoStabilizationEnabled) {
+            var videoOk = false
+            for (tier in buildVideoFallbackTiers()) {
+                streamWidth = tier.width
+                streamHeight = tier.height
+                streamFps = tier.fps
+                streamBitrate = tier.bitrate
+                videoOk = cam.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, streamRotation)
+                if (videoOk) break
+            }
+            if (!videoOk) {
+                encoderPrepared = false
+                return false
+            }
+            if (videoStabilizationEnabled && deviceTier != DeviceCapabilities.Tier.LOW) {
                 try {
                     cam.enableVideoStabilization()
                 } catch (_: Exception) {
@@ -343,6 +427,32 @@ object StreamCameraEngine : ConnectChecker {
         } finally {
             prepareInFlight = false
         }
+    }
+
+    private data class VideoTier(val width: Int, val height: Int, val fps: Int, val bitrate: Int)
+
+    /** Step down through resolutions until prepareVideo succeeds on budget phones. */
+    private fun buildVideoFallbackTiers(): List<VideoTier> {
+        val reqW = streamWidth
+        val reqH = streamHeight
+        val reqFps = streamFps.coerceIn(24, 30)
+        val reqBitrate = streamBitrate.coerceIn(800000, 4500000)
+        val landscapeSteps = listOf(
+            VideoTier(reqW, reqH, reqFps, reqBitrate),
+            VideoTier(1280, 720, reqFps.coerceAtMost(30), reqBitrate.coerceAtMost(2500000)),
+            VideoTier(854, 480, 30, 1500000),
+            VideoTier(640, 360, 24, 800000),
+        )
+        if (!streamIsPortrait) {
+            return landscapeSteps.distinctBy { "${it.width}x${it.height}" }
+        }
+        return landscapeSteps.map { tier ->
+            if (tier.width >= tier.height) {
+                VideoTier(tier.height, tier.width, tier.fps, tier.bitrate)
+            } else {
+                tier
+            }
+        }.distinctBy { "${it.width}x${it.height}" }
     }
 
     /** Go Live: start RTMP only — encoder was prepared at preview time. */
@@ -372,6 +482,8 @@ object StreamCameraEngine : ConnectChecker {
 
     private fun stopStreamInternal() {
         pendingOverlayAfterConnect = false
+        streamPaused = false
+        removePauseBlackFilter()
         stopOverlayRefresh()
         clearOverlayFilter()
         recycleOverlayBitmap()
@@ -380,12 +492,59 @@ object StreamCameraEngine : ConnectChecker {
         } catch (_: Exception) {
         }
         openGlView?.keepScreenOn = false
+        abandonStreamAudioFocus()
         try {
             if (camera?.isOnPreview != true && encoderPrepared) {
                 camera?.startPreview()
             }
         } catch (_: Exception) {
         }
+    }
+
+    private fun pauseStreamInternal() {
+        val cam = camera ?: return
+        if (!cam.isStreaming || streamPaused) return
+        streamPaused = true
+        stopOverlayRefresh()
+        try {
+            cam.disableAudio()
+        } catch (_: Exception) {
+        }
+        try {
+            if (pauseBlackFilter == null) {
+                val filter = BlackFilterRender()
+                pauseBlackFilter = filter
+                cam.glInterface.addFilter(filter)
+            }
+        } catch (_: Exception) {
+        }
+        emit(StreamCaptureService.EVENT_PAUSED, "")
+    }
+
+    private fun resumeStreamInternal() {
+        val cam = camera ?: return
+        if (!cam.isStreaming || !streamPaused) return
+        streamPaused = false
+        removePauseBlackFilter()
+        try {
+            cam.enableAudio()
+        } catch (_: Exception) {
+        }
+        if (overlayUrl.isNotEmpty() && imageFilter != null) {
+            startOverlayRefresh()
+        }
+        emit(StreamCaptureService.EVENT_RESUMED, "")
+    }
+
+    private fun removePauseBlackFilter() {
+        val cam = camera ?: return
+        pauseBlackFilter?.let { filter ->
+            try {
+                cam.glInterface.removeFilter(filter)
+            } catch (_: Exception) {
+            }
+        }
+        pauseBlackFilter = null
     }
 
     private fun releaseCamera() {
@@ -503,14 +662,16 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     private fun startOverlayRefresh() {
+        if (overlayPausedForMemory) return
         stopOverlayRefresh()
+        val interval = overlayRefreshMs
         val runnable = object : Runnable {
             override fun run() {
                 try {
                     captureAndApplyOverlay()
                 } catch (_: Exception) {
                 }
-                mainHandler.postDelayed(this, 500)
+                mainHandler.postDelayed(this, interval)
             }
         }
         overlayRunnable = runnable
@@ -525,7 +686,8 @@ object StreamCameraEngine : ConnectChecker {
     private fun captureAndApplyOverlay() {
         val filter = imageFilter ?: return
         val wFrac = overlayLayout.widthFraction.coerceIn(0.25f, 0.95f)
-        val w = (streamWidth * wFrac).toInt().coerceIn(320, 1920)
+        val rawW = (streamWidth * wFrac).toInt()
+        val w = rawW.coerceIn(160, maxOverlayCaptureWidth.coerceAtMost(1920))
         val h = (streamHeight * overlayLayout.heightFraction).toInt().coerceIn(64, 500)
         val bmp = overlayCapture?.capture(w, h) ?: return
         lastOverlayBitmap?.takeIf { !it.isRecycled }?.recycle()

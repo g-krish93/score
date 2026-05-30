@@ -27,7 +27,9 @@ class CricrelayCameraPlatformView(
             }
         }
 
-        override fun surfaceDestroyed(holder: SurfaceHolder) {}
+        override fun surfaceDestroyed(holder: SurfaceHolder) {
+            StreamCameraEngine.onPreviewSurfaceLost()
+        }
     }
 
     init {

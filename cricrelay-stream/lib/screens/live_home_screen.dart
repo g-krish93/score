@@ -5,6 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_download_card.dart';
+import '../widgets/studio/studio_hero.dart';
+import '../widgets/studio/studio_shell.dart';
 import '../widgets/ui_kit.dart';
 import 'broadcast_screen.dart';
 import 'create_stream_screen.dart';
@@ -231,132 +233,153 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('CricRelay Live'),
-        actions: [
-          IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh_rounded), tooltip: 'Refresh'),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            onSelected: (v) {
-              if (v == 'logout') _logout();
-              if (v == 'advanced') setState(() => _showAdvanced = !_showAdvanced);
-              if (v == 'about') _showAbout();
-            },
-            itemBuilder: (_) => [
-              CheckedPopupMenuItem(
-                value: 'advanced',
-                checked: _showAdvanced,
-                child: const Text('Show club OAuth options'),
-              ),
-              const PopupMenuItem(value: 'about', child: Text('About')),
-              const PopupMenuDivider(),
-              const PopupMenuItem(value: 'logout', child: Text('Sign out')),
-            ],
-          ),
-        ],
-      ),
-      body: _loading && _streams.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _refresh,
-              color: AppColors.primary,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, 100),
-                children: [
-                  const SizedBox(height: AppSpacing.sm),
-                  AppDownloadCard(api: widget.api),
-                  const CrInfoBanner(
-                    title: 'Volunteer streaming',
-                    body:
-                        'Paste the YouTube Studio or Twitch stream key on the broadcast screen (antenna icon). '
-                        'No Google login needed on match day.',
-                    icon: Icons.phonelink_ring_outlined,
-                    accentColor: AppColors.accentGreen,
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  const CrSectionLabel('Your streams'),
-                  if (_error != null) ...[
-                    CrErrorBanner(message: _error!),
-                    const SizedBox(height: AppSpacing.md),
-                  ],
-                  if (_streams.isEmpty && !_loading)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-                      child: Column(
-                        children: [
-                          Icon(Icons.videocam_off_outlined, size: 48, color: AppColors.onBackgroundDim),
-                          const SizedBox(height: AppSpacing.md),
-                          Text('No streams yet', style: appTextTheme.headlineSmall),
-                          const SizedBox(height: AppSpacing.sm),
-                          Text(
-                            'Create a stream linked to Play-Cricket or PCS BLE scoring.',
-                            style: appTextTheme.bodyMedium,
-                            textAlign: TextAlign.center,
+      body: CrStudioBackdrop(
+        child: SafeArea(
+          child: _loading && _streams.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: _refresh,
+                  color: AppColors.accent,
+                  child: CustomScrollView(
+                    slivers: [
+                      SliverAppBar(
+                        floating: true,
+                        snap: true,
+                        title: const Text('CricRelay Live'),
+                        actions: [
+                          IconButton(
+                            onPressed: _refresh,
+                            icon: const Icon(Icons.refresh_rounded),
+                            tooltip: 'Refresh',
                           ),
-                          const SizedBox(height: AppSpacing.lg),
-                          FilledButton.icon(
-                            onPressed: _newStream,
-                            icon: const Icon(Icons.add),
-                            label: const Text('Create stream'),
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert_rounded),
+                            onSelected: (v) {
+                              if (v == 'logout') _logout();
+                              if (v == 'advanced') setState(() => _showAdvanced = !_showAdvanced);
+                              if (v == 'about') _showAbout();
+                            },
+                            itemBuilder: (_) => [
+                              CheckedPopupMenuItem(
+                                value: 'advanced',
+                                checked: _showAdvanced,
+                                child: const Text('Show club OAuth options'),
+                              ),
+                              const PopupMenuItem(value: 'about', child: Text('About')),
+                              const PopupMenuDivider(),
+                              const PopupMenuItem(value: 'logout', child: Text('Sign out')),
+                            ],
                           ),
                         ],
                       ),
-                    ),
-                  for (final m in _streams) ...[
-                    CrStreamTile(
-                      title: m.label,
-                      subtitle: m.isLive ? 'Live now · ${m.slug}' : m.slug,
-                      isLive: m.isLive,
-                      onTap: () => _openStream(m),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                  ],
-                  if (_showAdvanced) ...[
-                    const SizedBox(height: AppSpacing.lg),
-                    const CrSectionLabel('Club accounts (optional)'),
-                    _OAuthCard(
-                      title: 'YouTube',
-                      connected: _youtubeOk,
-                      ok: _youtubeLiveOk,
-                      status: _youtubeOk
-                          ? (_youtubeLiveOk
-                              ? _channelTitle
-                              : '$_channelTitle — live permission missing')
-                          : (_youtubeOauthConfigured
-                              ? 'Not connected'
-                              : 'OAuth not configured on server'),
-                      detail: _youtubeOk && !_youtubeLiveOk ? _youtubeLiveMessage : null,
-                      onConnect: _youtubeOk ? null : _connectYoutube,
-                      onReconnect: _youtubeOk && !_youtubeLiveOk ? () async {
-                        try {
-                          await widget.api.youtubeDisconnect();
-                        } catch (_) {}
-                        if (mounted) await _connectYoutube();
-                      } : null,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    _OAuthCard(
-                      title: 'Twitch',
-                      connected: _twitchOk,
-                      ok: _twitchKeyOk,
-                      status: _twitchOk
-                          ? (_twitchKeyOk
-                              ? _twitchDisplayName
-                              : '$_twitchDisplayName — stream key issue')
-                          : (_twitchOauthConfigured
-                              ? 'Not connected'
-                              : 'OAuth not configured on server'),
-                      detail: _twitchOk && !_twitchKeyOk ? _twitchKeyMessage : null,
-                      onConnect: (!_twitchOk && _twitchOauthConfigured) ? _connectTwitch : null,
-                    ),
-                  ],
-                ],
-              ),
-            ),
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, 100),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate([
+                            const SizedBox(height: AppSpacing.sm),
+                            const CrStudioHero(),
+                            const SizedBox(height: AppSpacing.md),
+                            AppDownloadCard(api: widget.api),
+                            const SizedBox(height: AppSpacing.md),
+                            const CrInfoBanner(
+                              title: 'Volunteer streaming',
+                              body:
+                                  'Paste the YouTube Studio or Twitch stream key on the broadcast screen (Destination). '
+                                  'No Google login needed on match day.',
+                              icon: Icons.phonelink_ring_outlined,
+                              accentColor: AppColors.accentGreen,
+                            ),
+                            const SizedBox(height: AppSpacing.lg),
+                            const CrSectionLabel('Your streams'),
+                            if (_error != null) ...[
+                              CrErrorBanner(message: _error!),
+                              const SizedBox(height: AppSpacing.md),
+                            ],
+                            if (_streams.isEmpty && !_loading)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.videocam_off_outlined, size: 52, color: AppColors.onBackgroundDim),
+                                    const SizedBox(height: AppSpacing.md),
+                                    Text('No streams yet', style: appTextTheme.headlineSmall),
+                                    const SizedBox(height: AppSpacing.sm),
+                                    Text(
+                                      'Create a stream linked to Play-Cricket or PCS BLE scoring.',
+                                      style: appTextTheme.bodyMedium,
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: AppSpacing.lg),
+                                    FilledButton.icon(
+                                      onPressed: _newStream,
+                                      icon: const Icon(Icons.add_rounded),
+                                      label: const Text('Create stream'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            for (final m in _streams) ...[
+                              CrStreamTile(
+                                title: m.label,
+                                subtitle: m.isLive ? 'Live now · ${m.slug}' : m.slug,
+                                isLive: m.isLive,
+                                onTap: () => _openStream(m),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                            ],
+                            if (_showAdvanced) ...[
+                              const SizedBox(height: AppSpacing.lg),
+                              const CrSectionLabel('Club accounts (optional)'),
+                              _OAuthCard(
+                                title: 'YouTube',
+                                connected: _youtubeOk,
+                                ok: _youtubeLiveOk,
+                                status: _youtubeOk
+                                    ? (_youtubeLiveOk
+                                        ? _channelTitle
+                                        : '$_channelTitle — live permission missing')
+                                    : (_youtubeOauthConfigured
+                                        ? 'Not connected'
+                                        : 'OAuth not configured on server'),
+                                detail: _youtubeOk && !_youtubeLiveOk ? _youtubeLiveMessage : null,
+                                onConnect: _youtubeOk ? null : _connectYoutube,
+                                onReconnect: _youtubeOk && !_youtubeLiveOk
+                                    ? () async {
+                                        try {
+                                          await widget.api.youtubeDisconnect();
+                                        } catch (_) {}
+                                        if (mounted) await _connectYoutube();
+                                      }
+                                    : null,
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              _OAuthCard(
+                                title: 'Twitch',
+                                connected: _twitchOk,
+                                ok: _twitchKeyOk,
+                                status: _twitchOk
+                                    ? (_twitchKeyOk
+                                        ? _twitchDisplayName
+                                        : '$_twitchDisplayName — stream key issue')
+                                    : (_twitchOauthConfigured
+                                        ? 'Not connected'
+                                        : 'OAuth not configured on server'),
+                                detail: _twitchOk && !_twitchKeyOk ? _twitchKeyMessage : null,
+                                onConnect: (!_twitchOk && _twitchOauthConfigured) ? _connectTwitch : null,
+                              ),
+                            ],
+                          ]),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      ),
       floatingActionButton: _streams.isNotEmpty
           ? FloatingActionButton.extended(
               onPressed: _newStream,
-              icon: const Icon(Icons.add),
+              icon: const Icon(Icons.add_rounded),
               label: const Text('New stream'),
             )
           : null,
@@ -386,11 +409,11 @@ class _OAuthCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: AppColors.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -18,6 +18,27 @@ What CricRelay Stream tries to guarantee while you are **live**, and what remain
 |---------|--------|
 | **Keep screen on while live** (overlay settings) | When on, display stays on; when off, screen can turn off while RTMP continues |
 | **Steady stream (EIS)** | Enables RootEncoder video stabilization when the device supports it |
+| **Pause broadcast** | Black frame + muted audio while RTMP stays connected (rain delays, innings break) |
+
+## Safe to change while live
+
+These update the stream **without** re-preparing the encoder:
+
+| Control | Notes |
+|---------|--------|
+| **Pause / Resume** | Keeps RTMP connected; viewers see black + silence while paused |
+| **Scoring mode** | Server-side only |
+| **Overlay layout** (when unlocked) | Native `updateOverlay` only — no `prepareVideo` |
+| **Zoom** | Safe on native camera |
+| **Keep screen on / EIS toggles** | EIS cannot be toggled mid-stream (ignored by native layer) |
+
+## Locked while live
+
+| Control | Why |
+|---------|-----|
+| **Stream quality** | Re-preparing video crashes some devices (Pixel 9) |
+| **Destination / stream key** | Would require stopping RTMP |
+| **Orientation** | Encoder dimensions are fixed at Go Live |
 
 ## Best-effort (not guaranteed on all phones)
 

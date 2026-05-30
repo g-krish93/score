@@ -27,6 +27,12 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
 
         @Volatile
         var pipActive: Boolean = false
+
+        @Volatile
+        var pipAspectWidth: Int = 9
+
+        @Volatile
+        var pipAspectHeight: Int = 16
     }
 
     private var pluginActivity: Activity? = null
@@ -144,6 +150,10 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
             "isCaptureSupported" -> result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
             "isCameraReady" -> result.success(StreamCameraEngine.isPreviewReady)
             "prepareCamera" -> {
+                if (StreamCameraEngine.isStreaming) {
+                    result.success(StreamCameraEngine.isPreviewReady)
+                    return
+                }
                 val width = call.argument<Int>("width") ?: 1280
                 val height = call.argument<Int>("height") ?: 720
                 val fps = call.argument<Int>("fps") ?: 30
@@ -153,6 +163,10 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                 result.success(ok)
             }
             "resetCameraOrientation" -> {
+                if (StreamCameraEngine.isStreaming) {
+                    result.success(false)
+                    return
+                }
                 val width = call.argument<Int>("width") ?: 1280
                 val height = call.argument<Int>("height") ?: 720
                 val fps = call.argument<Int>("fps") ?: 30
@@ -242,6 +256,30 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
                 stopStreamServiceSafely(act)
                 pipWhenLive = false
                 unregisterStatusReceiver()
+                result.success(null)
+            }
+            "pauseStream" -> {
+                StreamCameraEngine.pauseStream()
+                result.success(null)
+            }
+            "resumeStream" -> {
+                StreamCameraEngine.resumeStream()
+                result.success(null)
+            }
+            "isStreamPaused" -> result.success(StreamCameraEngine.isStreamPaused)
+            "getDeviceCapabilities" -> {
+                val ctx = appContext ?: pluginActivity?.applicationContext
+                if (ctx == null) {
+                    result.success(emptyMap<String, Any>())
+                } else {
+                    result.success(DeviceCapabilities.toMap(ctx))
+                }
+            }
+            "setPipAspectRatio" -> {
+                val w = call.argument<Int>("width") ?: 9
+                val h = call.argument<Int>("height") ?: 16
+                pipAspectWidth = w.coerceAtLeast(1)
+                pipAspectHeight = h.coerceAtLeast(1)
                 result.success(null)
             }
             else -> result.notImplemented()

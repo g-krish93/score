@@ -182,6 +182,39 @@ class RtmpPlatform {
     await _ch.invokeMethod('stopStream');
   }
 
+  /// Pause live output (black frame + muted audio) without disconnecting RTMP.
+  static Future<void> pauseStream() async {
+    await _ch.invokeMethod('pauseStream');
+  }
+
+  /// Resume after [pauseStream].
+  static Future<void> resumeStream() async {
+    await _ch.invokeMethod('resumeStream');
+  }
+
+  static Future<bool> get isStreamPaused async {
+    try {
+      final v = await _ch.invokeMethod<bool>('isStreamPaused');
+      return v == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> getDeviceCapabilities() async {
+    try {
+      final raw = await _ch.invokeMethod<Map>('getDeviceCapabilities');
+      return Map<String, dynamic>.from(raw ?? {});
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> setPipAspectRatio({required int width, required int height}) async {
+    if (!Platform.isAndroid) return;
+    await _ch.invokeMethod('setPipAspectRatio', {'width': width, 'height': height});
+  }
+
   static Future<void> waitForConnected({
     Duration timeout = const Duration(seconds: 25),
     String timeoutMessage =
@@ -205,8 +238,10 @@ class RtmpPlatform {
       switch (e.event) {
         case 'connected':
           finishOk();
+          break;
         case 'error':
           finishErr(e.message.isNotEmpty ? e.message : 'Stream connection failed');
+          break;
         case 'disconnected':
           break;
       }

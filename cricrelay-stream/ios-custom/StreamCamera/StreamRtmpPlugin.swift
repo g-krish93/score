@@ -40,15 +40,68 @@ public final class StreamRtmpPlugin: NSObject, FlutterPlugin, FlutterStreamHandl
         switch call.method {
         case "isCaptureSupported":
             result(true)
+        case "isCameraReady":
+            result(StreamCameraEngine.shared.isPreviewReady)
         case "prepareCamera":
+            if StreamCameraEngine.shared.isStreaming {
+                result(StreamCameraEngine.shared.isPreviewReady)
+                return
+            }
             let args = call.arguments as? [String: Any]
             let width = args?["width"] as? Int ?? 1280
             let height = args?["height"] as? Int ?? 720
             let fps = args?["fps"] as? Int ?? 30
+            let bitrate = args?["bitrateBps"] as? Int ?? 2_500_000
+            let rotation = args?["rotation"] as? Int ?? 0
             Task {
-                await StreamCameraEngine.shared.preparePreview(width: width, height: height, fps: fps)
-                result(true)
+                await StreamCameraEngine.shared.preparePreview(
+                    width: width,
+                    height: height,
+                    fps: fps,
+                    bitrate: bitrate,
+                    rotation: rotation
+                )
+                result(StreamCameraEngine.shared.isPreviewReady)
             }
+        case "resetCameraOrientation":
+            if StreamCameraEngine.shared.isStreaming {
+                result(false)
+                return
+            }
+            let args = call.arguments as? [String: Any]
+            let width = args?["width"] as? Int ?? 1280
+            let height = args?["height"] as? Int ?? 720
+            let fps = args?["fps"] as? Int ?? 30
+            let bitrate = args?["bitrateBps"] as? Int ?? 2_500_000
+            let rotation = args?["rotation"] as? Int ?? 0
+            Task {
+                let ok = await StreamCameraEngine.shared.resetPreviewForOrientation(
+                    width: width,
+                    height: height,
+                    fps: fps,
+                    bitrate: bitrate,
+                    rotation: rotation
+                )
+                result(ok)
+            }
+        case "setKeepScreenOnDuringStream":
+            let enabled = (call.arguments as? [String: Any])?["enabled"] as? Bool ?? false
+            StreamCameraEngine.shared.setKeepScreenOnDuringStream(enabled: enabled)
+            result(nil)
+        case "setVideoStabilization":
+            let enabled = (call.arguments as? [String: Any])?["enabled"] as? Bool ?? true
+            StreamCameraEngine.shared.setVideoStabilization(enabled: enabled)
+            result(nil)
+        case "getDeviceCapabilities":
+            result([
+                "tier": "high",
+                "lowRam": false,
+                "overlayRefreshMs": 500,
+                "maxOverlayCaptureWidth": 960,
+                "suggestedQuality": "high",
+                "defaultEis": true,
+                "powerSave": ProcessInfo.processInfo.isLowPowerModeEnabled,
+            ])
         case "getZoomRange":
             let range = StreamCameraEngine.shared.zoomRange()
             result(["min": range.min, "max": range.max, "current": range.current])
@@ -60,12 +113,10 @@ public final class StreamRtmpPlugin: NSObject, FlutterPlugin, FlutterStreamHandl
         case "updateOverlay":
             let args = call.arguments as? [String: Any]
             let url = args?["overlayUrl"] as? String ?? ""
-            if !url.isEmpty {
-                StreamCameraEngine.shared.updateOverlay(
-                    url: url,
-                    layout: overlayLayout(from: args)
-                )
-            }
+            StreamCameraEngine.shared.updateOverlay(
+                url: url,
+                layout: overlayLayout(from: args)
+            )
             result(nil)
         case "startStream":
             guard let args = call.arguments as? [String: Any],
@@ -104,6 +155,21 @@ public final class StreamRtmpPlugin: NSObject, FlutterPlugin, FlutterStreamHandl
                 await StreamCameraEngine.shared.stopStream()
                 result(nil)
             }
+        case "pauseStream":
+            Task {
+                await StreamCameraEngine.shared.pauseStream()
+                result(nil)
+            }
+        case "resumeStream":
+            Task {
+                await StreamCameraEngine.shared.resumeStream()
+                result(nil)
+            }
+        case "isStreamPaused":
+            result(StreamCameraEngine.shared.isStreamPaused)
+        case "setPipWhenLive", "setPipAspectRatio", "updateStreamNotification",
+             "showNativePreview", "hideNativePreview", "lockActivityOrientation":
+            result(nil)
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -121,10 +187,16 @@ public final class StreamRtmpPlugin: NSObject, FlutterPlugin, FlutterStreamHandl
 
     private func overlayLayout(from args: [String: Any]?) -> StreamCameraEngine.OverlayLayout {
         let height = Float(args?["overlayHeightFraction"] as? Double ?? 0.22)
+        let width = Float(args?["overlayWidthFraction"] as? Double ?? 0.88)
+        let anchorX = Float(args?["overlayAnchorX"] as? Double ?? 0.5)
+        let anchorY = Float(args?["overlayAnchorY"] as? Double ?? 0.85)
         let bottom = Float(args?["overlayBottomMargin"] as? Double ?? 8.0) / 400
         let inset = Float(args?["overlayHorizontalInset"] as? Double ?? 8.0) / 400
         return StreamCameraEngine.OverlayLayout(
             heightFraction: height,
+            widthFraction: width,
+            anchorX: anchorX,
+            anchorY: anchorY,
             bottomMarginFraction: bottom,
             horizontalInsetFraction: inset
         )

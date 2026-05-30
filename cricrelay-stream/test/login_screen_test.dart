@@ -17,7 +17,7 @@ void main() {
       await tester.pumpWidget(buildLogin(CricRelayApi('https://cricrelay.co.uk')));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Sign in to studio'));
       await tester.pumpAndSettle();
 
       expect(find.text('Enter your club email'), findsOneWidget);
@@ -31,7 +31,7 @@ void main() {
       await tester.enterText(find.byType(TextFormField).at(0), 'http://evil.example.com');
       await tester.enterText(find.byType(TextFormField).at(1), 'volunteer@club.test');
       await tester.enterText(find.byType(TextFormField).at(2), 'secret');
-      await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Sign in to studio'));
       await tester.pumpAndSettle();
 
       expect(find.text('HTTPS required (http only for local dev)'), findsOneWidget);

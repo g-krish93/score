@@ -31,11 +31,11 @@ void main() {
       MaterialApp(home: OnboardingScreen(api: api)),
     );
 
-    await tester.tap(find.text('Next'));
+    await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Next'));
+    await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Get started'));
+    await tester.tap(find.text('Enter studio'));
     await tester.pumpAndSettle();
 
     expect(find.byType(LiveHomeScreen), findsOneWidget);

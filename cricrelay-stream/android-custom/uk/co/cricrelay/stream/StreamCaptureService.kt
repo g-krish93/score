@@ -94,7 +94,11 @@ class StreamCaptureService : Service() {
             packageManager.getLaunchIntentForPackage(packageName),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val body = if (elapsed.isNotEmpty()) "Live · $elapsed" else "Camera stream active"
+        val body = when {
+            elapsed.startsWith("Paused") -> elapsed
+            elapsed.isNotEmpty() -> "Live · $elapsed"
+            else -> "Camera stream active"
+        }
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("CricRelay Live")
             .setContentText(body)
@@ -121,6 +125,9 @@ class StreamCaptureService : Service() {
         const val EVENT_CONNECTED = "connected"
         const val EVENT_ERROR = "error"
         const val EVENT_DISCONNECTED = "disconnected"
+        const val EVENT_PAUSED = "paused"
+        const val EVENT_RESUMED = "resumed"
+        const val EVENT_PREVIEW_READY = "preview_ready"
 
         private const val NOTIF_ID = 4401
 

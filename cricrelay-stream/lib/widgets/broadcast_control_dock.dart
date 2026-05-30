@@ -1,14 +1,19 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
+import 'studio/studio_shell.dart';
 import 'ui_kit.dart';
 
-/// YouTube-style control dock below the camera preview.
+/// Pro broadcast control rail — studio-grade layout below or beside preview.
 class BroadcastControlDock extends StatelessWidget {
   const BroadcastControlDock({
     super.key,
     required this.status,
     required this.live,
+    required this.paused,
     required this.busy,
     required this.camReady,
     required this.qualityLabel,
@@ -25,10 +30,12 @@ class BroadcastControlDock extends StatelessWidget {
     required this.overlayLocked,
     required this.onGoLive,
     required this.onStop,
+    required this.onTogglePause,
   });
 
   final String? status;
   final bool live;
+  final bool paused;
   final bool busy;
   final bool camReady;
   final String qualityLabel;
@@ -45,30 +52,20 @@ class BroadcastControlDock extends StatelessWidget {
   final bool overlayLocked;
   final Future<void> Function() onGoLive;
   final Future<void> Function() onStop;
+  final Future<void> Function() onTogglePause;
 
   Future<void> _confirmStop(BuildContext context) async {
     if (!live) {
       await onStop();
       return;
     }
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showCrConfirmDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('Stop stream?'),
-        content: Text(
-          'This ends the live broadcast. You can go live again after checking your stream key.',
-          style: appTextTheme.bodyMedium,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
-            child: const Text('Stop stream'),
-          ),
-        ],
-      ),
+      title: 'End broadcast?',
+      message:
+          'This stops the live stream immediately. You can go live again after checking your destination and stream key.',
+      confirmLabel: 'Stop stream',
+      destructive: true,
     );
     if (confirmed == true) await onStop();
   }
@@ -76,134 +73,199 @@ class BroadcastControlDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canZoom = camReady && maxZoom > minZoom;
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppSpacing.radiusXl)),
-        border: Border(top: BorderSide(color: AppColors.border)),
-      ),
-      padding: EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.md,
-        AppSpacing.md,
-        AppSpacing.md + MediaQuery.of(context).padding.bottom,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceVariant,
-                borderRadius: BorderRadius.circular(2),
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(AppSpacing.radiusXl)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.surfaceElevated.withValues(alpha: 0.92),
+            border: const Border(top: BorderSide(color: AppColors.glassBorder)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 32,
+                offset: const Offset(0, -8),
               ),
-            ),
-          ),
-          if (status != null && status!.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              status!,
-              textAlign: TextAlign.center,
-              style: appTextTheme.bodySmall,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-          const SizedBox(height: AppSpacing.md),
-          CrGoLiveButton(
-            live: live,
-            busy: busy,
-            enabled: camReady,
-            onGoLive: () => onGoLive(),
-            onStop: () => _confirmStop(context),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              _DockAction(
-                icon: Icons.settings_input_antenna_outlined,
-                label: 'Stream',
-                onTap: onOpenDestination,
-              ),
-              _DockAction(
-                icon: Icons.tune,
-                label: 'Overlay',
-                onTap: overlayLocked ? null : onOpenOverlay,
-              ),
-              _DockAction(
-                icon: overlayLocked ? Icons.lock : Icons.lock_open_outlined,
-                label: overlayLocked ? 'Locked' : 'Lock',
-                onTap: onToggleOverlayLock,
-              ),
-              _DockAction(icon: Icons.scoreboard_outlined, label: 'Score', onTap: onOpenScoring),
-              _DockAction(icon: Icons.hd_outlined, label: qualityLabel, onTap: onOpenQuality),
             ],
           ),
-          if (canZoom) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Row(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.md + bottomInset),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.zoom_out, size: 18, color: AppColors.onBackgroundDim),
-                Expanded(
-                  child: Slider(
-                    value: zoom,
-                    min: minZoom,
-                    max: maxZoom,
-                    onChanged: onZoomChanged,
+                const CrBottomSheetHandle(),
+                if (status != null && status!.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  CrStatusPill(
+                    label: paused ? 'PAUSED' : (live ? 'STREAMING' : 'READY'),
+                    color: paused ? AppColors.warning : (live ? AppColors.live : AppColors.accent),
+                    pulse: live && !paused,
                   ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    status!,
+                    style: appTextTheme.bodySmall?.copyWith(color: AppColors.onBackgroundMuted),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.md),
+                CrGoLiveButton(
+                  live: live,
+                  busy: busy,
+                  enabled: camReady,
+                  onGoLive: () {
+                    HapticFeedback.mediumImpact();
+                    onGoLive();
+                  },
+                  onStop: () {
+                    HapticFeedback.lightImpact();
+                    _confirmStop(context);
+                  },
                 ),
-                const Icon(Icons.zoom_in, size: 18, color: AppColors.onBackgroundDim),
-                Text(
-                  '${zoomDisplay.toStringAsFixed(1)}×',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                if (live) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  SizedBox(
+                    height: 48,
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: busy ? null : () {
+                        HapticFeedback.selectionClick();
+                        onTogglePause();
+                      },
+                      icon: Icon(paused ? Icons.play_arrow_rounded : Icons.pause_rounded),
+                      label: Text(paused ? 'Resume broadcast' : 'Pause broadcast'),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.md),
+                const Text('STUDIO CONTROLS', style: _sectionStyle),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    _StudioControl(
+                      icon: Icons.settings_input_antenna_rounded,
+                      label: 'Destination',
+                      accent: AppColors.accentBlue,
+                      onTap: onOpenDestination,
+                    ),
+                    _StudioControl(
+                      icon: Icons.layers_outlined,
+                      label: 'Overlay',
+                      accent: AppColors.accent,
+                      onTap: overlayLocked ? null : onOpenOverlay,
+                    ),
+                    _StudioControl(
+                      icon: overlayLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                      label: overlayLocked ? 'Locked' : 'Lock',
+                      accent: overlayLocked ? AppColors.warning : AppColors.onBackgroundMuted,
+                      onTap: onToggleOverlayLock,
+                    ),
+                  ],
                 ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    _StudioControl(
+                      icon: Icons.scoreboard_rounded,
+                      label: 'Scoring',
+                      accent: AppColors.accentPurple,
+                      onTap: onOpenScoring,
+                    ),
+                    _StudioControl(
+                      icon: Icons.tune_rounded,
+                      label: qualityLabel,
+                      accent: AppColors.accentGreen,
+                      onTap: onOpenQuality,
+                    ),
+                    const Expanded(child: SizedBox()),
+                  ],
+                ),
+                if (canZoom) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  Row(
+                    children: [
+                      const Icon(Icons.zoom_out_map_rounded, size: 18, color: AppColors.onBackgroundDim),
+                      Expanded(
+                        child: Slider(
+                          value: zoom,
+                          min: minZoom,
+                          max: maxZoom,
+                          onChanged: onZoomChanged,
+                        ),
+                      ),
+                      Text(
+                        '${zoomDisplay.toStringAsFixed(1)}×',
+                        style: metricStyle(size: 13, color: AppColors.accent),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
-          ],
-        ],
+          ),
+        ),
       ),
     );
   }
 }
 
-class _DockAction extends StatelessWidget {
-  const _DockAction({
+const _sectionStyle = TextStyle(
+  fontSize: 10,
+  fontWeight: FontWeight.w800,
+  letterSpacing: 1.4,
+  color: AppColors.onBackgroundDim,
+);
+
+class _StudioControl extends StatelessWidget {
+  const _StudioControl({
     required this.icon,
     required this.label,
+    required this.accent,
     this.onTap,
   });
 
   final IconData icon;
   final String label;
+  final Color accent;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
     return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            children: [
-              Icon(icon, size: 22, color: onTap == null ? AppColors.onBackgroundDim : AppColors.onBackground),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
-                  color: onTap == null ? AppColors.onBackgroundDim : AppColors.onBackgroundMuted,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Material(
+          color: enabled ? AppColors.surfaceVariant.withValues(alpha: 0.55) : AppColors.surfaceVariant.withValues(alpha: 0.25),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+          child: InkWell(
+            onTap: enabled ? onTap : null,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+              child: Column(
+                children: [
+                  Icon(icon, size: 24, color: enabled ? accent : AppColors.onBackgroundDim),
+                  const SizedBox(height: 6),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: enabled ? AppColors.onBackgroundMuted : AppColors.onBackgroundDim,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

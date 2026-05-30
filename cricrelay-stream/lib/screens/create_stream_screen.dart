@@ -69,7 +69,7 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
       );
       await _createAndOpen(m);
     } catch (e) {
-      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -89,7 +89,7 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
       );
       await _createAndOpen(m);
     } catch (e) {
-      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -106,7 +106,7 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
       final m = await widget.api.createPcsBleStream(label: label);
       await _createAndOpen(m);
     } catch (e) {
-      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

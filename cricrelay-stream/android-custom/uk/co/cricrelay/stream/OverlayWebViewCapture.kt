@@ -5,6 +5,7 @@ import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -34,7 +35,11 @@ class OverlayWebViewCapture(private val activity: Activity) {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 setBackgroundColor(Color.TRANSPARENT)
-                setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                } else {
+                    setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+                }
             }.also { webView = it }
         } catch (_: Exception) {
             null

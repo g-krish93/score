@@ -46,8 +46,8 @@ void main() {
         ),
       );
 
-      expect(find.textContaining('Starting'), findsOneWidget);
-      await tester.tap(find.textContaining('Starting'), warnIfMissed: false);
+      expect(find.textContaining('Going live'), findsOneWidget);
+      await tester.tap(find.textContaining('Going live'), warnIfMissed: false);
       await tester.pump();
       expect(tapped, isFalse);
     });

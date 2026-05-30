@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api.dart';
 import '../theme/app_theme.dart';
+import '../widgets/studio/studio_shell.dart';
 import 'live_home_screen.dart';
 
 const kOnboardingCompleteKey = 'stream_onboarding_complete_v1';
@@ -34,22 +35,25 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   static const _steps = [
     _OnboardingStep(
-      icon: Icons.settings_input_antenna,
+      icon: Icons.settings_input_antenna_rounded,
       title: 'Paste your stream key',
       body:
-          'On the broadcast screen, tap the antenna icon and paste the RTMP URL and key from YouTube Studio or Twitch. No Google login needed on match day.',
+          'On the broadcast screen, tap Destination and paste the RTMP URL and key from YouTube Studio or Twitch. No Google login needed on match day.',
+      accent: AppColors.accentBlue,
     ),
     _OnboardingStep(
-      icon: Icons.lock_outline,
-      title: 'Lock the scoreboard overlay',
+      icon: Icons.layers_outlined,
+      title: 'Position & lock overlay',
       body:
-          'Adjust overlay size if needed, then lock it so preview touches do not move the scoreboard while you film.',
+          'Drag the scoreboard to the right spot, resize if needed, then lock it so touches do not move it while you film.',
+      accent: AppColors.accent,
     ),
     _OnboardingStep(
-      icon: Icons.sensors,
+      icon: Icons.sensors_rounded,
       title: 'Go live when ready',
       body:
-          'Wait for the camera preview, run the pre-flight checklist, then tap Go Live. Keep the phone plugged in and on a stable connection.',
+          'Wait for the camera preview, run the pre-flight checklist, then tap Go Live. Keep the phone plugged in on a stable connection.',
+      accent: AppColors.primary,
     ),
   ];
 
@@ -74,8 +78,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void _next() {
     if (_page < _steps.length - 1) {
       _pageCtrl.nextPage(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
+        duration: AppMotion.normal,
+        curve: AppMotion.curve,
       );
       return;
     }
@@ -85,53 +89,56 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: _finishing ? null : _finish,
-                child: const Text('Skip'),
+      body: CrStudioBackdrop(
+        child: SafeArea(
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _finishing ? null : _finish,
+                  child: const Text('Skip'),
+                ),
               ),
-            ),
-            Expanded(
-              child: PageView.builder(
-                controller: _pageCtrl,
-                itemCount: _steps.length,
-                onPageChanged: (i) => setState(() => _page = i),
-                itemBuilder: (_, i) => _StepPage(step: _steps[i]),
+              Expanded(
+                child: PageView.builder(
+                  controller: _pageCtrl,
+                  itemCount: _steps.length,
+                  onPageChanged: (i) => setState(() => _page = i),
+                  itemBuilder: (_, i) => _StepPage(step: _steps[i], index: i + 1, total: _steps.length),
+                ),
               ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                _steps.length,
-                (i) => Container(
-                  width: 8,
-                  height: 8,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: i == _page ? AppColors.primary : AppColors.surfaceVariant,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  _steps.length,
+                  (i) => AnimatedContainer(
+                    duration: AppMotion.fast,
+                    curve: AppMotion.curve,
+                    width: i == _page ? 24 : 8,
+                    height: 8,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                      color: i == _page ? AppColors.primary : AppColors.surfaceVariant,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: FilledButton(
-                  onPressed: _finishing ? null : _next,
-                  child: Text(_page == _steps.length - 1 ? 'Get started' : 'Next'),
+              const SizedBox(height: AppSpacing.lg),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: FilledButton(
+                    onPressed: _finishing ? null : _next,
+                    child: Text(_page == _steps.length - 1 ? 'Enter studio' : 'Continue'),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -143,17 +150,21 @@ class _OnboardingStep {
     required this.icon,
     required this.title,
     required this.body,
+    required this.accent,
   });
 
   final IconData icon;
   final String title;
   final String body;
+  final Color accent;
 }
 
 class _StepPage extends StatelessWidget {
-  const _StepPage({required this.step});
+  const _StepPage({required this.step, required this.index, required this.total});
 
   final _OnboardingStep step;
+  final int index;
+  final int total;
 
   @override
   Widget build(BuildContext context) {
@@ -162,15 +173,20 @@ class _StepPage extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 88,
-            height: 88,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.border),
+          Text(
+            'STEP $index OF $total',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.4,
+              color: AppColors.onBackgroundDim,
             ),
-            child: Icon(step.icon, size: 44, color: AppColors.accentGreen),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          CrGlassPanel(
+            padding: const EdgeInsets.all(28),
+            borderRadius: AppSpacing.radiusXl,
+            child: Icon(step.icon, size: 52, color: step.accent),
           ),
           const SizedBox(height: AppSpacing.xl),
           Text(step.title, style: appTextTheme.headlineSmall, textAlign: TextAlign.center),

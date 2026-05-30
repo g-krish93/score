@@ -115,6 +115,38 @@ bash cricrelay-stream/scripts/ci_validate.sh
 
 ---
 
+### 8. Slider missing `value:` (compile / runtime)
+
+**Symptom:** `flutter analyze` error on `Slider` without required `value` parameter.
+
+**Fix:** Every `Slider` must bind `value:` to state (see `overlay_layout_sheet.dart` width slider).
+
+---
+
+### 9. Missing imports after refactor
+
+**Symptom:** `Undefined name 'Permission'` or `CrGlassPanel` not found.
+
+**Fix:** Keep `permission_handler` import in `broadcast_screen.dart`; keep `studio_shell.dart` import where `CrGlassPanel` is used.
+
+---
+
+### 10. Wrong relative imports under `lib/widgets/studio/`
+
+**Symptom:** `flutter analyze` — target of URI doesn't exist for `../theme/app_theme.dart` from `studio_hero.dart`.
+
+**Fix:** From `lib/widgets/studio/`, use `../../theme/app_theme.dart`, `../ui_kit.dart`, and `studio_shell.dart` (same folder).
+
+---
+
+### 11. Switch cases without `break` (Dart 3)
+
+**Symptom:** Analyzer error in `rtmp_platform.dart` `waitForConnected` event switch.
+
+**Fix:** Add explicit `break;` after each non-empty case body.
+
+---
+
 ## Agent / developer checklist before push
 
 - [ ] `flutter analyze lib` — zero issues

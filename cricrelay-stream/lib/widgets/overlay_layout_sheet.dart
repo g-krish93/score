@@ -89,9 +89,11 @@ class _OverlayLayoutEditorState extends State<_OverlayLayoutEditor> {
                   style: appTextTheme.labelLarge,
                 ),
                 Slider(
+                  value: _p.widthFraction,
                   min: 0.25,
                   max: 0.95,
                   divisions: 14,
+                  label: '${(_p.widthFraction * 100).round()}%',
                   onChanged: (v) => setState(() => _p = _p.copyWith(widthFraction: v)),
                 ),
                 const SizedBox(height: AppSpacing.sm),

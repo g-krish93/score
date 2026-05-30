@@ -58,13 +58,41 @@ Future<T?> showCrBottomSheet<T>({
   return showModalBottomSheet<T>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppColors.surface,
+    backgroundColor: AppColors.surfaceElevated,
+    barrierColor: Colors.black54,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppSpacing.radiusXl)),
     ),
     builder: (ctx) => Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
       child: child,
+    ),
+  );
+}
+
+Future<bool?> showCrConfirmDialog({
+  required BuildContext context,
+  required String title,
+  required String message,
+  String cancelLabel = 'Cancel',
+  String confirmLabel = 'Confirm',
+  bool destructive = false,
+}) {
+  return showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title),
+      content: Text(message, style: appTextTheme.bodyMedium),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(cancelLabel)),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          style: destructive
+              ? FilledButton.styleFrom(backgroundColor: AppColors.error)
+              : null,
+          child: Text(confirmLabel),
+        ),
+      ],
     ),
   );
 }
@@ -200,23 +228,44 @@ class CrStreamTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        child: Container(
+        child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-            border: Border.all(color: AppColors.border, width: 0.5),
+            border: Border.all(
+              color: isLive ? AppColors.live.withValues(alpha: 0.35) : AppColors.borderSubtle,
+            ),
+            gradient: isLive
+                ? LinearGradient(
+                    colors: [
+                      AppColors.live.withValues(alpha: 0.08),
+                      AppColors.surface,
+                    ],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  )
+                : null,
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           child: Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 52,
+                height: 52,
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
+                  gradient: LinearGradient(
+                    colors: isLive
+                        ? [AppColors.live.withValues(alpha: 0.25), AppColors.primaryMuted.withValues(alpha: 0.15)]
+                        : [AppColors.surfaceVariant, AppColors.surfaceElevated],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                   borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  border: Border.all(
+                    color: isLive ? AppColors.live.withValues(alpha: 0.4) : AppColors.borderSubtle,
+                  ),
                 ),
                 child: Icon(
-                  isLive ? Icons.sensors : Icons.play_circle_outline,
+                  isLive ? Icons.sensors : Icons.play_circle_outline_rounded,
                   color: isLive ? AppColors.live : AppColors.onBackgroundMuted,
                   size: 28,
                 ),
@@ -226,18 +275,34 @@ class CrStreamTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        if (isLive) ...[
+                          Container(
+                            width: 7,
+                            height: 7,
+                            margin: const EdgeInsets.only(right: 6),
+                            decoration: const BoxDecoration(color: AppColors.live, shape: BoxShape.circle),
+                          ),
+                          Text('LIVE', style: metricStyle(size: 10, color: AppColors.live)),
+                          const SizedBox(width: 8),
+                        ],
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: -0.2),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(subtitle, style: appTextTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: AppColors.onBackgroundDim),
+              const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: AppColors.onBackgroundDim),
             ],
           ),
         ),
@@ -266,44 +331,75 @@ class CrGoLiveButton extends StatelessWidget {
   Widget build(BuildContext context) {
     if (live) {
       return SizedBox(
-        height: 52,
+        height: 56,
         width: double.infinity,
-        child: FilledButton(
-          onPressed: busy ? null : onStop,
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.surfaceVariant,
-            foregroundColor: AppColors.onBackground,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: const BoxDecoration(color: AppColors.live, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 10),
-              const Text('Stop stream', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            border: Border.all(color: AppColors.live.withValues(alpha: 0.5)),
+            boxShadow: [
+              BoxShadow(color: AppColors.live.withValues(alpha: 0.2), blurRadius: 16, offset: const Offset(0, 4)),
             ],
+          ),
+          child: FilledButton(
+            onPressed: busy ? null : onStop,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.surfaceVariant,
+              foregroundColor: AppColors.onBackground,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSpacing.radiusMd)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(color: AppColors.live, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 10),
+                const Text('Stop broadcast', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, letterSpacing: 0.3)),
+              ],
+            ),
           ),
         ),
       );
     }
     return SizedBox(
-      height: 52,
+      height: 56,
       width: double.infinity,
-      child: FilledButton.icon(
-        onPressed: (busy || !enabled) ? null : onGoLive,
-        icon: busy
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-              )
-            : const Icon(Icons.sensors, size: 22),
-        label: Text(
-          busy ? 'Starting…' : 'Go live',
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+          gradient: enabled && !busy
+              ? const LinearGradient(
+                  colors: [Color(0xFFFF4D57), Color(0xFFE8232E)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: enabled && !busy ? null : AppColors.surfaceVariant,
+          boxShadow: enabled && !busy
+              ? [BoxShadow(color: AppColors.primaryGlow, blurRadius: 20, offset: const Offset(0, 6))]
+              : null,
+        ),
+        child: FilledButton.icon(
+          onPressed: (busy || !enabled) ? null : onGoLive,
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSpacing.radiusMd)),
+          ),
+          icon: busy
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                )
+              : const Icon(Icons.sensors_rounded, size: 24),
+          label: Text(
+            busy ? 'Going live…' : 'Go live',
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17, letterSpacing: 0.4),
+          ),
         ),
       ),
     );
@@ -311,10 +407,11 @@ class CrGoLiveButton extends StatelessWidget {
 }
 
 class CrLiveTimerBadge extends StatefulWidget {
-  const CrLiveTimerBadge({super.key, this.startedAt, this.onTick});
+  const CrLiveTimerBadge({super.key, this.startedAt, this.onTick, this.paused = false});
 
   final DateTime? startedAt;
   final ValueChanged<Duration>? onTick;
+  final bool paused;
 
   @override
   State<CrLiveTimerBadge> createState() => _CrLiveTimerBadgeState();
@@ -334,7 +431,7 @@ class _CrLiveTimerBadgeState extends State<CrLiveTimerBadge> {
   @override
   void didUpdateWidget(covariant CrLiveTimerBadge oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.startedAt != widget.startedAt) {
+    if (oldWidget.startedAt != widget.startedAt || oldWidget.paused != widget.paused) {
       _syncElapsed();
     }
   }
@@ -342,6 +439,7 @@ class _CrLiveTimerBadgeState extends State<CrLiveTimerBadge> {
   void _syncElapsed() {
     final start = widget.startedAt;
     if (start == null) return;
+    if (widget.paused) return;
     final next = DateTime.now().difference(start);
     if (!mounted) return;
     setState(() => _elapsed = next);
@@ -365,22 +463,22 @@ class _CrLiveTimerBadgeState extends State<CrLiveTimerBadge> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.live,
-        borderRadius: BorderRadius.circular(4),
+        gradient: const LinearGradient(colors: [Color(0xFFFF4D57), Color(0xFFCC2F38)]),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
         boxShadow: [
-          BoxShadow(color: AppColors.live.withValues(alpha: 0.4), blurRadius: 8),
+          BoxShadow(color: AppColors.live.withValues(alpha: 0.45), blurRadius: 12, offset: const Offset(0, 2)),
         ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.circle, size: 8, color: Colors.white),
+          const Icon(Icons.fiber_manual_record_rounded, size: 10, color: Colors.white),
           const SizedBox(width: 6),
           Text(
-            'LIVE · ${_format(_elapsed)}',
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 0.5),
+            widget.paused ? 'PAUSED ${_format(_elapsed)}' : 'LIVE ${_format(_elapsed)}',
+            style: metricStyle(size: 12, color: Colors.white, weight: FontWeight.w800),
           ),
         ],
       ),
@@ -409,17 +507,24 @@ class CrBootstrapLoading extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 64,
-              height: 64,
+              width: 72,
+              height: 72,
               decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
+                gradient: LinearGradient(
+                  colors: [AppColors.primary.withValues(alpha: 0.2), AppColors.accent.withValues(alpha: 0.1)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.glassBorder),
               ),
-              child: const Icon(Icons.sensors, color: AppColors.primary, size: 36),
+              child: const Icon(Icons.sensors_rounded, color: AppColors.primary, size: 38),
             ),
-            const SizedBox(height: 20),
-            const Text('CricRelay Live', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
+            Text('CricRelay Live', style: appTextTheme.headlineSmall),
+            const SizedBox(height: 8),
+            Text('Loading studio…', style: appTextTheme.bodySmall),
+            const SizedBox(height: 24),
             const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.5)),
           ],
         ),

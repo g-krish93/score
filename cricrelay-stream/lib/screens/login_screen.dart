@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/api.dart';
 import '../theme/app_theme.dart';
 import '../utils/url_validator.dart';
+import '../widgets/studio/studio_shell.dart';
 import '../widgets/ui_kit.dart';
 import '../navigation/app_entry.dart';
 
@@ -83,125 +84,122 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const SizedBox(height: AppSpacing.lg),
-                    Center(
-                      child: Container(
-                        width: 72,
-                        height: 72,
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: const Icon(Icons.sensors, color: AppColors.primary, size: 40),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    Text('CricRelay Live', style: appTextTheme.headlineLarge, textAlign: TextAlign.center),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      'Professional cricket streaming with a live scoreboard on your broadcast.',
-                      style: appTextTheme.bodyMedium,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    TextFormField(
-                      controller: _baseCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Club server',
-                        hintText: 'https://cricrelay.co.uk',
-                        prefixIcon: Icon(Icons.cloud_outlined),
-                      ),
-                      autocorrect: false,
-                      keyboardType: TextInputType.url,
-                      validator: (v) {
-                        final s = (v ?? '').trim();
-                        if (s.isEmpty) return 'Enter your server URL';
-                        if (!isAllowedApiBaseUrl(normalizeApiBaseUrl(s))) {
-                          return 'HTTPS required (http only for local dev)';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    TextFormField(
-                      controller: _emailCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: Icon(Icons.email_outlined),
-                      ),
-                      keyboardType: TextInputType.emailAddress,
-                      autocorrect: false,
-                      validator: (v) =>
-                          (v ?? '').trim().isEmpty ? 'Enter your club email' : null,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    TextFormField(
-                      controller: _passCtrl,
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: IconButton(
-                          icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
-                          onPressed: () => setState(() => _obscure = !_obscure),
+      body: CrStudioBackdrop(
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: AppSpacing.xl),
+                      Center(
+                        child: CrGlassPanel(
+                          padding: const EdgeInsets.all(20),
+                          borderRadius: AppSpacing.radiusLg,
+                          child: const Icon(Icons.sensors_rounded, color: AppColors.primary, size: 44),
                         ),
                       ),
-                      obscureText: _obscure,
-                      validator: (v) => (v ?? '').isEmpty ? 'Enter your password' : null,
-                      onFieldSubmitted: (_) => _busy ? null : _login(),
-                    ),
-                    if (_error != null) ...[
+                      const SizedBox(height: AppSpacing.lg),
+                      Text('CricRelay Live', style: appTextTheme.headlineLarge, textAlign: TextAlign.center),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        'Professional cricket streaming with a live scoreboard burned into your broadcast.',
+                        style: appTextTheme.bodyMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+                      TextFormField(
+                        controller: _baseCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Club server',
+                          hintText: 'https://cricrelay.co.uk',
+                          prefixIcon: Icon(Icons.cloud_outlined),
+                        ),
+                        autocorrect: false,
+                        keyboardType: TextInputType.url,
+                        validator: (v) {
+                          final s = (v ?? '').trim();
+                          if (s.isEmpty) return 'Enter your server URL';
+                          if (!isAllowedApiBaseUrl(normalizeApiBaseUrl(s))) {
+                            return 'HTTPS required (http only for local dev)';
+                          }
+                          return null;
+                        },
+                      ),
                       const SizedBox(height: AppSpacing.md),
-                      CrErrorBanner(message: _error!),
-                    ],
-                    const SizedBox(height: AppSpacing.lg),
-                    SizedBox(
-                      height: 48,
-                      child: FilledButton(
-                        onPressed: _busy ? null : _login,
-                        child: _busy
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Text('Sign in'),
+                      TextFormField(
+                        controller: _emailCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Email',
+                          prefixIcon: Icon(Icons.email_outlined),
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                        autocorrect: false,
+                        validator: (v) =>
+                            (v ?? '').trim().isEmpty ? 'Enter your club email' : null,
                       ),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    Text(
-                      'New club? Register at cricrelay.co.uk, then sign in with the same email and password.',
-                      style: appTextTheme.bodySmall,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        TextButton(
-                          onPressed: _busy ? null : () => _openLegal('/privacy'),
-                          child: const Text('Privacy Policy'),
+                      const SizedBox(height: AppSpacing.md),
+                      TextFormField(
+                        controller: _passCtrl,
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
+                            onPressed: () => setState(() => _obscure = !_obscure),
+                          ),
                         ),
-                        Text('·', style: appTextTheme.bodySmall),
-                        TextButton(
-                          onPressed: _busy ? null : () => _openLegal('/terms'),
-                          child: const Text('Terms of Service'),
-                        ),
+                        obscureText: _obscure,
+                        validator: (v) => (v ?? '').isEmpty ? 'Enter your password' : null,
+                        onFieldSubmitted: (_) => _busy ? null : _login(),
+                      ),
+                      if (_error != null) ...[
+                        const SizedBox(height: AppSpacing.md),
+                        CrErrorBanner(message: _error!),
                       ],
-                    ),
-                  ],
+                      const SizedBox(height: AppSpacing.lg),
+                      SizedBox(
+                        height: 52,
+                        child: FilledButton(
+                          onPressed: _busy ? null : _login,
+                          child: _busy
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Text('Sign in to studio'),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      Text(
+                        'New club? Register at cricrelay.co.uk, then sign in with the same email and password.',
+                        style: appTextTheme.bodySmall,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          TextButton(
+                            onPressed: _busy ? null : () => _openLegal('/privacy'),
+                            child: const Text('Privacy Policy'),
+                          ),
+                          Text('·', style: appTextTheme.bodySmall),
+                          TextButton(
+                            onPressed: _busy ? null : () => _openLegal('/terms'),
+                            child: const Text('Terms of Service'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

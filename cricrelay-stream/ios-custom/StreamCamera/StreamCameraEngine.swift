@@ -10,6 +10,9 @@ final class StreamCameraEngine: NSObject {
 
     struct OverlayLayout {
         var heightFraction: Float = 0.22
+        var widthFraction: Float = 0.88
+        var anchorX: Float = 0.5
+        var anchorY: Float = 0.85
         var bottomMarginFraction: Float = 0.02
         var horizontalInsetFraction: Float = 0.02
     }
@@ -28,12 +31,30 @@ final class StreamCameraEngine: NSObject {
     private var streamBitrate = 2_500_000
     private var devicesAttached = false
     private var publishing = false
+    private var streamPaused = false
+    private var previewReady = false
+    private var keepScreenOnDuringStream = false
+    private var videoStabilizationEnabled = true
+    private var streamRotation = 0
     private var statusHandler: ((String, String) -> Void)?
 
     var isViewAttached: Bool { hkView != nil }
 
+    var isPreviewReady: Bool { isViewAttached && devicesAttached && previewReady }
+
+    var isStreaming: Bool { publishing }
+
     func setStatusHandler(_ handler: ((String, String) -> Void)?) {
         statusHandler = handler
+    }
+
+    func setKeepScreenOnDuringStream(enabled: Bool) {
+        keepScreenOnDuringStream = enabled
+        UIApplication.shared.isIdleTimerDisabled = enabled && publishing
+    }
+
+    func setVideoStabilization(enabled: Bool) {
+        videoStabilizationEnabled = enabled
     }
 
     func attachView(_ view: MTHKView) {
@@ -54,12 +75,16 @@ final class StreamCameraEngine: NSObject {
     func detachView(_ view: MTHKView) {
         if hkView === view {
             hkView = nil
+            previewReady = false
         }
     }
 
-    func preparePreview(width: Int, height: Int, fps: Int) async {
+    func preparePreview(width: Int, height: Int, fps: Int, bitrate: Int? = nil, rotation: Int = 0) async {
         streamWidth = width
         streamHeight = height
+        streamRotation = rotation
+        if let bitrate { streamBitrate = bitrate }
+        previewReady = false
         do {
             try await ensureDevices()
             let stream = await ensureStream()
@@ -74,9 +99,18 @@ final class StreamCameraEngine: NSObject {
             if !overlayUrl.isEmpty {
                 overlayCapture?.loadUrl(overlayUrl)
             }
+            previewReady = true
+            emit("preview_ready", "\(width)x\(height)")
         } catch {
+            previewReady = false
             emit("error", error.localizedDescription)
         }
+    }
+
+    func resetPreviewForOrientation(width: Int, height: Int, fps: Int, bitrate: Int, rotation: Int = 0) async -> Bool {
+        guard !publishing else { return false }
+        await preparePreview(width: width, height: height, fps: fps, bitrate: bitrate, rotation: rotation)
+        return isPreviewReady
     }
 
     func updateOverlay(url: String, layout: OverlayLayout) {
@@ -136,6 +170,9 @@ final class StreamCameraEngine: NSObject {
             try await connection.connect(base)
             try await stream.publish(name)
             publishing = true
+            if keepScreenOnDuringStream {
+                UIApplication.shared.isIdleTimerDisabled = true
+            }
             emit("connected", "")
         } catch {
             publishing = false
@@ -146,11 +183,31 @@ final class StreamCameraEngine: NSObject {
     func stopStream() async {
         stopOverlayRefresh()
         publishing = false
+        streamPaused = false
+        UIApplication.shared.isIdleTimerDisabled = false
         if let stream = rtmpStream {
             try? await stream.close()
         }
         try? await connection.close()
     }
+
+    func pauseStream() async {
+        guard publishing, !streamPaused else { return }
+        streamPaused = true
+        stopOverlayRefresh()
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        emit("paused", "")
+    }
+
+    func resumeStream() async {
+        guard publishing, streamPaused else { return }
+        streamPaused = false
+        configureAudioSession()
+        startOverlayRefresh()
+        emit("resumed", "")
+    }
+
+    var isStreamPaused: Bool { streamPaused && publishing }
 
     func setZoom(level: Float) {
         Task {
@@ -236,8 +293,17 @@ final class StreamCameraEngine: NSObject {
     @ScreenActor
     private func applyOverlayLayout() {
         guard let obj = overlayObject else { return }
-        let bottom = CGFloat(overlayLayout.bottomMarginFraction * 400)
-        obj.layoutMargin = UIEdgeInsets(top: 0, left: 0, bottom: bottom, right: 0)
+        let streamH = CGFloat(streamHeight)
+        let overlayH = streamH * CGFloat(overlayLayout.heightFraction)
+        let bottomFromAnchor = streamH * (1 - CGFloat(overlayLayout.anchorY)) - overlayH / 2
+        obj.layoutMargin = UIEdgeInsets(top: 0, left: 0, bottom: max(0, bottomFromAnchor), right: 0)
+        if overlayLayout.anchorX < 0.45 {
+            obj.horizontalAlignment = .left
+        } else if overlayLayout.anchorX > 0.55 {
+            obj.horizontalAlignment = .right
+        } else {
+            obj.horizontalAlignment = .center
+        }
     }
 
     private func startOverlayRefresh() {
@@ -256,8 +322,8 @@ final class StreamCameraEngine: NSObject {
     }
 
     private func refreshOverlayFrame() {
-        let inset = overlayLayout.horizontalInsetFraction
-        let w = Int(Float(streamWidth) * (1 - inset * 2))
+        let wFrac = overlayLayout.widthFraction
+        let w = Int(Float(streamWidth) * wFrac)
         let h = Int(Float(streamHeight) * overlayLayout.heightFraction)
         guard let image = overlayCapture?.capture(width: max(w, 320), height: max(h, 64)),
               let cg = image.cgImage else { return }

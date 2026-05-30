@@ -6,6 +6,7 @@ import '../models/overlay_layout_prefs.dart';
 import '../theme/app_theme.dart';
 
 /// Draggable + corner-resizable scoreboard frame on the camera preview.
+/// Uses local state while dragging so the parent broadcast screen does not rebuild every pixel.
 class DraggableOverlayFrame extends StatefulWidget {
   const DraggableOverlayFrame({
     super.key,
@@ -25,19 +26,40 @@ class DraggableOverlayFrame extends StatefulWidget {
 }
 
 class _DraggableOverlayFrameState extends State<DraggableOverlayFrame> {
-  Timer? _throttle;
+  late OverlayLayoutPrefs _local;
+  Timer? _syncDebounce;
 
-  void _emit(OverlayLayoutPrefs next) {
-    widget.onChanged(next);
-    _throttle?.cancel();
-    _throttle = Timer(const Duration(milliseconds: 200), () {
+  @override
+  void initState() {
+    super.initState();
+    _local = widget.prefs;
+  }
+
+  @override
+  void didUpdateWidget(covariant DraggableOverlayFrame oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.prefs != oldWidget.prefs) {
+      _local = widget.prefs;
+    }
+  }
+
+  void _updateLocal(OverlayLayoutPrefs next, {bool persist = false}) {
+    setState(() => _local = next);
+    if (persist) {
+      widget.onChanged(next);
+      widget.onDragEnd?.call();
+      return;
+    }
+    _syncDebounce?.cancel();
+    _syncDebounce = Timer(const Duration(milliseconds: 250), () {
+      widget.onChanged(next);
       widget.onDragEnd?.call();
     });
   }
 
   @override
   void dispose() {
-    _throttle?.cancel();
+    _syncDebounce?.cancel();
     super.dispose();
   }
 
@@ -49,12 +71,12 @@ class _DraggableOverlayFrameState extends State<DraggableOverlayFrame> {
         final maxH = constraints.maxHeight;
         if (maxW < 64 || maxH < 64) return const SizedBox.shrink();
 
-        final w = (maxW * widget.prefs.widthFraction).clamp(80.0, maxW);
-        final h = (maxH * widget.prefs.heightFraction).clamp(48.0, maxH * 0.55);
-        final left = (widget.prefs.anchorX * maxW - w / 2).clamp(0.0, maxW - w);
-        final top = (widget.prefs.anchorY * maxH - h / 2).clamp(0.0, maxH - h);
+        final w = (maxW * _local.widthFraction).clamp(80.0, maxW);
+        final h = (maxH * _local.heightFraction).clamp(48.0, maxH * 0.55);
+        final left = (_local.anchorX * maxW - w / 2).clamp(0.0, maxW - w);
+        final top = (_local.anchorY * maxH - h / 2).clamp(0.0, maxH - h);
 
-        final borderColor = widget.locked ? Colors.white24 : AppColors.accentGreen;
+        final borderColor = widget.locked ? AppColors.overlayFrameLocked : AppColors.overlayFrame;
 
         Widget frame = DecoratedBox(
           decoration: BoxDecoration(
@@ -71,10 +93,15 @@ class _DraggableOverlayFrameState extends State<DraggableOverlayFrame> {
 
         if (!widget.locked) {
           frame = GestureDetector(
+            onPanEnd: (_) {
+              _syncDebounce?.cancel();
+              widget.onChanged(_local);
+              widget.onDragEnd?.call();
+            },
             onPanUpdate: (d) {
               final nx = ((left + w / 2 + d.delta.dx) / maxW).clamp(0.05, 0.95);
               final ny = ((top + h / 2 + d.delta.dy) / maxH).clamp(0.05, 0.95);
-              _emit(widget.prefs.copyWith(anchorX: nx, anchorY: ny));
+              _updateLocal(_local.copyWith(anchorX: nx, anchorY: ny));
             },
             child: frame,
           );
@@ -89,11 +116,16 @@ class _DraggableOverlayFrameState extends State<DraggableOverlayFrame> {
                 left: left + w - 14,
                 top: top + h - 14,
                 child: GestureDetector(
+                  onPanEnd: (_) {
+                    _syncDebounce?.cancel();
+                    widget.onChanged(_local);
+                    widget.onDragEnd?.call();
+                  },
                   onPanUpdate: (d) {
                     final nw = (w + d.delta.dx).clamp(80.0, maxW * 0.95);
                     final nh = (h + d.delta.dy).clamp(48.0, maxH * 0.55);
-                    _emit(
-                      widget.prefs.copyWith(
+                    _updateLocal(
+                      _local.copyWith(
                         widthFraction: (nw / maxW).clamp(0.25, 0.95),
                         heightFraction: (nh / maxH).clamp(0.12, 0.45),
                       ),
