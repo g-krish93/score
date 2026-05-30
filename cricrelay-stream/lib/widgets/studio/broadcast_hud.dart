@@ -13,6 +13,7 @@ class BroadcastPreviewHud extends StatelessWidget {
     required this.orientationLabel,
     this.stabilizationOn = true,
     this.focusLocked = false,
+    this.scorerLabel,
     this.zoomLabel,
     this.liveTimer,
   });
@@ -23,6 +24,7 @@ class BroadcastPreviewHud extends StatelessWidget {
   final String orientationLabel;
   final bool stabilizationOn;
   final bool focusLocked;
+  final String? scorerLabel;
   final String? zoomLabel;
   final Widget? liveTimer;
 
@@ -53,6 +55,10 @@ class BroadcastPreviewHud extends StatelessWidget {
             if (focusLocked) ...[
               const SizedBox(width: 10),
               _HudMetric(label: 'FOCUS', value: 'LOCKED'),
+            ],
+            if (scorerLabel != null) ...[
+              const SizedBox(width: 10),
+              _HudMetric(label: 'SCORER', value: scorerLabel!),
             ],
             if (zoomLabel != null) ...[
               const SizedBox(width: 10),

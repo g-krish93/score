@@ -11,6 +11,7 @@ import android.view.MotionEvent
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.BlackFilterRender
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
+import com.pedro.encoder.utils.gl.AspectRatioMode
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 import java.util.concurrent.CountDownLatch
@@ -161,6 +162,7 @@ object StreamCameraEngine : ConnectChecker {
             releaseCamera()
         }
         openGlView = view
+        view.setAspectRatioMode(AspectRatioMode.Fill)
         if (camera == null) {
             camera = try {
                 RtmpCamera2(view, this)
@@ -184,15 +186,10 @@ object StreamCameraEngine : ConnectChecker {
         rotation: Int = 0,
     ): Boolean {
         if (camera?.isStreaming == true) return isPreviewReady
-        streamIsPortrait = height > width
         streamRotation = rotation.coerceIn(0, 360)
-        if (streamIsPortrait) {
-            streamWidth = width.coerceIn(360, MAX_HEIGHT)
-            streamHeight = height.coerceIn(640, MAX_WIDTH)
-        } else {
-            streamWidth = width.coerceIn(640, MAX_WIDTH)
-            streamHeight = height.coerceIn(360, MAX_HEIGHT)
-        }
+        streamIsPortrait = streamRotation == 90 || streamRotation == 270
+        streamWidth = width.coerceIn(640, MAX_WIDTH)
+        streamHeight = height.coerceIn(360, MAX_HEIGHT)
         streamFps = fps.coerceIn(24, 30)
         streamBitrate = bitrate.coerceIn(800000, 4500000)
         var ok = false
@@ -487,6 +484,8 @@ object StreamCameraEngine : ConnectChecker {
 
         prepareInFlight = true
         return try {
+            openGlView?.setAspectRatioMode(AspectRatioMode.Fill)
+            openGlView?.setStreamRotation(streamRotation)
             val audioOk = cam.prepareAudio(128 * 1024, 32_000, true, false, false)
             if (!audioOk) {
                 encoderPrepared = false
@@ -538,16 +537,7 @@ object StreamCameraEngine : ConnectChecker {
             VideoTier(854, 480, 30, 1500000),
             VideoTier(640, 360, 24, 800000),
         )
-        if (!streamIsPortrait) {
-            return landscapeSteps.distinctBy { "${it.width}x${it.height}" }
-        }
-        return landscapeSteps.map { tier ->
-            if (tier.width >= tier.height) {
-                VideoTier(tier.height, tier.width, tier.fps, tier.bitrate)
-            } else {
-                tier
-            }
-        }.distinctBy { "${it.width}x${it.height}" }
+        return landscapeSteps.distinctBy { "${it.width}x${it.height}" }
     }
 
     /** Go Live: start RTMP only — encoder was prepared at preview time. */
@@ -750,7 +740,8 @@ object StreamCameraEngine : ConnectChecker {
         val aspect = streamWidth.toFloat() / streamHeight.coerceAtLeast(1)
         filter.setScale(wFrac.coerceIn(0.35f, 1.0f), (hFrac * aspect).coerceIn(0.12f, 0.55f))
         val ax = overlayLayout.anchorX.coerceIn(0.05f, 0.95f)
-        val ay = overlayLayout.anchorY.coerceIn(0.05f, 0.95f)
+        val bottomFrac = overlayLayout.bottomMarginFraction.coerceIn(0f, 0.2f)
+        val ay = (1f - bottomFrac - hFrac / 2f).coerceIn(0.55f, 0.95f)
         // Normalized anchor: 0,0 top-left → GL position with y up (+ = top).
         filter.setPosition((ax - 0.5f) * 2f, (0.5f - ay) * 2f)
     }

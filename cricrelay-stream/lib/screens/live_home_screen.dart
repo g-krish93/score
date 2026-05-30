@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/api.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_download_card.dart';
+import '../widgets/stream_management_sheet.dart';
 import '../widgets/studio/studio_hero.dart';
 import '../widgets/studio/studio_shell.dart';
 import '../widgets/ui_kit.dart';
@@ -36,6 +37,8 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
   String _twitchDisplayName = '';
   String _twitchKeyMessage = '';
   bool _showAdvanced = false;
+  int _slotsUsed = 0;
+  int _slotsTotal = 6;
 
   @override
   void initState() {
@@ -64,21 +67,17 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
       final yt = await widget.api.youtubeStatus();
       final tw = await widget.api.twitchStatus();
       final list = await widget.api.listStreams();
-      for (var i = 0; i < list.length; i++) {
-        final m = list[i];
-        if (m.overlayEmbedUrl.startsWith('/')) {
-          list[i] = StreamMatch.fromJson({
-            'slug': m.slug,
-            'label': m.label,
-            'overlay_embed_url': '${widget.api.baseUrl}${m.overlayEmbedUrl}',
-            'relay_source': m.relaySource,
-            'paused': m.paused,
-            'is_live': m.isLive,
-          }, widget.api.baseUrl);
-        }
-      }
+      var slotsUsed = 0;
+      var slotsTotal = 6;
+      try {
+        final fixtures = await widget.api.listFixtures();
+        slotsUsed = fixtures.slotsUsed;
+        slotsTotal = fixtures.slotsTotal;
+      } catch (_) {}
       setState(() {
         _streams = list;
+        _slotsUsed = slotsUsed;
+        _slotsTotal = slotsTotal;
         _youtubeOauthConfigured = yt['oauth_configured'] != false;
         _youtubeOk = yt['connected'] == true;
         _youtubeLiveOk = yt['live_streaming_ok'] == true;
@@ -109,13 +108,13 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
       if (url.isEmpty) throw Exception('No authorize URL from server');
       final proceed = await _oauthDialog(
         title: 'Connect Twitch',
-        body: 'Sign in with the club Twitch account in your browser, then return to this app.',
+        body: 'Sign in with the club Twitch account in your browser, then tap Refresh when you return.',
       );
       if (proceed != true || !mounted) return;
       if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
         throw Exception('Could not open browser');
       }
-      _snack('Complete sign-in in the browser, then pull to refresh.');
+      await _oauthRefreshPrompt();
     } catch (e) {
       _snack(e.toString());
     }
@@ -134,13 +133,45 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
       final proceed = await _oauthDialog(
         title: 'Connect YouTube',
         body:
-            'Google sign-in opens in your browser. Allow YouTube access, then return here — the app refreshes automatically.',
+            'Google sign-in opens in your browser. Allow YouTube access, then tap Refresh when you return.',
       );
       if (proceed != true || !mounted) return;
       if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
         throw Exception('Could not open browser');
       }
-      _snack('Complete sign-in in the browser, then pull to refresh.');
+      await _oauthRefreshPrompt();
+    } catch (e) {
+      _snack(e.toString());
+    }
+  }
+
+  Future<void> _oauthRefreshPrompt() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Finish sign-in'),
+        content: const Text('When the browser sign-in is complete, tap Refresh to update connection status.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Later')),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _refresh();
+            },
+            child: const Text('Refresh'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _disconnectTwitch() async {
+    try {
+      await widget.api.twitchDisconnect();
+      await _refresh();
+      _snack('Twitch disconnected');
     } catch (e) {
       _snack(e.toString());
     }
@@ -291,6 +322,14 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
                             ),
                             const SizedBox(height: AppSpacing.lg),
                             const CrSectionLabel('Your streams'),
+                            if (_slotsTotal > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                                child: Text(
+                                  '$_slotsUsed/$_slotsTotal streams used',
+                                  style: appTextTheme.bodySmall,
+                                ),
+                              ),
                             if (_error != null) ...[
                               CrErrorBanner(message: _error!),
                               const SizedBox(height: AppSpacing.md),
@@ -321,9 +360,15 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
                             for (final m in _streams) ...[
                               CrStreamTile(
                                 title: m.label,
-                                subtitle: m.isLive ? 'Live now · ${m.slug}' : m.slug,
-                                isLive: m.isLive,
+                                subtitle: '${m.slug} · ${m.relaySource}',
+                                match: m,
                                 onTap: () => _openStream(m),
+                                onLongPress: () => showStreamManagementSheet(
+                                  context: context,
+                                  api: widget.api,
+                                  match: m,
+                                  onChanged: _refresh,
+                                ),
                               ),
                               const SizedBox(height: AppSpacing.sm),
                             ],
@@ -366,6 +411,15 @@ class _LiveHomeScreenState extends State<LiveHomeScreen> with WidgetsBindingObse
                                         : 'OAuth not configured on server'),
                                 detail: _twitchOk && !_twitchKeyOk ? _twitchKeyMessage : null,
                                 onConnect: (!_twitchOk && _twitchOauthConfigured) ? _connectTwitch : null,
+                                onReconnect: _twitchOk && !_twitchKeyOk
+                                    ? () async {
+                                        try {
+                                          await widget.api.twitchDisconnect();
+                                        } catch (_) {}
+                                        if (mounted) await _connectTwitch();
+                                      }
+                                    : null,
+                                onDisconnect: _twitchOk ? _disconnectTwitch : null,
                               ),
                             ],
                           ]),
@@ -396,6 +450,7 @@ class _OAuthCard extends StatelessWidget {
     this.detail,
     this.onConnect,
     this.onReconnect,
+    this.onDisconnect,
   });
 
   final String title;
@@ -405,6 +460,7 @@ class _OAuthCard extends StatelessWidget {
   final String? detail;
   final VoidCallback? onConnect;
   final VoidCallback? onReconnect;
+  final VoidCallback? onDisconnect;
 
   @override
   Widget build(BuildContext context) {
@@ -438,6 +494,10 @@ class _OAuthCard extends StatelessWidget {
           if (onReconnect != null) ...[
             const SizedBox(height: 8),
             TextButton(onPressed: onReconnect, child: const Text('Reconnect')),
+          ],
+          if (onDisconnect != null) ...[
+            const SizedBox(height: 4),
+            TextButton(onPressed: onDisconnect, child: Text('Disconnect $title')),
           ],
         ],
       ),

@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../screens/manual_scoring_screen.dart';
 import '../services/api.dart';
@@ -46,11 +50,29 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
   late ScoringConfig _cfg;
   bool _busy = false;
   String? _error;
+  bool _scorerActive = false;
+  Timer? _statusPoll;
 
   @override
   void initState() {
     super.initState();
     _cfg = widget.initial;
+    _pollScorerStatus();
+    _statusPoll = Timer.periodic(const Duration(seconds: 5), (_) => _pollScorerStatus());
+  }
+
+  @override
+  void dispose() {
+    _statusPoll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _pollScorerStatus() async {
+    if (_cfg.mode != 'manual') return;
+    try {
+      final day = await widget.api.getMatchDayStatus(widget.matchSlug);
+      if (mounted) setState(() => _scorerActive = day.scoringActive);
+    } catch (_) {}
   }
 
   Future<void> _pick(String mode) async {
@@ -71,7 +93,7 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
   }
 
   void _copyManualLink() {
-    final url = _cfg.manualInputUrl;
+    final url = _cfg.scorerUrl;
     if (url.isEmpty) return;
     Clipboard.setData(ClipboardData(text: url));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -81,13 +103,22 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
     );
   }
 
+  Future<void> _shareManualLink() async {
+    final url = _cfg.scorerUrl;
+    if (url.isEmpty) return;
+    await Share.share('Score this match: $url');
+  }
+
   void _openScorerOnThisPhone() {
-    final url = _cfg.manualInputUrl;
+    final url = _cfg.scorerUrl;
     if (url.isEmpty) return;
     Navigator.pop(context);
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ManualScoringScreen(inputUrl: url),
+        builder: (_) => ManualScoringScreen(
+          inputUrl: url,
+          matchLabel: widget.matchSlug,
+        ),
       ),
     );
   }
@@ -131,8 +162,10 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
             if (_cfg.mode == 'manual') ...[
               const SizedBox(height: AppSpacing.sm),
               ManualScorerLinkCard(
-                url: _cfg.manualInputUrl,
+                url: _cfg.scorerUrl,
+                scorerActive: _scorerActive,
                 onCopy: _copyManualLink,
+                onShare: _shareManualLink,
                 onOpenHere: _openScorerOnThisPhone,
               ),
             ],
@@ -197,12 +230,16 @@ class ManualScorerLinkCard extends StatelessWidget {
     super.key,
     required this.url,
     required this.onCopy,
+    required this.onShare,
     required this.onOpenHere,
+    this.scorerActive = false,
   });
 
   final String url;
   final VoidCallback onCopy;
+  final VoidCallback onShare;
   final VoidCallback onOpenHere;
+  final bool scorerActive;
 
   @override
   Widget build(BuildContext context) {
@@ -230,6 +267,31 @@ class ManualScorerLinkCard extends StatelessWidget {
             'Scores save to your club server and update the live stream overlay automatically.',
             style: appTextTheme.bodySmall?.copyWith(color: AppColors.onBackgroundMuted),
           ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Icon(
+                scorerActive ? Icons.check_circle_rounded : Icons.hourglass_empty_rounded,
+                size: 18,
+                color: scorerActive ? AppColors.accentGreen : AppColors.warning,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  scorerActive ? 'Scorer active on another phone' : 'Waiting for scorer to connect',
+                  style: appTextTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Center(
+            child: QrImageView(
+              data: url,
+              size: 160,
+              backgroundColor: Colors.white,
+            ),
+          ),
           const SizedBox(height: AppSpacing.md),
           DecoratedBox(
             decoration: BoxDecoration(
@@ -255,6 +317,12 @@ class ManualScorerLinkCard extends StatelessWidget {
             onPressed: onCopy,
             icon: const Icon(Icons.link_rounded),
             label: const Text('Copy scorer link'),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          OutlinedButton.icon(
+            onPressed: onShare,
+            icon: const Icon(Icons.share_rounded),
+            label: const Text('Share link'),
           ),
           const SizedBox(height: AppSpacing.sm),
           OutlinedButton.icon(

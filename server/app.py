@@ -58,6 +58,7 @@ from .stream_api import (
     issue_stream_token,
     issue_twitch_oauth_state,
     issue_youtube_oauth_state,
+    match_day_status,
     org_id_from_twitch_oauth_state,
     org_id_from_youtube_oauth_state,
     relay_match_for_org,
@@ -517,6 +518,48 @@ def save_state():
             json.dump(state, fh)
     except Exception:
         pass
+
+
+def save_state_with_manual_touch():
+    """Record manual scorer activity timestamp when in manual relay mode."""
+    mode = (state.get("relay_mode") or "manual").strip().lower()
+    if mode == "manual":
+        state["last_manual_at"] = datetime.now(timezone.utc).isoformat()
+    save_state()
+
+
+def _relay_set_paused(org: Organization, slug: str, paused: bool) -> tuple[RelayMatch | None, str | None]:
+    row = relay_match_for_org(org, slug)
+    if not row:
+        return None, "unknown stream"
+    row.paused = bool(paused)
+    db.session.commit()
+    return row, None
+
+
+def _relay_delete(org: Organization, slug: str) -> str | None:
+    row = relay_match_for_org(org, slug)
+    if not row:
+        return "unknown stream"
+    db.session.delete(row)
+    db.session.commit()
+    path = state_path_for(slug)
+    if path.is_file():
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    return None
+
+
+def _update_broadcast_status_in_state(slug: str, status: str, platform: str | None, watch_url: str | None):
+    with match_context(slug):
+        merge_missing_state_keys(state)
+        state["broadcast_status"] = status
+        state["broadcast_platform"] = platform
+        state["broadcast_watch_url"] = watch_url
+        state["broadcast_updated_at"] = datetime.now(timezone.utc).isoformat()
+        save_state()
 
 
 def apply_relay_to_score_match(match_slug: str, full_url: str):
@@ -1533,8 +1576,10 @@ def dashboard_relay_toggle_pause():
     if not row:
         flash("Unknown stream.", "error")
         return redirect(url_for("dashboard"))
-    row.paused = not bool(row.paused)
-    db.session.commit()
+    row, err = _relay_set_paused(org, slug, not bool(row.paused))
+    if err:
+        flash("Unknown stream.", "error")
+        return redirect(url_for("dashboard"))
     src = (getattr(row, "relay_source", None) or "scraper")
     if row.paused:
         flash("Stream paused — automatic scoring updates are off.", "success")
@@ -1553,18 +1598,10 @@ def dashboard_relay_delete():
     if not slug:
         flash("Missing stream.", "error")
         return redirect(url_for("dashboard"))
-    row = RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
-    if not row:
+    err = _relay_delete(org, slug)
+    if err:
         flash("Unknown stream.", "error")
         return redirect(url_for("dashboard"))
-    db.session.delete(row)
-    db.session.commit()
-    path = state_path_for(slug)
-    if path.is_file():
-        try:
-            path.unlink()
-        except OSError:
-            pass
     flash("Stream removed. Add a new match any time.", "success")
     return redirect(url_for("dashboard"))
 
@@ -1606,7 +1643,23 @@ def input_page():
 
 @app.get("/m/<match_id>/input")
 def input_page_scoped(match_id):
-    return render_template("input.html", match_id=sanitize_match_id(match_id))
+    slug = sanitize_match_id(match_id)
+    if str(request.args.get("layout") or "").strip().lower() == "scorer":
+        return _render_scorer_page(slug)
+    return render_template("input.html", match_id=slug)
+
+
+@app.get("/m/<match_id>/score")
+def scorer_page_scoped(match_id):
+    return _render_scorer_page(sanitize_match_id(match_id))
+
+
+def _render_scorer_page(slug: str):
+    label = slug
+    row = RelayMatch.query.filter_by(score_match_slug=slug).first()
+    if row and row.label:
+        label = row.label
+    return render_template("input_scorer.html", match_id=slug, match_label=label)
 
 
 def _relay_ingest_authorized() -> bool:
@@ -1952,7 +2005,7 @@ def ball():
                     if striker:
                         striker["status"] = "out"
                     state["striker"] = ""
-            save_state()
+            save_state_with_manual_touch()
             return jsonify(with_calculated_values(state))
 
         if ball_type == "Nb":
@@ -1979,7 +2032,7 @@ def ball():
                     if striker:
                         striker["status"] = "out"
                     state["striker"] = ""
-            save_state()
+            save_state_with_manual_touch()
             return jsonify(with_calculated_values(state))
 
         runs_map = {".": 0, "1": 1, "2": 2, "3": 3, "4": 4, "6": 6, "W": 0, "Bye": run_bonus, "Lb": run_bonus}
@@ -2025,7 +2078,7 @@ def ball():
             state["striker"], state["non_striker"] = state["non_striker"], state["striker"]
 
         end_over()
-        save_state()
+        save_state_with_manual_touch()
         return jsonify(with_calculated_values(state))
 
 
@@ -2683,6 +2736,7 @@ def api_get_scoring(org: Organization, match_slug: str):
             "relay_mode": relay_mode,
             "relay_source": getattr(row, "relay_source", None) or "scraper",
             "manual_input_url": f"{base}/m/{slug}/input" if base else f"/m/{slug}/input",
+            "manual_scorer_url": f"{base}/m/{slug}/score" if base else f"/m/{slug}/score",
             "overlay_embed_url": f"{base}/m/{slug}/stream?embed=1" if base else f"/m/{slug}/stream?embed=1",
             "pcs_ingest_url": pcs_ingest_url,
             "pcs_ingest_token": pcs_token,
@@ -2778,6 +2832,78 @@ def api_set_scoring(org: Organization, match_slug: str):
         current_app.logger.exception("api_set_scoring failed for %s", match_slug)
         db.session.rollback()
         return jsonify({"error": str(exc) or "scoring update failed"}), 500
+
+
+@app.get("/api/match/<match_slug>/match-day")
+@stream_api_auth_required
+def api_match_day(org: Organization, match_slug: str):
+    slug = sanitize_match_id(match_slug)
+    row = relay_match_for_org(org, slug)
+    if not row:
+        return jsonify({"error": "unknown stream"}), 404
+    return jsonify({"ok": True, **match_day_status(org, row)})
+
+
+@app.post("/api/match/<match_slug>/broadcast-status")
+@stream_api_auth_required
+def api_broadcast_status(org: Organization, match_slug: str):
+    slug = sanitize_match_id(match_slug)
+    if not relay_match_for_org(org, slug):
+        return jsonify({"error": "unknown stream"}), 404
+    data = request.get_json(silent=True) or {}
+    status = str(data.get("status") or "idle").strip().lower()
+    if status not in {"idle", "streaming", "paused"}:
+        return jsonify({"error": "status must be idle, streaming, or paused"}), 400
+    platform = str(data.get("platform") or "").strip().lower() or None
+    watch_url = str(data.get("watch_url") or "").strip() or None
+    _update_broadcast_status_in_state(slug, status, platform, watch_url)
+    return jsonify({"ok": True, "status": status, "platform": platform, "watch_url": watch_url})
+
+
+@app.post("/api/match/<match_slug>/relay-pause")
+@stream_api_auth_required
+def api_relay_pause(org: Organization, match_slug: str):
+    slug = sanitize_match_id(match_slug)
+    data = request.get_json(silent=True) or {}
+    if "paused" not in data:
+        return jsonify({"error": "paused (boolean) required"}), 400
+    row, err = _relay_set_paused(org, slug, bool(data.get("paused")))
+    if err:
+        return jsonify({"error": err}), 404
+    return jsonify({"ok": True, "slug": slug, "paused": bool(row.paused)})
+
+
+@app.patch("/api/streams/<match_slug>")
+@stream_api_auth_required
+def api_patch_stream(org: Organization, match_slug: str):
+    slug = sanitize_match_id(match_slug)
+    row = relay_match_for_org(org, slug)
+    if not row:
+        return jsonify({"error": "unknown stream"}), 404
+    data = request.get_json(silent=True) or {}
+    if "label" in data:
+        label = str(data.get("label") or "").strip()
+        row.label = label or row.play_cricket_match_id
+        db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "stream": {
+                "slug": slug,
+                "label": row.label or row.play_cricket_match_id,
+            },
+        }
+    )
+
+
+@app.delete("/api/streams/<match_slug>")
+@stream_api_auth_required
+def api_delete_stream(org: Organization, match_slug: str):
+    slug = sanitize_match_id(match_slug)
+    err = _relay_delete(org, slug)
+    if err:
+        return jsonify({"error": err}), 404
+    return jsonify({"ok": True, "deleted": slug})
 
 
 @app.get("/api/stream/youtube-status")

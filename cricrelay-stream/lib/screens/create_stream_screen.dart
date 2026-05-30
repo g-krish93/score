@@ -23,6 +23,8 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
   final _labelCtrl = TextEditingController();
   final _matchIdCtrl = TextEditingController();
   final _bleLabelCtrl = TextEditingController();
+  final _pcBaseUrlCtrl = TextEditingController();
+  bool _showAdvancedCreate = false;
 
   @override
   void initState() {
@@ -35,6 +37,7 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
     _labelCtrl.dispose();
     _matchIdCtrl.dispose();
     _bleLabelCtrl.dispose();
+    _pcBaseUrlCtrl.dispose();
     super.dispose();
   }
 
@@ -83,9 +86,10 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
     }
     setState(() => _loading = true);
     try {
-      final m = await widget.api.createPlayCricketStream(
+      final m = await widget.api.createPlayCricketStreamWithOptions(
         matchId: mid,
         label: _labelCtrl.text.trim(),
+        playCricketBaseUrl: _pcBaseUrlCtrl.text.trim(),
       );
       await _createAndOpen(m);
     } catch (e) {
@@ -175,6 +179,23 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
                     keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: AppSpacing.md),
+                  ExpansionTile(
+                    title: const Text('Advanced'),
+                    initiallyExpanded: _showAdvancedCreate,
+                    onExpansionChanged: (v) => setState(() => _showAdvancedCreate = v),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                        child: TextField(
+                          controller: _pcBaseUrlCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Play-Cricket base URL (optional)',
+                            hintText: 'https://play-cricket.com/website/results/...',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                   FilledButton(
                     onPressed: _loading ? null : _createManualId,
                     child: const Text('Create from match ID'),

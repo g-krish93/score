@@ -71,10 +71,11 @@ class _DraggableOverlayFrameState extends State<DraggableOverlayFrame> {
         final maxH = constraints.maxHeight;
         if (maxW < 64 || maxH < 64) return const SizedBox.shrink();
 
-        final w = (maxW * _local.widthFraction).clamp(80.0, maxW);
-        final h = (maxH * _local.heightFraction).clamp(48.0, maxH * 0.55);
-        final left = (_local.anchorX * maxW - w / 2).clamp(0.0, maxW - w);
-        final top = (_local.anchorY * maxH - h / 2).clamp(0.0, maxH - h);
+        final bounds = _local.frameRect(maxW, maxH);
+        final w = bounds.width;
+        final h = bounds.height;
+        final left = bounds.left;
+        final top = bounds.top;
 
         final borderColor = widget.locked ? AppColors.overlayFrameLocked : AppColors.overlayFrame;
 
@@ -100,8 +101,9 @@ class _DraggableOverlayFrameState extends State<DraggableOverlayFrame> {
             },
             onPanUpdate: (d) {
               final nx = ((left + w / 2 + d.delta.dx) / maxW).clamp(0.05, 0.95);
-              final ny = ((top + h / 2 + d.delta.dy) / maxH).clamp(0.05, 0.95);
-              _updateLocal(_local.copyWith(anchorX: nx, anchorY: ny));
+              final newTop = (top + d.delta.dy).clamp(0.0, maxH - h);
+              final newBottom = (maxH - newTop - h).clamp(0.0, maxH * 0.45);
+              _updateLocal(_local.copyWith(anchorX: nx, bottomMargin: newBottom));
             },
             child: frame,
           );

@@ -31,6 +31,7 @@ class BroadcastControlDock extends StatelessWidget {
     required this.onGoLive,
     required this.onStop,
     required this.onTogglePause,
+    this.onShare,
   });
 
   final String? status;
@@ -53,6 +54,7 @@ class BroadcastControlDock extends StatelessWidget {
   final Future<void> Function() onGoLive;
   final Future<void> Function() onStop;
   final Future<void> Function() onTogglePause;
+  final VoidCallback? onShare;
 
   Future<void> _confirmStop(BuildContext context) async {
     if (!live) {
@@ -141,6 +143,18 @@ class BroadcastControlDock extends StatelessWidget {
                       label: Text(paused ? 'Resume broadcast' : 'Pause broadcast'),
                     ),
                   ),
+                  if (onShare != null) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    SizedBox(
+                      height: 44,
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: busy ? null : onShare,
+                        icon: const Icon(Icons.share_rounded),
+                        label: const Text('Share watch link'),
+                      ),
+                    ),
+                  ],
                 ],
                 const SizedBox(height: AppSpacing.md),
                 const Text('STUDIO CONTROLS', style: _sectionStyle),

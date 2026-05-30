@@ -15,9 +15,11 @@ void main() {
     expect(capped.height, 480);
   });
 
-  test('paramsForOrientation swaps dimensions for portrait', () {
-    final p = NativeEncoderProfile.paramsForOrientation(StreamQualityProfile.high, true);
-    expect(p.width, lessThanOrEqualTo(p.height));
-    expect(p.rotation, 90);
+  test('paramsForOrientation keeps landscape dims and uses rotation', () {
+    final portrait = NativeEncoderProfile.paramsForOrientation(StreamQualityProfile.high, true);
+    expect(portrait.width, greaterThan(portrait.height));
+    expect(portrait.rotation, 90);
+    final landscape = NativeEncoderProfile.paramsForOrientation(StreamQualityProfile.high, false);
+    expect(landscape.rotation, 0);
   });
 }

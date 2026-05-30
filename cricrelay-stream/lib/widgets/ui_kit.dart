@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/api.dart';
 import '../theme/app_theme.dart';
 
 class CrBottomSheetHandle extends StatelessWidget {
@@ -212,29 +213,65 @@ class CrStreamTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
-    this.isLive = false,
+    this.match,
+    this.onLongPress,
+    @Deprecated('Use match.broadcast.isStreaming') this.isLive = false,
   });
 
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final StreamMatch? match;
   final bool isLive;
+
+  List<({String label, Color color, bool pulse})> _statusChips() {
+    final m = match;
+    if (m == null) {
+      if (isLive) return [(label: 'LIVE', color: AppColors.live, pulse: true)];
+      return [];
+    }
+    final chips = <({String label, Color color, bool pulse})>[];
+    if (m.broadcast.isStreaming) {
+      chips.add((label: 'ON AIR', color: AppColors.live, pulse: true));
+    } else if (m.broadcast.isPaused) {
+      chips.add((label: 'BROADCAST PAUSED', color: AppColors.warning, pulse: false));
+    }
+    if (m.scoringStale) {
+      chips.add((label: 'SCORING STALE', color: AppColors.warning, pulse: false));
+    } else if (m.scoringActive) {
+      chips.add((label: 'SCORING', color: AppColors.accentGreen, pulse: false));
+    }
+    if (m.relayPaused && m.scoringMode == 'auto') {
+      chips.add((label: 'AUTO PAUSED', color: AppColors.onBackgroundDim, pulse: false));
+    }
+    if (chips.length < 2 && m.scoringMode == 'manual') {
+      chips.add((label: 'MANUAL', color: AppColors.onBackgroundMuted, pulse: false));
+    } else if (chips.length < 2 && m.scoringMode == 'ble') {
+      chips.add((label: 'BLE', color: AppColors.onBackgroundMuted, pulse: false));
+    }
+    return chips.take(2).toList();
+  }
+
+  bool get _highlight => match?.broadcast.isStreaming == true || (match == null && isLive);
 
   @override
   Widget build(BuildContext context) {
+    final chips = _statusChips();
     return Material(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
             border: Border.all(
-              color: isLive ? AppColors.live.withValues(alpha: 0.35) : AppColors.borderSubtle,
+              color: _highlight ? AppColors.live.withValues(alpha: 0.35) : AppColors.borderSubtle,
             ),
-            gradient: isLive
+            gradient: _highlight
                 ? LinearGradient(
                     colors: [
                       AppColors.live.withValues(alpha: 0.08),
@@ -253,7 +290,7 @@ class CrStreamTile extends StatelessWidget {
                 height: 52,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: isLive
+                    colors: _highlight
                         ? [AppColors.live.withValues(alpha: 0.25), AppColors.primaryMuted.withValues(alpha: 0.15)]
                         : [AppColors.surfaceVariant, AppColors.surfaceElevated],
                     begin: Alignment.topLeft,
@@ -261,12 +298,12 @@ class CrStreamTile extends StatelessWidget {
                   ),
                   borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
                   border: Border.all(
-                    color: isLive ? AppColors.live.withValues(alpha: 0.4) : AppColors.borderSubtle,
+                    color: _highlight ? AppColors.live.withValues(alpha: 0.4) : AppColors.borderSubtle,
                   ),
                 ),
                 child: Icon(
-                  isLive ? Icons.sensors : Icons.play_circle_outline_rounded,
-                  color: isLive ? AppColors.live : AppColors.onBackgroundMuted,
+                  _highlight ? Icons.sensors : Icons.play_circle_outline_rounded,
+                  color: _highlight ? AppColors.live : AppColors.onBackgroundMuted,
                   size: 28,
                 ),
               ),
@@ -275,28 +312,35 @@ class CrStreamTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        if (isLive) ...[
-                          Container(
-                            width: 7,
-                            height: 7,
-                            margin: const EdgeInsets.only(right: 6),
-                            decoration: const BoxDecoration(color: AppColors.live, shape: BoxShape.circle),
-                          ),
-                          Text('LIVE', style: metricStyle(size: 10, color: AppColors.live)),
-                          const SizedBox(width: 8),
-                        ],
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: -0.2),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: -0.2),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
+                    if (chips.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: chips
+                            .map(
+                              (c) => Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: c.color.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: c.color.withValues(alpha: 0.45)),
+                                ),
+                                child: Text(
+                                  c.label,
+                                  style: metricStyle(size: 9, color: c.color),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     Text(subtitle, style: appTextTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
                   ],

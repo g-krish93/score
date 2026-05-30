@@ -132,7 +132,8 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
             widthFraction = (call.argument<Double>("overlayWidthFraction") ?: 0.88).toFloat(),
             anchorX = (call.argument<Double>("overlayAnchorX") ?: 0.5).toFloat(),
             anchorY = (call.argument<Double>("overlayAnchorY") ?: 0.85).toFloat(),
-            bottomMarginFraction = (call.argument<Double>("overlayBottomMargin") ?: 8.0).toFloat() / 400f,
+            bottomMarginFraction = ((call.argument<Double>("overlayBottomMargin") ?: 8.0).toFloat() / 720f)
+                .coerceIn(0f, 0.15f),
             horizontalInsetFraction = (call.argument<Double>("overlayHorizontalInset") ?: 8.0).toFloat() / 400f,
         )
     }

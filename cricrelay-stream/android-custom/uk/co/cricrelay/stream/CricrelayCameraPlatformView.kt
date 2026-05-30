@@ -3,6 +3,7 @@ package uk.co.cricrelay.stream
 import android.app.Activity
 import android.content.Context
 import android.view.SurfaceHolder
+import com.pedro.encoder.utils.gl.AspectRatioMode
 import com.pedro.library.view.OpenGlView
 import io.flutter.plugin.platform.PlatformView
 
@@ -13,6 +14,7 @@ class CricrelayCameraPlatformView(
 
     private val openGlView = OpenGlView(context).apply {
         setKeepScreenOn(false)
+        setAspectRatioMode(AspectRatioMode.Fill)
     }
 
     private var attached = false

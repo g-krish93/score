@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:camera/camera.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -30,7 +31,9 @@ import '../widgets/broadcast_control_dock.dart';
 import '../widgets/draggable_overlay_frame.dart';
 import '../widgets/go_live_preflight_sheet.dart';
 import '../widgets/overlay_layout_sheet.dart';
+import '../widgets/match_day_wizard.dart';
 import '../widgets/scoring_mode_sheet.dart';
+import '../widgets/stream_management_sheet.dart';
 import '../widgets/stream_settings_sheet.dart';
 import '../widgets/camera_focus_reticle.dart';
 import '../widgets/studio/broadcast_hud.dart';
@@ -96,6 +99,8 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
   bool _focusPinchActive = false;
   int _lastNotifMinute = -1;
   DeviceProfile? _deviceProfile;
+  MatchDayStatus? _matchDay;
+  Timer? _matchDayPoll;
 
   ({int width, int height, int rotation}) _encoderParamsForContext() {
     final portrait = StreamOrientationHelper.isPortrait(context);
@@ -119,10 +124,8 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
     final params = _encoderParamsForContext();
     _encoderWidth = params.width;
     _encoderHeight = params.height;
-    setState(() {
-      _nativeCameraReady = false;
-      _clearFocusUi();
-    });
+    _applyOverlayLayoutForOrientation();
+    _clearFocusUi();
     final ok = await RtmpPlatform.resetCameraOrientation(
       width: params.width,
       height: params.height,
@@ -167,10 +170,105 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
     setState(() => _dockVisible = !_dockVisible);
   }
 
-  void _applyCricketLayoutIfLandscape() {
-    if (!mounted || StreamOrientationHelper.isPortrait(context)) return;
-    if (_overlayPrefs.anchorY == const OverlayLayoutPrefs().anchorY &&
-        _overlayPrefs.widthFraction == const OverlayLayoutPrefs().widthFraction) {
+  Future<void> _reportBroadcastStatus(String status) async {
+    try {
+      await widget.api.updateBroadcastStatus(
+        widget.match.slug,
+        status: status,
+        platform: _destination.name,
+        watchUrl: _watchUrl,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _refreshMatchDayStatus() async {
+    try {
+      final day = await widget.api.getMatchDayStatus(widget.match.slug);
+      if (mounted) setState(() => _matchDay = day);
+    } catch (_) {}
+  }
+
+  StreamMatch _matchForManagement() {
+    final base = widget.match;
+    final day = _matchDay;
+    var broadcast = day?.broadcast ?? base.broadcast;
+    if (_live) {
+      broadcast = BroadcastStatus(
+        status: _streamPaused ? 'paused' : 'streaming',
+        platform: broadcast.platform ?? _livePlatform,
+        watchUrl: _watchUrl ?? broadcast.watchUrl,
+      );
+    }
+    if (day == null) {
+      return StreamMatch(
+        slug: base.slug,
+        label: base.label,
+        overlayEmbedUrl: base.overlayEmbedUrl,
+        relaySource: base.relaySource,
+        relayPaused: base.relayPaused,
+        scoringMode: base.scoringMode,
+        scoringActive: base.scoringActive,
+        scoringStale: base.scoringStale,
+        isLive: base.isLive,
+        broadcast: broadcast,
+      );
+    }
+    return StreamMatch(
+      slug: base.slug,
+      label: day.label.isNotEmpty ? day.label : base.label,
+      overlayEmbedUrl: base.overlayEmbedUrl,
+      relaySource: base.relaySource,
+      relayPaused: day.relayPaused,
+      scoringMode: day.scoringMode,
+      scoringActive: day.scoringActive,
+      scoringStale: day.scoringStale,
+      isLive: base.isLive,
+      broadcast: broadcast,
+    );
+  }
+
+  void _openStreamManagement() {
+    unawaited(showStreamManagementSheet(
+      context: context,
+      api: widget.api,
+      match: _matchForManagement(),
+      onChanged: _refreshMatchDayStatus,
+      onDeleted: () {
+        if (mounted) Navigator.of(context).pop();
+      },
+    ));
+  }
+
+  Future<void> _shareWatchLink() async {
+    final url = _watchUrl;
+    if (url == null || url.isEmpty) return;
+    await Share.share('Watch live: $url');
+  }
+
+  String? get _scorerHudLabel {
+    final mode = _matchDay?.scoringMode ?? _scoring?.mode;
+    if (mode != 'manual') return null;
+    if (_matchDay?.scoringActive == true) return 'ACTIVE';
+    return 'WAITING';
+  }
+
+  void _applyOverlayLayoutForOrientation() {
+    if (!mounted) return;
+    if (StreamOrientationHelper.isPortrait(context)) {
+      _overlayPrefs = OverlayLayoutPrefs(
+        size: _overlayPrefs.size,
+        theme: _overlayPrefs.theme,
+        density: _overlayPrefs.density,
+        heightFraction: 0.18,
+        widthFraction: 0.92,
+        anchorX: 0.5,
+        anchorY: 0.92,
+        bottomMargin: 12,
+        horizontalInset: 8,
+        keepScreenOn: _overlayPrefs.keepScreenOn,
+        videoStabilization: _overlayPrefs.videoStabilization,
+      );
+    } else {
       _overlayPrefs = OverlayLayoutPrefs.cricketLandscape.copyWith(
         theme: _overlayPrefs.theme,
         size: _overlayPrefs.size,
@@ -179,6 +277,8 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
         videoStabilization: _overlayPrefs.videoStabilization,
       );
     }
+    setState(() {});
+    unawaited(_syncNativeOverlay());
   }
 
   @override
@@ -368,8 +468,24 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
         await _loadOverlayWebView();
       }
       if (mounted) setState(() {});
-      _applyCricketLayoutIfLandscape();
+      _applyOverlayLayoutForOrientation();
       await _applyNativeStreamPrefs();
+      _matchDayPoll = Timer.periodic(const Duration(seconds: 8), (_) => _refreshMatchDayStatus());
+      unawaited(_refreshMatchDayStatus());
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          unawaited(maybeShowMatchDayWizard(
+            context: context,
+            api: widget.api,
+            matchSlug: widget.match.slug,
+            matchLabel: widget.match.label,
+            destination: _destination,
+            onOpenDestination: _chooseDestination,
+            onOpenScoring: _openScoringMenu,
+            onOpenOverlay: _openOverlayLayout,
+          ));
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -424,7 +540,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
     if (mounted && _orientationChangedSincePrepare && !_live) {
         unawaited(_reprepareCameraForCurrentOrientation().then((_) {
           if (!mounted) return;
-          _applyCricketLayoutIfLandscape();
+          _applyOverlayLayoutForOrientation();
           if (StreamOrientationHelper.isPortrait(context)) {
             setState(() => _status = 'Rotate to landscape for cricket — then tap Go Live');
           } else {
@@ -755,6 +871,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
               ? _liveStatusMessage
               : 'Live — broadcast resumed';
         });
+        unawaited(_reportBroadcastStatus('streaming'));
       } else {
         await RtmpPlatform.pauseStream();
         if (!mounted) return;
@@ -766,6 +883,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
           _status =
               'Broadcast paused — viewers see a black screen. Tap Resume when play continues.';
         });
+        unawaited(_reportBroadcastStatus('paused'));
       }
     } catch (e) {
       if (mounted) {
@@ -783,6 +901,10 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
     _orientationDebounce?.cancel();
     _zoomUiDebounce?.cancel();
     _focusReticleHide?.cancel();
+    _matchDayPoll?.cancel();
+    if (_live) {
+      unawaited(_reportBroadcastStatus('idle'));
+    }
     if (_live && _nativeCamera) {
       unawaited(RtmpPlatform.stopStream());
       if (_liveManagedByApi) {
@@ -1000,6 +1122,18 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
         }
         _liveStatusMessage = _status!;
       });
+      unawaited(_reportBroadcastStatus('streaming'));
+      if (cred.watchUrl.isNotEmpty && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('You are live'),
+            action: SnackBarAction(
+              label: 'Share watch link',
+              onPressed: _shareWatchLink,
+            ),
+          ),
+        );
+      }
       await _applyWakelock();
     } catch (e) {
       await AppAnalytics.logEvent('go_live_failed', {
@@ -1037,6 +1171,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
     await WakelockPlus.disable();
     await StreamOrientationHelper.restoreDefaultOrientations();
     await RtmpPlatform.setPipWhenLive(false);
+    if (_live) {
+      unawaited(_reportBroadcastStatus('idle'));
+    }
     if (mounted) {
       setState(() {
         _live = false;
@@ -1270,6 +1407,28 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
               accentColor: AppColors.warning,
             ),
           ),
+        if (_matchDay?.relayPaused == true && _matchDay?.scoringMode == 'auto')
+          Positioned(
+            top: 72,
+            left: 12,
+            right: 12,
+            child: CrInfoBanner(
+              title: 'Auto scoring paused',
+              body: 'Play-Cricket sync is off. Scores won\'t update automatically. Manual scorer still works.',
+              accentColor: AppColors.warning,
+            ),
+          ),
+        if (_matchDay?.scoringStale == true && _matchDay?.scoringMode == 'auto')
+          Positioned(
+            top: 72,
+            left: 12,
+            right: 12,
+            child: CrInfoBanner(
+              title: 'Auto scoring stale',
+              body: 'No recent Play-Cricket updates. Open Scoring and switch to Manual, or check the fixture.',
+              accentColor: AppColors.warning,
+            ),
+          ),
         if (_overlayLocked)
           Positioned(
             top: 72,
@@ -1290,6 +1449,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
             orientationLabel: StreamOrientationHelper.isPortrait(context) ? 'Portrait' : 'Landscape',
             stabilizationOn: _overlayPrefs.videoStabilization,
             focusLocked: _focusLocked,
+            scorerLabel: _scorerHudLabel,
             zoomLabel: camReady && _maxZoom > _minZoom ? '${_zoomDisplayFactor.toStringAsFixed(1)}×' : null,
             liveTimer: _live
                 ? CrLiveTimerBadge(
@@ -1366,15 +1526,12 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
         final maxW = constraints.maxWidth;
         final maxH = constraints.maxHeight;
         if (maxW < 64 || maxH < 64) return const SizedBox.shrink();
-        final w = (maxW * _overlayPrefs.widthFraction).clamp(80.0, maxW);
-        final h = (maxH * _overlayPrefs.heightFraction).clamp(48.0, maxH * 0.55);
-        final left = (_overlayPrefs.anchorX * maxW - w / 2).clamp(0.0, maxW - w);
-        final top = (_overlayPrefs.anchorY * maxH - h / 2).clamp(0.0, maxH - h);
+        final frame = _overlayPrefs.frameRect(maxW, maxH);
         return Positioned(
-          left: left,
-          top: top,
-          width: w,
-          height: h,
+          left: frame.left,
+          top: frame.top,
+          width: frame.width,
+          height: frame.height,
           child: IgnorePointer(
             ignoring: _overlayLocked,
             child: ClipRRect(
@@ -1391,30 +1548,31 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
   }
 
   Widget _buildFlutterOverlayPreview() {
-    final mq = MediaQuery.of(context);
-    final overlayH = mq.size.height * _overlayPrefs.heightFraction;
-    final inset = _overlayPrefs.horizontalInset;
-    final bottom = _overlayPrefs.bottomMargin;
-    return Positioned(
-      left: inset,
-      right: inset,
-      bottom: bottom,
-      height: overlayH,
-      child: IgnorePointer(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: _overlayLocked ? AppColors.overlayFrameLocked : AppColors.overlayFrame,
-              width: 2,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final frame = _overlayPrefs.frameRect(constraints.maxWidth, constraints.maxHeight);
+        return Positioned(
+          left: frame.left,
+          top: frame.top,
+          width: frame.width,
+          height: frame.height,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: _overlayLocked ? AppColors.overlayFrameLocked : AppColors.overlayFrame,
+                  width: 2,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: WebViewWidget(controller: _web!),
+              ),
             ),
-            borderRadius: BorderRadius.circular(8),
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: WebViewWidget(controller: _web!),
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1440,6 +1598,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
       onGoLive: _goLive,
       onStop: _stop,
       onTogglePause: _togglePause,
+      onShare: _live && (_watchUrl?.isNotEmpty ?? false) ? () => unawaited(_shareWatchLink()) : null,
     );
   }
 
@@ -1475,7 +1634,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
             filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
             child: AppBar(
               title: Text(
-                widget.match.label,
+                _matchDay?.label.isNotEmpty == true ? _matchDay!.label : widget.match.label,
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.2),
               ),
               backgroundColor: AppColors.hudBackground,
@@ -1487,6 +1646,11 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
                     onPressed: _openWatchUrl,
                     tooltip: 'Watch stream',
                   ),
+                IconButton(
+                  icon: const Icon(Icons.more_vert_rounded),
+                  onPressed: _openStreamManagement,
+                  tooltip: 'Stream settings',
+                ),
               ],
             ),
           ),

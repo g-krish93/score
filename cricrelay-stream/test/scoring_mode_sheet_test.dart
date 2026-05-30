@@ -11,8 +11,9 @@ void main() {
         theme: buildAppTheme().copyWith(textTheme: appTextTheme),
         home: Scaffold(
           body: ManualScorerLinkCard(
-            url: 'https://club.cricrelay.co.uk/m/my-match/input',
+            url: 'https://club.cricrelay.co.uk/m/my-match/score',
             onCopy: () => copied = true,
+            onShare: () {},
             onOpenHere: () {},
           ),
         ),
@@ -20,7 +21,7 @@ void main() {
     );
 
     expect(find.text('Copy scorer link'), findsOneWidget);
-    expect(find.textContaining('club.cricrelay.co.uk/m/my-match/input'), findsOneWidget);
+    expect(find.textContaining('club.cricrelay.co.uk/m/my-match/score'), findsOneWidget);
     expect(find.textContaining('2nd or 3rd phone'), findsOneWidget);
     await tester.tap(find.text('Copy scorer link'));
     expect(copied, isTrue);

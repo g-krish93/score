@@ -247,6 +247,17 @@ class CricRelayApi {
     required String matchId,
     String label = '',
   }) async {
+    return createPlayCricketStreamWithOptions(
+      matchId: matchId,
+      label: label,
+    );
+  }
+
+  Future<StreamMatch> createPlayCricketStreamWithOptions({
+    required String matchId,
+    String label = '',
+    String playCricketBaseUrl = '',
+  }) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/streams'),
       headers: _headers,
@@ -254,6 +265,7 @@ class CricRelayApi {
         'type': 'play_cricket',
         'play_cricket_match_id': matchId,
         'label': label,
+        if (playCricketBaseUrl.isNotEmpty) 'play_cricket_base_url': playCricketBaseUrl,
       }),
     );
     final body = _parseJsonResponse(res, fallback: 'Could not create stream');
@@ -319,6 +331,100 @@ class CricRelayApi {
     }
     return ScoringConfig.fromJson(body, baseUrl);
   }
+
+  Future<MatchDayStatus> getMatchDayStatus(String matchSlug) async {
+    final res = await http.get(
+      _matchApiUri(matchSlug, 'match-day'),
+      headers: _headers,
+    );
+    final body = _parseJsonResponse(res, fallback: 'Failed to load match status');
+    if (res.statusCode != 200) {
+      throw Exception(body['error']?.toString() ?? 'Failed to load match status');
+    }
+    return MatchDayStatus.fromJson(body);
+  }
+
+  Future<void> updateBroadcastStatus(
+    String matchSlug, {
+    required String status,
+    String? platform,
+    String? watchUrl,
+  }) async {
+    final res = await http.post(
+      _matchApiUri(matchSlug, 'broadcast-status'),
+      headers: _headers,
+      body: jsonEncode({
+        'status': status,
+        if (platform != null) 'platform': platform,
+        if (watchUrl != null) 'watch_url': watchUrl,
+      }),
+    );
+    if (res.statusCode != 200) {
+      final body = _parseJsonResponse(res, fallback: 'Failed to update broadcast status');
+      throw Exception(body['error']?.toString() ?? 'Failed to update broadcast status');
+    }
+  }
+
+  Future<void> renameStream(String matchSlug, String label) async {
+    final slug = Uri.encodeComponent(matchSlug);
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/streams/$slug'),
+      headers: _headers,
+      body: jsonEncode({'label': label}),
+    );
+    if (res.statusCode != 200) {
+      final body = _parseJsonResponse(res, fallback: 'Failed to rename stream');
+      throw Exception(body['error']?.toString() ?? 'Failed to rename stream');
+    }
+  }
+
+  Future<void> deleteStream(String matchSlug) async {
+    final slug = Uri.encodeComponent(matchSlug);
+    final res = await http.delete(
+      Uri.parse('$baseUrl/api/streams/$slug'),
+      headers: _headers,
+    );
+    if (res.statusCode != 200) {
+      final body = _parseJsonResponse(res, fallback: 'Failed to delete stream');
+      throw Exception(body['error']?.toString() ?? 'Failed to delete stream');
+    }
+  }
+
+  Future<void> setRelayPause(String matchSlug, {required bool paused}) async {
+    final res = await http.post(
+      _matchApiUri(matchSlug, 'relay-pause'),
+      headers: _headers,
+      body: jsonEncode({'paused': paused}),
+    );
+    if (res.statusCode != 200) {
+      final body = _parseJsonResponse(res, fallback: 'Failed to update relay pause');
+      throw Exception(body['error']?.toString() ?? 'Failed to update relay pause');
+    }
+  }
+}
+
+class BroadcastStatus {
+  const BroadcastStatus({
+    this.status = 'idle',
+    this.platform,
+    this.watchUrl,
+  });
+
+  final String status;
+  final String? platform;
+  final String? watchUrl;
+
+  bool get isStreaming => status == 'streaming';
+  bool get isPaused => status == 'paused';
+
+  factory BroadcastStatus.fromJson(Map<String, dynamic>? j) {
+    if (j == null) return BroadcastStatus();
+    return BroadcastStatus(
+      status: (j['status'] ?? 'idle').toString(),
+      platform: j['platform']?.toString(),
+      watchUrl: j['watch_url']?.toString(),
+    );
+  }
 }
 
 class StreamMatch {
@@ -327,17 +433,26 @@ class StreamMatch {
     required this.label,
     required this.overlayEmbedUrl,
     required this.relaySource,
-    required this.paused,
+    required this.relayPaused,
+    this.scoringMode = 'manual',
+    this.scoringActive = false,
+    this.scoringStale = false,
     this.isLive = false,
+    this.broadcast = const BroadcastStatus(),
   });
 
   final String slug;
   final String label;
   final String overlayEmbedUrl;
   final String relaySource;
-  final bool paused;
-  /// True when the server reports an active broadcast for this stream (`is_live` in API).
+  final bool relayPaused;
+  final String scoringMode;
+  final bool scoringActive;
+  final bool scoringStale;
   final bool isLive;
+  final BroadcastStatus broadcast;
+
+  bool get paused => relayPaused;
 
   factory StreamMatch.fromJson(Map<String, dynamic> j, [String? baseUrl]) {
     var overlay = (j['overlay_embed_url'] ?? '').toString();
@@ -345,13 +460,58 @@ class StreamMatch {
       final b = baseUrl.replaceAll(RegExp(r'/+$'), '');
       overlay = '$b$overlay';
     }
+    final broadcastRaw = j['broadcast'];
     return StreamMatch(
       slug: (j['slug'] ?? '').toString(),
       label: (j['label'] ?? j['slug'] ?? '').toString(),
       overlayEmbedUrl: overlay,
       relaySource: (j['relay_source'] ?? 'scraper').toString(),
-      paused: j['paused'] == true,
+      relayPaused: j['paused'] == true || j['relay_paused'] == true,
+      scoringMode: (j['scoring_mode'] ?? 'manual').toString(),
+      scoringActive: j['scoring_active'] == true,
+      scoringStale: j['scoring_stale'] == true,
       isLive: j['is_live'] == true || j['live'] == true,
+      broadcast: BroadcastStatus.fromJson(
+        broadcastRaw is Map ? Map<String, dynamic>.from(broadcastRaw) : null,
+      ),
+    );
+  }
+}
+
+class MatchDayStatus {
+  MatchDayStatus({
+    required this.slug,
+    required this.label,
+    required this.scoringMode,
+    required this.scoringActive,
+    required this.scoringStale,
+    required this.relayPaused,
+    required this.broadcast,
+    this.manualScorerUrl = '',
+  });
+
+  final String slug;
+  final String label;
+  final String scoringMode;
+  final bool scoringActive;
+  final bool scoringStale;
+  final bool relayPaused;
+  final BroadcastStatus broadcast;
+  final String manualScorerUrl;
+
+  factory MatchDayStatus.fromJson(Map<String, dynamic> j) {
+    final broadcastRaw = j['broadcast'];
+    return MatchDayStatus(
+      slug: (j['slug'] ?? '').toString(),
+      label: (j['label'] ?? '').toString(),
+      scoringMode: (j['scoring_mode'] ?? 'manual').toString(),
+      scoringActive: j['scoring_active'] == true,
+      scoringStale: j['scoring_stale'] == true,
+      relayPaused: j['relay_paused'] == true || j['paused'] == true,
+      broadcast: BroadcastStatus.fromJson(
+        broadcastRaw is Map ? Map<String, dynamic>.from(broadcastRaw) : null,
+      ),
+      manualScorerUrl: (j['manual_scorer_url'] ?? '').toString(),
     );
   }
 }
@@ -478,6 +638,7 @@ class ScoringConfig {
   ScoringConfig({
     required this.mode,
     required this.manualInputUrl,
+    required this.manualScorerUrl,
     required this.pcsIngestUrl,
     required this.pcsIngestToken,
     required this.pcsRelayApkUrl,
@@ -485,9 +646,12 @@ class ScoringConfig {
 
   final String mode;
   final String manualInputUrl;
+  final String manualScorerUrl;
   final String pcsIngestUrl;
   final String pcsIngestToken;
   final String pcsRelayApkUrl;
+
+  String get scorerUrl => manualScorerUrl.isNotEmpty ? manualScorerUrl : manualInputUrl.replaceAll('/input', '/score');
 
   factory ScoringConfig.fromJson(Map<String, dynamic> j, String baseUrl) {
     String abs(String path) {
@@ -497,9 +661,14 @@ class ScoringConfig {
       return p.startsWith('/') ? '$b$p' : '$b/$p';
     }
 
+    final inputUrl = abs(j['manual_input_url'] ?? '');
+    final scorerUrl = abs(j['manual_scorer_url'] ?? '');
     return ScoringConfig(
       mode: (j['mode'] ?? 'manual').toString(),
-      manualInputUrl: abs(j['manual_input_url'] ?? ''),
+      manualInputUrl: inputUrl,
+      manualScorerUrl: scorerUrl.isNotEmpty
+          ? scorerUrl
+          : inputUrl.replaceAll('/input', '/score'),
       pcsIngestUrl: abs(j['pcs_ingest_url'] ?? ''),
       pcsIngestToken: (j['pcs_ingest_token'] ?? '').toString(),
       pcsRelayApkUrl: abs(j['pcs_relay_apk_url'] ?? ''),

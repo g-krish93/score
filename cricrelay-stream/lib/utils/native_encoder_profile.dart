@@ -21,23 +21,17 @@ class NativeEncoderProfile {
   }
 
   /// Width, height, and RootEncoder rotation for landscape or portrait hold.
+  ///
+  /// RootEncoder expects landscape camera dimensions; [rotation] 90 rotates to portrait output.
   static ({int width, int height, int rotation}) paramsForOrientation(
     StreamQualityProfile selected,
     bool isPortrait,
   ) {
     final base = forNative(selected);
-    if (!isPortrait) {
-      return (width: base.width, height: base.height, rotation: 0);
-    }
-    var w = base.width;
-    var h = base.height;
-    if (w > h) {
-      final tmp = w;
-      w = h;
-      h = tmp;
-    }
-    w = w.clamp(360, maxHeight);
-    h = h.clamp(640, maxWidth);
-    return (width: w, height: h, rotation: 90);
+    return (
+      width: base.width,
+      height: base.height,
+      rotation: isPortrait ? 90 : 0,
+    );
   }
 }

@@ -95,6 +95,16 @@ class OverlayLayoutPrefs {
         'overlay_density': density,
       };
 
+  /// Bottom-anchored scoreboard strip rect (cricket-style along lower edge).
+  ({double left, double top, double width, double height}) frameRect(double maxW, double maxH) {
+    final w = (maxW * widthFraction).clamp(80.0, maxW);
+    final h = (maxH * heightFraction).clamp(48.0, maxH * 0.55);
+    final inset = horizontalInset.clamp(0.0, maxW * 0.3);
+    final left = (anchorX * maxW - w / 2).clamp(inset, maxW - w - inset);
+    final top = (maxH - h - bottomMargin).clamp(0.0, maxH - h);
+    return (left: left, top: top, width: w, height: h);
+  }
+
   Map<String, dynamic> toLocalJson() => {
         ...toServerJson(),
         'height_fraction': heightFraction,
