@@ -1,0 +1,761 @@
+﻿--------- beginning of system
+06-08 23:51:07.978 26613 26639 I DisplayManager: Choreographer implicitly registered for the refresh rate.
+06-08 23:51:08.074 26613 26613 D InsetsController: hide(ime())
+--------- beginning of main
+06-08 23:51:49.443 26613 26613 W WindowOnBackDispatcher: OnBackInvokedCallback is not enabled for the application.
+06-08 23:51:49.443 26613 26613 W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+06-08 23:51:49.604 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:51:49.604 26613 26613 D Cricrelay: CameraPreviewHost.show: gl attached, flutter elevated
+06-08 23:51:49.605 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:51:49.616 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:51:49.617 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:51:49.669 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:51:49.699 26613 26613 D AudioSystem: onNewServiceWithAdapter: media.audio_flinger service obtained 0xb40000764a7f2700
+06-08 23:51:49.701 26613 26613 D AudioSystem: getService: IAudioFlingerService retrieved: 0xb4000075da7e8de0  IAudioFlinger cached: 0xb40000764a7f2700
+06-08 23:51:49.701 26613 26613 D AudioSystem: getClient: checking for service: 0xb40000764a7f2700
+06-08 23:51:49.729 26613 26613 I MicrophoneManager: Microphone created, 32000hz, Stereo
+06-08 23:51:49.758 26613 26613 I AudioEncoder: 2 encoders found
+06-08 23:51:49.759 26613 26613 I AudioEncoder: Encoder selected c2.android.aac.encoder
+06-08 23:51:49.767 26613 26739 D CCodec  : allocate(c2.android.aac.encoder)
+06-08 23:51:49.817 26613 26739 I ApexCodecsLazy: ApexCodecs loaded
+06-08 23:51:49.817 26613 26739 I Codec2Client: Available Codec2 services: "default" "default1" "default9" "software" "__ApexCodecs__"
+06-08 23:51:49.818 26613 26739 I CCodec  : setting up 'default' as default (vendor) store
+06-08 23:51:49.826 26613 26739 I CCodec  : Created component [c2.android.aac.encoder] for [c2.android.aac.encoder]
+06-08 23:51:49.828 26613 26739 D CCodecConfig: read media type: audio/mp4a-latm
+06-08 23:51:49.829 26613 26739 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.max-count.values
+06-08 23:51:49.829 26613 26739 D ReflectedParamUpdater: extent() != 1 for single value type: output.subscribed-indices.values
+06-08 23:51:49.829 26613 26739 D ReflectedParamUpdater: extent() != 1 for single value type: input.buffers.allocator-ids.values
+06-08 23:51:49.830 26613 26739 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.allocator-ids.values
+06-08 23:51:49.830 26613 26739 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.allocator-ids.values
+06-08 23:51:49.830 26613 26739 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.pool-ids.values
+06-08 23:51:49.830 26613 26739 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.pool-ids.values
+06-08 23:51:49.833 26613 26739 I CCodecConfig: query failed after returning 10 values (BAD_INDEX)
+06-08 23:51:49.833 26613 26739 D CCodecConfig: c2 config diff is Dict {
+06-08 23:51:49.833 26613 26739 D CCodecConfig:   c2::u32 coded.bitrate.value = 64000
+06-08 23:51:49.833 26613 26739 D CCodecConfig:   c2::u32 coded.pl.level = 0
+06-08 23:51:49.833 26613 26739 D CCodecConfig:   c2::u32 coded.pl.profile = 8192
+06-08 23:51:49.833 26613 26739 D CCodecConfig:   c2::u32 coding.aac-sbr-mode.value = 3
+06-08 23:51:49.833 26613 26739 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 2048
+06-08 23:51:49.833 26613 26739 D CCodecConfig:   c2::u32 input.delay.value = 0
+06-08 23:51:49.833 26613 26739 D CCodecConfig:   string input.media-type.value = "audio/raw"
+06-08 23:51:49.833 26613 26739 D CCodecConfig:   c2::u32 output.large-frame.max-size = 0
+06-08 23:51:49.833 26613 26739 D CCodecConfig:   c2::u32 output.large-frame.threshold-size = 0
+06-08 23:51:49.833 26613 26739 D CCodecConfig:   string output.media-type.value = "audio/mp4a-latm"
+06-08 23:51:49.833 26613 26739 D CCodecConfig:   c2::u32 raw.channel-count.value = 1
+06-08 23:51:49.833 26613 26739 D CCodecConfig:   c2::u32 raw.sample-rate.value = 44100
+06-08 23:51:49.833 26613 26739 D CCodecConfig: }
+06-08 23:51:49.838 26613 26739 I MediaCodec: MediaCodec will operate in async mode
+06-08 23:51:49.838 26613 26613 I MediaCodec: media_quality service unavailable, skipping updatePictureProfile
+06-08 23:51:49.849 26613 26613 D CodecSeeding: Seed: codec c2.android.aac.encoder, mediatype audio/mp4a-latm, overrideable 1
+06-08 23:51:49.849 26613 26613 D CodecProperties: setFeatureValue(multiple-frames,0)
+06-08 23:51:49.849 26613 26613 D CodecProperties: setFeatureValue(_vq_eligible.device,1)
+06-08 23:51:49.849 26613 26613 D CodecProperties: setFeatureValue(_quality.target,1)
+06-08 23:51:49.849 26613 26613 D CodecSeeding: Seed: codec c2.android.aac.encoder, mediatype audio/mp4a-latm, overrideable 0
+06-08 23:51:49.850 26613 26613 D MediaCodec: shapeMediaFormat: deltas(0): AMessage(what = 0x00000000) = {
+06-08 23:51:49.850 26613 26613 D MediaCodec:   }
+06-08 23:51:49.850 26613 26739 D CCodec  : [c2.android.aac.encoder] buffers are bound to CCodec for this session
+06-08 23:51:49.850 26613 26739 D CCodecConfig: no c2 equivalents for flags
+06-08 23:51:49.850 26613 26739 D CCodecConfig: no c2 equivalents for encoder
+06-08 23:51:49.851 26613 26739 D CCodecConfig: c2 config diff is   c2::u32 coded.bitrate.value = 131072
+06-08 23:51:49.851 26613 26739 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 4096
+06-08 23:51:49.851 26613 26739 D CCodecConfig:   c2::u32 raw.channel-count.value = 2
+06-08 23:51:49.851 26613 26739 D CCodecConfig:   c2::u32 raw.sample-rate.value = 32000
+06-08 23:51:49.851 26613 26739 D CCodec  : client requested max input size 3840, which is smaller than what component recommended (4096); overriding with component recommendation.
+06-08 23:51:49.852 26613 26739 W CCodec  : This behavior is subject to change. It is recommended that app developers double check whether the requested max input size is in reasonable range.
+06-08 23:51:49.852 26613 26739 D CCodec  : encoding statistics level = 0
+06-08 23:51:49.852 26613 26739 D CCodec  : setup formats input: AMessage(what = 0x00000000) = {
+06-08 23:51:49.852 26613 26739 D CCodec  :   int32_t sample-rate = 32000
+06-08 23:51:49.852 26613 26739 D CCodec  :   int32_t channel-count = 2
+06-08 23:51:49.852 26613 26739 D CCodec  :   int32_t max-input-size = 4096
+06-08 23:51:49.852 26613 26739 D CCodec  :   string mime = "audio/raw"
+06-08 23:51:49.852 26613 26739 D CCodec  :   int32_t android._config-pcm-encoding = 2
+06-08 23:51:49.852 26613 26739 D CCodec  : }
+06-08 23:51:49.852 26613 26739 D CCodec  : setup formats output: AMessage(what = 0x00000000) = {
+06-08 23:51:49.852 26613 26739 D CCodec  :   int32_t sample-rate = 32000
+06-08 23:51:49.852 26613 26739 D CCodec  :   int32_t bitrate = 131072
+06-08 23:51:49.852 26613 26739 D CCodec  :   int32_t buffer-batch-max-output-size = 0
+06-08 23:51:49.852 26613 26739 D CCodec  :   int32_t buffer-batch-threshold-output-size = 0
+06-08 23:51:49.852 26613 26739 D CCodec  :   int32_t channel-count = 2
+06-08 23:51:49.852 26613 26739 D CCodec  :   int32_t level = 0
+06-08 23:51:49.852 26613 26739 D CCodec  :   int32_t max-bitrate = 131072
+06-08 23:51:49.852 26613 26739 D CCodec  :   string mime = "audio/mp4a-latm"
+06-08 23:51:49.852 26613 26739 D CCodec  :   int32_t profile = 2
+06-08 23:51:49.852 26613 26739 D CCodec  : }
+06-08 23:51:49.852 26613 26739 I CCodecConfig: query failed after returning 10 values (BAD_INDEX)
+06-08 23:51:49.852 26613 26739 E ricrelay.stream: Failed to query component interface for required system resources: 6
+06-08 23:51:49.852 26613 26613 I AudioEncoder: prepared
+06-08 23:51:49.853 26613 26613 I VideoEncoder: 3 encoders found
+06-08 23:51:49.853 26613 26613 I VideoEncoder: Encoder c2.exynos.h264.encoder
+06-08 23:51:49.853 26613 26613 I VideoEncoder: Color supported: 2130708361
+06-08 23:51:49.853 26613 26613 I VideoEncoder: Encoder selected c2.exynos.h264.encoder
+06-08 23:51:49.856 26613 26746 D CCodec  : allocate(c2.exynos.h264.encoder)
+06-08 23:51:49.858 26613 26746 I CCodec  : setting up 'default' as default (vendor) store
+06-08 23:51:49.864 26613 26746 W ricrelay.stream: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+06-08 23:51:49.865 26613 26746 I CCodec  : Created component [c2.exynos.h264.encoder] for [c2.exynos.h264.encoder]
+06-08 23:51:49.865 26613 26746 D CCodecConfig: read media type: video/avc
+06-08 23:51:49.867 26613 26746 D ReflectedParamUpdater: extent() != 1 for single value type: output.subscribed-indices.values
+06-08 23:51:49.867 26613 26746 D ReflectedParamUpdater: extent() != 1 for single value type: input.buffers.allocator-ids.values
+06-08 23:51:49.867 26613 26746 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.allocator-ids.values
+06-08 23:51:49.867 26613 26746 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.pool-ids.values
+06-08 23:51:49.869 26613 26746 D ReflectedParamUpdater: ignored struct field coding.qp.values
+06-08 23:51:49.871 26613 26746 D ReflectedParamUpdater: ignored struct field coding.gop.values
+06-08 23:51:49.874 26613 26746 D CCodecConfig: ignoring local param raw.color (0xc2001809) as it is already supported
+06-08 23:51:49.876 26613 26746 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+06-08 23:51:49.876 26613 26746 D CCodecConfig: c2 config diff is Dict {
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 algo.bitrate-mode.value = 3
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 algo.encoding-quality-level.value = 0
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::i32 algo.priority.value = 0
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::float algo.rate.value = 0
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::i32 coded.average-qp.value = 0
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 coded.bitrate-mode.value = 1
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 coded.bitrate.value = 64000
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::float coded.frame-rate.value = 15
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 coded.hdr-format.value = 0
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 coded.picture-type.value = 0
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 coded.pl.level = 20480
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 coded.pl.profile = 20484
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 coding.intra-refresh.mode = 0
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::float coding.intra-refresh.period = 0
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 coding.request-sync-frame.value = 0
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::i64 coding.sync-frame-interval.value = 1000000
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   Buffer coding.temporal-layering = {
+06-08 23:51:49.876 26613 26746 D CCodecConfig:     00000000:  10 00 00 00 07 20 01 52  00 00 00 00 00 00 00 00  ..... .R........
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   }
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 input.delay.value = 0
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   string input.media-type.value = "video/raw"
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 output.buffers.prepend-header.value = 0
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   string output.media-type.value = "video/avc"
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 raw.color.matrix = 0
+06-08 23:51:49.876 26613 26746 D CCodecConfig:   c2::u32 raw.color.primaries = 0
+06-08 23:51:49.876 26613 26746 D CCodecConfig:  
+06-08 23:51:49.878 26613 26613 I VideoEncoder: Prepare video info: SURFACE, 720x1280
+06-08 23:51:49.878 26613 26613 I VideoEncoder: set bitrate mode CBR
+06-08 23:51:49.882 26613 26745 I MediaCodec: MediaCodec will operate in async mode
+06-08 23:51:49.882 26613 26613 I MediaCodec: media_quality service unavailable, skipping updatePictureProfile
+06-08 23:51:49.882 26613 26613 D CodecSeeding: Seed: codec c2.exynos.h264.encoder, mediatype video/avc, overrideable 1
+06-08 23:51:49.882 26613 26613 D CodecProperties: setTuningValue(vq-target-bpp,0)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setTuningValue(vq-target-bpp-1080p,1.90)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setTuningValue(vq-target-bpp-720p,2.25)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setTuningValue(vq-target-bpp-540p,2.65)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setTuningValue(vq-target-bpp-480p,3.00)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setTuningValue(vq-target-bpp-320x240,0)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setTuningValue(vq-target-qpmax,-1)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setTuningValue(vq-target-qpmax-1080p,45)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setTuningValue(vq-target-qpmax-720p,43)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setTuningValue(vq-target-qpmax-540p,42)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setTuningValue(vq-target-qpmax-480p,38)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setTuningValue(vq-bitrate-phaseout,1.75)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setTuningValue(vq-boost-missing-qp,0.20)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setFeatureValue(can-swap-width-height,1)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setFeatureValue(encoding-statistics,0)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setFeatureValue(qp-bounds,0)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setFeatureValue(vq-minimum-quality,0)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setFeatureValue(_vq_eligible.device,1)
+06-08 23:51:49.882 26613 26613 D CodecProperties: setFeatureValue(_quality.target,1)
+06-08 23:51:49.882 26613 26613 D CodecSeeding: Seed: codec c2.exynos.h264.encoder, mediatype video/avc, overrideable 0
+06-08 23:51:49.883 26613 26613 D VQApply : minquality: applies only to VBR encoding
+06-08 23:51:49.883 26613 26613 D MediaCodec: shapeMediaFormat: deltas(0): AMessage(what = 0x00000000) = {
+06-08 23:51:49.883 26613 26613 D MediaCodec:   }
+06-08 23:51:49.883 26613 26746 D CCodec  : [c2.exynos.h264.encoder] buffers are bound to CCodec for this session
+06-08 23:51:49.883 26613 26746 D CCodecConfig: no c2 equivalents for color-format
+06-08 23:51:49.883 26613 26746 D CCodecConfig: no c2 equivalents for flags
+06-08 23:51:49.883 26613 26746 D CCodecConfig: no c2 equivalents for encoder
+06-08 23:51:49.885 26613 26746 D CCodecConfig: c2 config diff is   c2::u32 algo.bitrate-mode.value = 1
+06-08 23:51:49.885 26613 26746 D CCodecConfig:   c2::u32 coded.bitrate.value = 2500000
+06-08 23:51:49.885 26613 26746 D CCodecConfig:   c2::float coded.frame-rate.value = 30
+06-08 23:51:49.885 26613 26746 D CCodecConfig:   c2::i64 coding.sync-frame-interval.value = 2000000
+06-08 23:51:49.885 26613 26746 D CCodecConfig:   c2::u32 raw.size.height = 1280
+06-08 23:51:49.885 26613 26746 D CCodecConfig:   c2::u32 raw.size.width = 720
+06-08 23:51:49.885 26613 26746 D CCodec  : encoding statistics level = 0
+06-08 23:51:49.885 26613 26746 D CCodec  : setup formats input: AMessage(what = 0x00000000) = {
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t android._color-format = 2130708361
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t android._dataspace = 0
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t bitrate-mode = 1
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t frame-rate = 30
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t height = 1280
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t intra-refresh-period = 0
+06-08 23:51:49.885 26613 26746 D CCodec  :   string mime = "video/raw"
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t prepend-sps-pps-to-idr-frames = 0
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t priority = 0
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t video-qp-average = 0
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t width = 720
+06-08 23:51:49.885 26613 26746 D CCodec  :   Rect crop(0, 0, 719, 1279)
+06-08 23:51:49.885 26613 26746 D CCodec  :   int64_t android._C2MemoryUsage = 1125899906908160
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t color-format = 2130708361
+06-08 23:51:49.885 26613 26746 D CCodec  : }
+06-08 23:51:49.885 26613 26746 D CCodec  : setup formats output: AMessage(what = 0x00000000) = {
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t bitrate = 2500000
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t bitrate-mode = 1
+06-08 23:51:49.885 26613 26746 D CCodec  :   Rect crop(0, 0, 719, 1279)
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t width = 720
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t color-standard = 0
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t color-range = 0
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t color-transfer = 0
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t frame-rate = 30
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t height = 1280
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t intra-refresh-period = 0
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t level = 1
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t max-bitrate = 2500000
+06-08 23:51:49.885 26613 26746 D CCodec  :   string mime = "video/avc"
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t prepend-sps-pps-to-idr-frames = 0
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t priority = 0
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t profile = 8
+06-08 23:51:49.885 26613 26746 D CCodec  :   int32_t video-qp-average = 0
+06-08 23:51:49.885 26613 26746 D CCodec  : }
+06-08 23:51:49.886 26613 26746 I CCodecConfig: query failed after returning 22 values (BAD_INDEX)
+06-08 23:51:49.886 26613 26746 D CCodecConfig: c2 config diff is   c2::u32 coded.pl.level = 20489
+06-08 23:51:49.886 26613 26746 E ricrelay.stream: Failed to query component interface for required system resources: 6
+06-08 23:51:49.887 26613 26746 D CCodec  : aidl based PersistentSurface created
+06-08 23:51:49.887 26613 26746 D CCodec  : input format changed to AMessage(what = 0x00000000) = {
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t android._color-format = 2130708361
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t android._dataspace = 260
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t bitrate-mode = 1
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t frame-rate = 30
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t height = 1280
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t intra-refresh-period = 0
+06-08 23:51:49.887 26613 26746 D CCodec  :   string mime = "video/raw"
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t prepend-sps-pps-to-idr-frames = 0
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t priority = 0
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t video-qp-average = 0
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t width = 720
+06-08 23:51:49.887 26613 26746 D CCodec  :   Rect crop(0, 0, 719, 1279)
+06-08 23:51:49.887 26613 26746 D CCodec  :   int64_t android._C2MemoryUsage = 1125899906908160
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t color-format = 2130708361
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t color-range = 2
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t color-standard = 1
+06-08 23:51:49.887 26613 26746 D CCodec  :   int32_t color-transfer = 3
+06-08 23:51:49.887 26613 26746 D CCodec  : }
+06-08 23:51:49.888 26613 26746 D GraphicBufferSource: setting dataspace: 0x10c10000, acquired=0
+06-08 23:51:49.888 26613 26746 D CCodec  : ISConfig not changed
+06-08 23:51:49.888 26613 26613 I VideoEncoder: prepared
+06-08 23:51:49.888 26613 26613 I CameraManagerGlobal: Connecting to camera service
+06-08 23:51:49.907 26613 26754 E SurfaceManager: GL already released
+06-08 23:51:49.934 26613 26754 I SurfaceManager: GL initialized
+06-08 23:51:49.949 26613 26754 E SurfaceManager: GL already released
+06-08 23:51:49.961 26613 26754 I SurfaceManager: GL initialized
+06-08 23:51:49.967 26613 26613 I Camera2ApiManager: optimal resolution set to: 1280x720
+06-08 23:51:50.025 26613 26762 I Camera2ApiManager: Camera opened
+06-08 23:51:50.027 26613 26613 D Cricrelay: preview ready 1280x720 onPreview=true
+06-08 23:51:50.027 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:51:50.030 26613 26762 I Camera2ApiManager: fps: 30 - 30
+06-08 23:51:50.030 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:51:50.032 26613 26762 I Camera2ApiManager: Camera configured
+06-08 23:51:50.227 26613 26613 W pool-5-thread-1: type=1400 audit(0.0:36297): avc:  denied  { getattr } for  name="/" dev="dmabuf" ino=1 scontext=u:r:untrusted_app:s0:c211,c257,c512,c768 tcontext=u:object_r:unlabeled:s0 tclass=filesystem permissive=0 app=uk.co.cricrelay.stream
+06-08 23:51:50.231 26613 26754 I ricrelay.stream: Use dataspace 142671872as it is
+06-08 23:51:50.287 26613 26754 I ricrelay.stream: Use dataspace 142671872as it is
+06-08 23:51:50.283 26613 26613 W pool-5-thread-1: type=1400 audit(0.0:36298): avc:  denied  { getattr } for  name="/" dev="dmabuf" ino=1 scontext=u:r:untrusted_app:s0:c211,c257,c512,c768 tcontext=u:object_r:unlabeled:s0 tclass=filesystem permissive=0 app=uk.co.cricrelay.stream
+06-08 23:51:50.322 26613 26754 I ricrelay.stream: Use dataspace 142671872as it is
+06-08 23:51:50.319 26613 26613 W pool-5-thread-1: type=1400 audit(0.0:36299): avc:  denied  { getattr } for  name="/" dev="dmabuf" ino=1 scontext=u:r:untrusted_app:s0:c211,c257,c512,c768 tcontext=u:object_r:unlabeled:s0 tclass=filesystem permissive=0 app=uk.co.cricrelay.stream
+06-08 23:51:56.438 26613 26613 D VRI[MainActivity]: WindowInsets changed: 2424x1080 statusBars:[0,63,0,0] mandatorySystemGestures:[0,63,0,84] 
+06-08 23:51:56.438 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:51:56.488 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:51:56.619 26613 26613 D InsetsController: hide(ime())
+06-08 23:51:56.619 26613 26613 I ImeTracker: uk.co.cricrelay.stream:c1fd0465: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+06-08 23:51:56.689 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:51:59.289 26613 26754 I ricrelay.stream: Use dataspace 142671872as it is
+06-08 23:51:59.287 26613 26613 W pool-5-thread-1: type=1400 audit(0.0:36300): avc:  denied  { getattr } for  name="/" dev="dmabuf" ino=1 scontext=u:r:untrusted_app:s0:c211,c257,c512,c768 tcontext=u:object_r:unlabeled:s0 tclass=filesystem permissive=0 app=uk.co.cricrelay.stream
+06-08 23:51:59.939 26613 26613 I MicrophoneManager: Microphone stopped
+06-08 23:51:59.963 26613 26754 I SurfaceManager: GL released
+06-08 23:51:59.963 26613 26754 E SurfaceManager: GL already released
+06-08 23:51:59.974 26613 26754 I SurfaceManager: GL initialized
+06-08 23:51:59.975 26613 26613 I VideoEncoder: stopped
+06-08 23:51:59.976 26613 26745 E MediaCodec: flush() is valid only at Executing states; currently at Configured state
+06-08 23:51:59.981 26613 26613 I AudioEncoder: stopped
+06-08 23:51:59.982 26613 26739 E MediaCodec: flush() is valid only at Executing states; currently at Configured state
+06-08 23:51:59.991 26613 26754 I SurfaceManager: GL released
+06-08 23:51:59.991 26613 26754 E SurfaceManager: GL already released
+06-08 23:52:00.000 26613 26754 I SurfaceManager: GL released
+06-08 23:52:00.000 26613 26754 E libEGL  : call to OpenGL ES API with no current context (logged once per thread)
+06-08 23:52:00.013 26613 26633 E BufferQueueProducer: [SurfaceTexture-1-26613-0](id:67f500000003,api:4,p:1136,c:26613) dequeueBuffer: BufferQueue has been abandoned
+06-08 23:52:00.017 26613 26633 E BufferQueueProducer: [SurfaceTexture-1-26613-0](id:67f500000003,api:4,p:1136,c:26613) cancelBuffer: BufferQueue has been abandoned
+06-08 23:52:00.131 26613 26772 W DeliQueue: Handler (android.os.Handler) {ff309d7} sending message to a Handler on a dead thread
+06-08 23:52:00.131 26613 26772 W DeliQueue: java.lang.IllegalStateException: Handler (android.os.Handler) {ff309d7} sending message to a Handler on a dead thread
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at android.os.MessageQueue.logDeadThread(MessageQueue.java:386)
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at android.os.MessageQueue.enqueueMessageUnchecked(MessageQueue.java:413)
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at android.os.MessageQueue.enqueueMessageDeliQueue(MessageQueue.java:489)
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at android.os.MessageQueue.enqueueMessage(MessageQueue.java:398)
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at android.os.Handler.enqueueMessage(Handler.java:854)
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at android.os.Handler.sendMessageAtTime(Handler.java:798)
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at android.os.Handler.sendMessageDelayed(Handler.java:768)
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at android.os.Handler.post(Handler.java:488)
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at android.hardware.camera2.impl.CameraDeviceImpl$CameraHandlerExecutor.execute(CameraDeviceImpl.java:3142)
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at android.hardware.camera2.impl.CameraDeviceImpl$ClientStateCallback.onClosed(CameraDeviceImpl.java:358)
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at android.hardware.camera2.impl.CameraDeviceImpl$7.run(CameraDeviceImpl.java:311)
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1100)
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+06-08 23:52:00.131 26613 26772 W DeliQueue: 	at java.lang.Thread.run(Thread.java:1572)
+06-08 23:52:00.257 26613 26613 W WindowOnBackDispatcher: OnBackInvokedCallback is not enabled for the application.
+06-08 23:52:00.257 26613 26613 W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+06-08 23:52:00.425 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:00.425 26613 26613 D Cricrelay: CameraPreviewHost.show: gl attached, flutter elevated
+06-08 23:52:00.425 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:00.439 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:00.442 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:00.489 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:00.535 26613 26613 I MicrophoneManager: Microphone created, 32000hz, Stereo
+06-08 23:52:00.536 26613 26613 I AudioEncoder: 2 encoders found
+06-08 23:52:00.536 26613 26613 I AudioEncoder: Encoder selected c2.android.aac.encoder
+06-08 23:52:00.538 26613 26835 D CCodec  : allocate(c2.android.aac.encoder)
+06-08 23:52:00.540 26613 26835 I CCodec  : setting up 'default' as default (vendor) store
+06-08 23:52:00.543 26613 26835 W ricrelay.stream: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+06-08 23:52:00.544 26613 26835 I CCodec  : Created component [c2.android.aac.encoder] for [c2.android.aac.encoder]
+06-08 23:52:00.544 26613 26835 D CCodecConfig: read media type: audio/mp4a-latm
+06-08 23:52:00.546 26613 26835 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.max-count.values
+06-08 23:52:00.546 26613 26835 D ReflectedParamUpdater: extent() != 1 for single value type: output.subscribed-indices.values
+06-08 23:52:00.546 26613 26835 D ReflectedParamUpdater: extent() != 1 for single value type: input.buffers.allocator-ids.values
+06-08 23:52:00.546 26613 26835 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.allocator-ids.values
+06-08 23:52:00.546 26613 26835 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.allocator-ids.values
+06-08 23:52:00.546 26613 26835 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.pool-ids.values
+06-08 23:52:00.546 26613 26835 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.pool-ids.values
+06-08 23:52:00.547 26613 26835 I CCodecConfig: query failed after returning 10 values (BAD_INDEX)
+06-08 23:52:00.547 26613 26835 D CCodecConfig: c2 config diff is Dict {
+06-08 23:52:00.547 26613 26835 D CCodecConfig:   c2::u32 coded.bitrate.value = 64000
+06-08 23:52:00.547 26613 26835 D CCodecConfig:   c2::u32 coded.pl.level = 0
+06-08 23:52:00.547 26613 26835 D CCodecConfig:   c2::u32 coded.pl.profile = 8192
+06-08 23:52:00.547 26613 26835 D CCodecConfig:   c2::u32 coding.aac-sbr-mode.value = 3
+06-08 23:52:00.547 26613 26835 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 2048
+06-08 23:52:00.547 26613 26835 D CCodecConfig:   c2::u32 input.delay.value = 0
+06-08 23:52:00.547 26613 26835 D CCodecConfig:   string input.media-type.value = "audio/raw"
+06-08 23:52:00.547 26613 26835 D CCodecConfig:   c2::u32 output.large-frame.max-size = 0
+06-08 23:52:00.547 26613 26835 D CCodecConfig:   c2::u32 output.large-frame.threshold-size = 0
+06-08 23:52:00.547 26613 26835 D CCodecConfig:   string output.media-type.value = "audio/mp4a-latm"
+06-08 23:52:00.547 26613 26835 D CCodecConfig:   c2::u32 raw.channel-count.value = 1
+06-08 23:52:00.547 26613 26835 D CCodecConfig:   c2::u32 raw.sample-rate.value = 44100
+06-08 23:52:00.547 26613 26835 D CCodecConfig: }
+06-08 23:52:00.550 26613 26835 I MediaCodec: MediaCodec will operate in async mode
+06-08 23:52:00.550 26613 26613 I MediaCodec: media_quality service unavailable, skipping updatePictureProfile
+06-08 23:52:00.550 26613 26613 D MediaCodec: shapeMediaFormat: deltas(0): AMessage(what = 0x00000000) = {
+06-08 23:52:00.550 26613 26613 D MediaCodec:   }
+06-08 23:52:00.550 26613 26835 D CCodec  : [c2.android.aac.encoder] buffers are bound to CCodec for this session
+06-08 23:52:00.550 26613 26835 D CCodecConfig: no c2 equivalents for flags
+06-08 23:52:00.550 26613 26835 D CCodecConfig: no c2 equivalents for encoder
+06-08 23:52:00.551 26613 26835 D CCodecConfig: c2 config diff is   c2::u32 coded.bitrate.value = 131072
+06-08 23:52:00.551 26613 26835 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 4096
+06-08 23:52:00.551 26613 26835 D CCodecConfig:   c2::u32 raw.channel-count.value = 2
+06-08 23:52:00.551 26613 26835 D CCodecConfig:   c2::u32 raw.sample-rate.value = 32000
+06-08 23:52:00.551 26613 26835 D CCodec  : client requested max input size 3840, which is smaller than what component recommended (4096); overriding with component recommendation.
+06-08 23:52:00.551 26613 26835 W CCodec  : This behavior is subject to change. It is recommended that app developers double check whether the requested max input size is in reasonable range.
+06-08 23:52:00.551 26613 26835 D CCodec  : encoding statistics level = 0
+06-08 23:52:00.551 26613 26835 D CCodec  : setup formats input: AMessage(what = 0x00000000) = {
+06-08 23:52:00.551 26613 26835 D CCodec  :   int32_t sample-rate = 32000
+06-08 23:52:00.551 26613 26835 D CCodec  :   int32_t channel-count = 2
+06-08 23:52:00.551 26613 26835 D CCodec  :   int32_t max-input-size = 4096
+06-08 23:52:00.551 26613 26835 D CCodec  :   string mime = "audio/raw"
+06-08 23:52:00.551 26613 26835 D CCodec  :   int32_t android._config-pcm-encoding = 2
+06-08 23:52:00.551 26613 26835 D CCodec  : }
+06-08 23:52:00.551 26613 26835 D CCodec  : setup formats output: AMessage(what = 0x00000000) = {
+06-08 23:52:00.551 26613 26835 D CCodec  :   int32_t sample-rate = 32000
+06-08 23:52:00.551 26613 26835 D CCodec  :   int32_t bitrate = 131072
+06-08 23:52:00.551 26613 26835 D CCodec  :   int32_t buffer-batch-max-output-size = 0
+06-08 23:52:00.551 26613 26835 D CCodec  :   int32_t buffer-batch-threshold-output-size = 0
+06-08 23:52:00.551 26613 26835 D CCodec  :   int32_t channel-count = 2
+06-08 23:52:00.551 26613 26835 D CCodec  :   int32_t level = 0
+06-08 23:52:00.551 26613 26835 D CCodec  :   int32_t max-bitrate = 131072
+06-08 23:52:00.551 26613 26835 D CCodec  :   string mime = "audio/mp4a-latm"
+06-08 23:52:00.551 26613 26835 D CCodec  :   int32_t profile = 2
+06-08 23:52:00.551 26613 26835 D CCodec  : }
+06-08 23:52:00.552 26613 26835 I CCodecConfig: query failed after returning 10 values (BAD_INDEX)
+06-08 23:52:00.552 26613 26835 E ricrelay.stream: Failed to query component interface for required system resources: 6
+06-08 23:52:00.552 26613 26613 I AudioEncoder: prepared
+06-08 23:52:00.552 26613 26613 I VideoEncoder: 3 encoders found
+06-08 23:52:00.552 26613 26613 I VideoEncoder: Encoder c2.exynos.h264.encoder
+06-08 23:52:00.552 26613 26613 I VideoEncoder: Color supported: 2130708361
+06-08 23:52:00.552 26613 26613 I VideoEncoder: Encoder selected c2.exynos.h264.encoder
+06-08 23:52:00.554 26613 26839 D CCodec  : allocate(c2.exynos.h264.encoder)
+06-08 23:52:00.555 26613 26839 I CCodec  : setting up 'default' as default (vendor) store
+06-08 23:52:00.559 26613 26839 W ricrelay.stream: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+06-08 23:52:00.559 26613 26839 I CCodec  : Created component [c2.exynos.h264.encoder] for [c2.exynos.h264.encoder]
+06-08 23:52:00.559 26613 26839 D CCodecConfig: read media type: video/avc
+06-08 23:52:00.561 26613 26839 D ReflectedParamUpdater: extent() != 1 for single value type: output.subscribed-indices.values
+06-08 23:52:00.561 26613 26839 D ReflectedParamUpdater: extent() != 1 for single value type: input.buffers.allocator-ids.values
+06-08 23:52:00.561 26613 26839 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.allocator-ids.values
+06-08 23:52:00.561 26613 26839 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.pool-ids.values
+06-08 23:52:00.563 26613 26839 D ReflectedParamUpdater: ignored struct field coding.qp.values
+06-08 23:52:00.565 26613 26839 D ReflectedParamUpdater: ignored struct field coding.gop.values
+06-08 23:52:00.567 26613 26839 D CCodecConfig: ignoring local param raw.color (0xc2001809) as it is already supported
+06-08 23:52:00.568 26613 26839 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+06-08 23:52:00.569 26613 26839 D CCodecConfig: c2 config diff is Dict {
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 algo.bitrate-mode.value = 3
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 algo.encoding-quality-level.value = 0
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::i32 algo.priority.value = 0
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::float algo.rate.value = 0
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::i32 coded.average-qp.value = 0
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 coded.bitrate-mode.value = 1
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 coded.bitrate.value = 64000
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::float coded.frame-rate.value = 15
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 coded.hdr-format.value = 0
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 coded.picture-type.value = 0
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 coded.pl.level = 20480
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 coded.pl.profile = 20484
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 coding.intra-refresh.mode = 0
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::float coding.intra-refresh.period = 0
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 coding.request-sync-frame.value = 0
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::i64 coding.sync-frame-interval.value = 1000000
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   Buffer coding.temporal-layering = {
+06-08 23:52:00.569 26613 26839 D CCodecConfig:     00000000:  10 00 00 00 07 20 01 52  00 00 00 00 00 00 00 00  ..... .R........
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   }
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 input.delay.value = 0
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   string input.media-type.value = "video/raw"
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 output.buffers.prepend-header.value = 0
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   string output.media-type.value = "video/avc"
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 raw.color.matrix = 0
+06-08 23:52:00.569 26613 26839 D CCodecConfig:   c2::u32 raw.color.primaries = 0
+06-08 23:52:00.569 26613 26839 D CCodecConfig:  
+06-08 23:52:00.571 26613 26613 I VideoEncoder: Prepare video info: SURFACE, 1280x720
+06-08 23:52:00.571 26613 26613 I VideoEncoder: set bitrate mode CBR
+06-08 23:52:00.573 26613 26838 I MediaCodec: MediaCodec will operate in async mode
+06-08 23:52:00.574 26613 26613 I MediaCodec: media_quality service unavailable, skipping updatePictureProfile
+06-08 23:52:00.574 26613 26613 D VQApply : minquality: applies only to VBR encoding
+06-08 23:52:00.574 26613 26613 D MediaCodec: shapeMediaFormat: deltas(0): AMessage(what = 0x00000000) = {
+06-08 23:52:00.574 26613 26613 D MediaCodec:   }
+06-08 23:52:00.574 26613 26839 D CCodec  : [c2.exynos.h264.encoder] buffers are bound to CCodec for this session
+06-08 23:52:00.575 26613 26839 D CCodecConfig: no c2 equivalents for color-format
+06-08 23:52:00.575 26613 26839 D CCodecConfig: no c2 equivalents for flags
+06-08 23:52:00.575 26613 26839 D CCodecConfig: no c2 equivalents for encoder
+06-08 23:52:00.576 26613 26839 D CCodecConfig: c2 config diff is   c2::u32 algo.bitrate-mode.value = 1
+06-08 23:52:00.576 26613 26839 D CCodecConfig:   c2::u32 coded.bitrate.value = 2500000
+06-08 23:52:00.576 26613 26839 D CCodecConfig:   c2::float coded.frame-rate.value = 30
+06-08 23:52:00.576 26613 26839 D CCodecConfig:   c2::i64 coding.sync-frame-interval.value = 2000000
+06-08 23:52:00.576 26613 26839 D CCodecConfig:   c2::u32 raw.size.height = 720
+06-08 23:52:00.576 26613 26839 D CCodecConfig:   c2::u32 raw.size.width = 1280
+06-08 23:52:00.576 26613 26839 D CCodec  : encoding statistics level = 0
+06-08 23:52:00.576 26613 26839 D CCodec  : setup formats input: AMessage(what = 0x00000000) = {
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t android._color-format = 2130708361
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t android._dataspace = 0
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t bitrate-mode = 1
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t frame-rate = 30
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t height = 720
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t intra-refresh-period = 0
+06-08 23:52:00.576 26613 26839 D CCodec  :   string mime = "video/raw"
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t prepend-sps-pps-to-idr-frames = 0
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t priority = 0
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t video-qp-average = 0
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t width = 1280
+06-08 23:52:00.576 26613 26839 D CCodec  :   Rect crop(0, 0, 1279, 719)
+06-08 23:52:00.576 26613 26839 D CCodec  :   int64_t android._C2MemoryUsage = 1125899906908160
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t color-format = 2130708361
+06-08 23:52:00.576 26613 26839 D CCodec  : }
+06-08 23:52:00.576 26613 26839 D CCodec  : setup formats output: AMessage(what = 0x00000000) = {
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t bitrate = 2500000
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t bitrate-mode = 1
+06-08 23:52:00.576 26613 26839 D CCodec  :   Rect crop(0, 0, 1279, 719)
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t width = 1280
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t color-standard = 0
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t color-range = 0
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t color-transfer = 0
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t frame-rate = 30
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t height = 720
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t intra-refresh-period = 0
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t level = 1
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t max-bitrate = 2500000
+06-08 23:52:00.576 26613 26839 D CCodec  :   string mime = "video/avc"
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t prepend-sps-pps-to-idr-frames = 0
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t priority = 0
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t profile = 8
+06-08 23:52:00.576 26613 26839 D CCodec  :   int32_t video-qp-average = 0
+06-08 23:52:00.576 26613 26839 D CCodec  : }
+06-08 23:52:00.576 26613 26839 I CCodecConfig: query failed after returning 22 values (BAD_INDEX)
+06-08 23:52:00.577 26613 26839 D CCodecConfig: c2 config diff is   c2::u32 coded.pl.level = 20489
+06-08 23:52:00.577 26613 26839 E ricrelay.stream: Failed to query component interface for required system resources: 6
+06-08 23:52:00.577 26613 26839 D CCodec  : aidl based PersistentSurface created
+06-08 23:52:00.578 26613 26839 D CCodec  : input format changed to AMessage(what = 0x00000000) = {
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t android._color-format = 2130708361
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t android._dataspace = 260
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t bitrate-mode = 1
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t frame-rate = 30
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t height = 720
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t intra-refresh-period = 0
+06-08 23:52:00.578 26613 26839 D CCodec  :   string mime = "video/raw"
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t prepend-sps-pps-to-idr-frames = 0
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t priority = 0
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t video-qp-average = 0
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t width = 1280
+06-08 23:52:00.578 26613 26839 D CCodec  :   Rect crop(0, 0, 1279, 719)
+06-08 23:52:00.578 26613 26839 D CCodec  :   int64_t android._C2MemoryUsage = 1125899906908160
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t color-format = 2130708361
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t color-range = 2
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t color-standard = 1
+06-08 23:52:00.578 26613 26839 D CCodec  :   int32_t color-transfer = 3
+06-08 23:52:00.578 26613 26839 D CCodec  : }
+06-08 23:52:00.578 26613 26839 D GraphicBufferSource: setting dataspace: 0x10c10000, acquired=0
+06-08 23:52:00.578 26613 26839 D CCodec  : ISConfig not changed
+06-08 23:52:00.578 26613 26613 I VideoEncoder: prepared
+06-08 23:52:00.582 26613 26845 E SurfaceManager: GL already released
+06-08 23:52:00.601 26613 26845 I SurfaceManager: GL initialized
+06-08 23:52:00.605 26613 26845 E SurfaceManager: GL already released
+06-08 23:52:00.613 26613 26845 I SurfaceManager: GL initialized
+06-08 23:52:00.617 26613 26613 I Camera2ApiManager: optimal resolution set to: 1280x720
+06-08 23:52:00.661 26613 26613 D Cricrelay: preview ready 1280x720 onPreview=true
+06-08 23:52:00.660 26613 26846 I Camera2ApiManager: Camera opened
+06-08 23:52:00.661 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:00.671 26613 26846 I Camera2ApiManager: fps: 30 - 30
+06-08 23:52:00.671 26613 26846 I Camera2ApiManager: Camera configured
+06-08 23:52:00.689 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:00.846 26613 26845 I ricrelay.stream: Use dataspace 142671872as it is
+06-08 23:52:00.843 26613 26613 W pool-6-thread-1: type=1400 audit(0.0:36301): avc:  denied  { getattr } for  name="/" dev="dmabuf" ino=1 scontext=u:r:untrusted_app:s0:c211,c257,c512,c768 tcontext=u:object_r:unlabeled:s0 tclass=filesystem permissive=0 app=uk.co.cricrelay.stream
+06-08 23:52:00.904 26613 26845 I ricrelay.stream: Use dataspace 142671872as it is
+06-08 23:52:00.903 26613 26613 W pool-6-thread-1: type=1400 audit(0.0:36302): avc:  denied  { getattr } for  name="/" dev="dmabuf" ino=1 scontext=u:r:untrusted_app:s0:c211,c257,c512,c768 tcontext=u:object_r:unlabeled:s0 tclass=filesystem permissive=0 app=uk.co.cricrelay.stream
+06-08 23:52:00.939 26613 26845 I ricrelay.stream: Use dataspace 142671872as it is
+06-08 23:52:00.935 26613 26613 W pool-6-thread-1: type=1400 audit(0.0:36303): avc:  denied  { getattr } for  name="/" dev="dmabuf" ino=1 scontext=u:r:untrusted_app:s0:c211,c257,c512,c768 tcontext=u:object_r:unlabeled:s0 tclass=filesystem permissive=0 app=uk.co.cricrelay.stream
+06-08 23:52:01.509 26613 26845 I ricrelay.stream: Use dataspace 142671872as it is
+06-08 23:52:01.507 26613 26613 W pool-6-thread-1: type=1400 audit(0.0:36304): avc:  denied  { getattr } for  name="/" dev="dmabuf" ino=1 scontext=u:r:untrusted_app:s0:c211,c257,c512,c768 tcontext=u:object_r:unlabeled:s0 tclass=filesystem permissive=0 app=uk.co.cricrelay.stream
+06-08 23:52:02.172 26613 26613 I MicrophoneManager: Microphone stopped
+06-08 23:52:02.180 26613 26845 I SurfaceManager: GL released
+06-08 23:52:02.180 26613 26845 E SurfaceManager: GL already released
+06-08 23:52:02.190 26613 26845 I SurfaceManager: GL initialized
+06-08 23:52:02.190 26613 26613 I VideoEncoder: stopped
+06-08 23:52:02.190 26613 26838 E MediaCodec: flush() is valid only at Executing states; currently at Configured state
+06-08 23:52:02.192 26613 26613 I AudioEncoder: stopped
+06-08 23:52:02.192 26613 26835 E MediaCodec: flush() is valid only at Executing states; currently at Configured state
+06-08 23:52:02.208 26613 26845 I SurfaceManager: GL released
+06-08 23:52:02.208 26613 26845 E SurfaceManager: GL already released
+06-08 23:52:02.216 26613 26845 I SurfaceManager: GL released
+06-08 23:52:02.216 26613 26845 E libEGL  : call to OpenGL ES API with no current context (logged once per thread)
+06-08 23:52:02.235 26613 26892 E BufferQueueProducer: [SurfaceTexture-1-26613-1](id:67f500000006,api:4,p:1136,c:26613) cancelBuffer: BufferQueue has been abandoned
+06-08 23:52:02.334 26613 26856 W DeliQueue: Handler (android.os.Handler) {7b2652f} sending message to a Handler on a dead thread
+06-08 23:52:02.334 26613 26856 W DeliQueue: java.lang.IllegalStateException: Handler (android.os.Handler) {7b2652f} sending message to a Handler on a dead thread
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at android.os.MessageQueue.logDeadThread(MessageQueue.java:386)
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at android.os.MessageQueue.enqueueMessageUnchecked(MessageQueue.java:413)
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at android.os.MessageQueue.enqueueMessageDeliQueue(MessageQueue.java:489)
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at android.os.MessageQueue.enqueueMessage(MessageQueue.java:398)
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at android.os.Handler.enqueueMessage(Handler.java:854)
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at android.os.Handler.sendMessageAtTime(Handler.java:798)
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at android.os.Handler.sendMessageDelayed(Handler.java:768)
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at android.os.Handler.post(Handler.java:488)
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at android.hardware.camera2.impl.CameraDeviceImpl$CameraHandlerExecutor.execute(CameraDeviceImpl.java:3142)
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at android.hardware.camera2.impl.CameraDeviceImpl$ClientStateCallback.onClosed(CameraDeviceImpl.java:358)
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at android.hardware.camera2.impl.CameraDeviceImpl$7.run(CameraDeviceImpl.java:311)
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1100)
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+06-08 23:52:02.334 26613 26856 W DeliQueue: 	at java.lang.Thread.run(Thread.java:1572)
+06-08 23:52:03.877 26613 26613 D VRI[MainActivity]: WindowInsets changed: 1080x2424 statusBars:[0,173,0,0] mandatorySystemGestures:[0,205,0,84] 
+06-08 23:52:04.034 26613 26613 D InsetsController: hide(ime())
+06-08 23:52:04.034 26613 26613 I ImeTracker: uk.co.cricrelay.stream:9d5daa2c: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+06-08 23:52:06.901 26613 26613 D VRI[MainActivity]: visibilityChanged oldVisibility=true newVisibility=false
+06-08 23:52:07.003 26613 26613 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): null
+06-08 23:52:07.008 26613 26613 D ViewRootImpl: Skipping stats log for color mode
+06-08 23:52:07.390 26613 26613 I ContentCaptureHelper: Setting logging level to OFF
+06-08 23:52:07.398 26613 26613 D VRI[MainActivity]: WindowInsets changed: 1080x2424 statusBars:[0,173,0,0] navigationBars:[0,0,0,63] ime:[0,0,0,965] mandatorySystemGestures:[0,205,0,84] 
+06-08 23:52:07.399 26613 26613 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.view.ViewRootImpl$$ExternalSyntheticLambda25@79ae7d7
+06-08 23:52:07.505 26613 26613 D InsetsController: hide(ime())
+06-08 23:52:07.505 26613 26613 I ImeTracker: uk.co.cricrelay.stream:97133656: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+06-08 23:52:07.509 26613 26613 D VRI[MainActivity]: WindowInsets changed: ime:null 
+06-08 23:52:07.512 26613 26613 I ImeTracker: system_server:fd286381: onCancelled at PHASE_CLIENT_ON_CONTROLS_CHANGED
+06-08 23:52:07.557 26613 26613 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.view.ImeBackAnimationController@5845bec
+06-08 23:52:07.559 26613 26613 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.view.ViewRootImpl$$ExternalSyntheticLambda25@79ae7d7
+06-08 23:52:07.595 26613 26613 I ImeTracker: system_server:db809899: onCancelled at PHASE_CLIENT_ON_CONTROLS_CHANGED
+06-08 23:52:10.978 26613 26613 W WindowOnBackDispatcher: OnBackInvokedCallback is not enabled for the application.
+06-08 23:52:10.978 26613 26613 W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+06-08 23:52:11.074 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:11.074 26613 26613 D Cricrelay: CameraPreviewHost.show: gl attached, flutter elevated
+06-08 23:52:11.075 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:11.090 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:11.093 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:11.140 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:11.187 26613 26613 I MicrophoneManager: Microphone created, 32000hz, Stereo
+06-08 23:52:11.187 26613 26613 I AudioEncoder: 2 encoders found
+06-08 23:52:11.187 26613 26613 I AudioEncoder: Encoder selected c2.android.aac.encoder
+06-08 23:52:11.188 26613 26941 D CCodec  : allocate(c2.android.aac.encoder)
+06-08 23:52:11.193 26613 26941 I CCodec  : setting up 'default' as default (vendor) store
+06-08 23:52:11.202 26613 26941 W ricrelay.stream: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+06-08 23:52:11.202 26613 26941 I CCodec  : Created component [c2.android.aac.encoder] for [c2.android.aac.encoder]
+06-08 23:52:11.203 26613 26941 D CCodecConfig: read media type: audio/mp4a-latm
+06-08 23:52:11.206 26613 26941 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.max-count.values
+06-08 23:52:11.207 26613 26941 D ReflectedParamUpdater: extent() != 1 for single value type: output.subscribed-indices.values
+06-08 23:52:11.207 26613 26941 D ReflectedParamUpdater: extent() != 1 for single value type: input.buffers.allocator-ids.values
+06-08 23:52:11.207 26613 26941 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.allocator-ids.values
+06-08 23:52:11.207 26613 26941 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.allocator-ids.values
+06-08 23:52:11.207 26613 26941 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.pool-ids.values
+06-08 23:52:11.207 26613 26941 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.pool-ids.values
+06-08 23:52:11.209 26613 26941 I CCodecConfig: query failed after returning 10 values (BAD_INDEX)
+06-08 23:52:11.209 26613 26941 D CCodecConfig: c2 config diff is Dict {
+06-08 23:52:11.209 26613 26941 D CCodecConfig:   c2::u32 coded.bitrate.value = 64000
+06-08 23:52:11.209 26613 26941 D CCodecConfig:   c2::u32 coded.pl.level = 0
+06-08 23:52:11.209 26613 26941 D CCodecConfig:   c2::u32 coded.pl.profile = 8192
+06-08 23:52:11.209 26613 26941 D CCodecConfig:   c2::u32 coding.aac-sbr-mode.value = 3
+06-08 23:52:11.209 26613 26941 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 2048
+06-08 23:52:11.209 26613 26941 D CCodecConfig:   c2::u32 input.delay.value = 0
+06-08 23:52:11.209 26613 26941 D CCodecConfig:   string input.media-type.value = "audio/raw"
+06-08 23:52:11.209 26613 26941 D CCodecConfig:   c2::u32 output.large-frame.max-size = 0
+06-08 23:52:11.209 26613 26941 D CCodecConfig:   c2::u32 output.large-frame.threshold-size = 0
+06-08 23:52:11.209 26613 26941 D CCodecConfig:   string output.media-type.value = "audio/mp4a-latm"
+06-08 23:52:11.209 26613 26941 D CCodecConfig:   c2::u32 raw.channel-count.value = 1
+06-08 23:52:11.209 26613 26941 D CCodecConfig:   c2::u32 raw.sample-rate.value = 44100
+06-08 23:52:11.209 26613 26941 D CCodecConfig: }
+06-08 23:52:11.213 26613 26941 I MediaCodec: MediaCodec will operate in async mode
+06-08 23:52:11.213 26613 26613 I MediaCodec: media_quality service unavailable, skipping updatePictureProfile
+06-08 23:52:11.213 26613 26613 D MediaCodec: shapeMediaFormat: deltas(0): AMessage(what = 0x00000000) = {
+06-08 23:52:11.213 26613 26613 D MediaCodec:   }
+06-08 23:52:11.214 26613 26941 D CCodec  : [c2.android.aac.encoder] buffers are bound to CCodec for this session
+06-08 23:52:11.214 26613 26941 D CCodecConfig: no c2 equivalents for flags
+06-08 23:52:11.214 26613 26941 D CCodecConfig: no c2 equivalents for encoder
+06-08 23:52:11.215 26613 26941 D CCodecConfig: c2 config diff is   c2::u32 coded.bitrate.value = 131072
+06-08 23:52:11.215 26613 26941 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 4096
+06-08 23:52:11.215 26613 26941 D CCodecConfig:   c2::u32 raw.channel-count.value = 2
+06-08 23:52:11.215 26613 26941 D CCodecConfig:   c2::u32 raw.sample-rate.value = 32000
+06-08 23:52:11.215 26613 26941 D CCodec  : client requested max input size 3840, which is smaller than what component recommended (4096); overriding with component recommendation.
+06-08 23:52:11.215 26613 26941 W CCodec  : This behavior is subject to change. It is recommended that app developers double check whether the requested max input size is in reasonable range.
+06-08 23:52:11.215 26613 26941 D CCodec  : encoding statistics level = 0
+06-08 23:52:11.215 26613 26941 D CCodec  : setup formats input: AMessage(what = 0x00000000) = {
+06-08 23:52:11.215 26613 26941 D CCodec  :   int32_t sample-rate = 32000
+06-08 23:52:11.215 26613 26941 D CCodec  :   int32_t channel-count = 2
+06-08 23:52:11.215 26613 26941 D CCodec  :   int32_t max-input-size = 4096
+06-08 23:52:11.215 26613 26941 D CCodec  :   string mime = "audio/raw"
+06-08 23:52:11.215 26613 26941 D CCodec  :   int32_t android._config-pcm-encoding = 2
+06-08 23:52:11.215 26613 26941 D CCodec  : }
+06-08 23:52:11.215 26613 26941 D CCodec  : setup formats output: AMessage(what = 0x00000000) = {
+06-08 23:52:11.215 26613 26941 D CCodec  :   int32_t sample-rate = 32000
+06-08 23:52:11.215 26613 26941 D CCodec  :   int32_t bitrate = 131072
+06-08 23:52:11.215 26613 26941 D CCodec  :   int32_t buffer-batch-max-output-size = 0
+06-08 23:52:11.215 26613 26941 D CCodec  :   int32_t buffer-batch-threshold-output-size = 0
+06-08 23:52:11.215 26613 26941 D CCodec  :   int32_t channel-count = 2
+06-08 23:52:11.215 26613 26941 D CCodec  :   int32_t level = 0
+06-08 23:52:11.215 26613 26941 D CCodec  :   int32_t max-bitrate = 131072
+06-08 23:52:11.215 26613 26941 D CCodec  :   string mime = "audio/mp4a-latm"
+06-08 23:52:11.215 26613 26941 D CCodec  :   int32_t profile = 2
+06-08 23:52:11.215 26613 26941 D CCodec  : }
+06-08 23:52:11.215 26613 26941 I CCodecConfig: query failed after returning 10 values (BAD_INDEX)
+06-08 23:52:11.215 26613 26941 E ricrelay.stream: Failed to query component interface for required system resources: 6
+06-08 23:52:11.215 26613 26613 I AudioEncoder: prepared
+06-08 23:52:11.216 26613 26613 I VideoEncoder: 3 encoders found
+06-08 23:52:11.216 26613 26613 I VideoEncoder: Encoder c2.exynos.h264.encoder
+06-08 23:52:11.216 26613 26613 I VideoEncoder: Color supported: 2130708361
+06-08 23:52:11.216 26613 26613 I VideoEncoder: Encoder selected c2.exynos.h264.encoder
+06-08 23:52:11.218 26613 26945 D CCodec  : allocate(c2.exynos.h264.encoder)
+06-08 23:52:11.220 26613 26945 I CCodec  : setting up 'default' as default (vendor) store
+06-08 23:52:11.224 26613 26945 W ricrelay.stream: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+06-08 23:52:11.224 26613 26945 I CCodec  : Created component [c2.exynos.h264.encoder] for [c2.exynos.h264.encoder]
+06-08 23:52:11.225 26613 26945 D CCodecConfig: read media type: video/avc
+06-08 23:52:11.227 26613 26945 D ReflectedParamUpdater: extent() != 1 for single value type: output.subscribed-indices.values
+06-08 23:52:11.228 26613 26945 D ReflectedParamUpdater: extent() != 1 for single value type: input.buffers.allocator-ids.values
+06-08 23:52:11.228 26613 26945 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.allocator-ids.values
+06-08 23:52:11.228 26613 26945 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.pool-ids.values
+06-08 23:52:11.232 26613 26945 D ReflectedParamUpdater: ignored struct field coding.qp.values
+06-08 23:52:11.235 26613 26945 D ReflectedParamUpdater: ignored struct field coding.gop.values
+06-08 23:52:11.238 26613 26945 D CCodecConfig: ignoring local param raw.color (0xc2001809) as it is already supported
+06-08 23:52:11.239 26613 26945 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+06-08 23:52:11.239 26613 26945 D CCodecConfig: c2 config diff is Dict {
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 algo.bitrate-mode.value = 3
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 algo.encoding-quality-level.value = 0
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::i32 algo.priority.value = 0
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::float algo.rate.value = 0
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::i32 coded.average-qp.value = 0
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 coded.bitrate-mode.value = 1
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 coded.bitrate.value = 64000
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::float coded.frame-rate.value = 15
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 coded.hdr-format.value = 0
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 coded.picture-type.value = 0
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 coded.pl.level = 20480
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 coded.pl.profile = 20484
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 coding.intra-refresh.mode = 0
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::float coding.intra-refresh.period = 0
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 coding.request-sync-frame.value = 0
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::i64 coding.sync-frame-interval.value = 1000000
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   Buffer coding.temporal-layering = {
+06-08 23:52:11.239 26613 26945 D CCodecConfig:     00000000:  10 00 00 00 07 20 01 52  00 00 00 00 00 00 00 00  ..... .R........
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   }
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 input.delay.value = 0
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   string input.media-type.value = "video/raw"
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 output.buffers.prepend-header.value = 0
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   string output.media-type.value = "video/avc"
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 raw.color.matrix = 0
+06-08 23:52:11.239 26613 26945 D CCodecConfig:   c2::u32 raw.color.primaries = 0
+06-08 23:52:11.239 26613 26945 D CCodecConfig:  
+06-08 23:52:11.241 26613 26613 I VideoEncoder: Prepare video info: SURFACE, 720x1280
+06-08 23:52:11.242 26613 26613 I VideoEncoder: set bitrate mode CBR
+06-08 23:52:11.244 26613 26944 I MediaCodec: MediaCodec will operate in async mode
+06-08 23:52:11.244 26613 26613 I MediaCodec: media_quality service unavailable, skipping updatePictureProfile
+06-08 23:52:11.245 26613 26613 D VQApply : minquality: applies only to VBR encoding
+06-08 23:52:11.245 26613 26613 D MediaCodec: shapeMediaFormat: deltas(0): AMessage(what = 0x00000000) = {
+06-08 23:52:11.245 26613 26613 D MediaCodec:   }
+06-08 23:52:11.245 26613 26945 D CCodec  : [c2.exynos.h264.encoder] buffers are bound to CCodec for this session
+06-08 23:52:11.245 26613 26945 D CCodecConfig: no c2 equivalents for color-format
+06-08 23:52:11.245 26613 26945 D CCodecConfig: no c2 equivalents for flags
+06-08 23:52:11.245 26613 26945 D CCodecConfig: no c2 equivalents for encoder
+06-08 23:52:11.247 26613 26945 D CCodecConfig: c2 config diff is   c2::u32 algo.bitrate-mode.value = 1
+06-08 23:52:11.247 26613 26945 D CCodecConfig:   c2::u32 coded.bitrate.value = 2500000
+06-08 23:52:11.247 26613 26945 D CCodecConfig:   c2::float coded.frame-rate.value = 30
+06-08 23:52:11.247 26613 26945 D CCodecConfig:   c2::i64 coding.sync-frame-interval.value = 2000000
+06-08 23:52:11.247 26613 26945 D CCodecConfig:   c2::u32 raw.size.height = 1280
+06-08 23:52:11.247 26613 26945 D CCodecConfig:   c2::u32 raw.size.width = 720
+06-08 23:52:11.248 26613 26945 D CCodec  : encoding statistics level = 0
+06-08 23:52:11.248 26613 26945 D CCodec  : setup formats input: AMessage(what = 0x00000000) = {
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t android._color-format = 2130708361
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t android._dataspace = 0
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t bitrate-mode = 1
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t frame-rate = 30
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t height = 1280
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t intra-refresh-period = 0
+06-08 23:52:11.248 26613 26945 D CCodec  :   string mime = "video/raw"
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t prepend-sps-pps-to-idr-frames = 0
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t priority = 0
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t video-qp-average = 0
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t width = 720
+06-08 23:52:11.248 26613 26945 D CCodec  :   Rect crop(0, 0, 719, 1279)
+06-08 23:52:11.248 26613 26945 D CCodec  :   int64_t android._C2MemoryUsage = 1125899906908160
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t color-format = 2130708361
+06-08 23:52:11.248 26613 26945 D CCodec  : }
+06-08 23:52:11.248 26613 26945 D CCodec  : setup formats output: AMessage(what = 0x00000000) = {
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t bitrate = 2500000
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t bitrate-mode = 1
+06-08 23:52:11.248 26613 26945 D CCodec  :   Rect crop(0, 0, 719, 1279)
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t width = 720
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t color-standard = 0
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t color-range = 0
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t color-transfer = 0
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t frame-rate = 30
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t height = 1280
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t intra-refresh-period = 0
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t level = 1
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t max-bitrate = 2500000
+06-08 23:52:11.248 26613 26945 D CCodec  :   string mime = "video/avc"
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t prepend-sps-pps-to-idr-frames = 0
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t priority = 0
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t profile = 8
+06-08 23:52:11.248 26613 26945 D CCodec  :   int32_t video-qp-average = 0
+06-08 23:52:11.248 26613 26945 D CCodec  : }
+06-08 23:52:11.248 26613 26945 I CCodecConfig: query failed after returning 22 values (BAD_INDEX)
+06-08 23:52:11.249 26613 26945 D CCodecConfig: c2 config diff is   c2::u32 coded.pl.level = 20489
+06-08 23:52:11.249 26613 26945 E ricrelay.stream: Failed to query component interface for required system resources: 6
+06-08 23:52:11.250 26613 26945 D CCodec  : aidl based PersistentSurface created
+06-08 23:52:11.250 26613 26945 D CCodec  : input format changed to AMessage(what = 0x00000000) = {
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t android._color-format = 2130708361
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t android._dataspace = 260
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t bitrate-mode = 1
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t frame-rate = 30
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t height = 1280
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t intra-refresh-period = 0
+06-08 23:52:11.250 26613 26945 D CCodec  :   string mime = "video/raw"
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t prepend-sps-pps-to-idr-frames = 0
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t priority = 0
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t video-qp-average = 0
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t width = 720
+06-08 23:52:11.250 26613 26945 D CCodec  :   Rect crop(0, 0, 719, 1279)
+06-08 23:52:11.250 26613 26945 D CCodec  :   int64_t android._C2MemoryUsage = 1125899906908160
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t color-format = 2130708361
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t color-range = 2
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t color-standard = 1
+06-08 23:52:11.250 26613 26945 D CCodec  :   int32_t color-transfer = 3
+06-08 23:52:11.250 26613 26945 D CCodec  : }
+06-08 23:52:11.251 26613 26945 D GraphicBufferSource: setting dataspace: 0x10c10000, acquired=0
+06-08 23:52:11.251 26613 26945 D CCodec  : ISConfig not changed
+06-08 23:52:11.251 26613 26613 I VideoEncoder: prepared
+06-08 23:52:11.260 26613 26951 E SurfaceManager: GL already released
+06-08 23:52:11.274 26613 26951 I SurfaceManager: GL initialized
+06-08 23:52:11.279 26613 26951 E SurfaceManager: GL already released
+06-08 23:52:11.290 26613 26951 I SurfaceManager: GL initialized
+06-08 23:52:11.297 26613 26613 I Camera2ApiManager: optimal resolution set to: 1280x720
+06-08 23:52:11.351 26613 26952 I Camera2ApiManager: Camera opened
+06-08 23:52:11.352 26613 26613 D Cricrelay: preview ready 1280x720 onPreview=true
+06-08 23:52:11.352 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:11.354 26613 26613 D Cricrelay: elevateFlutterUi: rootChildren=2 glIndex=0
+06-08 23:52:11.358 26613 26952 I Camera2ApiManager: fps: 30 - 30
+06-08 23:52:11.362 26613 26952 I Camera2ApiManager: Camera configured
+06-08 23:52:11.544 26613 26951 I ricrelay.stream: Use dataspace 142671872as it is
+06-08 23:52:11.543 26613 26613 W pool-7-thread-1: type=1400 audit(0.0:36305): avc:  denied  { getattr } for  name="/" dev="dmabuf" ino=1 scontext=u:r:untrusted_app:s0:c211,c257,c512,c768 tcontext=u:object_r:unlabeled:s0 tclass=filesystem permissive=0 app=uk.co.cricrelay.stream
+06-08 23:52:11.588 26613 26623 W System  : A resource failed to call Surface.release. 
+06-08 23:52:11.588 26613 26623 I libbinder.BpBinder: onLastStrongRef automatically unlinking death recipients for binder (0xb40000768a7e6ce0) with descriptor: '(not cached)'
+06-08 23:52:11.605 26613 26951 I ricrelay.stream: Use dataspace 142671872as it is
+06-08 23:52:11.603 26613 26613 W pool-7-thread-1: type=1400 audit(0.0:36306): avc:  denied  { getattr } for  name="/" dev="dmabuf" ino=1 scontext=u:r:untrusted_app:s0:c211,c257,c512,c768 tcontext=u:object_r:unlabeled:s0 tclass=filesystem permissive=0 app=uk.co.cricrelay.stream
+06-08 23:52:11.637 26613 26951 I ricrelay.stream: Use dataspace 142671872as it is
+06-08 23:52:11.635 26613 26613 W pool-7-thread-1: type=1400 audit(0.0:36307): avc:  denied  { getattr } for  name="/" dev="dmabuf" ino=1 scontext=u:r:untrusted_app:s0:c211,c257,c512,c768 tcontext=u:object_r:unlabeled:s0 tclass=filesystem permissive=0 app=uk.co.cricrelay.stream

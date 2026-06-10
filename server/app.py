@@ -873,7 +873,8 @@ def finalize_bowler_over(bowler):
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("org_id"):
+        if not _org_from_session():
+            session.pop("org_id", None)
             return redirect(url_for("login_page"))
         return view(*args, **kwargs)
 
@@ -978,23 +979,33 @@ def normalize_overlay_size(value, fallback_scale=None) -> int:
     return 3
 
 
+VALID_OVERLAY_THEMES = {"classic", "neon", "minimal", "compact", "ai", "stadium"}
+
+def _sanitize_overlay_theme(raw) -> str:
+    t = str(raw or "classic").strip().lower()
+    return t if t in VALID_OVERLAY_THEMES else "classic"
+
 def read_relay_overlay_prefs(slug):
     safe = sanitize_match_id(slug)
     path = state_path_for(safe)
     if not path.exists():
-        return {"overlay_size": 3, "overlay_scale": 1.0}
+        return {"overlay_size": 3, "overlay_scale": 1.0, "theme": "classic"}
     try:
         with path.open("r", encoding="utf-8") as fh:
             s = json.load(fh)
         size = normalize_overlay_size(s.get("overlay_size"), s.get("overlay_scale"))
-        return {"overlay_size": size, "overlay_scale": float(s.get("overlay_scale") or 1.0)}
+        return {
+            "overlay_size": size,
+            "overlay_scale": float(s.get("overlay_scale") or 1.0),
+            "theme": _sanitize_overlay_theme(s.get("theme")),
+        }
     except Exception:
-        return {"overlay_size": 3, "overlay_scale": 1.0}
+        return {"overlay_size": 3, "overlay_scale": 1.0, "theme": "classic"}
 
 
 @app.get("/")
 def cricrelay_home():
-    if session.get("org_id"):
+    if _org_from_session():
         return redirect(url_for("dashboard"))
     structured_data = {
         "@context": "https://schema.org",
@@ -1555,12 +1566,14 @@ def dashboard_relay_appearance():
         flash("Unknown relay for your club.", "error")
         return redirect(url_for("dashboard"))
     size = normalize_overlay_size(request.form.get("overlay_size"), request.form.get("overlay_scale"))
+    theme = _sanitize_overlay_theme(request.form.get("theme", "classic"))
     with match_context(slug):
         merge_missing_state_keys(state)
         state["overlay_size"] = size
         state["overlay_scale"] = round(0.8 + (size - 1) * 0.25, 2)
+        state["theme"] = theme
         save_state()
-    flash("Overlay widget size updated.", "success")
+    flash("Overlay style updated.", "success")
     return redirect(url_for("dashboard"))
 
 
@@ -1925,9 +1938,7 @@ def setup():
         state["team1_color"] = str(data.get("team1_color", "#2dd4bf")).strip() or "#2dd4bf"
         state["team2_color"] = str(data.get("team2_color", "#f59e0b")).strip() or "#f59e0b"
         theme = str(data.get("theme", "classic")).strip().lower()
-        if theme not in {"classic", "neon", "minimal"}:
-            theme = "classic"
-        state["theme"] = theme
+        state["theme"] = _sanitize_overlay_theme(theme)
         state["toss_winner"] = toss_winner
         state["toss_decision"] = toss_decision
         state["scoring_mode"] = "ball_by_ball"
@@ -2749,9 +2760,7 @@ def _overlay_prefs_json(slug: str) -> dict:
     with match_context(slug):
         merge_missing_state_keys(state)
         size = normalize_overlay_size(state.get("overlay_size"), state.get("overlay_scale"))
-        theme = str(state.get("theme") or "classic").strip().lower()
-        if theme not in {"classic", "neon", "minimal"}:
-            theme = "classic"
+        theme = _sanitize_overlay_theme(state.get("theme"))
         density = str(state.get("overlay_density") or "expanded").strip().lower()
         if density not in {"compact", "expanded"}:
             density = "expanded"
@@ -2788,8 +2797,7 @@ def api_set_overlay(org: Organization, match_slug: str):
             )
             state["overlay_scale"] = round(0.8 + (state["overlay_size"] - 1) * 0.25, 2)
         if "theme" in data:
-            theme = str(data.get("theme") or "classic").strip().lower()
-            state["theme"] = theme if theme in {"classic", "neon", "minimal"} else "classic"
+            state["theme"] = _sanitize_overlay_theme(data.get("theme"))
         if "overlay_density" in data:
             density = str(data.get("overlay_density") or "expanded").strip().lower()
             state["overlay_density"] = density if density in {"compact", "expanded"} else "expanded"

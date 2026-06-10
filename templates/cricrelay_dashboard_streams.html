@@ -202,19 +202,56 @@
               </details>
               {% endif %}
               <details style="margin-top:8px;">
-                <summary class="cr-help" style="cursor:pointer;font-weight:600;">Widget size</summary>
-                <form method="post" action="{{ url_for('dashboard_relay_appearance') }}" style="margin-top:10px;max-width:320px;">
+                <summary class="cr-help" style="cursor:pointer;font-weight:600;">Widget style &amp; size</summary>
+                <form method="post" action="{{ url_for('dashboard_relay_appearance') }}" style="margin-top:10px;max-width:380px;">
                   <input type="hidden" name="score_match_slug" value="{{ m.score_match_slug }}">
-                  <label class="cr-label" for="size-{{ loop.index }}">Center score box (5 sizes)</label>
+                  <label class="cr-label" style="margin-bottom:6px;display:block;">Overlay theme</label>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px;">
+                    {% set cur_theme = row.overlay_prefs.theme|default('classic') %}
+                    {% for t_val, t_label, t_desc in [
+                      ('classic',  '🏏 Broadcast',  'Sky/ESPN blue'),
+                      ('compact',  '📋 Compact',    'Slim ticker bar'),
+                      ('ai',       '🤖 AI Neural',  'Purple glassmorphism'),
+                      ('stadium',  '🏟️ Stadium',    'T20 night amber'),
+                      ('neon',     '⚡ Neon',        'Cyan glow'),
+                      ('minimal',  '⬜ Minimal',     'Clean dark'),
+                    ] %}
+                    <label style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px;border-radius:6px;border:2px solid {% if cur_theme == t_val %}#2f7bff{% else %}rgba(255,255,255,0.12){% endif %};background:{% if cur_theme == t_val %}rgba(47,123,255,0.12){% else %}rgba(255,255,255,0.03){% endif %};cursor:pointer;text-align:center;">
+                      <input type="radio" name="theme" value="{{ t_val }}" {% if cur_theme == t_val %}checked{% endif %} style="display:none;">
+                      <span style="font-size:18px;">{{ t_label.split(' ')[0] }}</span>
+                      <span style="font-size:10px;font-weight:700;letter-spacing:.04em;color:#e2e8f0;">{{ t_label.split(' ',1)[1] }}</span>
+                      <span style="font-size:9px;color:#94a3b8;">{{ t_desc }}</span>
+                    </label>
+                    {% endfor %}
+                  </div>
+                  <label class="cr-label" for="size-{{ loop.index }}">Widget size</label>
                   <select class="cr-input" id="size-{{ loop.index }}" name="overlay_size">
                     <option value="1" {% if row.overlay_prefs.overlay_size == 1 %}selected{% endif %}>1 — Extra small</option>
                     <option value="2" {% if row.overlay_prefs.overlay_size == 2 %}selected{% endif %}>2 — Small</option>
-                    <option value="3" {% if row.overlay_prefs.overlay_size == 3 %}selected{% endif %}>3 — Medium</option>
+                    <option value="3" {% if row.overlay_prefs.overlay_size == 3 %}selected{% endif %}>3 — Medium (default)</option>
                     <option value="4" {% if row.overlay_prefs.overlay_size == 4 %}selected{% endif %}>4 — Large</option>
                     <option value="5" {% if row.overlay_prefs.overlay_size == 5 %}selected{% endif %}>5 — Extra large</option>
                   </select>
-                  <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm" style="margin-top:10px;">Save size</button>
+                  <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm" style="margin-top:10px;">Save style</button>
                 </form>
+                <script>
+                  (function(){
+                    var form = document.currentScript.previousElementSibling;
+                    form.querySelectorAll('label[style]').forEach(function(lbl){
+                      lbl.addEventListener('click', function(){
+                        var radio = lbl.querySelector('input[type=radio]');
+                        if(!radio) return;
+                        form.querySelectorAll('label[style]').forEach(function(l){
+                          l.style.borderColor='rgba(255,255,255,0.12)';
+                          l.style.background='rgba(255,255,255,0.03)';
+                        });
+                        lbl.style.borderColor='#2f7bff';
+                        lbl.style.background='rgba(47,123,255,0.12)';
+                        radio.checked=true;
+                      });
+                    });
+                  })();
+                </script>
               </details>
             </td>
           </tr>
