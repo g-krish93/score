@@ -2798,6 +2798,8 @@ def api_set_overlay(org: Organization, match_slug: str):
             state["overlay_scale"] = round(0.8 + (state["overlay_size"] - 1) * 0.25, 2)
         if "theme" in data:
             state["theme"] = _sanitize_overlay_theme(data.get("theme"))
+        elif "overlay_theme" in data:
+            state["theme"] = _sanitize_overlay_theme(data.get("overlay_theme"))
         if "overlay_density" in data:
             density = str(data.get("overlay_density") or "expanded").strip().lower()
             state["overlay_density"] = density if density in {"compact", "expanded"} else "expanded"

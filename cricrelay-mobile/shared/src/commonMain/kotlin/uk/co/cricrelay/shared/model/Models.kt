@@ -226,7 +226,7 @@ data class OverlayLayoutPrefs(
     @SerialName("overlay_anchor_y") val anchorY: Double = 0.85,
     @SerialName("overlay_bottom_margin") val bottomMargin: Double = 8.0,
     @SerialName("overlay_horizontal_inset") val horizontalInset: Double = 8.0,
-    @SerialName("overlay_theme") val theme: String = "dark",
+    @SerialName("theme") val theme: String = "classic",
     // Configurable scoreboard appearance (Board Edit sheet).
     @SerialName("overlay_font_scale") val fontScale: Double = 1.0,
     @SerialName("overlay_bg_color") val bgColor: String = "",
@@ -236,6 +236,16 @@ data class OverlayLayoutPrefs(
     @SerialName("keep_screen_on") val keepScreenOn: Boolean = true,
 ) {
     companion object {
+        private val validThemes = setOf("classic", "neon", "minimal", "compact", "ai", "stadium")
+
+        private fun sanitizeTheme(raw: String?): String {
+            val t = raw?.trim()?.lowercase().orEmpty()
+            if (t in validThemes) return t
+            // Legacy mobile default before theme picker.
+            if (t == "dark") return "classic"
+            return "classic"
+        }
+
         fun fromJson(json: JsonObject): OverlayLayoutPrefs = OverlayLayoutPrefs(
             heightFraction = json.string("overlay_height_fraction")?.toDoubleOrNull() ?: 0.16,
             widthFraction = json.string("overlay_width_fraction")?.toDoubleOrNull() ?: 0.92,
@@ -243,7 +253,7 @@ data class OverlayLayoutPrefs(
             anchorY = json.string("overlay_anchor_y")?.toDoubleOrNull() ?: 0.85,
             bottomMargin = json.string("overlay_bottom_margin")?.toDoubleOrNull() ?: 8.0,
             horizontalInset = json.string("overlay_horizontal_inset")?.toDoubleOrNull() ?: 8.0,
-            theme = json.string("overlay_theme") ?: "dark",
+            theme = sanitizeTheme(json.string("theme") ?: json.string("overlay_theme")),
             fontScale = json.string("overlay_font_scale")?.toDoubleOrNull() ?: 1.0,
             bgColor = json.string("overlay_bg_color") ?: "",
             textColor = json.string("overlay_text_color") ?: "",
@@ -260,7 +270,7 @@ data class OverlayLayoutPrefs(
         put("overlay_anchor_y", anchorY)
         put("overlay_bottom_margin", bottomMargin)
         put("overlay_horizontal_inset", horizontalInset)
-        put("overlay_theme", theme)
+        put("theme", theme)
         put("overlay_font_scale", fontScale)
         put("overlay_bg_color", bgColor)
         put("overlay_text_color", textColor)
