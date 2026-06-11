@@ -639,7 +639,15 @@ def _stream_ipa_path() -> Path:
 
 
 def _stream_app_version_label() -> str:
-    return (os.getenv("STREAM_APP_VERSION") or "1.2.0").strip() or "1.2.0"
+    env = (os.getenv("STREAM_APP_VERSION") or "").strip()
+    if env:
+        return env
+    gradle = Path(__file__).resolve().parents[1] / "cricrelay-mobile" / "android" / "app" / "build.gradle.kts"
+    if gradle.is_file():
+        m = re.search(r'versionName\s*=\s*"([^"]+)"', gradle.read_text(encoding="utf-8"))
+        if m:
+            return m.group(1)
+    return "2.0.0"
 
 
 def _stream_app_builds_payload() -> dict:
@@ -1332,7 +1340,8 @@ def download_stream_apk():
     path = _stream_apk_path()
     if not path.is_file():
         flash(
-            "Stream app APK is not on the server yet. Build from cricrelay-stream/ (see README).",
+            "Stream app APK is not on the server yet. Push cricrelay-mobile/ to main to trigger CI "
+            "(see cricrelay-mobile/README.md).",
             "error",
         )
         return redirect(url_for("dashboard"))

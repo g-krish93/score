@@ -43,6 +43,12 @@ class RtmpCredentialsStore @Inject constructor(
     }
 }
 
+/** Vertical lift from the bottom edge; matches GL sprite [bottomMarginFraction] math. */
+fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.bottomMarginPx(frameHeightPx: Int): Int {
+    val fraction = (bottomMargin.toFloat() / 720f).coerceIn(0f, 0.2f)
+    return (frameHeightPx * fraction).toInt()
+}
+
 fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.toEngineLayout(): uk.co.cricrelay.stream.StreamCameraEngine.OverlayLayout {
     return uk.co.cricrelay.stream.StreamCameraEngine.OverlayLayout(
         heightFraction = heightFraction.toFloat(),
@@ -51,7 +57,7 @@ fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.toEngineLayout(): uk.co.cric
         anchorY = anchorY.toFloat(),
         bottomMarginFraction = (bottomMargin.toFloat() / 720f).coerceIn(0f, 0.2f),
         horizontalInsetFraction = (horizontalInset.toFloat() / 400f).coerceIn(0f, 0.2f),
-        fontScale = fontScale.toFloat().coerceIn(0.6f, 2.0f),
+        fontScale = effectiveFontScale(),
         bgColor = bgColor,
         textColor = textColor,
         opacity = opacity.toFloat().coerceIn(0.2f, 1.0f),

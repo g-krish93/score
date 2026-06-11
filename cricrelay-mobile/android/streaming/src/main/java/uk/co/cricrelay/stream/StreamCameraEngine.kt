@@ -48,6 +48,8 @@ object StreamCameraEngine : ConnectChecker {
     )
 
     private const val MAX_WIDTH = 1280
+    private const val REF_OVERLAY_WIDTH_FRACTION = OverlayCaptureDimensions.REF_WIDTH_FRACTION
+    private const val REF_OVERLAY_HEIGHT_FRACTION = OverlayCaptureDimensions.REF_HEIGHT_FRACTION
     private const val MAX_HEIGHT = 720
     private const val DEFAULT_BITRATE = 2500000
     private const val DEFAULT_FPS = 30
@@ -732,7 +734,16 @@ object StreamCameraEngine : ConnectChecker {
                 throw IllegalStateException("Camera preview not ready — wait for preview before Go Live")
             }
         }
-        if (cam.isStreaming) return
+        if (cam.isStreaming) {
+            CricrelayLog.w("startStreamOnMain: previous stream still active — stopping before retry")
+            try {
+                cam.stopStream()
+            } catch (_: Exception) {
+            }
+            if (!preparePreviewOnMain()) {
+                throw IllegalStateException("Camera not ready after stopping previous stream")
+            }
+        }
 
         // Re-sync the encoder to the phone's current physical orientation. The whole
         // pipeline (preview + encoder) is configured by prepareVideo's rotation, which is
@@ -776,25 +787,38 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
+    /** After RTMP ends, recycle the encoder so the next Go Live starts from a clean preview. */
+    private fun resetEncoderAfterRtmpStop() {
+        val cam = camera ?: return
+        if (cam.isStreaming) {
+            try {
+                cam.stopStream()
+            } catch (_: Exception) {
+            }
+        }
+        try {
+            if (cam.isOnPreview) {
+                cam.stopPreview()
+            }
+        } catch (_: Exception) {
+        }
+        encoderPrepared = false
+        resetFocusState()
+        if (!preparePreviewOnMain()) {
+            CricrelayLog.w("resetEncoderAfterRtmpStop: preview re-prepare failed")
+        }
+    }
+
     private fun stopStreamInternal() {
         pendingOverlayAfterConnect = false
         streamPaused = false
         removePauseBlackFilter()
         stopOverlayRefresh()
         clearOverlayFilter()
-        try {
-            camera?.stopStream()
-        } catch (_: Exception) {
-        }
         recycleOverlayBitmap()
         openGlView?.keepScreenOn = false
         abandonStreamAudioFocus()
-        try {
-            if (camera?.isOnPreview != true && encoderPrepared) {
-                camera?.startPreview()
-            }
-        } catch (_: Exception) {
-        }
+        resetEncoderAfterRtmpStop()
         if (previewOverlayListener != null && overlayUrl.isNotEmpty()) {
             startPreviewOverlayPush()
         }
@@ -972,6 +996,16 @@ object StreamCameraEngine : ConnectChecker {
 
     private fun applyOverlaySprite() {
         val filter = imageFilter ?: return
+        val canvasW = if (streamIsPortrait) streamHeight else streamWidth
+        val canvasH = if (streamIsPortrait) streamWidth else streamHeight
+        filter.setDefaultScale(canvasW, canvasH)
+        val base = filter.getScale()
+        val wMul = overlayLayout.widthFraction.coerceIn(0.25f, 0.98f) / REF_OVERLAY_WIDTH_FRACTION
+        val hMul = overlayLayout.heightFraction.coerceIn(0.10f, 0.28f) / REF_OVERLAY_HEIGHT_FRACTION
+        filter.setScale(
+            (base.x * wMul).coerceIn(1f, 100f),
+            (base.y * hMul).coerceIn(1f, 100f),
+        )
         val scale = filter.getScale()
         val pos = OverlaySpriteLayout.computePosition(
             OverlaySpriteLayout.Params(
@@ -985,6 +1019,10 @@ object StreamCameraEngine : ConnectChecker {
         )
         filter.setPosition(pos.x, pos.y)
     }
+
+    /** Rasterize at reference board size; width/height prefs scale the GL sprite, not the viewport. */
+    private fun overlayCaptureDimensions(canvasWidth: Int): Pair<Int, Int> =
+        OverlayCaptureDimensions.compute(canvasWidth, maxOverlayCaptureWidth)
 
     private fun startOverlayRefresh() {
         if (overlayPausedForMemory) return
@@ -1065,11 +1103,7 @@ object StreamCameraEngine : ConnectChecker {
     private fun pushPreviewOverlayFrame() {
         if (camera?.isStreaming == true || overlayPausedForMemory) return
         val listener = previewOverlayListener ?: return
-        // Capture WIDE so the scoreboard uses its horizontal score-strip layout
-        // (below ~720px wide it stacks tall and fills the screen). Height stays thin.
-        val w = 1080.coerceAtMost(maxOverlayCaptureWidth.coerceAtLeast(1080))
-        val hFrac = overlayLayout.heightFraction.coerceIn(0.12f, 0.24f)
-        val h = (w * hFrac).toInt().coerceIn(110, 260)
+        val (w, h) = overlayCaptureDimensions(1080)
         val captured = overlayCapture?.capture(w, h)
         if (captured == null) {
             CricrelayLog.w("pushPreviewOverlayFrame: capture null (WebView not ready?) ${w}x$h")
@@ -1104,14 +1138,7 @@ object StreamCameraEngine : ConnectChecker {
         // Capturing at the landscape streamWidth (1280) would make the strip overflow the
         // portrait frame (~160% wide) once rendered at native size.
         val canvasW = if (streamIsPortrait) streamHeight else streamWidth
-        val canvasH = if (streamIsPortrait) streamWidth else streamHeight
-        val wFrac = overlayLayout.widthFraction.coerceIn(0.25f, 0.95f)
-        val rawW = (canvasW * wFrac).toInt()
-        // Floor at 720 so the overlay always uses its horizontal strip layout
-        // (narrower forces the tall stacked layout that fills the frame).
-        val w = rawW.coerceIn(720, maxOverlayCaptureWidth.coerceAtMost(1920))
-        val hFrac = overlayLayout.heightFraction.coerceIn(0.12f, 0.24f)
-        val h = (w * hFrac).toInt().coerceIn(96, 320)
+        val (w, h) = overlayCaptureDimensions(canvasW)
         val captured = overlayCapture?.capture(w, h) ?: return
         val forGl = applyBitmapOpacity(
             captured.copy(Bitmap.Config.ARGB_8888, false),
@@ -1125,21 +1152,14 @@ object StreamCameraEngine : ConnectChecker {
         val previous = lastOverlayBitmap
         lastOverlayBitmap = forGl
         filter.setImage(forGl)
-        // setDefaultScale must receive the ACTUAL render canvas size, which equals
-        // the encoder size. In portrait RootEncoder swaps the encoder to (h, w), so
-        // the sprite canvas is streamHeight x streamWidth. Passing the raw landscape
-        // streamWidth x streamHeight here stretches the overlay ~3x taller (the
-        // "scoreboard gets enlarged" bug). Use the effective, post-swap canvas dims
-        // (canvasW/canvasH computed above).
-        filter.setDefaultScale(canvasW, canvasH)
+        applyOverlaySprite()
         runCatching {
             val s = filter.getScale()
             CricrelayLog.d(
-                "overlaySprite: bitmap=${w}x${h} canvas=${canvasW}x${canvasH} " +
+                "overlaySprite: bitmap=${w}x${h} canvas=${canvasW}x${if (streamIsPortrait) streamWidth else streamHeight} " +
                     "portrait=$streamIsPortrait scale=${s.x}x${s.y}",
             )
         }
-        applyOverlaySprite()
         if (previous != null && previous !== forGl && !previous.isRecycled) {
             mainHandler.postDelayed({
                 previous.takeIf { !it.isRecycled && it !== lastOverlayBitmap }?.recycle()

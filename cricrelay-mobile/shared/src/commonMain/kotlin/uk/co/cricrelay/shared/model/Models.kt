@@ -235,7 +235,32 @@ data class OverlayLayoutPrefs(
     @SerialName("video_stabilization") val videoStabilization: Boolean = true,
     @SerialName("keep_screen_on") val keepScreenOn: Boolean = true,
 ) {
+    /** Reference board size used when tuning default typography. */
+    fun clampedWidthFraction(): Double = widthFraction.coerceIn(WIDTH_MIN, WIDTH_MAX)
+
+    fun clampedHeightFraction(): Double = heightFraction.coerceIn(HEIGHT_MIN, HEIGHT_MAX)
+
+    /** Display scale vs reference board size (width/height sliders scale the whole strip). */
+    fun boardDisplayScaleX(): Float =
+        (clampedWidthFraction() / REF_WIDTH_FRACTION).toFloat()
+
+    fun boardDisplayScaleY(): Float =
+        (clampedHeightFraction() / REF_HEIGHT_FRACTION).toFloat()
+
+    /** User font slider only; board width/height scale the rendered bitmap, not typography. */
+    fun effectiveFontScale(): Float =
+        fontScale.toFloat().coerceIn(FONT_MIN.toFloat(), FONT_MAX.toFloat())
+
     companion object {
+        const val REF_WIDTH_FRACTION = 0.92
+        const val REF_HEIGHT_FRACTION = 0.16
+        const val WIDTH_MIN = 0.25
+        const val WIDTH_MAX = 0.98
+        const val HEIGHT_MIN = 0.10
+        const val HEIGHT_MAX = 0.28
+        const val FONT_MIN = 0.6
+        const val FONT_MAX = 2.0
+
         private val validThemes = setOf("classic", "neon", "minimal", "compact", "ai", "stadium")
 
         private fun sanitizeTheme(raw: String?): String {

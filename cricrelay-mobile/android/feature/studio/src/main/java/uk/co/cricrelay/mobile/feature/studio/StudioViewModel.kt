@@ -23,7 +23,6 @@ import uk.co.cricrelay.shared.model.ScoringConfig
 import uk.co.cricrelay.shared.model.StreamMatch
 import uk.co.cricrelay.shared.repository.ApiClientProvider
 import uk.co.cricrelay.shared.repository.StreamRepository
-import uk.co.cricrelay.stream.StreamCameraEngine
 import uk.co.cricrelay.stream.StreamController
 import javax.inject.Inject
 
@@ -451,6 +450,7 @@ class StudioViewModel @Inject constructor(
         val match = _uiState.value.match ?: return
         val platform = _uiState.value.destination.platform
         viewModelScope.launch {
+            _uiState.update { it.copy(busy = true, error = null) }
             streamController.stopStream()
             liveTimerJob?.cancel()
             try {
@@ -460,8 +460,10 @@ class StudioViewModel @Inject constructor(
                 streamRepository.updateBroadcastStatus(match.slug, status = "idle")
             } catch (_: Exception) {
             }
+            prepareCamera()
             _uiState.update {
                 it.copy(
+                    busy = false,
                     streaming = false,
                     paused = false,
                     liveElapsedSeconds = 0,

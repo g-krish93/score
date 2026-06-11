@@ -1,13 +1,8 @@
 name: Build CricRelay Stream (Android + iOS)
 
+# Legacy Flutter app — manual builds only. Website APK comes from build-cricrelay-mobile.yml.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "cricrelay-stream/**"
-      - ".github/workflows/build-cricrelay-stream-apk.yml"
-      - ".github/workflows/validate-cricrelay-stream.yml"
 
 permissions:
   contents: write

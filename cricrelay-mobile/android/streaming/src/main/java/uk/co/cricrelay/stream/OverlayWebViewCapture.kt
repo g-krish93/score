@@ -12,6 +12,8 @@ import android.view.View
 import android.view.WindowManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /** Off-screen WebView used to rasterize the scoreboard for GL overlay (not screen capture). */
 class OverlayWebViewCapture(private val activity: Activity) {
@@ -32,37 +34,21 @@ class OverlayWebViewCapture(private val activity: Activity) {
         this.fontScale = fontScale.coerceIn(0.6f, 2.0f)
         this.bgColor = bgColor.trim()
         this.textColor = textColor.trim()
-        runOnMain { webView?.evaluateJavascript(styleScript(), null) }
+        runOnMain { webView?.evaluateJavascript(prepareCaptureScript(), null) }
     }
 
-    private fun styleScript(): String {
-        // The scoreboard embed sizes ALL typography via `calc(Npx * var(--overlay-scale))`,
-        // exposes `--overlay-box-color` on :root, and paints the strip with
-        // `#overlay { background: linear-gradient(...) }`. Critically, the embed rebuilds
-        // #overlay's inner DOM every ~2s and re-applies `--overlay-scale` inline (non-
-        // important). Inline overrides therefore race the rebuild and get clobbered. We
-        // instead inject ONE persistent <style id="cr-style"> into <head>: a stylesheet
-        // `!important` rule beats the embed's inline-normal value, survives DOM rebuilds,
-        // and re-applies to freshly-created children automatically.
+    private fun buildStyleCss(): String {
+        // The scoreboard embed sizes typography via overlay-size-N CSS classes and
+        // `calc(Npx * var(--overlay-scale))`. Do not hardcode --widget-name/--widget-score
+        // here — that overrides the web "Widget size" preset (e.g. extra-small = size 1).
         val scale = String.format(java.util.Locale.US, "%.3f", fontScale.coerceIn(0.6f, 2.0f))
         val bg = bgColor.replace("'", "").replace("\"", "")
         val fg = textColor.replace("'", "").replace("\"", "")
         val css = StringBuilder()
         css.append(":root{--overlay-scale:$scale !important;")
-        // The live score widgets read `--overlay-scale`, but the team-name and score text
-        // are sized by `--widget-name`/`--widget-score` (defined only via the embed's
-        // responsive media queries — never set inline). Override them too so the font
-        // control visibly scales ALL text uniformly, including the pre-match placeholder.
-        css.append("--widget-name:calc(10px * $scale) !important;")
-        css.append("--widget-score:calc(30px * $scale) !important;")
         if (bg.isNotEmpty()) css.append("--overlay-box-color:$bg !important;")
         css.append("}")
         if (bg.isNotEmpty()) {
-            // The visible panel is the inner `.relay-widget` (a hardcoded gradient) sitting
-            // inside #overlay, with `.score-strip`/#content nested further. Repaint every
-            // structural container so the chosen colour fully takes over the strip; killing
-            // background-image removes the baked-in gradients. The ::before is the thin top
-            // accent line.
             css.append("#overlay,#overlay .relay-widget,#overlay .score-strip,#overlay #content")
             css.append("{background:$bg !important;background-image:none !important;}")
             css.append("#overlay::before{background:$bg !important;background-image:none !important;}")
@@ -70,27 +56,19 @@ class OverlayWebViewCapture(private val activity: Activity) {
         if (fg.isNotEmpty()) {
             css.append("#overlay,#overlay *{color:$fg !important;}")
         }
-        val cssLiteral = css.toString().replace("\\", "\\\\").replace("'", "\\'")
-        val sb = StringBuilder()
-        sb.append("(function(){try{")
-        sb.append("var s=document.getElementById('cr-style');")
-        sb.append("if(!s){s=document.createElement('style');s.id='cr-style';")
-        sb.append("(document.head||document.documentElement).appendChild(s);}")
-        sb.append("s.textContent='$cssLiteral';")
-        sb.append("}catch(e){}})();")
-        return sb.toString()
+        return css.toString()
     }
 
-    companion object {
-        // Capture width: wide enough to use the horizontal score-strip layout
-        // (the overlay stacks tall and gets clipped below ~720px).
-        private const val CAPTURE_WIDTH = 1080
-
-        // Neutralize the overlay's fixed bottom pinning so the full scoreboard
-        // flows from the top-left and can be measured/captured without clipping.
-        private const val FIT_SCRIPT = """
+    /** Apply fit + styles, then return measured content height (px). */
+    private fun prepareCaptureScript(): String {
+        val cssLiteral = buildStyleCss().replace("\\", "\\\\").replace("'", "\\'")
+        return """
 (function(){
   try{
+    var s=document.getElementById('cr-style');
+    if(!s){s=document.createElement('style');s.id='cr-style';
+    (document.head||document.documentElement).appendChild(s);}
+    s.textContent='$cssLiteral';
     var o=document.getElementById('overlay');
     if(o){
       o.style.setProperty('position','static','important');
@@ -100,13 +78,25 @@ class OverlayWebViewCapture(private val activity: Activity) {
       o.style.setProperty('right','auto','important');
       o.style.setProperty('transform','none','important');
       o.style.setProperty('margin','0 auto','important');
+      o.style.setProperty('width','100%','important');
     }
     var de=document.documentElement, b=document.body;
-    if(de){de.style.background='transparent';}
-    if(b){b.style.margin='0';b.style.background='transparent';}
-  }catch(e){}
+    if(de){de.style.background='transparent';de.style.overflow='visible';}
+    if(b){b.style.margin='0';b.style.background='transparent';b.style.overflow='visible';}
+    var el=o||b;
+    var rect=el.getBoundingClientRect();
+    var h=Math.ceil(Math.max(el.scrollHeight,el.offsetHeight,rect.height,64));
+    return String(h);
+  }catch(e){return '140';}
 })();
-"""
+""".trimIndent()
+    }
+
+    companion object {
+        private const val MEASURE_VIEWPORT_HEIGHT = 900
+        private const val MIN_CAPTURE_HEIGHT = 140
+        private const val MAX_CAPTURE_HEIGHT = 640
+        private const val JS_PREPARE_TIMEOUT_MS = 750L
     }
 
     private fun runOnMain(block: () -> Unit) {
@@ -130,8 +120,7 @@ class OverlayWebViewCapture(private val activity: Activity) {
                 setLayerType(View.LAYER_TYPE_SOFTWARE, null)
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
-                        view?.evaluateJavascript(FIT_SCRIPT, null)
-                        view?.evaluateJavascript(styleScript(), null)
+                        view?.evaluateJavascript(prepareCaptureScript(), null)
                     }
                 }
             }.also { webView = it }
@@ -145,18 +134,10 @@ class OverlayWebViewCapture(private val activity: Activity) {
             if (attached) return@runOnMain
             val view = obtainWebView() ?: return@runOnMain
             val token = activity.window?.decorView?.windowToken ?: return@runOnMain
-            // Host the offscreen WebView in its OWN WindowManager sub-window rather
-            // than in the activity's content/decor view tree. Earlier versions added
-            // it as a child of the DecorView (then the content FrameLayout); during
-            // navigation transitions the parent was drawn while this child's slot was
-            // momentarily null, throwing the FATAL "<ViewGroup> contains null child at
-            // index 1 ... dispatchGetDisplayList" — which kicked the user back to a
-            // black "Starting camera…" screen. A panel sub-window is fully decoupled
-            // from the activity's view hierarchy, so transitions can never null it out.
             try {
                 val lp = WindowManager.LayoutParams(
                     1280,
-                    360,
+                    MEASURE_VIEWPORT_HEIGHT,
                     WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
@@ -164,7 +145,6 @@ class OverlayWebViewCapture(private val activity: Activity) {
                     PixelFormat.TRANSLUCENT,
                 ).apply {
                     this.token = token
-                    // Position fully off-screen and invisible; we only rasterize via draw().
                     gravity = android.view.Gravity.TOP or android.view.Gravity.START
                     x = -20000
                     y = -20000
@@ -173,8 +153,6 @@ class OverlayWebViewCapture(private val activity: Activity) {
                 windowManager.addView(view, lp)
                 attached = true
             } catch (_: Exception) {
-                // If the panel window can't be added, leave attached=false so capture()
-                // returns null — preview simply shows no scoreboard, never crashes.
             }
         }
     }
@@ -196,13 +174,13 @@ class OverlayWebViewCapture(private val activity: Activity) {
     fun capture(width: Int, height: Int): Bitmap? {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             var result: Bitmap? = null
-            val latch = java.util.concurrent.CountDownLatch(1)
+            val latch = CountDownLatch(1)
             mainHandler.post {
                 result = captureOnMain(width, height)
                 latch.countDown()
             }
             try {
-                latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+                latch.await(2, TimeUnit.SECONDS)
             } catch (_: InterruptedException) {
             }
             return result
@@ -214,11 +192,25 @@ class OverlayWebViewCapture(private val activity: Activity) {
         if (!attached || webView == null) return null
         return try {
             val view = webView!!
-            // Re-apply fit + appearance styles (the overlay re-renders its score every ~2s).
-            view.evaluateJavascript(FIT_SCRIPT, null)
-            view.evaluateJavascript(styleScript(), null)
             val w = maxOf(width, 320)
-            val h = height.coerceIn(64, 320)
+            val hintH = height.coerceIn(MIN_CAPTURE_HEIGHT, MAX_CAPTURE_HEIGHT)
+
+            // Measure pass: tall viewport so scrollHeight reflects full scoreboard DOM.
+            view.measure(
+                View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(MEASURE_VIEWPORT_HEIGHT, View.MeasureSpec.EXACTLY),
+            )
+            view.layout(0, 0, w, MEASURE_VIEWPORT_HEIGHT)
+
+            val latch = CountDownLatch(1)
+            var measuredH = hintH
+            view.evaluateJavascript(prepareCaptureScript()) { result ->
+                measuredH = parseMeasuredHeight(result, hintH)
+                latch.countDown()
+            }
+            latch.await(JS_PREPARE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+
+            val h = maxOf(hintH, measuredH).coerceIn(MIN_CAPTURE_HEIGHT, MAX_CAPTURE_HEIGHT)
             view.measure(
                 View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY),
@@ -231,6 +223,12 @@ class OverlayWebViewCapture(private val activity: Activity) {
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun parseMeasuredHeight(result: String?, fallback: Int): Int {
+        if (result.isNullOrBlank() || result == "null") return fallback
+        val cleaned = result.trim().removeSurrounding("\"")
+        return cleaned.toIntOrNull()?.coerceIn(MIN_CAPTURE_HEIGHT, MAX_CAPTURE_HEIGHT) ?: fallback
     }
 
     fun destroy() {

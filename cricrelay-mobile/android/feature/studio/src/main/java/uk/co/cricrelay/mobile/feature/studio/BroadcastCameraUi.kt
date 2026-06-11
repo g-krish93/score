@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -41,8 +43,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.mobile.ui.AppColors
 import uk.co.cricrelay.mobile.ui.BroadcastGradientScrim
 import uk.co.cricrelay.mobile.ui.CameraCircleButton
@@ -81,6 +85,13 @@ fun BroadcastCameraUi(
         val previewWidth = constraints.maxWidth
         val previewHeight = constraints.maxHeight
         val landscape = previewWidth > previewHeight
+        val density = LocalDensity.current
+        // Board Edit "Position" slider — same bottom-margin math as the burned-in GL overlay.
+        val positionLift = with(density) {
+            state.overlayPrefs.bottomMarginPx(previewHeight).toDp()
+        }
+        val boardScaleX = state.overlayPrefs.boardDisplayScaleX()
+        val boardScaleY = state.overlayPrefs.boardDisplayScaleY()
 
         CameraPreviewLayer(
             modifier = Modifier.fillMaxSize(),
@@ -92,27 +103,34 @@ fun BroadcastCameraUi(
         if (!state.streaming) {
             state.overlayPreview?.let { board ->
                 val boardAlpha = state.overlayPrefs.opacity.toFloat().coerceIn(0.2f, 1f)
+                val boardBaseModifier = Modifier
+                    .fillMaxWidth(OverlayLayoutPrefs.REF_WIDTH_FRACTION.toFloat())
+                    .graphicsLayer {
+                        scaleX = boardScaleX
+                        scaleY = boardScaleY
+                        transformOrigin = TransformOrigin(0.5f, 1f)
+                    }
                 val boardModifier = if (landscape) {
                     // Sit centered along the bottom, clearing the left tool rail and the
                     // right Go Live rail.
                     Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(start = 96.dp, end = 110.dp, bottom = 14.dp)
-                        .fillMaxWidth()
+                        .padding(start = 96.dp, end = 110.dp, bottom = 14.dp + positionLift)
+                        .then(boardBaseModifier)
                 } else {
                     Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 272.dp)
-                        .fillMaxWidth(0.94f)
+                        .padding(bottom = 272.dp + positionLift)
+                        .then(boardBaseModifier)
                 }
                 Image(
                     bitmap = board,
                     contentDescription = "Scoreboard preview",
-                    contentScale = ContentScale.FillWidth,
+                    // Fit shows the full captured board; FillWidth cropped the bottom when
+                    // the rasterized strip was taller than the legacy 16% viewport.
+                    contentScale = ContentScale.Fit,
                     alpha = boardAlpha,
-                    modifier = boardModifier
-                        .heightIn(max = if (landscape) 96.dp else 110.dp)
-                        .clip(RoundedCornerShape(10.dp)),
+                    modifier = boardModifier.clip(RoundedCornerShape(10.dp)),
                 )
             }
         }

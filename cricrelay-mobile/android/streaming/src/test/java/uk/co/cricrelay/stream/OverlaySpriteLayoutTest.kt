@@ -23,6 +23,25 @@ class OverlaySpriteLayoutTest {
     }
 
     @Test
+    fun `higher bottom margin moves scoreboard up`() {
+        val low = OverlaySpriteLayout.computePosition(
+            OverlaySpriteLayout.Params(
+                scaleX = 88f,
+                scaleY = 22f,
+                bottomMarginFraction = 0f,
+            ),
+        )
+        val high = OverlaySpriteLayout.computePosition(
+            OverlaySpriteLayout.Params(
+                scaleX = 88f,
+                scaleY = 22f,
+                bottomMarginFraction = 48f / 720f,
+            ),
+        )
+        assertTrue("higher margin should reduce Y, low=${low.y} high=${high.y}", high.y < low.y)
+    }
+
+    @Test
     fun `computePosition stays within sprite percent bounds`() {
         val pos = OverlaySpriteLayout.computePosition(
             OverlaySpriteLayout.Params(scaleX = 40f, scaleY = 18f),

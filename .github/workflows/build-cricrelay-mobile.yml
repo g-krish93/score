@@ -77,18 +77,48 @@ jobs:
           name: cricrelay-mobile-apk
           path: static/cricrelay-stream.apk
 
+      - name: Upload APK to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_KEY }}
+          source: "static/cricrelay-stream.apk"
+          target: "/app/static"
+
       - name: Commit APK for EC2 git pull
+        id: commit_apk
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add static/cricrelay-stream.apk static/cricrelay-stream.aab
           if git diff --staged --quiet; then
             echo "APK unchanged"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git commit -m "chore: update CricRelay native mobile APK [skip deploy]"
           git pull --rebase --autostash origin main
           git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Sync repo on EC2
+        if: steps.commit_apk.outputs.changed == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            set -euo pipefail
+            REPO="${{ github.repository }}"
+            EMERGENCY_URL="https://raw.githubusercontent.com/${REPO}/main/deploy/ec2-emergency-cleanup.sh"
+            GIT_SYNC_URL="https://raw.githubusercontent.com/${REPO}/main/deploy/ec2-git-sync.sh"
+            curl -sfSL "$EMERGENCY_URL" | sudo bash
+            curl -sfSL "$GIT_SYNC_URL" | sudo bash
+            cd /app
+            test -f static/cricrelay-stream.apk
+            ls -la static/cricrelay-stream.apk
 
   build-ios:
     needs: validate

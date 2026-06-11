@@ -22,6 +22,16 @@ Release APK: `android/app/build/outputs/apk/release/app-release.apk`
 
 Package ID: `uk.co.cricrelay.stream` (same as legacy Flutter app for seamless upgrade).
 
+## Website download
+
+Any push to `main` that touches `cricrelay-mobile/` triggers **Build CricRelay Mobile** CI:
+
+1. Builds release APK/AAB
+2. Copies to `static/cricrelay-stream.apk` (served at `/download/cricrelay-stream.apk`)
+3. Uploads the APK to EC2 and commits it to git
+
+Bump `versionCode` / `versionName` in `android/app/build.gradle.kts` when shipping so installs update cleanly.
+
 ## Features
 
 - Login, onboarding, stream list, create Play-Cricket / PCS BLE streams

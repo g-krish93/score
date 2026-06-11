@@ -147,6 +147,8 @@ fun OverlaySheet(
     onDismiss: () -> Unit,
 ) {
     var fontScale by remember { mutableStateOf(prefs.fontScale.toFloat()) }
+    var widthFraction by remember { mutableStateOf(prefs.clampedWidthFraction().toFloat()) }
+    var heightFraction by remember { mutableStateOf(prefs.clampedHeightFraction().toFloat()) }
     var opacity by remember { mutableStateOf(prefs.opacity.toFloat()) }
     var bottomMargin by remember { mutableStateOf(prefs.bottomMargin.toFloat()) }
     var bg by remember { mutableStateOf(prefs.bgColor) }
@@ -223,6 +225,30 @@ fun OverlaySheet(
     Spacer(Modifier.height(AppSpacing.md))
 
     Text(
+        "Board width  ${(widthFraction * 100).toInt()}%",
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(horizontal = AppSpacing.lg),
+    )
+    Slider(
+        value = widthFraction,
+        onValueChange = { widthFraction = it },
+        valueRange = 0.25f..0.98f,
+        modifier = Modifier.padding(horizontal = AppSpacing.lg),
+    )
+
+    Text(
+        "Board height  ${(heightFraction * 100).toInt()}%",
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(horizontal = AppSpacing.lg),
+    )
+    Slider(
+        value = heightFraction,
+        onValueChange = { heightFraction = it },
+        valueRange = 0.10f..0.28f,
+        modifier = Modifier.padding(horizontal = AppSpacing.lg),
+    )
+
+    Text(
         "Font size  ${(fontScale * 100).toInt()}%",
         fontWeight = FontWeight.Medium,
         modifier = Modifier.padding(horizontal = AppSpacing.lg),
@@ -230,7 +256,7 @@ fun OverlaySheet(
     Slider(
         value = fontScale,
         onValueChange = { fontScale = it },
-        valueRange = 0.6f..2.0f,
+        valueRange = OverlayLayoutPrefs.FONT_MIN.toFloat()..OverlayLayoutPrefs.FONT_MAX.toFloat(),
         modifier = Modifier.padding(horizontal = AppSpacing.lg),
     )
 
@@ -264,6 +290,8 @@ fun OverlaySheet(
         onClick = {
             onSave(
                 prefs.copy(
+                    widthFraction = widthFraction.toDouble(),
+                    heightFraction = heightFraction.toDouble(),
                     fontScale = fontScale.toDouble(),
                     opacity = opacity.toDouble(),
                     bottomMargin = bottomMargin.toDouble(),
