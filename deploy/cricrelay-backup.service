@@ -1,0 +1,14 @@
+[Unit]
+Description=CricRelay nightly SQLite backup to S3
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ec2-user
+WorkingDirectory=/app
+# Pulls STATE_DIR + BACKUP_S3_BUCKET from the app env file.
+EnvironmentFile=-/app/.env
+ExecStart=/bin/bash /app/deploy/backup-sqlite-to-s3.sh
+# Don't wedge the timer if a single run fails; the next night retries.
+TimeoutStartSec=600

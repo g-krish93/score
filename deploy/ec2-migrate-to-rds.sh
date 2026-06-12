@@ -115,16 +115,46 @@ def migrate_table(table):
     pg.commit()
     return len(rows), ok
 
+# Order matters for foreign keys: org → match → user → sponsor → stream_session.
+# Tables added after the original SQLite→RDS script was written are migrated too;
+# missing tables (older SQLite files) are skipped rather than aborting the run.
+def migrate_table_optional(table):
+    try:
+        sq.execute(f"SELECT 1 FROM {table} LIMIT 1")
+    except sqlite3.OperationalError:
+        print(f"Skipping {table} (not present in this SQLite database).")
+        return 0, 0
+    return migrate_table(table)
+
 sq_orgs, ok_orgs = migrate_table("cricrelay_org")
 sq_matches, ok_matches = migrate_table("cricrelay_match")
+sq_users, ok_users = migrate_table_optional("cricrelay_user")
+sq_sponsors, ok_sponsors = migrate_table_optional("cricrelay_sponsor")
+sq_sessions, ok_sessions = migrate_table_optional("cricrelay_stream_session")
 
-cur.execute("SELECT COUNT(*) FROM cricrelay_org"); pg_orgs = cur.fetchone()[0]
-cur.execute("SELECT COUNT(*) FROM cricrelay_match"); pg_matches = cur.fetchone()[0]
+def pg_count(table):
+    cur.execute(f"SELECT COUNT(*) FROM {table}")
+    return cur.fetchone()[0]
 
-print(f"Orgs:    SQLite={sq_orgs}  PostgreSQL={pg_orgs}")
-print(f"Matches: SQLite={sq_matches}  PostgreSQL={pg_matches}")
+pg_orgs = pg_count("cricrelay_org")
+pg_matches = pg_count("cricrelay_match")
+pg_users = pg_count("cricrelay_user")
+pg_sponsors = pg_count("cricrelay_sponsor")
+pg_sessions = pg_count("cricrelay_stream_session")
 
-if pg_orgs < sq_orgs or pg_matches < sq_matches:
+print(f"Orgs:      SQLite={sq_orgs}  PostgreSQL={pg_orgs}")
+print(f"Matches:   SQLite={sq_matches}  PostgreSQL={pg_matches}")
+print(f"Users:     SQLite={sq_users}  PostgreSQL={pg_users}")
+print(f"Sponsors:  SQLite={sq_sponsors}  PostgreSQL={pg_sponsors}")
+print(f"Sessions:  SQLite={sq_sessions}  PostgreSQL={pg_sessions}")
+
+if (
+    pg_orgs < sq_orgs
+    or pg_matches < sq_matches
+    or pg_users < sq_users
+    or pg_sponsors < sq_sponsors
+    or pg_sessions < sq_sessions
+):
     print("ERROR: row count mismatch", file=sys.stderr)
     sys.exit(1)
 

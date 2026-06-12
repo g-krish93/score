@@ -69,9 +69,14 @@ resource "aws_instance" "cricket" {
   user_data              = templatefile("user_data.sh", { github_repo = var.github_repo })
   tags                   = { Name = "cricket-overlay" }
 
+  # Lets the box push nightly SQLite backups to S3 without static keys (see backups.tf).
+  iam_instance_profile = aws_iam_instance_profile.instance.name
+
   root_block_device {
     volume_size = var.root_volume_size_gb
     volume_type = "gp3"
+    # Tag so Data Lifecycle Manager picks this volume up for daily snapshots (backups.tf).
+    tags = { Backup = "cricrelay" }
   }
 }
 
