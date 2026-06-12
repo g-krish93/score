@@ -1084,6 +1084,7 @@ def cricrelay_home():
         "cricrelay_home.html",
         logged_in=False,
         structured_data=structured_data,
+        app_builds=_stream_app_builds_payload(),
     )
 
 
