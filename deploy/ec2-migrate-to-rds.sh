@@ -1,7 +1,6 @@
 #!/bin/bash
 # One-shot SQLite → RDS PostgreSQL migration.
-# Runs on the EC2 instance via GitHub Actions migrate-to-rds.yml.
-# Safe to re-run — uses INSERT ... ON CONFLICT DO NOTHING.
+# Strategy: write DATABASE_URL → restart app (creates schema) → stop → migrate data → restart.
 set -euo pipefail
 
 APP="${APP:-/app}"
@@ -12,60 +11,73 @@ if [[ -z "$DB_URL" ]]; then
   exit 1
 fi
 
-# Find the SQLite file
+# ── 1. Find SQLite file ────────────────────────────────────────────────────────
 SQLITE_PATH=""
 for candidate in \
     "$APP/data/cricrelay.db" \
+    "$APP/server/cricrelay.db" \
     "$APP/cricrelay.db" \
-    "/var/lib/cricrelay/cricrelay.db" \
-    "/tmp/cricrelay.db"; do
+    "/var/lib/cricrelay/cricrelay.db"; do
   if [[ -f "$candidate" ]]; then
     SQLITE_PATH="$candidate"
     break
   fi
 done
 
-# Also check STATE_DIR from the service environment
 if [[ -z "$SQLITE_PATH" ]]; then
-  STATE_DIR=$(grep -i STATE_DIR "$APP/.env" 2>/dev/null | cut -d= -f2 | tr -d ' "' || true)
+  STATE_DIR=$(grep -i STATE_DIR "$APP/server/.env" "$APP/.env" 2>/dev/null \
+    | head -1 | cut -d= -f2 | tr -d ' "' || true)
   if [[ -n "$STATE_DIR" && -f "$STATE_DIR/cricrelay.db" ]]; then
     SQLITE_PATH="$STATE_DIR/cricrelay.db"
   fi
 fi
 
 if [[ -z "$SQLITE_PATH" ]]; then
-  echo "ERROR: Could not find SQLite database file" >&2
-  find "$APP" -name "*.db" -o -name "*.sqlite" 2>/dev/null || true
+  echo "ERROR: Cannot find SQLite database file" >&2
+  find "$APP" /var/lib -name "*.db" -o -name "*.sqlite" 2>/dev/null || true
   exit 1
 fi
+echo "SQLite found: $SQLITE_PATH"
 
-echo "Found SQLite at: $SQLITE_PATH"
+# ── 2. Write DATABASE_URL to .env so app starts with PostgreSQL ───────────────
+ENV_FILE="$APP/server/.env"
+[[ ! -f "$ENV_FILE" ]] && ENV_FILE="$APP/.env"
 
-# Install psycopg2 if needed
+if grep -q "^DATABASE_URL=" "$ENV_FILE" 2>/dev/null; then
+  sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$DB_URL|" "$ENV_FILE"
+else
+  echo "DATABASE_URL=$DB_URL" >> "$ENV_FILE"
+fi
+echo "DATABASE_URL written to $ENV_FILE"
+
+# ── 3. Restart app — Flask db.create_all() + apply_migrations() run on boot ──
+echo "Restarting app to create PostgreSQL schema..."
+systemctl restart cricket
+for i in $(seq 1 20); do
+  if curl -sf http://127.0.0.1:5000/health >/dev/null 2>&1; then
+    echo "App healthy on PostgreSQL (attempt $i)."
+    break
+  fi
+  if [[ $i -eq 20 ]]; then
+    echo "ERROR: App did not come up after schema creation." >&2
+    journalctl -u cricket -n 60 --no-pager || true
+    exit 1
+  fi
+  sleep 3
+done
+
+# ── 4. Stop app for clean data migration ──────────────────────────────────────
+systemctl stop cricket
+echo "App stopped for data migration."
+
+# ── 5. Install psycopg2 and migrate data ──────────────────────────────────────
 pip3 install --quiet psycopg2-binary
 
-# Create schema on PostgreSQL first (Flask apply_migrations handles columns)
-# Flask app lives at /app/server/app.py — run from that directory
-cd "$APP/server"
-PYTHONPATH="$APP/server" python3 - <<'PYEOF'
-import os, sys
-sys.path.insert(0, os.getcwd())
-os.environ.setdefault("FLASK_ENV", "production")
-from app import app, db
-with app.app_context():
-    db.create_all()
-    from app import apply_migrations
-    apply_migrations()
-print("Schema ready on PostgreSQL.")
-PYEOF
-
-# Migrate data
-cd "$APP"
-python3 - <<PYEOF
-import os, sqlite3, psycopg2
+python3 << PYEOF
+import sqlite3, psycopg2, os, sys
 
 SQLITE_PATH = "$SQLITE_PATH"
-PG_DSN = os.environ["DATABASE_URL"]
+PG_DSN = "$DB_URL"
 
 sq = sqlite3.connect(SQLITE_PATH)
 sq.row_factory = sqlite3.Row
@@ -74,77 +86,70 @@ cur = pg.cursor()
 
 # Orgs
 rows = sq.execute("SELECT * FROM cricrelay_org").fetchall()
-print(f"Migrating {len(rows)} organisations...")
+print(f"Migrating {len(rows)} organisation(s)...")
 for r in rows:
     d = dict(r)
-    cur.execute("""
-        INSERT INTO cricrelay_org (
-            id, slug, name, email, password_hash, play_cricket_base_url,
-            public_logo_url, public_primary_color, public_accent_color, ui_theme,
-            youtube_refresh_token_enc, youtube_channel_id, youtube_channel_title,
-            youtube_connected_at, youtube_active_broadcast_id, youtube_active_stream_id,
-            youtube_active_match_slug, twitch_refresh_token_enc, twitch_user_id,
-            twitch_login, twitch_display_name, twitch_connected_at,
-            twitch_active_match_slug, created_at
-        ) VALUES (
-            %(id)s, %(slug)s, %(name)s, %(email)s, %(password_hash)s,
-            %(play_cricket_base_url)s, %(public_logo_url)s,
-            %(public_primary_color)s, %(public_accent_color)s, %(ui_theme)s,
-            %(youtube_refresh_token_enc)s, %(youtube_channel_id)s,
-            %(youtube_channel_title)s, %(youtube_connected_at)s,
-            %(youtube_active_broadcast_id)s, %(youtube_active_stream_id)s,
-            %(youtube_active_match_slug)s, %(twitch_refresh_token_enc)s,
-            %(twitch_user_id)s, %(twitch_login)s, %(twitch_display_name)s,
-            %(twitch_connected_at)s, %(twitch_active_match_slug)s, %(created_at)s
+    cols = list(d.keys())
+    vals = list(d.values())
+    placeholders = ",".join(["%s"] * len(cols))
+    col_str = ",".join(cols)
+    try:
+        cur.execute(
+            f"INSERT INTO cricrelay_org ({col_str}) VALUES ({placeholders}) ON CONFLICT (id) DO NOTHING",
+            vals,
         )
-        ON CONFLICT (id) DO NOTHING
-    """, d)
+    except Exception as e:
+        print(f"  Skipping org {d.get('id')}: {e}")
+        pg.rollback()
+
+pg.commit()
 
 # Matches
 rows = sq.execute("SELECT * FROM cricrelay_match").fetchall()
-print(f"Migrating {len(rows)} relay matches...")
+print(f"Migrating {len(rows)} match(es)...")
 for r in rows:
     d = dict(r)
-    cur.execute("""
-        INSERT INTO cricrelay_match (
-            id, organization_id, play_cricket_match_id, full_scrape_url,
-            score_match_slug, label, paused, relay_source, created_at
-        ) VALUES (
-            %(id)s, %(organization_id)s, %(play_cricket_match_id)s,
-            %(full_scrape_url)s, %(score_match_slug)s, %(label)s,
-            %(paused)s, %(relay_source)s, %(created_at)s
+    cols = list(d.keys())
+    vals = list(d.values())
+    placeholders = ",".join(["%s"] * len(cols))
+    col_str = ",".join(cols)
+    try:
+        cur.execute(
+            f"INSERT INTO cricrelay_match ({col_str}) VALUES ({placeholders}) ON CONFLICT (id) DO NOTHING",
+            vals,
         )
-        ON CONFLICT (id) DO NOTHING
-    """, d)
+    except Exception as e:
+        print(f"  Skipping match {d.get('id')}: {e}")
+        pg.rollback()
 
 pg.commit()
 
 # Verify
-cur.execute("SELECT COUNT(*) FROM cricrelay_org")
-pg_orgs = cur.fetchone()[0]
+cur.execute("SELECT COUNT(*) FROM cricrelay_org"); pg_orgs = cur.fetchone()[0]
+cur.execute("SELECT COUNT(*) FROM cricrelay_match"); pg_matches = cur.fetchone()[0]
 sq_orgs = sq.execute("SELECT COUNT(*) FROM cricrelay_org").fetchone()[0]
-cur.execute("SELECT COUNT(*) FROM cricrelay_match")
-pg_matches = cur.fetchone()[0]
 sq_matches = sq.execute("SELECT COUNT(*) FROM cricrelay_match").fetchone()[0]
 
 print(f"Orgs:    SQLite={sq_orgs}  PostgreSQL={pg_orgs}")
 print(f"Matches: SQLite={sq_matches}  PostgreSQL={pg_matches}")
 
 if pg_orgs < sq_orgs or pg_matches < sq_matches:
-    print("WARNING: row count mismatch — check for errors above")
-    exit(1)
+    print("WARNING: row count mismatch", file=sys.stderr)
+    sys.exit(1)
 
-print("Migration complete.")
-sq.close()
-pg.close()
+print("Data migration complete.")
+sq.close(); pg.close()
 PYEOF
 
-# Write DATABASE_URL into the app .env so it survives restarts
-if grep -q "^DATABASE_URL=" "$APP/.env" 2>/dev/null; then
-  sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$DB_URL|" "$APP/.env"
-else
-  echo "DATABASE_URL=$DB_URL" >> "$APP/.env"
+# ── 6. Restart app on PostgreSQL ──────────────────────────────────────────────
+systemctl start cricket
+sleep 5
+if ! systemctl is-active --quiet cricket; then
+  echo "ERROR: App failed to start after migration" >&2
+  journalctl -u cricket -n 60 --no-pager || true
+  exit 1
 fi
 
-echo "DATABASE_URL written to $APP/.env"
-echo "Restart the cricket service to switch to PostgreSQL."
+curl -sf http://127.0.0.1:5000/health
+echo ""
+echo "Migration complete. App is live on PostgreSQL."
