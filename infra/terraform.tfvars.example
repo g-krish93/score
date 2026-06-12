@@ -2,5 +2,3 @@ aws_region      = "eu-west-2"
 instance_type   = "t3.micro"
 key_name        = "your-ec2-key-name"
 github_repo     = "https://github.com/g-krish93/score.git"
-# Your public IP with /32 — never 0.0.0.0/0 in production
-admin_ssh_cidr  = "203.0.113.10/32"

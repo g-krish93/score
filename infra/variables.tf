@@ -22,8 +22,3 @@ variable "root_volume_size_gb" {
   type        = number
   default     = 20
 }
-
-variable "admin_ssh_cidr" {
-  description = "CIDR allowed for SSH (e.g. 203.0.113.10/32). Never use 0.0.0.0/0 in production. GitHub Actions deploy needs its runner IP or use SSM."
-  type        = string
-}
