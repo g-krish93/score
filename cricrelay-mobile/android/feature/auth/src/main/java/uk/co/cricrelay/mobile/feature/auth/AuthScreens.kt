@@ -1,5 +1,7 @@
 package uk.co.cricrelay.mobile.feature.auth
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -29,16 +31,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Sensors
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ViewInAr
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -81,7 +88,7 @@ private fun BrandMark(modifier: Modifier = Modifier, size: Int = 72) {
         Icon(
             imageVector = Icons.Outlined.Sensors,
             contentDescription = null,
-            tint = Color.White,
+            tint = AppColors.OnPrimary,
             modifier = Modifier.size((size * 0.5).dp),
         )
     }
@@ -90,6 +97,7 @@ private fun BrandMark(modifier: Modifier = Modifier, size: Int = 72) {
 @Composable
 fun LoginScreen(
     onLoggedIn: (needsOnboarding: Boolean) -> Unit,
+    onSignUp: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: LoginViewModel = hiltViewModel(),
 ) {
@@ -154,6 +162,138 @@ fun LoginScreen(
                 onClick = { viewModel.login(onLoggedIn) },
                 loading = state.loading,
             )
+            Spacer(Modifier.height(AppSpacing.md))
+            TextButton(onClick = onSignUp) {
+                Text(
+                    "Don't have an account? Sign up",
+                    style = AppTypography.bodyMedium,
+                    color = AppColors.Accent,
+                )
+            }
+            Spacer(Modifier.height(AppSpacing.xl))
+        }
+    }
+}
+
+@Composable
+fun RegisterScreen(
+    onRegistered: (needsOnboarding: Boolean) -> Unit,
+    onBackToLogin: () -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: RegisterViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val privacyUrl = "${state.baseUrl.trimEnd('/')}/privacy"
+    StudioBackdrop(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .imePadding()
+                .padding(AppSpacing.lg),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Spacer(Modifier.height(AppSpacing.xl))
+            BrandMark()
+            Spacer(Modifier.height(AppSpacing.lg))
+            Text(
+                "Create account",
+                style = AppTypography.headlineLarge.copy(brush = AppGradients.TitleShine),
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(AppSpacing.sm))
+            Text(
+                "Set up your CricRelay account to start broadcasting.",
+                style = AppTypography.bodyMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = AppSpacing.md),
+            )
+            Spacer(Modifier.height(AppSpacing.xl))
+            StudioTextField(
+                value = state.name,
+                onValueChange = viewModel::onNameChange,
+                label = "Club or your name",
+                leadingIcon = Icons.Outlined.Person,
+            )
+            Spacer(Modifier.height(AppSpacing.md))
+            StudioTextField(
+                value = state.email,
+                onValueChange = viewModel::onEmailChange,
+                label = "Email",
+                keyboardType = KeyboardType.Email,
+                leadingIcon = Icons.Outlined.Email,
+            )
+            Spacer(Modifier.height(AppSpacing.md))
+            StudioTextField(
+                value = state.password,
+                onValueChange = viewModel::onPasswordChange,
+                label = "Password (min 8 characters)",
+                isPassword = true,
+                leadingIcon = Icons.Outlined.Lock,
+            )
+            Spacer(Modifier.height(AppSpacing.md))
+            StudioTextField(
+                value = state.confirmPassword,
+                onValueChange = viewModel::onConfirmPasswordChange,
+                label = "Confirm password",
+                isPassword = true,
+                leadingIcon = Icons.Outlined.Lock,
+            )
+            state.error?.let {
+                Spacer(Modifier.height(AppSpacing.md))
+                ErrorBanner(it)
+            }
+            Spacer(Modifier.height(AppSpacing.md))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Checkbox(
+                    checked = state.consent,
+                    onCheckedChange = viewModel::onConsentChange,
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = AppColors.Accent,
+                        uncheckedColor = AppColors.OnBackgroundDim,
+                        checkmarkColor = AppColors.Surface,
+                    ),
+                )
+                Column(modifier = Modifier.padding(top = 12.dp)) {
+                    Text(
+                        "I agree to the Privacy Policy and consent to CricRelay processing my data to provide the service.",
+                        style = AppTypography.bodySmall,
+                        color = AppColors.OnBackgroundMuted,
+                    )
+                    TextButton(
+                        onClick = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(privacyUrl)))
+                        },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                    ) {
+                        Text(
+                            "Read Privacy Policy",
+                            style = AppTypography.bodySmall,
+                            color = AppColors.Accent,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(AppSpacing.lg))
+            PrimaryButton(
+                text = "Create account",
+                onClick = { viewModel.register(onRegistered) },
+                loading = state.loading,
+            )
+            Spacer(Modifier.height(AppSpacing.md))
+            TextButton(onClick = onBackToLogin) {
+                Text(
+                    "Already have an account? Sign in",
+                    style = AppTypography.bodyMedium,
+                    color = AppColors.Accent,
+                )
+            }
             Spacer(Modifier.height(AppSpacing.xl))
         }
     }

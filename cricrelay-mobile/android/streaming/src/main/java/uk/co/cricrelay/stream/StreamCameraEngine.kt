@@ -61,6 +61,9 @@ object StreamCameraEngine : ConnectChecker {
     private var activity: Activity? = null
     private var appContext: Context? = null
     private var imageFilter: ImageObjectFilterRender? = null
+    private var watermarkFilter: ImageObjectFilterRender? = null
+    // TODO(paywall): read from session once Stripe is wired — all users are free for now
+    private const val IS_FREE_USER = true
     private var overlayCapture: OverlayWebViewCapture? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var overlayRunnable: Runnable? = null
@@ -1008,6 +1011,63 @@ object StreamCameraEngine : ConnectChecker {
             }
         }
         imageFilter = null
+        clearWatermarkFilter()
+    }
+
+    private fun buildWatermarkBitmap(): Bitmap {
+        val w = 480
+        val h = 80
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            alpha = 130
+        }
+        canvas.drawRoundRect(0f, 0f, w.toFloat(), h.toFloat(), 14f, 14f, bg)
+        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            alpha = 200
+            textSize = 34f
+            isFakeBoldText = true
+            textAlign = Paint.Align.CENTER
+        }
+        canvas.drawText("cricrelay.co.uk", w / 2f, h / 2f + 12f, text)
+        return bmp
+    }
+
+    private fun ensureWatermarkFilter() {
+        if (!IS_FREE_USER) return
+        val cam = camera ?: return
+        if (watermarkFilter != null) return
+        if (!cam.isOnPreview && !cam.isStreaming) return
+        try {
+            val filter = ImageObjectFilterRender()
+            cam.glInterface.addFilter(filter)
+            filter.setImage(buildWatermarkBitmap())
+            applyWatermarkSprite(filter)
+            watermarkFilter = filter
+        } catch (e: Exception) {
+            CricrelayLog.w("Watermark filter failed: ${e.message}")
+        }
+    }
+
+    private fun clearWatermarkFilter() {
+        val cam = camera ?: return
+        watermarkFilter?.let { filter ->
+            try {
+                cam.glInterface.removeFilter(filter)
+            } catch (_: Exception) {
+            }
+        }
+        watermarkFilter = null
+    }
+
+    private fun applyWatermarkSprite(filter: ImageObjectFilterRender) {
+        val canvasW = if (streamIsPortrait) streamHeight else streamWidth
+        val canvasH = if (streamIsPortrait) streamWidth else streamHeight
+        filter.setDefaultScale(canvasW, canvasH)
+        filter.setScale(22f, 7f)
+        filter.setPosition(76f, 2f)
     }
 
     private fun ensureOverlayFilter() {
@@ -1211,6 +1271,7 @@ object StreamCameraEngine : ConnectChecker {
                     return@runOnMain
                 }
                 ensureOverlayFilter()
+                ensureWatermarkFilter()
                 val filter = imageFilter ?: run {
                     if (!forGl.isRecycled) forGl.recycle()
                     return@runOnMain

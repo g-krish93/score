@@ -1,35 +1,73 @@
 {% extends "base_marketing.html" %}
-{% block title %}Privacy — CricRelay{% endblock %}
-{% block meta_description %}Privacy overview for CricRelay — how club accounts, Play-Cricket relay data, and logs are handled.{% endblock %}
+{% block title %}Privacy Policy — CricRelay{% endblock %}
+{% block meta_description %}CricRelay privacy policy — what data we collect, why, how long we keep it, and your UK GDPR rights.{% endblock %}
 
 {% block page_shell %}
 <main id="main-content" class="cr-page cr-legal">
   <article class="cr-section-inner cr-legal-inner cr-reveal">
-    <h1 class="cr-page-title">Privacy overview</h1>
-    <p class="cr-muted">Last updated {{ current_year }}. This page is a high-level summary — have counsel review before an IPO or regulated launch.</p>
+    <h1 class="cr-page-title">Privacy Policy</h1>
+    <p class="cr-muted">Last updated {{ current_year }}. This policy explains how CricRelay handles your personal data under UK GDPR.</p>
 
-    <h2>What we process</h2>
-    <p>Account details you provide at registration (club name, email, hashed password, Play-Cricket base URL). Relay operations fetch public ECB Play-Cricket HTML required to derive scores for overlays you configure.</p>
+    <h2>Who is the data controller</h2>
+    <p>
+      CricRelay is operated by the CricRelay team. For any privacy or data-protection request, contact us at
+      <a href="mailto:support@cricrelay.co.uk">support@cricrelay.co.uk</a>.
+    </p>
 
-    <h2>Where data lives</h2>
-    <p>Deployment is under your control (for example AWS EC2 + RDS in the UK). Configure region pinning, encryption at rest, and backups to meet your league obligations.</p>
-
-    <h2>Cookies &amp; analytics</h2>
-    <p>The web product uses session cookies for login. Add your own marketing analytics and consent banners when you enable tags on the marketing site.</p>
-
-    <h2>CricRelay Live mobile app</h2>
-    <p>The CricRelay Stream Android app (CricRelay Live) may collect:</p>
+    <h2>What data we collect</h2>
     <ul>
-      <li><strong>Crash and diagnostic data</strong> via Firebase Crashlytics (Google) to fix stability issues. Stack traces may include device model and OS version; we do not intentionally log stream keys or passwords.</li>
-      <li><strong>Anonymous usage events</strong> via Firebase Analytics (Google), such as sign-in success, stream creation, and go-live outcomes. Events do not include your email, stream keys, or RTMP URLs.</li>
-      <li><strong>Camera and microphone</strong> while you broadcast — audio/video is sent only to the RTMP destination you configure (for example YouTube or Twitch), not to CricRelay servers for storage.</li>
-      <li><strong>Account email</strong> when you sign in to your club server.</li>
-      <li><strong>RTMP stream keys</strong> stored on your device for volunteer streaming (see app Data safety in Google Play).</li>
+      <li><strong>Account details:</strong> club or personal name, email address, and a hashed password.</li>
+      <li><strong>Play-Cricket link:</strong> your club code or base URL, if you provide one (optional for app sign-up).</li>
+      <li><strong>OAuth tokens:</strong> encrypted YouTube and Twitch refresh tokens when you connect those platforms.</li>
+      <li><strong>Stream history:</strong> match slugs, labels, and timestamps for streams you create.</li>
+      <li><strong>Consent record:</strong> the date and time you agreed to this policy at registration.</li>
     </ul>
-    <p>You can disable analytics collection in Android settings for Google Play services where available. Crash reporting helps us improve reliability for club volunteers.</p>
+
+    <h2>Why we collect it</h2>
+    <p>
+      We process this data to provide the CricRelay streaming service — account authentication, live score overlays,
+      YouTube/Twitch integration, and stream management for your club.
+    </p>
+
+    <h2>How long we keep it</h2>
+    <p>
+      We retain your account data and associated stream records until you delete your account. When you request deletion,
+      we erase your account, stream history, and connected OAuth tokens.
+    </p>
+
+    <h2>Your rights</h2>
+    <p>Under UK GDPR you have the right to:</p>
+    <ul>
+      <li><strong>Access</strong> — view the personal data we hold about you.</li>
+      <li><strong>Erasure</strong> — delete your account and all associated data.</li>
+      <li><strong>Portability</strong> — export your data in a machine-readable format.</li>
+      <li><strong>Rectification</strong> — correct inaccurate data via your dashboard settings.</li>
+      <li><strong>Object</strong> — object to processing where applicable.</li>
+    </ul>
+    <p>
+      Signed-in users can export or delete their account from the
+      <a href="{{ url_for('dashboard') }}">dashboard</a> or via the mobile app.
+      API endpoints: <code class="cr-code">GET /api/auth/account/export</code> and
+      <code class="cr-code">DELETE /api/auth/account</code> (Bearer token required).
+    </p>
+
+    <h2>Cookies</h2>
+    <p>The web app uses session cookies for login. We do not use third-party advertising trackers on the core product.</p>
+
+    <h2>CricRelay mobile app</h2>
+    <p>The native Android and iOS apps may additionally collect:</p>
+    <ul>
+      <li><strong>Crash diagnostics</strong> via Firebase Crashlytics to improve stability.</li>
+      <li><strong>Anonymous usage events</strong> via Firebase Analytics (sign-in, stream creation, go-live outcomes).</li>
+      <li><strong>Camera and microphone</strong> while broadcasting — sent only to the RTMP destination you configure.</li>
+    </ul>
 
     <h2>Contact</h2>
-    <p>For privacy requests, reach the data controller email you publish for your deployment.</p>
+    <p>
+      For data subject requests or questions about this policy, email
+      <a href="mailto:support@cricrelay.co.uk">support@cricrelay.co.uk</a>.
+      We aim to respond within 30 days.
+    </p>
   </article>
 </main>
 {% endblock %}

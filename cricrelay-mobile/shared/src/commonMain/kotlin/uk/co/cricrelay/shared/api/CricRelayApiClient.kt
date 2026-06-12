@@ -116,6 +116,27 @@ class CricRelayApiClient(
         return body
     }
 
+    suspend fun register(name: String, email: String, password: String, consent: Boolean = false): JsonObject {
+        if (!isAllowedApiBaseUrl(baseUrl)) {
+            throw ApiException("Server URL must use HTTPS (http only for local testing).")
+        }
+        val response = httpClient.post("$baseUrl/api/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(buildJsonObject {
+                put("name", name)
+                put("email", email)
+                put("password", password)
+                put("consent", consent)
+            })
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Registration failed")
+        val newToken = body["token"]?.toString()?.trim('"')
+            ?: throw ApiException("Registration failed")
+        updateSession(baseUrl, newToken)
+        return body
+    }
+
     suspend fun listStreams(): List<StreamMatch> {
         val response = httpClient.get("$baseUrl/api/streams") {
             authHeaders().forEach { (k, v) -> header(k, v) }

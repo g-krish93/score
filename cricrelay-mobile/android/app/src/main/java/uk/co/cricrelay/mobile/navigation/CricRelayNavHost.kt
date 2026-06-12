@@ -8,6 +8,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import uk.co.cricrelay.mobile.feature.auth.LoginScreen
 import uk.co.cricrelay.mobile.feature.auth.OnboardingScreen
+import uk.co.cricrelay.mobile.feature.auth.RegisterScreen
 import uk.co.cricrelay.mobile.feature.home.CreateStreamScreen
 import uk.co.cricrelay.mobile.feature.home.HomeScreen
 import uk.co.cricrelay.mobile.feature.pcsble.PcsBleScreen
@@ -38,6 +39,19 @@ fun CricRelayNavHost(
                         popUpTo(LoginRoute) { inclusive = true }
                     }
                 },
+                onSignUp = { navController.navigate(RegisterRoute) },
+            )
+        }
+        composable<RegisterRoute> {
+            RegisterScreen(
+                onRegistered = { needsOnboarding ->
+                    navController.navigate(
+                        if (needsOnboarding) OnboardingRoute else HomeRoute,
+                    ) {
+                        popUpTo(LoginRoute) { inclusive = true }
+                    }
+                },
+                onBackToLogin = { navController.popBackStack() },
             )
         }
         composable<OnboardingRoute> {

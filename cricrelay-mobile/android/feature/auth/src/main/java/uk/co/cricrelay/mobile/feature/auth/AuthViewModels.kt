@@ -56,6 +56,69 @@ class LoginViewModel @Inject constructor(
     }
 }
 
+data class RegisterUiState(
+    val baseUrl: String = "https://cricrelay.co.uk",
+    val name: String = "",
+    val email: String = "",
+    val password: String = "",
+    val confirmPassword: String = "",
+    val consent: Boolean = false,
+    val loading: Boolean = false,
+    val error: String? = null,
+)
+
+@HiltViewModel
+class RegisterViewModel @Inject constructor(
+    private val authRepository: AuthRepository,
+) : ViewModel() {
+    private val _uiState = MutableStateFlow(RegisterUiState())
+    val uiState: StateFlow<RegisterUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val session = authRepository.currentSession()
+            _uiState.update { it.copy(baseUrl = session.baseUrl) }
+        }
+    }
+
+    fun onNameChange(value: String) = _uiState.update { it.copy(name = value, error = null) }
+    fun onEmailChange(value: String) = _uiState.update { it.copy(email = value, error = null) }
+    fun onPasswordChange(value: String) = _uiState.update { it.copy(password = value, error = null) }
+    fun onConfirmPasswordChange(value: String) = _uiState.update { it.copy(confirmPassword = value, error = null) }
+    fun onConsentChange(value: Boolean) = _uiState.update { it.copy(consent = value, error = null) }
+
+    fun register(onSuccess: suspend (needsOnboarding: Boolean) -> Unit) {
+        val state = _uiState.value
+        if (state.password != state.confirmPassword) {
+            _uiState.update { it.copy(error = "Passwords do not match") }
+            return
+        }
+        if (!state.consent) {
+            _uiState.update { it.copy(error = "You must agree to the Privacy Policy") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(loading = true, error = null) }
+            try {
+                authRepository.register(
+                    state.baseUrl,
+                    state.name.trim(),
+                    state.email.trim(),
+                    state.password,
+                    consent = true,
+                )
+                onSuccess(true)
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(error = e.message?.replace("Exception: ", "").orEmpty().ifBlank { "Registration failed" })
+                }
+            } finally {
+                _uiState.update { it.copy(loading = false) }
+            }
+        }
+    }
+}
+
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
     private val authRepository: AuthRepository,

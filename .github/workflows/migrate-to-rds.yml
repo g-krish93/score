@@ -1,0 +1,37 @@
+name: Migrate SQLite to RDS PostgreSQL
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "migrate" to confirm'
+        required: true
+
+jobs:
+  migrate:
+    if: ${{ github.event.inputs.confirm == 'migrate' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Migrate SQLite to RDS
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_KEY }}
+          envs: DATABASE_URL
+          script: |
+            set -euo pipefail
+            cd /app
+            sudo chown -R ec2-user:ec2-user /app
+            sudo -E bash deploy/ec2-migrate-to-rds.sh
+            sudo systemctl restart cricket
+            sleep 4
+            if ! sudo systemctl is-active --quiet cricket; then
+              echo "=== Service failed to start after migration ==="
+              sudo journalctl -u cricket -n 60 --no-pager
+              exit 1
+            fi
+            curl -sf http://127.0.0.1:5000/health
+            echo "Migration complete. App is live on PostgreSQL."

@@ -37,6 +37,15 @@
       </p>
       <input class="cr-input" id="play_cricket_base_url" name="play_cricket_base_url" required autocomplete="off" placeholder="bmacc" value="{{ request.form.play_cricket_base_url or '' }}">
 
+      <div class="form-group" style="margin-top:16px;">
+        <label class="checkbox-label" style="display:flex;align-items:flex-start;gap:10px;font-size:.92rem;line-height:1.45;cursor:pointer;">
+          <input type="checkbox" name="consent" required style="margin-top:3px;flex-shrink:0;">
+          <span>I agree to the
+            <a href="/privacy" target="_blank" rel="noopener" style="color:var(--cr-accent);">Privacy Policy</a>
+            and consent to CricRelay processing my data to provide the service.</span>
+        </label>
+      </div>
+
       <button type="submit" class="cr-btn cr-btn-primary" style="width:100%;margin-top:20px;">Create account</button>
     </form>
   </div>

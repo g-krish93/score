@@ -298,6 +298,33 @@ def migrate_organization_brand_columns():
         db.session.commit()
 
 
+def migrate_play_cricket_base_url_nullable():
+    """App registrations may not have a Play-Cricket URL at sign-up."""
+    insp = inspect(db.engine)
+    if not insp.has_table("cricrelay_org"):
+        return
+    cols = {c["name"]: c for c in insp.get_columns("cricrelay_org")}
+    col = cols.get("play_cricket_base_url")
+    if col and not col["nullable"]:
+        if db.engine.dialect.name == "postgresql":
+            db.session.execute(text(
+                "ALTER TABLE cricrelay_org ALTER COLUMN play_cricket_base_url DROP NOT NULL"
+            ))
+            db.session.commit()
+
+
+def migrate_consent_given_at_column():
+    """GDPR consent timestamp for account registration."""
+    insp = inspect(db.engine)
+    if not insp.has_table("cricrelay_org"):
+        return
+    cols = {c["name"] for c in insp.get_columns("cricrelay_org")}
+    if "consent_given_at" not in cols:
+        ts = _sql_timestamp_type()
+        db.session.execute(text(f"ALTER TABLE cricrelay_org ADD COLUMN consent_given_at {ts}"))
+        db.session.commit()
+
+
 def _sql_timestamp_type() -> str:
     if db.engine.dialect.name == "postgresql":
         return "TIMESTAMP WITHOUT TIME ZONE"
@@ -1125,6 +1152,9 @@ def register_page():
     if len(password) < 8:
         flash("Use a password of at least 8 characters.", "error")
         return render_template("cricrelay_register.html"), 400
+    if not request.form.get("consent"):
+        flash("You must agree to the Privacy Policy to create an account.", "error")
+        return render_template("cricrelay_register.html"), 400
     if not base_url:
         flash(
             "Enter your Play-Cricket club code — the short name before .play-cricket.com in your club site "
@@ -1145,6 +1175,7 @@ def register_page():
         play_cricket_base_url=base_url,
     )
     org.set_password(password)
+    org.consent_given_at = datetime.now(timezone.utc)
     db.session.add(org)
     try:
         db.session.commit()
@@ -2632,6 +2663,117 @@ def api_stream_login():
     )
 
 
+@app.post("/api/auth/register")
+def api_stream_register():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+    play_cricket_base_url = normalize_play_cricket_club_root(data.get("play_cricket_base_url") or "")
+    if not name or not email or not password:
+        return jsonify({"error": "name, email, and password are required"}), 400
+    if not data.get("consent"):
+        return jsonify({"error": "You must agree to the Privacy Policy"}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters"}), 400
+    base_slug = slugify_org_name(name)
+    slug = base_slug
+    for _ in range(12):
+        if not Organization.query.filter_by(slug=slug).first():
+            break
+        slug = f"{base_slug}-{secrets.token_hex(2)}"
+    org = Organization(
+        slug=slug,
+        name=name,
+        email=email,
+        play_cricket_base_url=play_cricket_base_url,
+    )
+    org.set_password(password)
+    org.consent_given_at = datetime.now(timezone.utc)
+    db.session.add(org)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "An account with that email already exists"}), 409
+    return jsonify(
+        {
+            "ok": True,
+            "token": issue_stream_token(org),
+            "org_id": org.id,
+            "org_name": org.name,
+        }
+    ), 201
+
+
+@app.delete("/api/auth/account")
+@stream_api_auth_required
+def api_delete_account(org: Organization):
+    """GDPR Article 17 — right to erasure. Deletes account and all associated data."""
+    if (org.youtube_refresh_token_enc or "").strip():
+        try:
+            import requests as _req
+            _req.post(
+                "https://oauth2.googleapis.com/revoke",
+                params={"token": org.youtube_refresh_token_enc},
+                timeout=5,
+            )
+        except Exception:
+            pass
+
+    if (org.twitch_refresh_token_enc or "").strip():
+        try:
+            import requests as _req
+            _req.post(
+                "https://id.twitch.tv/oauth2/revoke",
+                data={
+                    "client_id": os.getenv("TWITCH_CLIENT_ID", ""),
+                    "token": org.twitch_refresh_token_enc,
+                },
+                timeout=5,
+            )
+        except Exception:
+            pass
+
+    RelayMatch.query.filter_by(organization_id=org.id).delete()
+
+    db.session.delete(org)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Deletion failed — contact support@cricrelay.co.uk"}), 500
+
+    return "", 204
+
+
+@app.get("/api/auth/account/export")
+@stream_api_auth_required
+def api_export_account(org: Organization):
+    """GDPR Article 20 — data portability. Returns all personal data as JSON."""
+    matches = RelayMatch.query.filter_by(organization_id=org.id).all()
+    return jsonify({
+        "account": {
+            "name": org.name,
+            "email": org.email,
+            "slug": org.slug,
+            "play_cricket_url": org.play_cricket_base_url or "",
+            "created_at": org.created_at.isoformat() if org.created_at else None,
+            "consent_given_at": org.consent_given_at.isoformat() if org.consent_given_at else None,
+            "youtube_connected": bool((org.youtube_refresh_token_enc or "").strip()),
+            "twitch_connected": bool((org.twitch_refresh_token_enc or "").strip()),
+        },
+        "streams": [
+            {
+                "slug": m.score_match_slug,
+                "label": m.label or "",
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in matches
+        ],
+    })
+
+
 @app.get("/api/streams")
 @stream_api_auth_required
 def api_list_streams(org: Organization):
@@ -3202,6 +3344,8 @@ with app.app_context():
     migrate_organization_brand_columns()
     migrate_youtube_columns()
     migrate_twitch_columns()
+    migrate_play_cricket_base_url_nullable()
+    migrate_consent_given_at_column()
 
 with state_lock:
     try:

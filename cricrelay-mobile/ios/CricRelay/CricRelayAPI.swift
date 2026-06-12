@@ -25,6 +25,28 @@ final class CricRelayAPI {
         token = newToken
     }
 
+    func register(name: String, email: String, password: String, baseUrl: String) async throws {
+        self.baseUrl = baseUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: "\(self.baseUrl)/api/auth/register") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "name": name,
+            "email": email,
+            "password": password,
+            "consent": true,
+        ])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        if let http = response as? HTTPURLResponse, http.statusCode != 201 {
+            let message = json?["error"] as? String ?? "Registration failed"
+            throw NSError(domain: "CricRelayAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: message])
+        }
+        guard let newToken = json?["token"] as? String else { throw URLError(.badServerResponse) }
+        token = newToken
+    }
+
     func listStreams() async throws -> [StreamItem] {
         guard let url = URL(string: "\(baseUrl)/api/streams") else { throw URLError(.badURL) }
         var request = URLRequest(url: url)

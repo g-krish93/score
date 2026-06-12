@@ -37,6 +37,23 @@ class AuthRepository(
         return client
     }
 
+    suspend fun register(
+        baseUrl: String,
+        name: String,
+        email: String,
+        password: String,
+        consent: Boolean = false,
+    ): CricRelayApiClient {
+        val normalized = normalizeApiBaseUrl(baseUrl)
+        if (!isAllowedApiBaseUrl(normalized)) {
+            throw IllegalArgumentException("Use HTTPS for your club server (http only for local testing).")
+        }
+        val client = CricRelayApiClient(httpClientFactory(), normalized)
+        client.register(name, email, password, consent)
+        sessionStore.writeSession(client.baseUrl, client.token.orEmpty())
+        return client
+    }
+
     suspend fun logout() {
         sessionStore.clearToken()
     }

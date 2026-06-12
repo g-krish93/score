@@ -39,6 +39,19 @@ final class SessionViewModel: ObservableObject {
         }
     }
 
+    func register(name: String, email: String, password: String) async {
+        errorMessage = nil
+        do {
+            try await api.register(name: name, email: email, password: password, baseUrl: baseUrl)
+            UserDefaults.standard.set(baseUrl, forKey: "stream_api_base")
+            UserDefaults.standard.set(api.token, forKey: "stream_api_token_secure")
+            isLoggedIn = true
+            onboardingComplete = false
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func completeOnboarding() {
         UserDefaults.standard.set(true, forKey: "stream_onboarding_complete_v1")
         onboardingComplete = true

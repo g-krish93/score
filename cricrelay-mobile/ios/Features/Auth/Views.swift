@@ -2,15 +2,19 @@ import SwiftUI
 
 // MARK: - Brand theme (kept in-file so no Xcode project changes are needed)
 
+/// "Floodlight" palette — sunlight-legible: ink base, stadium-gold hero
+/// (gold always carries ink text, never white), sky accent, red = danger only.
 enum CricTheme {
-    static let background = Color(red: 0.027, green: 0.031, blue: 0.047)   // #07080C
-    static let surface = Color(red: 0.071, green: 0.082, blue: 0.110)      // #12151C
-    static let surfaceElevated = Color(red: 0.102, green: 0.118, blue: 0.157) // #1A1E28
-    static let primary = Color(red: 1.0, green: 0.231, blue: 0.278)        // #FF3B47
-    static let primaryDeep = Color(red: 0.878, green: 0.137, blue: 0.239)  // #E0233D
-    static let accent = Color(red: 0.0, green: 0.831, blue: 0.667)         // #00D4AA
-    static let textMuted = Color(red: 0.706, green: 0.733, blue: 0.784)    // #B4BBC8
-    static let textDim = Color(red: 0.42, green: 0.451, blue: 0.502)       // #6B7380
+    static let background = Color(red: 0.039, green: 0.055, blue: 0.082)   // #0A0E15
+    static let surface = Color(red: 0.078, green: 0.102, blue: 0.149)      // #141A26
+    static let surfaceElevated = Color(red: 0.110, green: 0.141, blue: 0.200) // #1C2433
+    static let primary = Color(red: 1.0, green: 0.761, blue: 0.2)          // #FFC233
+    static let primaryDeep = Color(red: 0.910, green: 0.663, blue: 0.071)  // #E8A912
+    static let onPrimary = Color(red: 0.102, green: 0.075, blue: 0.020)    // #1A1305
+    static let accent = Color(red: 0.341, green: 0.780, blue: 1.0)         // #57C7FF
+    static let danger = Color(red: 1.0, green: 0.361, blue: 0.478)         // #FF5C7A
+    static let textMuted = Color(red: 0.780, green: 0.804, blue: 0.851)    // #C7CDD9
+    static let textDim = Color(red: 0.596, green: 0.631, blue: 0.702)      // #98A1B3
 
     static var ctaGradient: LinearGradient {
         LinearGradient(colors: [primary, primaryDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -55,7 +59,7 @@ private struct PrimaryCtaStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(.white)
+            .foregroundStyle(CricTheme.onPrimary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 15)
             .background(CricTheme.ctaGradient, in: RoundedRectangle(cornerRadius: 14))
@@ -74,7 +78,7 @@ private struct BrandMark: View {
                 .shadow(color: CricTheme.primary.opacity(0.5), radius: 18, y: 6)
             Image(systemName: "dot.radiowaves.left.and.right")
                 .font(.system(size: 30, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(CricTheme.onPrimary)
         }
     }
 }
@@ -86,6 +90,7 @@ struct LoginView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var busy = false
+    @State private var showRegister = false
 
     var body: some View {
         StudioBackdrop {
@@ -119,10 +124,10 @@ struct LoginView: View {
                     if let error = session.errorMessage {
                         Text(error)
                             .font(.footnote)
-                            .foregroundStyle(CricTheme.primary)
+                            .foregroundStyle(CricTheme.danger)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(12)
-                            .background(CricTheme.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                            .background(CricTheme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                     }
 
                     Button {
@@ -133,7 +138,7 @@ struct LoginView: View {
                         }
                     } label: {
                         if busy {
-                            ProgressView().tint(.white)
+                            ProgressView().tint(CricTheme.onPrimary)
                         } else {
                             Text("Sign in to studio")
                         }
@@ -141,6 +146,103 @@ struct LoginView: View {
                     .buttonStyle(PrimaryCtaStyle())
                     .disabled(busy)
                     .padding(.top, 8)
+
+                    Button("Don't have an account? Sign up") {
+                        showRegister = true
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(CricTheme.accent)
+                    .padding(.top, 4)
+                }
+                .padding(24)
+            }
+        }
+        .sheet(isPresented: $showRegister) {
+            RegisterView(session: session)
+        }
+    }
+}
+
+// MARK: - Register
+
+struct RegisterView: View {
+    @ObservedObject var session: SessionViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var email = ""
+    @State private var password = ""
+    @State private var confirmPassword = ""
+    @State private var busy = false
+    @State private var localError: String?
+
+    var body: some View {
+        StudioBackdrop {
+            ScrollView {
+                VStack(spacing: 16) {
+                    Spacer(minLength: 48)
+                    BrandMark()
+                    Text("Create account")
+                        .font(.largeTitle.bold())
+                        .foregroundStyle(.white)
+                    Text("Set up your CricRelay account to start broadcasting.")
+                        .font(.subheadline)
+                        .foregroundStyle(CricTheme.textMuted)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 16)
+
+                    TextField("Club or your name", text: $name)
+                        .textInputAutocapitalization(.words)
+                        .modifier(StudioFieldStyle())
+                    TextField("Email", text: $email)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.emailAddress)
+                        .modifier(StudioFieldStyle())
+                    SecureField("Password (min 8 characters)", text: $password)
+                        .modifier(StudioFieldStyle())
+                    SecureField("Confirm password", text: $confirmPassword)
+                        .modifier(StudioFieldStyle())
+
+                    let displayError = localError ?? session.errorMessage
+                    if let error = displayError {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(CricTheme.danger)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(CricTheme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                    }
+
+                    Button {
+                        guard password == confirmPassword else {
+                            localError = "Passwords do not match"
+                            return
+                        }
+                        localError = nil
+                        Task {
+                            busy = true
+                            await session.register(name: name, email: email, password: password)
+                            busy = false
+                            if session.errorMessage == nil {
+                                dismiss()
+                            }
+                        }
+                    } label: {
+                        if busy {
+                            ProgressView().tint(CricTheme.onPrimary)
+                        } else {
+                            Text("Create account")
+                        }
+                    }
+                    .buttonStyle(PrimaryCtaStyle())
+                    .disabled(busy)
+                    .padding(.top, 8)
+
+                    Button("Already have an account? Sign in") { dismiss() }
+                        .font(.subheadline)
+                        .foregroundStyle(CricTheme.accent)
+                        .padding(.top, 4)
                 }
                 .padding(24)
             }
