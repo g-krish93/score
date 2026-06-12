@@ -36,8 +36,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import inspect, text
 
 from .models_cricrelay import (
+    ClubUser,
     Organization,
     RelayMatch,
+    Sponsor,
+    StreamSession,
     build_play_cricket_scrape_url,
     canonicalize_play_cricket_scrape_url,
     db,
@@ -2753,6 +2756,16 @@ def api_stream_register():
     ), 201
 
 
+def _erase_org_personal_data(org_id: str) -> None:
+    """Delete all org-scoped rows in FK-safe order (GDPR Art. 17)."""
+    StreamSession.query.filter_by(organization_id=org_id).delete(
+        synchronize_session=False
+    )
+    Sponsor.query.filter_by(organization_id=org_id).delete(synchronize_session=False)
+    ClubUser.query.filter_by(organization_id=org_id).delete(synchronize_session=False)
+    RelayMatch.query.filter_by(organization_id=org_id).delete(synchronize_session=False)
+
+
 @app.delete("/api/auth/account")
 @stream_api_auth_required
 def api_delete_account(org: Organization):
@@ -2784,7 +2797,7 @@ def api_delete_account(org: Organization):
         except Exception:
             pass
 
-    RelayMatch.query.filter_by(organization_id=org.id).delete()
+    _erase_org_personal_data(org.id)
 
     db.session.delete(org)
     try:
@@ -2801,6 +2814,12 @@ def api_delete_account(org: Organization):
 def api_export_account(org: Organization):
     """GDPR Article 20 — data portability. Returns all personal data as JSON."""
     matches = RelayMatch.query.filter_by(organization_id=org.id).all()
+    users = ClubUser.query.filter_by(organization_id=org.id).all()
+    sessions = (
+        StreamSession.query.filter_by(organization_id=org.id)
+        .order_by(StreamSession.started_at.desc())
+        .all()
+    )
     return jsonify({
         "account": {
             "name": org.name,
@@ -2812,6 +2831,16 @@ def api_export_account(org: Organization):
             "youtube_connected": bool((org.youtube_refresh_token_enc or "").strip()),
             "twitch_connected": bool((org.twitch_refresh_token_enc or "").strip()),
         },
+        "users": [
+            {
+                "name": u.name,
+                "email": u.email,
+                "role": u.role,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+                "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+            }
+            for u in users
+        ],
         "streams": [
             {
                 "slug": m.score_match_slug,
@@ -2819,6 +2848,21 @@ def api_export_account(org: Organization):
                 "created_at": m.created_at.isoformat() if m.created_at else None,
             }
             for m in matches
+        ],
+        "stream_sessions": [
+            {
+                "match_slug": s.match_slug,
+                "match_label": s.match_label or "",
+                "platform": s.platform,
+                "started_at": s.started_at.isoformat() if s.started_at else None,
+                "ended_at": s.ended_at.isoformat() if s.ended_at else None,
+                "duration_sec": s.duration_sec,
+                "peak_viewers": s.peak_viewers,
+                "avg_viewers": s.avg_viewers,
+                "vod_url": s.vod_url or s.watch_url or "",
+                "status": s.status,
+            }
+            for s in sessions
         ],
     })
 

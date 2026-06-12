@@ -183,6 +183,47 @@ class Organization(db.Model):
         return check_password_hash(self.password_hash, password)
 
 
+class ClubUser(db.Model):
+    """Individual login belonging to a club (Organization)."""
+
+    __tablename__ = "cricrelay_user"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id = db.Column(
+        db.String(36), db.ForeignKey("cricrelay_org.id"), nullable=False, index=True
+    )
+    name = db.Column(db.String(200), nullable=False)
+    email = db.Column(db.String(200), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(256), nullable=False)
+    role = db.Column(db.String(16), nullable=False, default="member")  # admin | member
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    last_login_at = db.Column(db.DateTime, nullable=True)
+
+    def set_password(self, password: str) -> None:
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        return check_password_hash(self.password_hash, password)
+
+
+class Sponsor(db.Model):
+    """Club sponsor on record — feeds the public page and Pro overlay slot."""
+
+    __tablename__ = "cricrelay_sponsor"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id = db.Column(
+        db.String(36), db.ForeignKey("cricrelay_org.id"), nullable=False, index=True
+    )
+    name = db.Column(db.String(200), nullable=False)
+    logo_url = db.Column(db.String(1000), nullable=True)
+    link_url = db.Column(db.String(1000), nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    active_from = db.Column(db.DateTime, nullable=True)
+    active_to = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class RelayMatch(db.Model):
     __tablename__ = "cricrelay_match"
 
@@ -200,3 +241,37 @@ class RelayMatch(db.Model):
     __table_args__ = (
         UniqueConstraint("organization_id", "play_cricket_match_id", name="uq_cricrelay_org_pc_match"),
     )
+
+
+class StreamSession(db.Model):
+    """One live broadcast: when it ran, who started it, where the recording lives."""
+
+    __tablename__ = "cricrelay_stream_session"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id = db.Column(
+        db.String(36), db.ForeignKey("cricrelay_org.id"), nullable=False, index=True
+    )
+    relay_match_id = db.Column(db.String(36), db.ForeignKey("cricrelay_match.id"), nullable=True)
+    match_slug = db.Column(db.String(120), nullable=False, index=True)
+    match_label = db.Column(db.String(120), nullable=True)
+    platform = db.Column(db.String(16), nullable=False)  # youtube | twitch
+    started_by_user_id = db.Column(db.String(36), db.ForeignKey("cricrelay_user.id"), nullable=True)
+    started_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    ended_at = db.Column(db.DateTime, nullable=True)
+    duration_sec = db.Column(db.Integer, nullable=True)
+    broadcast_id = db.Column(db.String(64), nullable=True)
+    watch_url = db.Column(db.String(500), nullable=True)
+    vod_url = db.Column(db.String(500), nullable=True)
+    peak_viewers = db.Column(db.Integer, nullable=False, default=0)
+    viewer_sample_sum = db.Column(db.BigInteger, nullable=False, default=0)
+    viewer_sample_count = db.Column(db.Integer, nullable=False, default=0)
+    final_score_json = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(16), nullable=False, default="live")  # live | ended | stale
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    @property
+    def avg_viewers(self) -> int:
+        if not self.viewer_sample_count:
+            return 0
+        return round(self.viewer_sample_sum / self.viewer_sample_count)
