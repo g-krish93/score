@@ -108,11 +108,6 @@ struct LoginView: View {
                         .padding(.horizontal, 8)
                         .padding(.bottom, 16)
 
-                    TextField("Club server", text: $session.baseUrl)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                        .modifier(StudioFieldStyle())
                     TextField("Email", text: $email)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()

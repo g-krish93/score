@@ -29,7 +29,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Sensors
@@ -129,14 +128,6 @@ fun LoginScreen(
                 modifier = Modifier.padding(horizontal = AppSpacing.md),
             )
             Spacer(Modifier.height(AppSpacing.xl))
-            StudioTextField(
-                value = state.baseUrl,
-                onValueChange = viewModel::onBaseUrlChange,
-                label = "Club server",
-                keyboardType = KeyboardType.Uri,
-                leadingIcon = Icons.Outlined.Language,
-            )
-            Spacer(Modifier.height(AppSpacing.md))
             StudioTextField(
                 value = state.email,
                 onValueChange = viewModel::onEmailChange,
