@@ -37,11 +37,14 @@ import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -73,10 +76,16 @@ fun BroadcastCameraUi(
     onPreviewTap: (Float, Float, Int, Int) -> Unit,
     onPinchZoom: (Float) -> Unit,
     onPreviewSurfaceBound: () -> Unit = {},
+    onCancelCountdown: () -> Unit = {},
+    onDismissRecap: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val transformState = rememberTransformableState { zoomChange, _, _ ->
         if (zoomChange != 1f) onPinchZoom(zoomChange)
+    }
+    val haptic = LocalHapticFeedback.current
+    LaunchedEffect(state.streaming) {
+        if (state.streaming) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
     }
 
     BoxWithConstraints(
@@ -180,6 +189,13 @@ fun BroadcastCameraUi(
                     onToggleKeepScreenOn = onToggleKeepScreenOn,
                 )
             }
+        }
+
+        state.goLiveCountdown?.let { n ->
+            GoLiveCountdown(count = n, onCancel = onCancelCountdown)
+        }
+        state.recap?.let { recap ->
+            StreamRecapOverlay(recap = recap, onDismiss = onDismissRecap, onShare = onShare)
         }
     }
 }

@@ -201,6 +201,8 @@ fun StudioScreen(
                     onPreviewTap = viewModel::onPreviewTap,
                     onPinchZoom = viewModel::onPinchZoom,
                     onPreviewSurfaceBound = viewModel::onPreviewSurfaceBound,
+                    onCancelCountdown = viewModel::cancelGoLiveCountdown,
+                    onDismissRecap = viewModel::dismissRecap,
                 )
             }
         }

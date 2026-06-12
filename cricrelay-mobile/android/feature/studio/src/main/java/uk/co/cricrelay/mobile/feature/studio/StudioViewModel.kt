@@ -41,6 +41,13 @@ enum class StudioSheet {
     Menu,
 }
 
+/** Shown after a broadcast ends — the shareable wrap-up. */
+data class StreamRecap(
+    val durationSeconds: Long,
+    val destinationLabel: String,
+    val watchUrl: String,
+)
+
 data class StudioUiState(
     val loading: Boolean = true,
     val busy: Boolean = false,
@@ -65,6 +72,8 @@ data class StudioUiState(
     val focusX: Float? = null,
     val focusY: Float? = null,
     val overlayPreview: androidx.compose.ui.graphics.ImageBitmap? = null,
+    val goLiveCountdown: Int? = null,
+    val recap: StreamRecap? = null,
 ) {
     val destinationLabel: String
         get() = when (destination) {
@@ -87,6 +96,7 @@ class StudioViewModel @Inject constructor(
 
     private var matchDayJob: Job? = null
     private var liveTimerJob: Job? = null
+    private var countdownJob: Job? = null
     private var matchSlug: String = ""
     private var permissionsGranted = false
     private var previewSurfaceBound = false
@@ -394,10 +404,26 @@ class StudioViewModel @Inject constructor(
         openSheet(StudioSheet.Preflight)
     }
 
+    /** Go Live cinema: 3-2-1 countdown takeover, then connect. Tap anywhere cancels. */
     fun confirmGoLive() {
         closeSheet()
-        goLive()
+        countdownJob?.cancel()
+        countdownJob = viewModelScope.launch {
+            for (n in 3 downTo 1) {
+                _uiState.update { it.copy(goLiveCountdown = n) }
+                delay(800)
+            }
+            _uiState.update { it.copy(goLiveCountdown = null) }
+            goLive()
+        }
     }
+
+    fun cancelGoLiveCountdown() {
+        countdownJob?.cancel()
+        _uiState.update { it.copy(goLiveCountdown = null) }
+    }
+
+    fun dismissRecap() = _uiState.update { it.copy(recap = null) }
 
     fun goLive() {
         val match = _uiState.value.match ?: return
@@ -458,6 +484,11 @@ class StudioViewModel @Inject constructor(
     fun stopLive() {
         val match = _uiState.value.match ?: return
         val platform = _uiState.value.destination.platform
+        val recap = StreamRecap(
+            durationSeconds = _uiState.value.liveElapsedSeconds,
+            destinationLabel = _uiState.value.destination.label,
+            watchUrl = _uiState.value.watchUrl,
+        )
         viewModelScope.launch {
             _uiState.update { it.copy(busy = true, error = null) }
             streamController.stopStream()
@@ -477,6 +508,7 @@ class StudioViewModel @Inject constructor(
                     paused = false,
                     liveElapsedSeconds = 0,
                     statusMessage = "Stream stopped",
+                    recap = recap.takeIf { r -> r.durationSeconds > 0 },
                 )
             }
         }
@@ -523,6 +555,7 @@ class StudioViewModel @Inject constructor(
     override fun onCleared() {
         matchDayJob?.cancel()
         liveTimerJob?.cancel()
+        countdownJob?.cancel()
         streamController.setPreviewOverlayListener(null)
         streamController.destroyOverlayCapture()
         streamController.hideNativePreview()

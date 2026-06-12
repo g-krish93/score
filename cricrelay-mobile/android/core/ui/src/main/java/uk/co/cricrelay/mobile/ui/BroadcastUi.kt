@@ -308,7 +308,7 @@ fun LiveTimerBadge(elapsedSeconds: Long, paused: Boolean, modifier: Modifier = M
         )
         Spacer(Modifier.width(7.dp))
         Text(
-            text = if (paused) "PAUSED" else "LIVE",
+            text = if (paused) "PAUSED" else "ON AIR",
             color = tint,
             fontWeight = FontWeight.Bold,
             fontSize = 13.sp,

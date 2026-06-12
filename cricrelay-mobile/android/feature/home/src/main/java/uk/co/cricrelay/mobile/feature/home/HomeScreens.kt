@@ -88,6 +88,7 @@ import uk.co.cricrelay.mobile.ui.SelectableOptionCard
 import uk.co.cricrelay.mobile.ui.SheetHeader
 import uk.co.cricrelay.mobile.ui.StatusChip
 import uk.co.cricrelay.mobile.ui.StreamTile
+import uk.co.cricrelay.mobile.ui.BackdropMood
 import uk.co.cricrelay.mobile.ui.StudioBackdrop
 import uk.co.cricrelay.mobile.ui.StudioHero
 import uk.co.cricrelay.mobile.ui.StudioTextField
@@ -111,7 +112,14 @@ fun HomeScreen(
     var createSheet by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    StudioBackdrop(modifier = modifier) {
+    StudioBackdrop(
+        modifier = modifier,
+        mood = if (state.streams.any { it.broadcast.isStreaming }) {
+            BackdropMood.OnAir
+        } else {
+            BackdropMood.Idle
+        },
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -291,7 +299,7 @@ fun HomeScreen(
                 FloatingActionButton(
                     onClick = { createSheet = true },
                     containerColor = AppColors.Primary,
-                    contentColor = Color.White,
+                    contentColor = AppColors.OnPrimary,
                     modifier = Modifier
                         .align(Alignment.End)
                         .padding(AppSpacing.lg),

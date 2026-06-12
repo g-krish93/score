@@ -11,26 +11,33 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/**
+ * "Floodlight" palette — built for direct-sunlight legibility at the ground.
+ * Deep ink base, stadium-gold hero (always carries ink text, never white),
+ * sky for ready/info, coral for caution; red appears only for danger.
+ * Contrast floors: 7:1 body, 4.5:1 interactive, ~10:1 over live video.
+ */
 object AppColors {
-    val Background = Color(0xFF07080C)
-    val Canvas = Color(0xFF0A0B10)
-    val Surface = Color(0xFF12151C)
-    val SurfaceElevated = Color(0xFF1A1E28)
-    val SurfaceSunken = Color(0xFF0D1016)
-    val Primary = Color(0xFFFF3B47)
-    val PrimaryBright = Color(0xFFFF5A64)
-    val PrimaryDeep = Color(0xFFE0233D)
-    val Accent = Color(0xFF00D4AA)
+    val Background = Color(0xFF0A0E15)
+    val Canvas = Color(0xFF0D1219)
+    val Surface = Color(0xFF141A26)
+    val SurfaceElevated = Color(0xFF1C2433)
+    val SurfaceSunken = Color(0xFF070A10)
+    val Primary = Color(0xFFFFC233)
+    val PrimaryBright = Color(0xFFFFD15C)
+    val PrimaryDeep = Color(0xFFE8A912)
+    val OnPrimary = Color(0xFF1A1305)
+    val Accent = Color(0xFF57C7FF)
     val AccentBlue = Color(0xFF4DA3FF)
-    val OnBackground = Color(0xFFF4F6FA)
-    val OnBackgroundMuted = Color(0xFFB4BBC8)
-    val OnBackgroundDim = Color(0xFF6B7380)
-    val Border = Color(0xFF2E3440)
-    val BorderSubtle = Color(0xFF1F2530)
-    val Error = Color(0xFFFF5A52)
-    val Live = Color(0xFFFF3B47)
-    val Success = Color(0xFF34D399)
-    val Warning = Color(0xFFFBBF24)
+    val OnBackground = Color(0xFFFFFFFF)
+    val OnBackgroundMuted = Color(0xFFC7CDD9)
+    val OnBackgroundDim = Color(0xFF98A1B3)
+    val Border = Color(0xFF323B4D)
+    val BorderSubtle = Color(0xFF222A3A)
+    val Error = Color(0xFFFF5C7A)
+    val Live = Color(0xFFFFC233)
+    val Success = Color(0xFF57C7FF)
+    val Warning = Color(0xFFFF9466)
     val GlassBorder = Color(0x33FFFFFF)
     val YouTube = Color(0xFFFF0033)
     val Twitch = Color(0xFF9146FF)
@@ -66,7 +73,7 @@ object AppSpacing {
 
 private val DarkScheme = darkColorScheme(
     primary = AppColors.Primary,
-    onPrimary = Color.White,
+    onPrimary = AppColors.OnPrimary,
     secondary = AppColors.Accent,
     background = AppColors.Background,
     surface = AppColors.Surface,

@@ -1,7 +1,13 @@
 package uk.co.cricrelay.mobile.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -43,8 +49,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -56,11 +64,51 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/** Broadcast mood for the living backdrop — drives the aurora hue. */
+enum class BackdropMood { Idle, OnAir, Caution }
+
+/**
+ * Living backdrop: two slow-drifting light pools over ink that shift hue with
+ * broadcast state — sky while idle, gold while on air, coral for caution.
+ * Aurora alpha stays ≤0.12 so text contrast (sunlight contract) is unaffected.
+ */
 @Composable
 fun StudioBackdrop(
     modifier: Modifier = Modifier,
+    mood: BackdropMood = BackdropMood.Idle,
     content: @Composable () -> Unit,
 ) {
+    val auroraA by animateColorAsState(
+        targetValue = when (mood) {
+            BackdropMood.Idle -> AppColors.Accent
+            BackdropMood.OnAir -> AppColors.Primary
+            BackdropMood.Caution -> AppColors.Warning
+        },
+        animationSpec = tween(1200),
+        label = "auroraA",
+    )
+    val auroraB by animateColorAsState(
+        targetValue = when (mood) {
+            BackdropMood.Idle -> AppColors.AccentBlue
+            BackdropMood.OnAir -> AppColors.PrimaryDeep
+            BackdropMood.Caution -> AppColors.Error
+        },
+        animationSpec = tween(1200),
+        label = "auroraB",
+    )
+    val drift = rememberInfiniteTransition(label = "aurora")
+    val tA by drift.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(14000, easing = LinearEasing), RepeatMode.Reverse),
+        label = "auroraDriftA",
+    )
+    val tB by drift.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(19000, easing = LinearEasing), RepeatMode.Reverse),
+        label = "auroraDriftB",
+    )
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -68,19 +116,31 @@ fun StudioBackdrop(
                 Brush.verticalGradient(
                     listOf(AppColors.Canvas, AppColors.Background, Color.Black),
                 ),
-            ),
-    ) {
-        // Faint brand glow at the top so large dark areas never read as flat black.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(260.dp)
-                .background(
+            )
+            .drawBehind {
+                if (size.width <= 0f || size.height <= 0f) return@drawBehind
+                drawRect(
                     Brush.radialGradient(
-                        colors = listOf(AppColors.Accent.copy(alpha = 0.07f), Color.Transparent),
+                        listOf(auroraA.copy(alpha = 0.12f), Color.Transparent),
+                        center = Offset(
+                            size.width * (0.18f + 0.5f * tA),
+                            size.height * (0.04f + 0.14f * tB),
+                        ),
+                        radius = size.width * 0.95f,
                     ),
-                ),
-        )
+                )
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(auroraB.copy(alpha = 0.09f), Color.Transparent),
+                        center = Offset(
+                            size.width * (0.92f - 0.6f * tB),
+                            size.height * (0.34f + 0.22f * tA),
+                        ),
+                        radius = size.width * 0.8f,
+                    ),
+                )
+            },
+    ) {
         content()
     }
 }
@@ -165,11 +225,12 @@ fun PrimaryButton(
         if (loading) {
             CircularProgressIndicator(
                 strokeWidth = 2.dp,
-                color = Color.White,
+                color = AppColors.OnPrimary,
                 modifier = Modifier.size(22.dp),
             )
         } else {
-            Text(text, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            // Sunlight contract: gold CTAs carry ink text (~11:1), never white (would be ~1.6:1).
+            Text(text, color = AppColors.OnPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
