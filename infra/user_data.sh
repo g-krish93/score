@@ -28,7 +28,16 @@ if [[ -f /app/deploy/cricket.service ]]; then
   install -m 644 /app/deploy/cricket.service /etc/systemd/system/cricket.service
 fi
 
+# Nightly S3 backup (needs AWS CLI + BACKUP_S3_BUCKET in /app/.env to actually run).
+yum install -y awscli || pip3 install awscli || true
+if [[ -f /app/deploy/cricrelay-backup.service ]]; then
+  install -m 644 /app/deploy/cricrelay-backup.service /etc/systemd/system/cricrelay-backup.service
+  install -m 644 /app/deploy/cricrelay-backup.timer /etc/systemd/system/cricrelay-backup.timer
+fi
+
 systemctl daemon-reload
 systemctl enable cricket nginx
 systemctl start cricket
 systemctl start nginx
+# Enable the backup timer; it no-ops safely until BACKUP_S3_BUCKET is set in /app/.env.
+systemctl enable --now cricrelay-backup.timer || true

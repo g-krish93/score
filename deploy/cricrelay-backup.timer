@@ -1,0 +1,11 @@
+[Unit]
+Description=Run CricRelay SQLite S3 backup nightly
+
+[Timer]
+# 02:30 UTC daily — before the 03:00 DLM EBS snapshot, so S3 + snapshot are close in time.
+OnCalendar=*-*-* 02:30:00
+# Catch up if the box was off at the scheduled time.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

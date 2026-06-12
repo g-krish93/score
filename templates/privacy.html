@@ -16,23 +16,35 @@
 
     <h2>What data we collect</h2>
     <ul>
-      <li><strong>Account details:</strong> club or personal name, email address, and a hashed password.</li>
+      <li><strong>Account details:</strong> your name, email address, and a hashed password.</li>
+      <li><strong>Club membership &amp; role:</strong> the club you belong to and whether you are an admin or member. A club can have several member logins; club admins can see the names, emails, and roles of members in their club, and remove them.</li>
       <li><strong>Play-Cricket link:</strong> your club code or base URL, if you provide one (optional for app sign-up).</li>
       <li><strong>OAuth tokens:</strong> encrypted YouTube and Twitch refresh tokens when you connect those platforms.</li>
-      <li><strong>Stream history:</strong> match slugs, labels, and timestamps for streams you create.</li>
+      <li><strong>Stream records:</strong> for each broadcast — the match label, platform, start/end time and duration, a link to the recording (VOD) held on YouTube/Twitch, viewer-count statistics (peak and average), the final score snapshot, and which member started the stream. These are visible to your club on the club dashboard.</li>
+      <li><strong>Sponsors:</strong> sponsor names, logos, and links your club chooses to record (business information, not personal data).</li>
       <li><strong>Consent record:</strong> the date and time you agreed to this policy at registration.</li>
     </ul>
 
     <h2>Why we collect it</h2>
     <p>
       We process this data to provide the CricRelay streaming service — account authentication, live score overlays,
-      YouTube/Twitch integration, and stream management for your club.
+      YouTube/Twitch integration, stream management, and club &amp; member statistics on your dashboard. Recordings are
+      stored by YouTube/Twitch under their own terms; we keep only a link to them.
+    </p>
+
+    <h2>Where we store and protect it</h2>
+    <p>
+      Your data is stored on infrastructure hosted in the <strong>United Kingdom (London / eu-west-2)</strong>.
+      Passwords are hashed, OAuth tokens are encrypted at rest, traffic is served over HTTPS, and access is restricted.
+      We take daily encrypted backups (held in the UK) so we can restore the service after an incident.
     </p>
 
     <h2>How long we keep it</h2>
     <p>
-      We retain your account data and associated stream records until you delete your account. When you request deletion,
-      we erase your account, stream history, and connected OAuth tokens.
+      We retain your account data and associated stream records until you (or your club admin) delete the account.
+      When you request deletion, we erase your account, club membership, stream records, sponsors, and connected OAuth
+      tokens from the live service. Copies may persist in our encrypted backups for up to 30 days before they are
+      automatically overwritten; we do not use backups for any purpose other than disaster recovery.
     </p>
 
     <h2>Your rights</h2>
