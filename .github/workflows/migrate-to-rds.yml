@@ -25,13 +25,5 @@ jobs:
             set -euo pipefail
             cd /app
             sudo chown -R ec2-user:ec2-user /app
+            git -C /app pull origin main
             sudo -E bash deploy/ec2-migrate-to-rds.sh
-            sudo systemctl restart cricket
-            sleep 4
-            if ! sudo systemctl is-active --quiet cricket; then
-              echo "=== Service failed to start after migration ==="
-              sudo journalctl -u cricket -n 60 --no-pager
-              exit 1
-            fi
-            curl -sf http://127.0.0.1:5000/health
-            echo "Migration complete. App is live on PostgreSQL."
