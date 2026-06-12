@@ -15,7 +15,7 @@ final class SessionViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         baseUrl = UserDefaults.standard.string(forKey: "stream_api_base") ?? baseUrl
-        if let token = UserDefaults.standard.string(forKey: "stream_api_token_secure"), !token.isEmpty {
+        if let token = KeychainHelper.readToken(), !token.isEmpty {
             api.configure(baseUrl: baseUrl, token: token)
             isLoggedIn = true
             onboardingComplete = UserDefaults.standard.bool(forKey: "stream_onboarding_complete_v1")
@@ -29,7 +29,7 @@ final class SessionViewModel: ObservableObject {
             try await api.login(email: email, password: password, baseUrl: baseUrl)
             UserDefaults.standard.set(baseUrl, forKey: "stream_api_base")
             if let token = api.token {
-                UserDefaults.standard.set(token, forKey: "stream_api_token_secure")
+                KeychainHelper.saveToken(token)
             }
             isLoggedIn = true
             onboardingComplete = UserDefaults.standard.bool(forKey: "stream_onboarding_complete_v1")
@@ -44,7 +44,9 @@ final class SessionViewModel: ObservableObject {
         do {
             try await api.register(name: name, email: email, password: password, baseUrl: baseUrl)
             UserDefaults.standard.set(baseUrl, forKey: "stream_api_base")
-            UserDefaults.standard.set(api.token, forKey: "stream_api_token_secure")
+            if let token = api.token {
+                KeychainHelper.saveToken(token)
+            }
             isLoggedIn = true
             onboardingComplete = false
         } catch {
@@ -58,7 +60,7 @@ final class SessionViewModel: ObservableObject {
     }
 
     func logout() {
-        UserDefaults.standard.removeObject(forKey: "stream_api_token_secure")
+        KeychainHelper.deleteToken()
         isLoggedIn = false
         streams = []
     }

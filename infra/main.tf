@@ -15,21 +15,15 @@ resource "aws_security_group" "cricket_sg" {
   name        = "cricket-overlay-sg"
   description = "Cricket score overlay"
 
+  # SSH — restrict to admin_ssh_cidr (see deploy/aws-security-hardening.md). Gunicorn is not exposed publicly.
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.admin_ssh_cidr]
   }
 
-  ingress {
-    from_port   = 5000
-    to_port     = 5000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Public site (nginx → Gunicorn). Without these, https://cricrelay.co.uk does not reach the instance.
+  # Public site (nginx → Gunicorn on 127.0.0.1:5000). Without these, https://cricrelay.co.uk does not reach the instance.
   ingress {
     from_port   = 80
     to_port     = 80

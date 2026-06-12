@@ -67,6 +67,7 @@ from .stream_api import (
 )
 from . import twitch_stream as tw
 from . import youtube_stream as yt
+from .rate_limit import auth_limiter
 
 load_dotenv()
 
@@ -76,10 +77,35 @@ try:
 except OSError:
     pass
 
+_DEFAULT_CORS_ORIGINS = [
+    "https://cricrelay.co.uk",
+    "https://www.cricrelay.co.uk",
+    r"http://localhost:\d+",
+    r"http://127\.0\.0\.1:\d+",
+]
+
+
+def _parse_cors_origins() -> list[str]:
+    raw = (os.getenv("CORS_ORIGINS") or "").strip()
+    if raw:
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return list(_DEFAULT_CORS_ORIGINS)
+
+
+def _is_production_https() -> bool:
+    base = (os.getenv("PUBLIC_BASE_URL") or "").strip().lower()
+    if base.startswith("https://"):
+        return True
+    return os.getenv("FLASK_ENV", "").lower() == "production"
+
+
 app = Flask(__name__, template_folder="../templates", static_folder="../static")
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/*": {"origins": _parse_cors_origins()}})
 
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-insecure-change-me")
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = _is_production_https()
 _db_url = (os.getenv("DATABASE_URL") or "").strip()
 if not _db_url:
     _db_path = (STATE_DIR / "cricrelay.db").resolve()
@@ -1135,6 +1161,7 @@ def sitemap_xml():
 
 
 @app.route("/register", methods=["GET", "POST"])
+@auth_limiter.limit_auth(scope="register", html_template="cricrelay_register.html")
 def register_page():
     if request.method == "GET":
         return render_template("cricrelay_register.html")
@@ -1189,6 +1216,7 @@ def register_page():
 
 
 @app.route("/login", methods=["GET", "POST"])
+@auth_limiter.limit_auth(scope="login", html_template="cricrelay_login.html")
 def login_page():
     if request.method == "GET":
         return render_template("cricrelay_login.html")
@@ -1203,6 +1231,7 @@ def login_page():
 
 
 @app.route("/forgot-password", methods=["GET", "POST"])
+@auth_limiter.limit_auth(scope="forgot-password", html_template="forgot_password.html")
 def forgot_password_page():
     if request.method == "GET":
         return render_template("forgot_password.html")
@@ -2476,7 +2505,15 @@ def dashboard_youtube_callback():
             return redirect(url_for("dashboard"))
         ch_id, ch_title = yt.fetch_channel_for_token(access)
         live_check = yt.verify_live_streaming_access(access)
-        org.youtube_refresh_token_enc = yt.encrypt_token(refresh)
+        encrypted_refresh = yt.encrypt_token(refresh)
+        if not encrypted_refresh:
+            flash(
+                "YouTube connected but token storage is misconfigured on the server "
+                "(YOUTUBE_TOKEN_ENCRYPTION_KEY). Contact support@cricrelay.co.uk.",
+                "error",
+            )
+            return redirect(url_for("dashboard"))
+        org.youtube_refresh_token_enc = encrypted_refresh
         org.youtube_channel_id = ch_id
         org.youtube_channel_title = ch_title
         org.youtube_connected_at = datetime.now(timezone.utc)
@@ -2591,7 +2628,15 @@ def dashboard_twitch_callback():
             return redirect(url_for("dashboard"))
         user_id, login, display = tw.fetch_user_for_token(access)
         live_check = tw.verify_streaming_access(access, user_id)
-        org.twitch_refresh_token_enc = tw.encrypt_token(refresh)
+        encrypted_refresh = tw.encrypt_token(refresh)
+        if not encrypted_refresh:
+            flash(
+                "Twitch connected but token storage is misconfigured on the server "
+                "(YOUTUBE_TOKEN_ENCRYPTION_KEY). Contact support@cricrelay.co.uk.",
+                "error",
+            )
+            return redirect(url_for("dashboard"))
+        org.twitch_refresh_token_enc = encrypted_refresh
         org.twitch_user_id = user_id
         org.twitch_login = login
         org.twitch_display_name = display
@@ -2642,6 +2687,7 @@ def dashboard_twitch_disconnect():
 
 
 @app.post("/api/auth/login")
+@auth_limiter.limit_auth(scope="api-login", json_endpoint=True)
 def api_stream_login():
     data = request.get_json(silent=True) or {}
     email = (data.get("email") or "").strip().lower()
@@ -2664,6 +2710,7 @@ def api_stream_login():
 
 
 @app.post("/api/auth/register")
+@auth_limiter.limit_auth(scope="api-register", json_endpoint=True)
 def api_stream_register():
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
@@ -2710,25 +2757,27 @@ def api_stream_register():
 @stream_api_auth_required
 def api_delete_account(org: Organization):
     """GDPR Article 17 — right to erasure. Deletes account and all associated data."""
-    if (org.youtube_refresh_token_enc or "").strip():
+    yt_refresh = yt.decrypt_token((org.youtube_refresh_token_enc or "").strip())
+    if yt_refresh:
         try:
             import requests as _req
             _req.post(
                 "https://oauth2.googleapis.com/revoke",
-                params={"token": org.youtube_refresh_token_enc},
+                params={"token": yt_refresh},
                 timeout=5,
             )
         except Exception:
             pass
 
-    if (org.twitch_refresh_token_enc or "").strip():
+    tw_refresh = tw.decrypt_token((org.twitch_refresh_token_enc or "").strip())
+    if tw_refresh:
         try:
             import requests as _req
             _req.post(
                 "https://id.twitch.tv/oauth2/revoke",
                 data={
                     "client_id": os.getenv("TWITCH_CLIENT_ID", ""),
-                    "token": org.twitch_refresh_token_enc,
+                    "token": tw_refresh,
                 },
                 timeout=5,
             )

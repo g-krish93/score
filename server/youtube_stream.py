@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import os
 import secrets
 import urllib.parse
@@ -13,6 +14,7 @@ from typing import Any
 import requests
 from cryptography.fernet import Fernet, InvalidToken
 
+logger = logging.getLogger(__name__)
 YOUTUBE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 YOUTUBE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 YOUTUBE_API = "https://www.googleapis.com/youtube/v3"
@@ -26,8 +28,14 @@ def oauth_scopes() -> list[str]:
     return [OAUTH_SCOPE_MANAGE]
 
 
-def _fernet() -> Fernet | None:
-    raw = (os.getenv("YOUTUBE_TOKEN_ENCRYPTION_KEY") or os.getenv("SECRET_KEY") or "").strip()
+def _is_production() -> bool:
+    base = (os.getenv("PUBLIC_BASE_URL") or "").strip().lower()
+    if base.startswith("https://"):
+        return True
+    return os.getenv("FLASK_ENV", "").lower() == "production"
+
+
+def _fernet_from_secret(raw: str) -> Fernet | None:
     if not raw:
         return None
     digest = hashlib.sha256(raw.encode("utf-8")).digest()
@@ -35,12 +43,30 @@ def _fernet() -> Fernet | None:
     return Fernet(key)
 
 
+def _fernet() -> Fernet | None:
+    raw = (os.getenv("YOUTUBE_TOKEN_ENCRYPTION_KEY") or "").strip()
+    return _fernet_from_secret(raw)
+
+
+def _legacy_fernet() -> Fernet | None:
+    raw = (os.getenv("SECRET_KEY") or "").strip()
+    return _fernet_from_secret(raw)
+
+
 def encrypt_token(plain: str) -> str:
     if not plain:
         return ""
     f = _fernet()
     if not f:
-        return plain
+        if _is_production():
+            logger.warning(
+                "YOUTUBE_TOKEN_ENCRYPTION_KEY is not set; refusing to store OAuth token in production"
+            )
+            return ""
+        f = _legacy_fernet()
+        if not f:
+            logger.warning("No encryption key available; refusing to store OAuth token")
+            return ""
     return f.encrypt(plain.encode("utf-8")).decode("ascii")
 
 
@@ -48,13 +74,18 @@ def decrypt_token(cipher: str) -> str:
     if not cipher:
         return ""
     f = _fernet()
-    if not f:
-        return cipher
-    try:
-        return f.decrypt(cipher.encode("ascii")).decode("utf-8")
-    except InvalidToken:
-        return ""
-
+    if f:
+        try:
+            return f.decrypt(cipher.encode("ascii")).decode("utf-8")
+        except InvalidToken:
+            pass
+    legacy = _legacy_fernet()
+    if legacy:
+        try:
+            return legacy.decrypt(cipher.encode("ascii")).decode("utf-8")
+        except InvalidToken:
+            pass
+    return ""
 
 def _client_id() -> str:
     for key in ("YOUTUBE_CLIENT_ID", "GOOGLE_CLIENT_ID", "OAUTH_CLIENT_ID"):
