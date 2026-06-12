@@ -1,0 +1,12 @@
+[Unit]
+Description=CricRelay post-migration AWS cleanup (DLM snapshot, RDS check)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ec2-user
+WorkingDirectory=/app
+EnvironmentFile=-/app/.env
+ExecStart=/bin/bash /app/deploy/aws-post-migration-cleanup.sh
+TimeoutStartSec=300
