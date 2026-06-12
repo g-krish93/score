@@ -4,7 +4,7 @@ import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,10 +14,22 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Slider
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.SmartDisplay
+import androidx.compose.material.icons.outlined.SportsEsports
+import androidx.compose.material.icons.outlined.Vibration
+import androidx.compose.material.icons.outlined.VpnKey
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,15 +38,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import uk.co.cricrelay.mobile.ui.AppColors
 import uk.co.cricrelay.mobile.ui.AppSpacing
-import uk.co.cricrelay.mobile.ui.GlassPanel
+import uk.co.cricrelay.mobile.ui.AppTypography
+import uk.co.cricrelay.mobile.ui.GhostButton
+import uk.co.cricrelay.mobile.ui.LabeledSlider
 import uk.co.cricrelay.mobile.ui.PrimaryButton
+import uk.co.cricrelay.mobile.ui.SecondaryButton
+import uk.co.cricrelay.mobile.ui.SelectableOptionCard
+import uk.co.cricrelay.mobile.ui.SettingRow
 import uk.co.cricrelay.mobile.ui.SheetHeader
-import uk.co.cricrelay.mobile.ui.StatusChip
 import uk.co.cricrelay.mobile.ui.StudioTextField
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 
@@ -53,19 +72,34 @@ fun DestinationSheet(
         title = "Stream destination",
         subtitle = "Volunteers paste a YouTube Studio or Twitch stream key. Clubs can use OAuth.",
     )
-    StreamDestination.entries.forEach { dest ->
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = AppSpacing.lg),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            RadioButton(
-                selected = state.destination == dest,
-                onClick = { onSelect(dest) },
-            )
-            Text(dest.label, modifier = Modifier.weight(1f))
-        }
+    Column(
+        modifier = Modifier.padding(horizontal = AppSpacing.lg),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+    ) {
+        SelectableOptionCard(
+            title = "YouTube",
+            description = "Club account via OAuth",
+            icon = Icons.Outlined.SmartDisplay,
+            iconTint = AppColors.YouTube,
+            selected = state.destination == StreamDestination.YouTube,
+            onClick = { onSelect(StreamDestination.YouTube) },
+        )
+        SelectableOptionCard(
+            title = "Twitch",
+            description = "Club account via OAuth",
+            icon = Icons.Outlined.SportsEsports,
+            iconTint = AppColors.Twitch,
+            selected = state.destination == StreamDestination.Twitch,
+            onClick = { onSelect(StreamDestination.Twitch) },
+        )
+        SelectableOptionCard(
+            title = "Custom RTMP",
+            description = "Paste any server URL and stream key",
+            icon = Icons.Outlined.VpnKey,
+            iconTint = AppColors.Accent,
+            selected = state.destination == StreamDestination.Custom,
+            onClick = { onSelect(StreamDestination.Custom) },
+        )
     }
     if (state.destination == StreamDestination.Custom) {
         Spacer(Modifier.height(AppSpacing.md))
@@ -80,6 +114,7 @@ fun DestinationSheet(
             value = streamKey,
             onValueChange = { streamKey = it },
             label = "Stream key",
+            isPassword = true,
             modifier = Modifier.padding(horizontal = AppSpacing.lg),
         )
         Spacer(Modifier.height(AppSpacing.sm))
@@ -162,59 +197,58 @@ fun OverlaySheet(
 
     Text(
         "Overlay style",
-        fontWeight = FontWeight.Medium,
+        style = AppTypography.titleSmall,
         modifier = Modifier.padding(horizontal = AppSpacing.lg),
     )
-    Spacer(Modifier.height(AppSpacing.xs))
-    androidx.compose.foundation.lazy.LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = AppSpacing.lg),
-        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(AppSpacing.sm),
+    Spacer(Modifier.height(AppSpacing.sm))
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = AppSpacing.lg),
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
     ) {
         items(overlayStyles) { style ->
             val selected = overlayTheme == style.id
             Column(
                 modifier = Modifier
-                    .width(72.dp)
+                    .width(76.dp)
+                    .clip(RoundedCornerShape(AppSpacing.radiusSm))
                     .background(
-                        if (selected) Color(0xFF1A3060) else Color(0xFF131B2A),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                        if (selected) AppColors.Accent.copy(alpha = 0.12f) else AppColors.SurfaceElevated.copy(alpha = 0.7f),
                     )
                     .border(
-                        width = if (selected) 2.dp else 1.dp,
-                        color = if (selected) Color(0xFF2F7BFF) else Color.White.copy(alpha = 0.12f),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                        width = if (selected) 1.5.dp else 1.dp,
+                        color = if (selected) AppColors.Accent.copy(alpha = 0.8f) else AppColors.Border,
+                        shape = RoundedCornerShape(AppSpacing.radiusSm),
                     )
                     .clickable { overlayTheme = style.id }
-                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                    .padding(vertical = 10.dp, horizontal = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(34.dp)
                         .background(style.swatch, CircleShape)
-                        .border(1.dp, Color.White.copy(alpha = 0.20f), CircleShape),
+                        .border(
+                            width = if (selected) 1.5.dp else 1.dp,
+                            color = if (selected) AppColors.Accent else Color.White.copy(alpha = 0.20f),
+                            shape = CircleShape,
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(style.emoji, style = androidx.compose.ui.text.TextStyle(fontSize = androidx.compose.ui.unit.TextUnit(14f, androidx.compose.ui.unit.TextUnitType.Sp)))
+                    Text(style.emoji, fontSize = 14.sp)
                 }
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(6.dp))
                 Text(
                     style.label,
-                    style = androidx.compose.ui.text.TextStyle(
-                        fontSize = androidx.compose.ui.unit.TextUnit(10f, androidx.compose.ui.unit.TextUnitType.Sp),
-                        fontWeight = FontWeight.Bold,
-                        color = if (selected) Color.White else Color(0xFFCBD5E1),
-                    ),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (selected) AppColors.OnBackground else AppColors.OnBackgroundMuted,
                     maxLines = 1,
                 )
                 Text(
                     style.description,
-                    style = androidx.compose.ui.text.TextStyle(
-                        fontSize = androidx.compose.ui.unit.TextUnit(8f, androidx.compose.ui.unit.TextUnitType.Sp),
-                        color = Color(0xFF64748B),
-                    ),
+                    fontSize = 8.sp,
+                    color = AppColors.OnBackgroundDim,
                     maxLines = 2,
                     modifier = Modifier.padding(top = 2.dp),
                 )
@@ -224,65 +258,46 @@ fun OverlaySheet(
 
     Spacer(Modifier.height(AppSpacing.md))
 
-    Text(
-        "Board width  ${(widthFraction * 100).toInt()}%",
-        fontWeight = FontWeight.Medium,
+    Column(
         modifier = Modifier.padding(horizontal = AppSpacing.lg),
-    )
-    Slider(
-        value = widthFraction,
-        onValueChange = { widthFraction = it },
-        valueRange = 0.25f..0.98f,
-        modifier = Modifier.padding(horizontal = AppSpacing.lg),
-    )
-
-    Text(
-        "Board height  ${(heightFraction * 100).toInt()}%",
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier.padding(horizontal = AppSpacing.lg),
-    )
-    Slider(
-        value = heightFraction,
-        onValueChange = { heightFraction = it },
-        valueRange = 0.10f..0.28f,
-        modifier = Modifier.padding(horizontal = AppSpacing.lg),
-    )
-
-    Text(
-        "Font size  ${(fontScale * 100).toInt()}%",
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier.padding(horizontal = AppSpacing.lg),
-    )
-    Slider(
-        value = fontScale,
-        onValueChange = { fontScale = it },
-        valueRange = OverlayLayoutPrefs.FONT_MIN.toFloat()..OverlayLayoutPrefs.FONT_MAX.toFloat(),
-        modifier = Modifier.padding(horizontal = AppSpacing.lg),
-    )
-
-    Text(
-        "Opacity  ${(opacity * 100).toInt()}%",
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier.padding(horizontal = AppSpacing.lg),
-    )
-    Slider(
-        value = opacity,
-        onValueChange = { opacity = it },
-        valueRange = 0.2f..1.0f,
-        modifier = Modifier.padding(horizontal = AppSpacing.lg),
-    )
-
-    Text(
-        "Position  ${bottomMargin.toInt()}",
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier.padding(horizontal = AppSpacing.lg),
-    )
-    Slider(
-        value = bottomMargin,
-        onValueChange = { bottomMargin = it },
-        valueRange = 0f..48f,
-        modifier = Modifier.padding(horizontal = AppSpacing.lg),
-    )
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.xs),
+    ) {
+        LabeledSlider(
+            label = "Board width",
+            valueText = "${(widthFraction * 100).toInt()}%",
+            value = widthFraction,
+            onValueChange = { widthFraction = it },
+            valueRange = 0.25f..0.98f,
+        )
+        LabeledSlider(
+            label = "Board height",
+            valueText = "${(heightFraction * 100).toInt()}%",
+            value = heightFraction,
+            onValueChange = { heightFraction = it },
+            valueRange = 0.10f..0.28f,
+        )
+        LabeledSlider(
+            label = "Font size",
+            valueText = "${(fontScale * 100).toInt()}%",
+            value = fontScale,
+            onValueChange = { fontScale = it },
+            valueRange = OverlayLayoutPrefs.FONT_MIN.toFloat()..OverlayLayoutPrefs.FONT_MAX.toFloat(),
+        )
+        LabeledSlider(
+            label = "Opacity",
+            valueText = "${(opacity * 100).toInt()}%",
+            value = opacity,
+            onValueChange = { opacity = it },
+            valueRange = 0.2f..1.0f,
+        )
+        LabeledSlider(
+            label = "Position",
+            valueText = "${bottomMargin.toInt()}",
+            value = bottomMargin,
+            onValueChange = { bottomMargin = it },
+            valueRange = 0f..48f,
+        )
+    }
 
     Spacer(Modifier.height(AppSpacing.md))
     PrimaryButton(
@@ -319,39 +334,77 @@ fun ScoringSheet(
         title = "Scoring",
         subtitle = "Switch the scoreboard's data source any time — even mid-match.",
     )
-    listOf(
-        "auto" to "Auto (Play-Cricket)",
-        "manual" to "Manual scorer",
-        "ble" to "PCS BLE (R&D)",
-    ).forEach { (mode, label) ->
-        val selected = current.equals(mode, ignoreCase = true)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onSelectMode(mode) }
-                .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            RadioButton(selected = selected, onClick = { onSelectMode(mode) })
-            Text(
-                label,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                modifier = Modifier.weight(1f),
+    Column(
+        modifier = Modifier.padding(horizontal = AppSpacing.lg),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+    ) {
+        listOf(
+            Triple("auto", "Auto (Play-Cricket)", "Follows the club's Play-Cricket scorer"),
+            Triple("manual", "Manual scorer", "Score from the web scorer yourself"),
+            Triple("ble", "PCS BLE (R&D)", "Scores relayed over Bluetooth from PCS"),
+        ).forEach { (mode, label, description) ->
+            SelectableOptionCard(
+                title = label,
+                description = description,
+                selected = current.equals(mode, ignoreCase = true),
+                onClick = { onSelectMode(mode) },
             )
         }
     }
     scoring?.let {
-        Spacer(Modifier.height(AppSpacing.sm))
-        GlassPanel(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
-            Text("Active mode: ${it.mode}", fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(AppSpacing.sm))
-            PrimaryButton(
-                text = "Open scorer in browser",
-                onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(it.scorerUrl)))
-                    onDismiss()
-                },
+        Spacer(Modifier.height(AppSpacing.md))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = AppSpacing.lg),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.OpenInNew,
+                contentDescription = null,
+                tint = AppColors.OnBackgroundDim,
+                modifier = Modifier.size(16.dp),
             )
+            Spacer(Modifier.width(AppSpacing.sm))
+            Text("Active mode: ${it.mode}", style = AppTypography.bodySmall)
+        }
+        Spacer(Modifier.height(AppSpacing.sm))
+        SecondaryButton(
+            text = "Open scorer in browser",
+            onClick = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(it.scorerUrl)))
+                onDismiss()
+            },
+            modifier = Modifier.padding(horizontal = AppSpacing.lg),
+        )
+    }
+}
+
+/** One row of the pre-flight checklist: pass/fail icon, label, hint when failing. */
+@Composable
+private fun PreflightRow(label: String, ok: Boolean, hint: String? = null) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppSpacing.radiusMd))
+            .background(
+                (if (ok) AppColors.Success else AppColors.Warning).copy(alpha = 0.08f),
+            )
+            .padding(horizontal = AppSpacing.md, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (ok) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+            contentDescription = null,
+            tint = if (ok) AppColors.Success else AppColors.Warning,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(AppSpacing.md))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, style = AppTypography.titleSmall)
+            if (!ok && hint != null) {
+                Text(hint, style = AppTypography.bodySmall)
+            }
         }
     }
 }
@@ -366,12 +419,25 @@ fun PreflightSheet(
         title = "Ready to go live?",
         subtitle = "The scoreboard appears at the bottom of your stream.",
     )
-    Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
-        StatusChip(label = "Camera ready", ok = state.previewReady)
-        Spacer(Modifier.height(AppSpacing.sm))
-        StatusChip(label = state.destinationLabel, ok = state.destinationReady)
-        Spacer(Modifier.height(AppSpacing.sm))
-        StatusChip(label = "Scoreboard on stream", ok = state.match?.overlayEmbedUrl?.isNotBlank() == true)
+    Column(
+        modifier = Modifier.padding(horizontal = AppSpacing.lg),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+    ) {
+        PreflightRow(
+            label = "Camera ready",
+            ok = state.previewReady,
+            hint = "Wait for the preview, or restart it from the menu",
+        )
+        PreflightRow(
+            label = state.destinationLabel,
+            ok = state.destinationReady,
+            hint = "Set a destination or paste a stream key first",
+        )
+        PreflightRow(
+            label = "Scoreboard on stream",
+            ok = state.match?.overlayEmbedUrl?.isNotBlank() == true,
+            hint = "Overlay URL missing — check the stream setup",
+        )
     }
     Spacer(Modifier.height(AppSpacing.lg))
     PrimaryButton(
@@ -380,8 +446,12 @@ fun PreflightSheet(
         onClick = onConfirm,
         modifier = Modifier.padding(horizontal = AppSpacing.lg),
     )
-    Spacer(Modifier.height(AppSpacing.sm))
-    PrimaryButton(text = "Cancel", onClick = onDismiss, modifier = Modifier.padding(horizontal = AppSpacing.lg))
+    Spacer(Modifier.height(AppSpacing.xs))
+    GhostButton(
+        text = "Cancel",
+        onClick = onDismiss,
+        modifier = Modifier.padding(horizontal = AppSpacing.lg),
+    )
 }
 
 @Composable
@@ -392,32 +462,40 @@ fun StudioMenuSheet(
     onDismiss: () -> Unit,
 ) {
     SheetHeader(title = "Broadcast menu")
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Video stabilization", modifier = Modifier.weight(1f))
-        Switch(
-            checked = prefs.videoStabilization,
-            onCheckedChange = { onSave(prefs.copy(videoStabilization = it)) },
-        )
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Keep screen on", modifier = Modifier.weight(1f))
-        Switch(
-            checked = prefs.keepScreenOn,
-            onCheckedChange = { onSave(prefs.copy(keepScreenOn = it)) },
-        )
+    Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
+        SettingRow(
+            title = "Video stabilization",
+            subtitle = "Smooths handheld camera shake",
+            icon = Icons.Outlined.Vibration,
+            iconTint = AppColors.Accent,
+        ) {
+            Switch(
+                checked = prefs.videoStabilization,
+                onCheckedChange = { onSave(prefs.copy(videoStabilization = it)) },
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = AppColors.Accent,
+                    checkedThumbColor = Color.White,
+                ),
+            )
+        }
+        SettingRow(
+            title = "Keep screen on",
+            subtitle = "Stops the phone sleeping mid-broadcast",
+            icon = Icons.Outlined.LightMode,
+            iconTint = AppColors.Warning,
+        ) {
+            Switch(
+                checked = prefs.keepScreenOn,
+                onCheckedChange = { onSave(prefs.copy(keepScreenOn = it)) },
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = AppColors.Accent,
+                    checkedThumbColor = Color.White,
+                ),
+            )
+        }
     }
     Spacer(Modifier.height(AppSpacing.sm))
-    PrimaryButton(
+    SecondaryButton(
         text = "Restart camera preview",
         onClick = {
             onRestartPreview()

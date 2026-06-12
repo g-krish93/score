@@ -103,35 +103,38 @@ fun BroadcastCameraUi(
         if (!state.streaming) {
             state.overlayPreview?.let { board ->
                 val boardAlpha = state.overlayPrefs.opacity.toFloat().coerceIn(0.2f, 1f)
-                val boardBaseModifier = Modifier
-                    .fillMaxWidth(OverlayLayoutPrefs.REF_WIDTH_FRACTION.toFloat())
-                    .graphicsLayer {
-                        scaleX = boardScaleX
-                        scaleY = boardScaleY
-                        transformOrigin = TransformOrigin(0.5f, 1f)
-                    }
-                val boardModifier = if (landscape) {
-                    // Sit centered along the bottom, clearing the left tool rail and the
-                    // right Go Live rail.
+                val boardSlotModifier = if (landscape) {
                     Modifier
                         .align(Alignment.BottomCenter)
                         .padding(start = 96.dp, end = 110.dp, bottom = 14.dp + positionLift)
-                        .then(boardBaseModifier)
+                        .fillMaxWidth(OverlayLayoutPrefs.REF_WIDTH_FRACTION.toFloat())
                 } else {
                     Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 272.dp + positionLift)
-                        .then(boardBaseModifier)
+                        .fillMaxWidth(OverlayLayoutPrefs.REF_WIDTH_FRACTION.toFloat())
                 }
-                Image(
-                    bitmap = board,
-                    contentDescription = "Scoreboard preview",
-                    // Fit shows the full captured board; FillWidth cropped the bottom when
-                    // the rasterized strip was taller than the legacy 16% viewport.
-                    contentScale = ContentScale.Fit,
-                    alpha = boardAlpha,
-                    modifier = boardModifier.clip(RoundedCornerShape(10.dp)),
-                )
+                // Bitmap is a fixed-width viewport with the widget already centered by the
+                // injected page CSS — position is deterministic from the very first frame.
+                Box(
+                    modifier = boardSlotModifier,
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    Image(
+                        bitmap = board,
+                        contentDescription = "Scoreboard preview",
+                        contentScale = ContentScale.FillWidth,
+                        alpha = boardAlpha,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                scaleX = boardScaleX
+                                scaleY = boardScaleY
+                                transformOrigin = TransformOrigin(0.5f, 1f)
+                            }
+                            .clip(RoundedCornerShape(10.dp)),
+                    )
+                }
             }
         }
 

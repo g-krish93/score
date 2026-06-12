@@ -103,23 +103,30 @@ class StudioViewModel @Inject constructor(
     }
 
     init {
-        streamController.setPreviewOverlayListener { bytes, _, _ ->
+        streamController.setPreviewOverlayListener { bytes, w, h ->
             val bitmap = runCatching {
                 android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            }.getOrNull() ?: return@setPreviewOverlayListener
+            }.getOrNull()
+            if (bitmap == null) {
+                android.util.Log.w("Cricrelay", "overlay preview decode failed (${bytes.size} bytes)")
+                return@setPreviewOverlayListener
+            }
+            android.util.Log.d(
+                "Cricrelay",
+                "overlay preview frame ${bitmap.width}x${bitmap.height} (push ${w}x$h)",
+            )
             _uiState.update { it.copy(overlayPreview = bitmap.asImageBitmap()) }
         }
         viewModelScope.launch {
             streamController.status.collect { status ->
                 _uiState.update {
-                    val ready = status.previewReady || it.previewReady
                     it.copy(
-                        previewReady = ready,
+                        previewReady = status.previewReady,
                         streaming = status.streaming,
                         paused = status.paused,
                         statusMessage = when {
                             status.streaming -> it.statusMessage
-                            ready && it.statusMessage == "Starting camera…" -> ""
+                            status.previewReady && it.statusMessage == "Starting camera…" -> ""
                             else -> it.statusMessage
                         },
                     )
@@ -189,6 +196,8 @@ class StudioViewModel @Inject constructor(
                 customWatchUrl = creds.watchUrl,
             )
         }
+        // Start overlay WebView load immediately; don't wait for overlay prefs API.
+        syncOverlay(match, _uiState.value.overlayPrefs)
     }
 
     private suspend fun loadStudioExtras(slug: String, match: StreamMatch) {
@@ -515,11 +524,20 @@ class StudioViewModel @Inject constructor(
         matchDayJob?.cancel()
         liveTimerJob?.cancel()
         streamController.setPreviewOverlayListener(null)
+        streamController.destroyOverlayCapture()
         streamController.hideNativePreview()
         super.onCleared()
     }
 
     fun onStudioHidden() {
+        previewSurfaceBound = false
+        _uiState.update {
+            it.copy(
+                previewReady = false,
+                overlayPreview = null,
+                statusMessage = if (it.streaming) it.statusMessage else "Starting camera…",
+            )
+        }
         streamController.hideNativePreview()
     }
 }

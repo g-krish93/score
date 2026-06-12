@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -279,17 +280,51 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 fun LiveTimerBadge(elapsedSeconds: Long, paused: Boolean, modifier: Modifier = Modifier) {
     val mins = elapsedSeconds / 60
     val secs = elapsedSeconds % 60
-    val label = if (paused) "PAUSED" else "LIVE · %02d:%02d".format(mins, secs)
-    Text(
-        text = label,
-        color = if (paused) AppColors.Warning else AppColors.Live,
-        fontWeight = FontWeight.Bold,
-        fontSize = 13.sp,
+    val tint = if (paused) AppColors.Warning else AppColors.Live
+    val dotAlpha = if (paused) {
+        1f
+    } else {
+        val transition = rememberInfiniteTransition(label = "liveDot")
+        transition.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+            label = "liveDotAlpha",
+        ).value
+    }
+    Row(
         modifier = modifier
             .clip(RoundedCornerShape(20.dp))
-            .background((if (paused) AppColors.Warning else AppColors.Live).copy(alpha = 0.18f))
+            .background(Color.Black.copy(alpha = 0.55f))
+            .border(1.dp, tint.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
             .padding(horizontal = 12.dp, vertical = 6.dp),
-    )
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(tint.copy(alpha = dotAlpha)),
+        )
+        Spacer(Modifier.width(7.dp))
+        Text(
+            text = if (paused) "PAUSED" else "LIVE",
+            color = tint,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            letterSpacing = 1.sp,
+        )
+        if (!paused) {
+            Spacer(Modifier.width(7.dp))
+            Text(
+                text = "%02d:%02d".format(mins, secs),
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+    }
 }
 
 @Composable

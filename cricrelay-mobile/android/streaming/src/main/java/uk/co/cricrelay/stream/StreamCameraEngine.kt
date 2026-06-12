@@ -48,8 +48,10 @@ object StreamCameraEngine : ConnectChecker {
     )
 
     private const val MAX_WIDTH = 1280
-    private const val REF_OVERLAY_WIDTH_FRACTION = OverlayCaptureDimensions.REF_WIDTH_FRACTION
-    private const val REF_OVERLAY_HEIGHT_FRACTION = OverlayCaptureDimensions.REF_HEIGHT_FRACTION
+    // Reference prefs (the defaults in OverlayLayoutPrefs). When the user sliders sit at
+    // these values the overlay bitmap renders at its NATIVE aspect ratio — wMul/hMul == 1.
+    private const val REF_OVERLAY_WIDTH_FRACTION = 0.92f
+    private const val REF_OVERLAY_HEIGHT_FRACTION = 0.16f
     private const val MAX_HEIGHT = 720
     private const val DEFAULT_BITRATE = 2500000
     private const val DEFAULT_FPS = 30
@@ -63,6 +65,7 @@ object StreamCameraEngine : ConnectChecker {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var overlayRunnable: Runnable? = null
     private var previewOverlayRunnable: Runnable? = null
+    private var previewOverlayPushActive = false
     private var previewOverlayRefreshRunnable: Runnable? = null
     private var previewOverlayListener: ((ByteArray, Int, Int) -> Unit)? = null
     private var streamWidth = MAX_WIDTH
@@ -88,9 +91,9 @@ object StreamCameraEngine : ConnectChecker {
     private var streamPaused = false
     private var deviceTier = DeviceCapabilities.Tier.HIGH
     private var overlayRefreshMs = 500L
-    private var maxOverlayCaptureWidth = 960
     private var surfaceValid = true
     private var overlayPausedForMemory = false
+    private var overlayCaptureInFlight = false
     private var focusLocked = false
     private var lastFocusTapX = -1f
     private var lastFocusTapY = -1f
@@ -130,8 +133,14 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     /** Surface lost (rotation, PiP) — wait for surfaceChanged before prepare again. */
-    fun onPreviewSurfaceLost() {
+    fun onPreviewSurfaceLost(view: OpenGlView? = null) {
         runOnMain {
+            // Stale SurfaceHolder callbacks from a replaced OpenGlView must not tear down
+            // the active preview (black screen when re-entering studio).
+            if (view != null && openGlView != null && view !== openGlView) {
+                CricrelayLog.d("onPreviewSurfaceLost: ignored stale surface")
+                return@runOnMain
+            }
             surfaceValid = false
             if (camera?.isStreaming == true) {
                 stopOverlayRefresh()
@@ -163,7 +172,6 @@ object StreamCameraEngine : ConnectChecker {
     private fun refreshDeviceTier(context: Context) {
         deviceTier = DeviceCapabilities.tier(context)
         overlayRefreshMs = DeviceCapabilities.overlayRefreshMs(deviceTier)
-        maxOverlayCaptureWidth = DeviceCapabilities.maxOverlayCaptureWidth(deviceTier)
         if (DeviceCapabilities.isPowerSaveMode(context) || DeviceCapabilities.isThermalStressed(context)) {
             overlayRefreshMs = (overlayRefreshMs * 1.5).toLong().coerceAtMost(2500L)
         }
@@ -189,6 +197,7 @@ object StreamCameraEngine : ConnectChecker {
                 null
             }
         }
+        resumeOverlayPreviewIfNeeded()
     }
 
     fun detachView(view: OpenGlView) {
@@ -449,6 +458,7 @@ object StreamCameraEngine : ConnectChecker {
                     emit(StreamCaptureService.EVENT_PREVIEW_READY, "${streamWidth}x${streamHeight}")
                     CricrelayLog.d("preview ready ${streamWidth}x${streamHeight} onPreview=${camera?.isOnPreview}")
                     activity?.let { CameraPreviewHost.elevateComposeUi(it) }
+                    resumeOverlayPreviewIfNeeded()
                 }
             }
         }
@@ -872,25 +882,66 @@ object StreamCameraEngine : ConnectChecker {
 
     private fun releaseCamera() {
         stopPreviewOverlayPush()
-        stopStreamInternal()
-        overlayCapture?.destroy()
-        overlayCapture = null
-        resetFocusState()
-        try {
-            camera?.stopPreview()
-        } catch (_: Exception) {
+        if (camera?.isStreaming == true) {
+            stopStreamInternal()
+        } else {
+            stopPreviewOverlayRefresh()
+            recycleOverlayBitmap()
+            clearOverlayFilter()
+            resetFocusState()
+            try {
+                camera?.stopPreview()
+            } catch (_: Exception) {
+            }
+            encoderPrepared = false
+            surfaceValid = false
         }
+        // Keep overlay WebView alive across studio navigation to avoid reload flicker.
         camera = null
         openGlView = null
-        encoderPrepared = false
+    }
+
+    /** Full teardown — ViewModel cleared or streaming session ended. */
+    fun destroyOverlayCapture() {
+        runOnMain {
+            overlayCapture?.destroy()
+            overlayCapture = null
+        }
     }
 
     private fun ensureOverlayCapture(): OverlayWebViewCapture? {
         val act = activity ?: return null
         if (overlayCapture == null) {
-            overlayCapture = OverlayWebViewCapture(act)
+            overlayCapture = OverlayWebViewCapture(act).also { capture ->
+                capture.onPageReady = {
+                    // Periodic preview push handles refresh; avoid an extra capture on load.
+                    CricrelayLog.d("overlay WebView page ready — preview push will refresh")
+                }
+            }
         }
         return overlayCapture
+    }
+
+    /** Overlay URL may be set before the GL view attaches an Activity — restart capture then. */
+    private fun resumeOverlayPreviewIfNeeded() {
+        if (overlayUrl.isEmpty() || activity == null) return
+        ensureOverlayCapture()?.apply {
+            setStyle(overlayLayout.fontScale, overlayLayout.bgColor, overlayLayout.textColor)
+            loadUrl(overlayUrl)
+        }
+        when (
+            StreamOverlayPolicy.refreshMode(
+                isStreaming = camera?.isStreaming == true,
+                hasPreviewListener = previewOverlayListener != null,
+                overlayUrlBlank = false,
+            )
+        ) {
+            StreamOverlayPolicy.RefreshMode.StreamRefresh -> {
+                if (imageFilter != null && overlayRunnable == null) startOverlayRefresh()
+            }
+            StreamOverlayPolicy.RefreshMode.PreviewPush -> startPreviewOverlayPush()
+            StreamOverlayPolicy.RefreshMode.None -> Unit
+        }
     }
 
     private fun attachOverlayAfterConnect() {
@@ -1002,10 +1053,8 @@ object StreamCameraEngine : ConnectChecker {
         val base = filter.getScale()
         val wMul = overlayLayout.widthFraction.coerceIn(0.25f, 0.98f) / REF_OVERLAY_WIDTH_FRACTION
         val hMul = overlayLayout.heightFraction.coerceIn(0.10f, 0.28f) / REF_OVERLAY_HEIGHT_FRACTION
-        filter.setScale(
-            (base.x * wMul).coerceIn(1f, 100f),
-            (base.y * hMul).coerceIn(1f, 100f),
-        )
+        val fitted = OverlaySpriteLayout.fitScale(base.x, base.y, wMul, hMul)
+        filter.setScale(fitted.x, fitted.y)
         val scale = filter.getScale()
         val pos = OverlaySpriteLayout.computePosition(
             OverlaySpriteLayout.Params(
@@ -1019,10 +1068,6 @@ object StreamCameraEngine : ConnectChecker {
         )
         filter.setPosition(pos.x, pos.y)
     }
-
-    /** Rasterize at reference board size; width/height prefs scale the GL sprite, not the viewport. */
-    private fun overlayCaptureDimensions(canvasWidth: Int): Pair<Int, Int> =
-        OverlayCaptureDimensions.compute(canvasWidth, maxOverlayCaptureWidth)
 
     private fun startOverlayRefresh() {
         if (overlayPausedForMemory) return
@@ -1047,17 +1092,17 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     private fun startPreviewOverlayPush() {
+        if (previewOverlayPushActive) return
         if (camera?.isStreaming == true || overlayPausedForMemory) return
-        stopPreviewOverlayPush()
         if (overlayUrl.isEmpty() || previewOverlayListener == null) {
             CricrelayLog.w(
                 "startPreviewOverlayPush skipped: urlEmpty=${overlayUrl.isEmpty()} listener=${previewOverlayListener != null}",
             )
             return
         }
+        previewOverlayPushActive = true
         CricrelayLog.d("startPreviewOverlayPush: url=$overlayUrl")
-        ensureOverlayCapture()?.loadUrl(overlayUrl)
-        val interval = (overlayRefreshMs * 2).coerceIn(800L, 2500L)
+        val interval = (overlayRefreshMs * 2).coerceIn(1000L, 2500L)
         val runnable = object : Runnable {
             override fun run() {
                 try {
@@ -1068,10 +1113,11 @@ object StreamCameraEngine : ConnectChecker {
             }
         }
         previewOverlayRunnable = runnable
-        mainHandler.postDelayed(runnable, 400)
+        mainHandler.postDelayed(runnable, 1000)
     }
 
     private fun stopPreviewOverlayPush() {
+        previewOverlayPushActive = false
         previewOverlayRunnable?.let { mainHandler.removeCallbacks(it) }
         previewOverlayRunnable = null
     }
@@ -1101,20 +1147,28 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     private fun pushPreviewOverlayFrame() {
-        if (camera?.isStreaming == true || overlayPausedForMemory) return
+        if (camera?.isStreaming == true || overlayPausedForMemory || overlayCaptureInFlight) return
         val listener = previewOverlayListener ?: return
-        val (w, h) = overlayCaptureDimensions(1080)
-        val captured = overlayCapture?.capture(w, h)
-        if (captured == null) {
-            CricrelayLog.w("pushPreviewOverlayFrame: capture null (WebView not ready?) ${w}x$h")
+        val capture = ensureOverlayCapture()
+        if (capture == null) {
+            CricrelayLog.w("pushPreviewOverlayFrame: no activity for overlay capture")
             return
         }
-        val stream = java.io.ByteArrayOutputStream()
-        captured.compress(Bitmap.CompressFormat.PNG, 85, stream)
-        if (!captured.isRecycled) {
-            captured.recycle()
+        capture.ensureAttached()
+        overlayCaptureInFlight = true
+        capture.captureAsync { captured ->
+            overlayCaptureInFlight = false
+            if (captured == null) return@captureAsync
+            val w = captured.width
+            val h = captured.height
+            val stream = java.io.ByteArrayOutputStream()
+            captured.compress(Bitmap.CompressFormat.PNG, 85, stream)
+            if (!captured.isRecycled) {
+                captured.recycle()
+            }
+            val bytes = stream.toByteArray()
+            mainHandler.post { listener(bytes, w, h) }
         }
-        listener(stream.toByteArray(), w, h)
     }
 
     private fun captureAndApplyOverlay() {
@@ -1132,38 +1186,52 @@ object StreamCameraEngine : ConnectChecker {
         } else if (!cam.isOnPreview || cam.isStreaming) {
             return
         }
-        // Derive the capture width from the ACTUAL frame width (canvas width), not the
-        // raw landscape streamWidth. In portrait RootEncoder swaps the canvas to
-        // streamHeight x streamWidth, so the visible frame width is streamHeight (e.g. 720).
-        // Capturing at the landscape streamWidth (1280) would make the strip overflow the
-        // portrait frame (~160% wide) once rendered at native size.
-        val canvasW = if (streamIsPortrait) streamHeight else streamWidth
-        val (w, h) = overlayCaptureDimensions(canvasW)
-        val captured = overlayCapture?.capture(w, h) ?: return
-        val forGl = applyBitmapOpacity(
-            captured.copy(Bitmap.Config.ARGB_8888, false),
-            overlayLayout.opacity,
-        )
-        if (forGl != captured) {
-            captured.recycle()
-        }
-        ensureOverlayFilter()
-        val filter = imageFilter ?: return
-        val previous = lastOverlayBitmap
-        lastOverlayBitmap = forGl
-        filter.setImage(forGl)
-        applyOverlaySprite()
-        runCatching {
-            val s = filter.getScale()
-            CricrelayLog.d(
-                "overlaySprite: bitmap=${w}x${h} canvas=${canvasW}x${if (streamIsPortrait) streamWidth else streamHeight} " +
-                    "portrait=$streamIsPortrait scale=${s.x}x${s.y}",
+        if (overlayCaptureInFlight) return
+        val capture = overlayCapture ?: return
+        overlayCaptureInFlight = true
+        capture.captureAsync { captured ->
+            overlayCaptureInFlight = false
+            if (captured == null) return@captureAsync
+            val forGl = applyBitmapOpacity(
+                captured.copy(Bitmap.Config.ARGB_8888, false),
+                overlayLayout.opacity,
             )
-        }
-        if (previous != null && previous !== forGl && !previous.isRecycled) {
-            mainHandler.postDelayed({
-                previous.takeIf { !it.isRecycled && it !== lastOverlayBitmap }?.recycle()
-            }, 1000)
+            if (forGl != captured) {
+                captured.recycle()
+            }
+            runOnMain {
+                val liveCam = camera ?: return@runOnMain
+                if (requireStreaming) {
+                    if (!liveCam.isStreaming || streamPaused) {
+                        if (!forGl.isRecycled) forGl.recycle()
+                        return@runOnMain
+                    }
+                } else if (!liveCam.isOnPreview || liveCam.isStreaming) {
+                    if (!forGl.isRecycled) forGl.recycle()
+                    return@runOnMain
+                }
+                ensureOverlayFilter()
+                val filter = imageFilter ?: run {
+                    if (!forGl.isRecycled) forGl.recycle()
+                    return@runOnMain
+                }
+                val previous = lastOverlayBitmap
+                lastOverlayBitmap = forGl
+                filter.setImage(forGl)
+                applyOverlaySprite()
+                runCatching {
+                    val s = filter.getScale()
+                    CricrelayLog.d(
+                        "overlaySprite: bitmap=${forGl.width}x${forGl.height} " +
+                            "portrait=$streamIsPortrait scale=${s.x}x${s.y}",
+                    )
+                }
+                if (previous != null && previous !== forGl && !previous.isRecycled) {
+                    mainHandler.postDelayed({
+                        previous.takeIf { !it.isRecycled && it !== lastOverlayBitmap }?.recycle()
+                    }, 1000)
+                }
+            }
         }
     }
 

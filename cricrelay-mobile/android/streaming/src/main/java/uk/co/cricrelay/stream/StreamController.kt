@@ -70,6 +70,11 @@ class StreamController @Inject constructor() {
 
     fun hideNativePreview() {
         activity?.let { CameraPreviewHost.hide(it) }
+        _status.value = _status.value.copy(previewReady = false)
+    }
+
+    fun destroyOverlayCapture() {
+        StreamCameraEngine.destroyOverlayCapture()
     }
 
     fun ensureComposeAboveCamera() {

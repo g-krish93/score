@@ -18,9 +18,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Bluetooth
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.SmartDisplay
+import androidx.compose.material.icons.outlined.SportsCricket
+import androidx.compose.material.icons.outlined.SportsEsports
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +33,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,7 +43,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -54,22 +59,32 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import uk.co.cricrelay.mobile.ui.AppColors
+import uk.co.cricrelay.mobile.ui.AppGradients
 import uk.co.cricrelay.mobile.ui.AppSpacing
 import uk.co.cricrelay.mobile.ui.AppTypography
 import uk.co.cricrelay.mobile.ui.CricRelayBottomSheet
+import uk.co.cricrelay.mobile.ui.DangerButton
 import uk.co.cricrelay.mobile.ui.ErrorBanner
+import uk.co.cricrelay.mobile.ui.GhostButton
 import uk.co.cricrelay.mobile.ui.GlassPanel
 import uk.co.cricrelay.mobile.ui.InfoBanner
 import uk.co.cricrelay.mobile.ui.LoadingState
 import uk.co.cricrelay.mobile.ui.PrimaryButton
+import uk.co.cricrelay.mobile.ui.ScreenTopBar
+import uk.co.cricrelay.mobile.ui.SecondaryButton
 import uk.co.cricrelay.mobile.ui.SectionLabel
+import uk.co.cricrelay.mobile.ui.SelectableOptionCard
 import uk.co.cricrelay.mobile.ui.SheetHeader
 import uk.co.cricrelay.mobile.ui.StatusChip
 import uk.co.cricrelay.mobile.ui.StreamTile
@@ -94,6 +109,7 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     var menuExpanded by remember { mutableStateOf(false) }
     var createSheet by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
 
     StudioBackdrop(modifier = modifier) {
         Column(
@@ -116,11 +132,7 @@ fun HomeScreen(
                     Spacer(Modifier.height(2.dp))
                     Text(
                         "CricRelay Studio",
-                        style = AppTypography.headlineLarge.copy(
-                            brush = Brush.linearGradient(
-                                listOf(AppColors.OnBackground, AppColors.Accent),
-                            ),
-                        ),
+                        style = AppTypography.headlineLarge.copy(brush = AppGradients.TitleShine),
                     )
                 }
                 Row {
@@ -137,6 +149,9 @@ fun HomeScreen(
                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                             DropdownMenuItem(
                                 text = { Text("Sign out") },
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
+                                },
                                 onClick = {
                                     menuExpanded = false
                                     viewModel.logout(onLogout)
@@ -233,6 +248,8 @@ fun HomeScreen(
                         item {
                             OAuthCard(
                                 title = "YouTube",
+                                icon = Icons.Outlined.SmartDisplay,
+                                brandColor = AppColors.YouTube,
                                 status = state.youtube,
                                 onConnect = {
                                     scope.launch {
@@ -250,6 +267,8 @@ fun HomeScreen(
                         item {
                             OAuthCard(
                                 title = "Twitch",
+                                icon = Icons.Outlined.SportsEsports,
+                                brandColor = AppColors.Twitch,
                                 status = state.twitch,
                                 onConnect = {
                                     scope.launch {
@@ -272,6 +291,7 @@ fun HomeScreen(
                 FloatingActionButton(
                     onClick = { createSheet = true },
                     containerColor = AppColors.Primary,
+                    contentColor = Color.White,
                     modifier = Modifier
                         .align(Alignment.End)
                         .padding(AppSpacing.lg),
@@ -284,8 +304,11 @@ fun HomeScreen(
 
     CricRelayBottomSheet(visible = createSheet, onDismiss = { createSheet = false }) {
         SheetHeader(title = "New stream", subtitle = "Choose how scoring feeds the overlay.")
-        PrimaryButton(
-            text = "Play-Cricket fixture",
+        ActionCard(
+            title = "Play-Cricket fixture",
+            description = "Scores follow your club's Play-Cricket scorer automatically.",
+            icon = Icons.Outlined.SportsCricket,
+            tint = AppColors.Accent,
             onClick = {
                 createSheet = false
                 onCreateStream("play_cricket")
@@ -293,8 +316,11 @@ fun HomeScreen(
             modifier = Modifier.padding(horizontal = AppSpacing.lg),
         )
         Spacer(Modifier.height(AppSpacing.sm))
-        PrimaryButton(
-            text = "PCS BLE relay",
+        ActionCard(
+            title = "PCS BLE relay",
+            description = "Scores arrive over Bluetooth from the PCS scoring app.",
+            icon = Icons.Outlined.Bluetooth,
+            tint = AppColors.AccentBlue,
             onClick = {
                 createSheet = false
                 onCreateStream("pcs_ble")
@@ -321,10 +347,79 @@ fun HomeScreen(
             modifier = Modifier.padding(horizontal = AppSpacing.lg),
         )
         Spacer(Modifier.height(AppSpacing.sm))
-        PrimaryButton(
+        DangerButton(
             text = "Delete stream",
-            onClick = { state.managementSlug?.let(viewModel::deleteStream) },
+            onClick = { confirmDelete = true },
             modifier = Modifier.padding(horizontal = AppSpacing.lg),
+        )
+    }
+
+    if (confirmDelete && state.managementSlug != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            containerColor = AppColors.SurfaceElevated,
+            titleContentColor = AppColors.OnBackground,
+            textContentColor = AppColors.OnBackgroundMuted,
+            title = { Text("Delete this stream?") },
+            text = { Text("“${state.renameLabel.ifBlank { state.managementSlug }}” and its overlay settings will be removed. This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        state.managementSlug?.let(viewModel::deleteStream)
+                    },
+                ) {
+                    Text("Delete", color = AppColors.Error, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) {
+                    Text("Cancel", color = AppColors.OnBackgroundMuted)
+                }
+            },
+        )
+    }
+}
+
+/** Full-width tappable action row with an icon tile and chevron affordance. */
+@Composable
+private fun ActionCard(
+    title: String,
+    description: String,
+    icon: ImageVector,
+    tint: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppSpacing.radiusMd))
+            .background(AppColors.SurfaceElevated.copy(alpha = 0.7f))
+            .border(1.dp, AppColors.Border, RoundedCornerShape(AppSpacing.radiusMd))
+            .clickable(onClick = onClick)
+            .padding(AppSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                .background(tint.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = AppTypography.titleSmall)
+            Spacer(Modifier.height(2.dp))
+            Text(description, style = AppTypography.bodySmall)
+        }
+        Icon(
+            Icons.Outlined.ChevronRight,
+            contentDescription = null,
+            tint = AppColors.OnBackgroundDim,
         )
     }
 }
@@ -332,40 +427,47 @@ fun HomeScreen(
 @Composable
 private fun OAuthCard(
     title: String,
+    icon: ImageVector,
+    brandColor: Color,
     status: PlatformStatus,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
-    GlassPanel(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = AppSpacing.lg),
-    ) {
-        Text(title, style = AppTypography.titleMedium)
-        if (status.label.isNotBlank()) {
-            Spacer(Modifier.height(AppSpacing.xs))
-            Text(status.label, style = AppTypography.bodySmall)
+    GlassPanel(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                    .background(brandColor.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = brandColor, modifier = Modifier.size(22.dp))
+            }
+            Spacer(Modifier.width(AppSpacing.md))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = AppTypography.titleMedium)
+                if (status.label.isNotBlank()) {
+                    Text(status.label, style = AppTypography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            StatusChip(
+                label = when {
+                    status.ready -> "Ready"
+                    status.connected -> "Connected"
+                    else -> "Not linked"
+                },
+                ok = status.ready || status.connected,
+            )
         }
-        Spacer(Modifier.height(AppSpacing.sm))
-        StatusChip(
-            label = when {
-                status.ready -> "Ready"
-                status.connected -> "Connected"
-                else -> "Not connected"
-            },
-            ok = status.ready || status.connected,
-        )
         Spacer(Modifier.height(AppSpacing.md))
         if (status.connected) {
-            PrimaryButton(text = "Reconnect", onClick = onConnect, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(AppSpacing.sm))
-            PrimaryButton(text = "Disconnect", onClick = onDisconnect, modifier = Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                SecondaryButton(text = "Reconnect", onClick = onConnect, modifier = Modifier.weight(1f))
+                DangerButton(text = "Disconnect", onClick = onDisconnect, modifier = Modifier.weight(1f))
+            }
         } else {
-            PrimaryButton(
-                text = "Connect $title",
-                onClick = onConnect,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            PrimaryButton(text = "Connect $title", onClick = onConnect)
         }
     }
 }
@@ -383,70 +485,68 @@ fun CreateStreamScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(AppSpacing.lg),
+                .statusBarsPadding(),
         ) {
-            Text(
-                if (mode == "pcs_ble") "Create PCS BLE stream" else "Create Play-Cricket stream",
-                style = AppTypography.headlineLarge,
+            ScreenTopBar(
+                title = if (mode == "pcs_ble") "New PCS BLE stream" else "New Play-Cricket stream",
+                onBack = onBack,
             )
-            Spacer(Modifier.height(AppSpacing.lg))
-            StudioTextField(
-                value = state.label,
-                onValueChange = viewModel::onLabelChange,
-                label = "Stream label",
-            )
-            if (mode != "pcs_ble") {
-                Spacer(Modifier.height(AppSpacing.md))
-                SectionLabel("Fixtures")
-                state.fixtures.forEach { fixture ->
-                    val selected = fixture.matchId == state.selectedMatchId
-                    GlassPanel(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = AppSpacing.sm),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(
-                                fixture.title,
-                                color = if (selected) AppColors.Accent else AppColors.OnBackground,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(end = AppSpacing.sm),
-                            )
-                            PrimaryButton(
-                                text = if (selected) "Selected" else "Select",
-                                onClick = { viewModel.onMatchSelected(fixture.matchId) },
-                                modifier = Modifier.weight(0.45f),
-                                enabled = !state.activeMatchIds.contains(fixture.matchId),
-                            )
-                        }
-                        if (state.activeMatchIds.contains(fixture.matchId)) {
-                            Text("Already streaming", style = AppTypography.bodySmall)
-                        }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = AppSpacing.lg),
+            ) {
+                Spacer(Modifier.height(AppSpacing.sm))
+                StudioTextField(
+                    value = state.label,
+                    onValueChange = viewModel::onLabelChange,
+                    label = "Stream label",
+                )
+                if (mode != "pcs_ble") {
+                    Spacer(Modifier.height(AppSpacing.md))
+                    SectionLabel("Choose a fixture")
+                    state.fixtures.forEach { fixture ->
+                        val alreadyLive = state.activeMatchIds.contains(fixture.matchId)
+                        SelectableOptionCard(
+                            title = fixture.title,
+                            description = if (alreadyLive) "Already streaming" else null,
+                            selected = fixture.matchId == state.selectedMatchId,
+                            enabled = !alreadyLive,
+                            onClick = { viewModel.onMatchSelected(fixture.matchId) },
+                            icon = Icons.Outlined.SportsCricket,
+                            modifier = Modifier.padding(bottom = AppSpacing.sm),
+                        )
+                    }
+                    if (state.fixtures.isEmpty()) {
+                        Text(
+                            "No upcoming fixtures found for your club.",
+                            style = AppTypography.bodyMedium,
+                            modifier = Modifier.padding(vertical = AppSpacing.sm),
+                        )
                     }
                 }
-            }
-            state.error?.let {
+                state.error?.let {
+                    Spacer(Modifier.height(AppSpacing.md))
+                    ErrorBanner(it)
+                }
                 Spacer(Modifier.height(AppSpacing.md))
-                ErrorBanner(it)
             }
-            Spacer(Modifier.weight(1f))
-            PrimaryButton(
-                text = "Create stream",
-                loading = state.loading,
-                onClick = {
-                    if (mode == "pcs_ble") {
-                        viewModel.createPcsBle(onCreated)
-                    } else {
-                        viewModel.createPlayCricket(onCreated)
-                    }
-                },
-            )
-            Spacer(Modifier.height(AppSpacing.sm))
-            PrimaryButton(text = "Back", onClick = onBack)
+            Column(modifier = Modifier.padding(AppSpacing.lg)) {
+                PrimaryButton(
+                    text = "Create stream",
+                    loading = state.loading,
+                    onClick = {
+                        if (mode == "pcs_ble") {
+                            viewModel.createPcsBle(onCreated)
+                        } else {
+                            viewModel.createPlayCricket(onCreated)
+                        }
+                    },
+                )
+                Spacer(Modifier.height(AppSpacing.xs))
+                GhostButton(text = "Back", onClick = onBack)
+            }
         }
     }
 }

@@ -25,6 +25,7 @@ object CameraPreviewHost {
     private var openGlView: OpenGlView? = null
     private var hostActivity: Activity? = null
     private var embeddedMode = false
+    private var surfaceCallback: SurfaceHolder.Callback? = null
 
     val isShowing: Boolean
         get() = openGlView != null
@@ -157,7 +158,8 @@ object CameraPreviewHost {
     }
 
     private fun installSurfaceCallback(gl: OpenGlView, activity: Activity) {
-        gl.holder.addCallback(object : SurfaceHolder.Callback {
+        removeSurfaceCallback(gl)
+        val callback = object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {}
 
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -170,9 +172,16 @@ object CameraPreviewHost {
             }
 
             override fun surfaceDestroyed(holder: SurfaceHolder) {
-                StreamCameraEngine.onPreviewSurfaceLost()
+                StreamCameraEngine.onPreviewSurfaceLost(gl)
             }
-        })
+        }
+        surfaceCallback = callback
+        gl.holder.addCallback(callback)
+    }
+
+    private fun removeSurfaceCallback(gl: OpenGlView) {
+        surfaceCallback?.let { gl.holder.removeCallback(it) }
+        surfaceCallback = null
     }
 
     fun refreshPreviewSurface() {
@@ -204,6 +213,7 @@ object CameraPreviewHost {
     }
 
     private fun detachInternal(gl: OpenGlView, removeFromParent: Boolean) {
+        removeSurfaceCallback(gl)
         StreamCameraEngine.detachView(gl)
         if (removeFromParent) {
             (gl.parent as? ViewGroup)?.removeView(gl)

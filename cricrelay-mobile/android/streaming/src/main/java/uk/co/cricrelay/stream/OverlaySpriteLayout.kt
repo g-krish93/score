@@ -17,6 +17,31 @@ object OverlaySpriteLayout {
         val horizontalInsetFraction: Float = 0.02f,
     )
 
+    data class SpriteScale(val x: Float, val y: Float)
+
+    /**
+     * Scale the sprite from its native (base) size by the user width/height multipliers,
+     * shrinking BOTH axes proportionally if the result would overflow the frame — this
+     * preserves the bitmap aspect ratio (e.g. a 960px-wide capture on a 720px-wide
+     * portrait canvas must not be squashed horizontally only).
+     */
+    fun fitScale(
+        baseX: Float,
+        baseY: Float,
+        wMul: Float,
+        hMul: Float,
+        maxPercent: Float = 96f,
+    ): SpriteScale {
+        var sx = (baseX * wMul).coerceAtLeast(1f)
+        var sy = (baseY * hMul).coerceAtLeast(1f)
+        val overflow = maxOf(sx / maxPercent, sy / 100f)
+        if (overflow > 1f) {
+            sx /= overflow
+            sy /= overflow
+        }
+        return SpriteScale(sx.coerceIn(1f, 100f), sy.coerceIn(1f, 100f))
+    }
+
     fun computePosition(params: Params): SpritePosition {
         val scaleX = params.scaleX.coerceIn(1f, 100f)
         val scaleY = params.scaleY.coerceIn(1f, 100f)
