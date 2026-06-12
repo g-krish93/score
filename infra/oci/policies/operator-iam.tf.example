@@ -1,0 +1,24 @@
+# Example only: copy into a root Terraform module and fill variable values.
+# OCI policies on the tenancy (or parent compartment) require appropriate admin rights.
+
+variable "tenancy_ocid" { type = string }
+variable "cricket_compartment_name" {
+  type        = string
+  description = "Compartment name as shown in policies (not OCID)."
+}
+variable "operator_group_name" {
+  type        = string
+  description = "OCI IAM group name allowed to manage cricket infra."
+}
+
+resource "oci_identity_policy" "cricket_operators" {
+  compartment_id = var.tenancy_ocid
+  name           = "cricket-operators-tf-example"
+  description    = "Allow operators to manage cricket stack (adjust names/OCIDs)."
+  statements = [
+    "Allow group ${var.operator_group_name} to manage virtual-network-family in compartment ${var.cricket_compartment_name}",
+    "Allow group ${var.operator_group_name} to manage instance-family in compartment ${var.cricket_compartment_name}",
+    "Allow group ${var.operator_group_name} to use volume-family in compartment ${var.cricket_compartment_name}",
+    "Allow group ${var.operator_group_name} to manage public-ip-family in compartment ${var.cricket_compartment_name}",
+  ]
+}

@@ -1,0 +1,810 @@
+<!doctype html>
+<!--
+  CricRelay Scoreboard Overlay — LOVABLE EXPORT
+  -----------------------------------------------
+  All Flask/Jinja2 template tags have been replaced with static example values.
+  The JavaScript logic is fully intact and uses mock data so you can see the
+  scoreboard rendered in a browser before sharing with Lovable.
+
+  PROMPT TO GIVE LOVABLE:
+  "This is a live cricket scoreboard overlay used as a browser source in OBS/Prism
+  for YouTube and Twitch streams. It shows the batting team name, two batsmen scores,
+  current score (runs/wickets), overs, bowler, ball-by-ball chips, and a CRR/chase pill.
+  There is also a compact relay widget used when scores come from Play-Cricket.
+  Please redesign the visual style to be more modern and polished — keep it compact
+  and transparent-background-friendly for a video overlay. The HTML structure and all
+  JavaScript logic must remain exactly intact; only improve the CSS and visual layout."
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>CricRelay Cricket Overlay</title>
+  <style>
+    :root {
+      --team1: #3b82f6;
+      --team2: #facc15;
+      --bg: rgba(5, 14, 38, 0.96);
+      --fg: #f8fbff;
+      --muted: #95a7c7;
+      --overlay-scale: 1;
+      --overlay-box-color: #0b1f56;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      min-height: 100%;
+      background: transparent;
+    }
+    body {
+      font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+    #overlay {
+      position: fixed;
+      z-index: 1;
+      color: var(--fg);
+      -webkit-transform: translate3d(0, 0, 0);
+      transform: translate3d(0, 0, 0);
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+    }
+    /* Manual scoring: full-width bottom bar */
+    body:not(.relay-active) #overlay {
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(180deg, #0d2154, #091842);
+      border-top: 1px solid rgba(121, 169, 255, .35);
+      border-radius: 0;
+      box-shadow: 0 -10px 24px rgba(0,0,0,.35);
+      padding: calc(8px * var(--overlay-scale)) calc(10px * var(--overlay-scale));
+      font-size: calc(14px * var(--overlay-scale));
+    }
+    body:not(.relay-active) #overlay::before {
+      content: "";
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      top: 0;
+      height: 3px;
+      border-radius: 8px 8px 0 0;
+      background: linear-gradient(90deg, var(--team1), #93c5fd 56%, var(--team2));
+      opacity: .95;
+    }
+    /* Play-Cricket relay: compact widget (5 sizes via html.overlay-size-N) */
+    html.overlay-size-1 { --widget-max-w: 210px; --widget-pad: 8px; --widget-name: 8px; --widget-score: 20px; --widget-ov: 9px; --widget-vs: 9px; }
+    html.overlay-size-2 { --widget-max-w: 260px; --widget-pad: 10px; --widget-name: 9px; --widget-score: 24px; --widget-ov: 10px; --widget-vs: 10px; }
+    html.overlay-size-3 { --widget-max-w: 320px; --widget-pad: 12px; --widget-name: 10px; --widget-score: 30px; --widget-ov: 11px; --widget-vs: 11px; }
+    html.overlay-size-4 { --widget-max-w: 380px; --widget-pad: 14px; --widget-name: 11px; --widget-score: 36px; --widget-ov: 12px; --widget-vs: 12px; }
+    html.overlay-size-5 { --widget-max-w: 440px; --widget-pad: 16px; --widget-name: 12px; --widget-score: 42px; --widget-ov: 13px; --widget-vs: 13px; }
+    body.relay-active #overlay {
+      left: 50%;
+      right: auto;
+      top: auto;
+      bottom: max(10px, env(safe-area-inset-bottom, 0px));
+      width: min(var(--widget-max-w, 320px), 92vw);
+      max-width: var(--widget-max-w, 320px);
+      padding: 0;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      transform: translateX(-50%) translate3d(0, 0, 0);
+    }
+    @media (orientation: landscape) {
+      body.relay-active #overlay {
+        left: 50%;
+        right: auto;
+        top: auto;
+        bottom: max(12px, env(safe-area-inset-bottom, 0px));
+        transform: translateX(-50%) translate3d(0, 0, 0);
+      }
+    }
+    body.relay-active #overlay::before { display: none; }
+    body.relay-active #matchTag,
+    body.relay-active #flash,
+    body.relay-active #momentum,
+    body.relay-active #pressureWrap,
+    body.relay-active .statline { display: none !important; }
+    body.relay-active #stale { top: 2px; right: 4px; font-size: 14px; }
+    #stale { position: absolute; right: 12px; top: 8px; color: #ef4444; display: none; }
+    #flash { position: absolute; left: 12px; top: 8px; font-weight: 900; display: none; letter-spacing: .03em; }
+    .muted { color: var(--muted); }
+    .row { margin: 3px 0; white-space: pre-wrap; }
+    .title { font-weight: 800; }
+    .section-title { color: #9ab0d8; font-size: calc(10.5px * var(--overlay-scale)); letter-spacing: .1em; text-transform: uppercase; font-weight: 800; }
+    .result {
+      color: #22c55e;
+      font-weight: 800;
+      letter-spacing: .02em;
+      padding: 4px 8px;
+      border: 1px solid rgba(34,197,94,.35);
+      border-radius: 8px;
+      background: rgba(34,197,94,.11);
+    }
+    .team1 { color: var(--team1); }
+    .team2 { color: var(--team2); }
+    .score-pop { animation: pop .32s ease-out; display: inline-block; }
+    .score-strip {
+      display: grid;
+      grid-template-columns: minmax(260px,1fr) auto minmax(230px,1fr);
+      align-items: stretch;
+      gap: 6px;
+      margin-top: 5px;
+      background: var(--overlay-box-color);
+      border: 1px solid rgba(166, 194, 241, .32);
+      border-radius: 10px;
+      padding: 6px;
+      box-shadow: 0 10px 28px rgba(0,0,0,.45);
+    }
+    .team-box {
+      min-height: 58px;
+      border-radius: 8px;
+      display: grid;
+      align-content: center;
+      gap: 2px;
+      padding: 7px 10px;
+      border: 1px solid rgba(175, 197, 236, .22);
+      background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.03));
+    }
+    .team-box.left { border-left: 4px solid var(--team1); }
+    .team-box.right { border-right: 4px solid var(--team2); text-align: right; }
+    .team-name { font-size: calc(12px * var(--overlay-scale)); font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+    .team-sub { font-size: calc(10px * var(--overlay-scale)); color: #b4c3de; }
+    .team-stat { font-size: calc(13px * var(--overlay-scale)); font-weight: 800; color: #ecf4ff; font-variant-numeric: tabular-nums; }
+    .main-score {
+      border-radius: 9px;
+      border: 1px solid rgba(121, 169, 255, .55);
+      background: linear-gradient(180deg, rgba(38, 74, 150, .9), rgba(19, 45, 105, .88));
+      text-align: center;
+      padding: 6px 12px;
+      min-width: 160px;
+    }
+    .score-title { font-size: calc(11px * var(--overlay-scale)); color: #fef08a; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+    .score-big {
+      font-size: calc(33px * var(--overlay-scale));
+      line-height: .95;
+      font-weight: 950;
+      letter-spacing: .02em;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 1px 0 rgba(0,0,0,.55), 0 0 10px rgba(0,0,0,.22);
+    }
+    .score-meta {
+      font-size: calc(11px * var(--overlay-scale));
+      color: #d7e4fb;
+      margin-top: 3px;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+    .bowler-panel {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 8px;
+    }
+    .balls-row { display:flex; gap:4px; justify-content:flex-end; flex-wrap:wrap; }
+    .ball-chip {
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size: calc(10px * var(--overlay-scale));
+      font-weight: 900;
+      background: rgba(255,255,255,.16);
+      border: 1px solid rgba(201,219,248,.35);
+      color: #eaf2ff;
+    }
+    .ball-chip.w { background: rgba(239,68,68,.35); border-color: rgba(254,202,202,.55); }
+    .ball-chip.f { background: rgba(234,179,8,.3); border-color: rgba(254,240,138,.45); }
+    .ball-chip.s { background: rgba(249,115,22,.32); border-color: rgba(254,215,170,.45); }
+    .statline {
+      margin-top: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .pill {
+      border-radius: 999px;
+      border: 1px solid rgba(178, 201, 240, .3);
+      background: rgba(84, 118, 177, .24);
+      padding: 3px 8px;
+      font-size: calc(10.5px * var(--overlay-scale));
+      font-weight: 800;
+      color: #eaf1ff;
+      letter-spacing: .02em;
+      text-shadow: 0 1px 0 rgba(0,0,0,.35);
+    }
+    #momentum { margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
+    .mom {
+      font-size: calc(11px * var(--overlay-scale));
+      border-radius: 999px;
+      padding: calc(2px * var(--overlay-scale)) calc(7px * var(--overlay-scale));
+      border: 1px solid rgba(171, 193, 230, .23);
+      background: rgba(106, 138, 193, .24);
+      font-weight: 800;
+      text-shadow: 0 1px 0 rgba(0,0,0,.35);
+    }
+    .mom.w { background: rgba(239,68,68,.26); }
+    .mom.f { background: rgba(234,179,8,.24); }
+    .mom.s { background: rgba(249,115,22,.28); }
+    #pressureWrap { margin-top: 5px; height: 6px; border-radius: 999px; background: rgba(255,255,255,.15); overflow: hidden; display: none; }
+    #pressureFill { height: 100%; width: 0%; transition: width .35s ease; background: linear-gradient(90deg,#22c55e,#eab308,#ef4444); }
+    .flash-4 { color: #facc15; text-shadow: 0 0 8px rgba(250,204,21,.5); }
+    .flash-6 { color: #fb923c; text-shadow: 0 0 8px rgba(251,146,60,.6); }
+    .flash-w { color: #ef4444; text-shadow: 0 0 8px rgba(239,68,68,.65); }
+    .theme-neon { --bg: rgba(9,11,26,.96); --fg: #d6f6ff; --muted: #86a8b8; }
+    .theme-neon #overlay { border-color: rgba(85,245,255,.45); box-shadow: 0 0 20px rgba(85,245,255,.18); }
+    .theme-minimal { --bg: rgba(0,0,0,.78); }
+    .theme-minimal #overlay {
+      border-radius: 4px;
+      border-color: rgba(255,255,255,.12);
+      box-shadow: none;
+      left: 0;
+      right: 0;
+      bottom: 0;
+    }
+    .density-compact #overlay { padding: 5px 7px; }
+    .density-compact .score-big { font-size: calc(27px * var(--overlay-scale)); }
+    .density-compact .team-box { min-height: 44px; }
+    /* Play-Cricket relay widget */
+    .relay-widget {
+      background: linear-gradient(165deg, #0f2558 0%, #091842 100%);
+      border: 1px solid rgba(121, 169, 255, .4);
+      border-radius: 14px;
+      box-shadow: 0 14px 40px rgba(0, 0, 0, .55);
+      padding: var(--widget-pad, 12px);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .relay-widget::before {
+      content: "";
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      top: 0;
+      height: 3px;
+      border-radius: 0 0 6px 6px;
+      background: linear-gradient(90deg, var(--team1), #93c5fd 56%, var(--team2));
+    }
+    .relay-widget-stale {
+      font-size: calc(var(--widget-name, 10px) - 1px);
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: #fecaca;
+      margin-bottom: 6px;
+    }
+    .relay-widget-result {
+      font-size: calc(var(--widget-name, 10px) + 1px);
+      font-weight: 800;
+      color: #86efac;
+      margin-bottom: 6px;
+      line-height: 1.25;
+    }
+    .relay-widget-match {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 6px 8px;
+    }
+    .relay-widget-side { min-width: 0; }
+    .relay-widget-side.team2-side { text-align: right; }
+    .relay-widget-name {
+      font-size: var(--widget-name, 10px);
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: #c5d7f5;
+      line-height: 1.2;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .relay-widget-side.team1-side .relay-widget-name { color: var(--team1); filter: brightness(1.15); }
+    .relay-widget-side.team2-side .relay-widget-name { color: var(--team2); filter: brightness(1.1); }
+    .relay-widget-score {
+      font-size: var(--widget-score, 30px);
+      font-weight: 950;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+      margin-top: 4px;
+      text-shadow: 0 1px 0 rgba(0,0,0,.45);
+    }
+    .relay-widget-ov {
+      font-size: var(--widget-ov, 11px);
+      font-weight: 700;
+      color: #8fa6c9;
+      margin-top: 3px;
+      font-variant-numeric: tabular-nums;
+    }
+    .relay-widget-vs {
+      font-size: var(--widget-vs, 11px);
+      font-weight: 900;
+      color: #64748b;
+      letter-spacing: .06em;
+      padding: 0 2px;
+    }
+    .relay-widget-chase {
+      margin-top: 8px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: rgba(34, 197, 94, 0.14);
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      font-size: calc(var(--widget-name, 10px) + 1px);
+      font-weight: 800;
+      color: #ecfdf5;
+    }
+    .relay-widget-wait {
+      font-size: var(--widget-name, 10px);
+      color: #95a7c7;
+      line-height: 1.4;
+      margin-top: 6px;
+    }
+    .relay-widget-chase strong {
+      font-weight: 950;
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+    }
+    .relay-widget-chase .relay-chase-muted {
+      font-weight: 700;
+      color: #b6e9c9;
+    }
+    .relay-board-main { margin-top: 6px; }
+    .relay-board-team {
+      font-size: calc(var(--widget-name, 10px) + 2px);
+      font-weight: 900;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--team1);
+      line-height: 1.2;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .relay-board-total {
+      font-size: calc(var(--widget-score, 30px) + 4px);
+      font-weight: 950;
+      line-height: 1.05;
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+      margin-top: 4px;
+      text-shadow: 0 1px 0 rgba(0,0,0,.45);
+    }
+    .relay-board-meta {
+      font-size: var(--widget-ov, 11px);
+      font-weight: 700;
+      color: #8fa6c9;
+      margin-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .relay-board-batters {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 10px;
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(121, 169, 255, .22);
+      text-align: left;
+    }
+    .relay-board-bat {
+      font-size: calc(var(--widget-name, 10px) + 1px);
+      font-weight: 800;
+      color: #dbeafe;
+      line-height: 1.25;
+      font-variant-numeric: tabular-nums;
+    }
+    .relay-board-bat.on-strike { color: #fff; }
+    .relay-board-bat .bat-name {
+      display: block;
+      font-size: calc(var(--widget-name, 10px) - 1px);
+      font-weight: 700;
+      color: #8fa6c9;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .relay-board-inns1 {
+      margin-top: 8px;
+      font-size: calc(var(--widget-name, 10px));
+      color: #94a3b8;
+      font-weight: 700;
+    }
+    .wk-ios body.relay-active .relay-widget {
+      background: #0d2154;
+      -webkit-transform: translate3d(0, 0, 0);
+    }
+    .wk-ios body.relay-active #overlay {
+      z-index: 2147483646;
+      bottom: max(14px, env(safe-area-inset-bottom, 0px));
+    }
+    @media (orientation: landscape) {
+      .wk-ios body.relay-active #overlay {
+        bottom: max(16px, env(safe-area-inset-bottom, 0px));
+      }
+    }
+    @media (max-width: 720px) {
+      .score-strip { grid-template-columns: 1fr; }
+      .team-box.right { text-align: left; border-right: 1px solid rgba(255,255,255,.14); border-left: 4px solid var(--team2); }
+      .main-score { min-width: 0; }
+      .balls-row { justify-content:flex-start; }
+    }
+    @media (min-width: 1600px) {
+      body:not(.relay-active) #overlay {
+        left: 0; right: 0; bottom: 0;
+        border-radius: 0;
+        border-left: none; border-right: none; border-bottom: none;
+        padding: 9px 16px;
+      }
+      body:not(.relay-active) #overlay::before { border-radius: 0; height: 4px; }
+      .score-strip { grid-template-columns: minmax(170px,1fr) auto minmax(210px,1fr); gap: 12px; }
+      .team-name { font-size: 13px; }
+      .team-sub { font-size: 10.5px; }
+      .score-big { font-size: calc(38px * var(--overlay-scale)); }
+      .score-meta { font-size: calc(12px * var(--overlay-scale)); }
+      .pill { font-size: calc(11px * var(--overlay-scale)); padding: 4px 10px; }
+      .section-title { font-size: calc(11px * var(--overlay-scale)); }
+      .row { font-size: calc(15px * var(--overlay-scale)); }
+    }
+    @keyframes pop {
+      0% { transform: scale(1.0); }
+      45% { transform: scale(1.1); }
+      100% { transform: scale(1.0); }
+    }
+  </style>
+</head>
+<body>
+  <div id="overlay">
+    <div id="stale">●</div>
+    <div id="flash"></div>
+    <div id="matchTag" class="row muted"></div>
+    <div id="content" class="row">Loading...</div>
+    <div id="pressureWrap"><div id="pressureFill"></div></div>
+    <div id="momentum"></div>
+  </div>
+  <script>
+    (function () {
+      const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent || "") ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      if (ios) document.documentElement.classList.add("wk-ios");
+    })();
+
+    let lastData = null;
+    let failCount = 0;
+    let lastBallToken = "";
+    let lastScoreKey = "";
+    let lastRelayKey = "";
+
+    /* ── MOCK DATA (replaces live /score fetch for Lovable preview) ── */
+    const MOCK_DATA = {
+      runs: 142, wickets: 4, overs_display: "22.3", innings: 1,
+      team1: "BMACC", team2: "Hove CC",
+      batting_team: "BMACC", bowling_team: "Hove CC",
+      striker: "A Smith", striker_runs: 45, striker_balls: 38,
+      non_striker: "B Jones", non_striker_runs: 12, non_striker_balls: 10,
+      current_bowler: "C Brown", current_bowler_fig: "2-24",
+      current_over: ["1", "0", "4", "W", "1", "2"],
+      crr: "6.3", rrr: null, runs_needed: null, balls_remaining: null, target: null,
+      match_complete: false, match_result: "",
+      overlay_size: 3, overlay_scale: 1.0, overlay_density: "expanded",
+      theme: "classic", team1_color: "#3b82f6", team2_color: "#facc15",
+      overlay_box_color: "#0b1f56",
+      relay_bundle: { enabled: false }
+    };
+
+    const MATCH_ID = "default";
+    const MATCH_QUERY = `match=${encodeURIComponent(MATCH_ID)}`;
+    function withMatch(url) {
+      const sep = url.includes("?") ? "&" : "?";
+      return `${url}${sep}${MATCH_QUERY}`;
+    }
+
+    const text = (v) => (v === null || v === undefined || v === "" ? "—" : String(v));
+    const pad = (v) => text(v).padEnd(18, " ");
+
+    function abbreviateBmaccTeam(name) {
+      const s = String(name || "").trim();
+      if (!s || s === "—") return null;
+      if (!/^brighton\s+malayalee\s+association\s+cc\b/i.test(s)) return null;
+      if (/\b2nd(\s+xi)?\b/i.test(s) || /\-\s*2nd\b/i.test(s)) return "BMACC 2nd XI";
+      if (/\b1st(\s+xi)?\b/i.test(s) || /\-\s*1st\b/i.test(s)) return "BMACC 1st XI";
+      return "BMACC";
+    }
+    function shortTeamName(name, maxLen = 28) {
+      let s = String(name || "").trim();
+      if (!s || s === "—") return "—";
+      const bmacc = abbreviateBmaccTeam(s);
+      if (bmacc) return bmacc.length > maxLen ? `${bmacc.slice(0, maxLen - 1)}…` : bmacc;
+      s = s.replace(/\s+CC(\s*\([^)]*\))?$/i, "").replace(/\s+-\s+[^-]+$/i, "").trim();
+      if (s.length > maxLen) s = `${s.slice(0, maxLen - 1)}…`;
+      return s;
+    }
+    function applyOverlaySize(data) {
+      const root = document.documentElement;
+      for (let i = 1; i <= 5; i += 1) root.classList.remove(`overlay-size-${i}`);
+      let size = Number(data.overlay_size);
+      if (!Number.isFinite(size) || size < 1 || size > 5) {
+        const sc = Number(data.overlay_scale);
+        size = Number.isFinite(sc) ? Math.min(5, Math.max(1, Math.round(1 + (sc - 0.8) / 0.25))) : 3;
+      }
+      root.classList.add(`overlay-size-${Math.round(size)}`);
+      const sc = Number(data.overlay_scale);
+      const scale = Number.isFinite(sc) ? Math.min(1.8, Math.max(0.8, sc)) : 0.8 + (size - 1) * 0.25;
+      root.style.setProperty("--overlay-scale", String(scale));
+    }
+    function setTheme(data) {
+      const body = document.body;
+      body.classList.remove("theme-classic", "theme-neon", "theme-minimal");
+      const theme = String(data.theme || "classic").toLowerCase();
+      if (theme === "neon") body.classList.add("theme-neon");
+      else if (theme === "minimal") body.classList.add("theme-minimal");
+      else body.classList.add("theme-classic");
+      body.classList.remove("density-compact");
+      if (String(data.overlay_density || "expanded").toLowerCase() === "compact") {
+        body.classList.add("density-compact");
+      }
+      document.documentElement.style.setProperty("--team1", data.team1_color || "#3b82f6");
+      document.documentElement.style.setProperty("--team2", data.team2_color || "#facc15");
+      applyOverlaySize(data);
+      const box = String(data.overlay_box_color || "").trim();
+      document.documentElement.style.setProperty(
+        "--overlay-box-color",
+        /^#[0-9a-fA-F]{6}$/.test(box) ? box : "#0b1f56"
+      );
+    }
+    function renderMomentum(data) {
+      const holder = document.getElementById("momentum");
+      const list = (data.current_over || []).slice(-6);
+      holder.innerHTML = list.map((v) => {
+        const low = String(v).toLowerCase();
+        const cls = low.includes("w") ? "w" : low === "4" ? "f" : low === "6" ? "s" : "";
+        return `<span class="mom ${cls}">${v}</span>`;
+      }).join("");
+    }
+    function renderPressure(data) {
+      const wrap = document.getElementById("pressureWrap");
+      const fill = document.getElementById("pressureFill");
+      const rb = data.relay_bundle || {};
+      if (rb.enabled) { wrap.style.display = "none"; fill.style.width = "0%"; return; }
+      if (data.innings !== 2 || data.rrr === null || data.crr === null) {
+        wrap.style.display = "none"; fill.style.width = "0%"; return;
+      }
+      wrap.style.display = "block";
+      const ratio = Math.max(0, Math.min(2, Number(data.rrr || 0) / Math.max(0.1, Number(data.crr || 0))));
+      fill.style.width = `${Math.round((ratio / 2) * 100)}%`;
+    }
+    function maybeFlash(data) {
+      const token = (data.current_over || [])[data.current_over.length - 1] || "";
+      if (!token || token === lastBallToken) return;
+      lastBallToken = token;
+      const flash = document.getElementById("flash");
+      flash.className = "";
+      if (token.startsWith("4")) { flash.textContent = "FOUR!"; flash.classList.add("flash-4"); }
+      else if (token.startsWith("6")) { flash.textContent = "SIX!"; flash.classList.add("flash-6"); }
+      else if (token.startsWith("W")) { flash.textContent = "WICKET!"; flash.classList.add("flash-w"); }
+      else return;
+      flash.style.display = "block";
+      setTimeout(() => { flash.style.display = "none"; }, 1200);
+    }
+
+    function renderMainScore(data, resultRow) {
+      const scoreKey = `${data.runs}-${data.wickets}`;
+      const popClass = scoreKey !== lastScoreKey ? "score-pop" : "";
+      lastScoreKey = scoreKey;
+      const strikerLine = `${text(data.striker)} ${text(data.striker_runs || "")}${data.striker_balls != null ? ` (${data.striker_balls})` : ""}`.trim();
+      const nonStrikerLine = `${text(data.non_striker)} ${text(data.non_striker_runs || "")}${data.non_striker_balls != null ? ` (${data.non_striker_balls})` : ""}`.trim();
+      const bowlerLine = `${text(data.current_bowler)} ${text(data.current_bowler_fig || "")}`.trim();
+      const overBalls = (data.current_over || []).slice(-6).map((v) => {
+        const low = String(v).toLowerCase();
+        const cls = low.includes("w") ? "w" : low === "4" ? "f" : low === "6" ? "s" : "";
+        return `<span class="ball-chip ${cls}">${text(v)}</span>`;
+      }).join("");
+      const chasePill = data.innings === 2
+        ? `<span class="pill">Need ${text(data.runs_needed)} off ${text(data.balls_remaining)}b</span><span class="pill">RRR ${text(data.rrr)}</span>`
+        : `<span class="pill">CRR ${text(data.crr)}</span>`;
+      return (
+        resultRow +
+        `<div class="score-strip">` +
+          `<div class="team-box left">` +
+            `<div class="team-name team1">${text(data.batting_team)}</div>` +
+            `<div class="team-stat">${strikerLine}</div>` +
+            `<div class="team-sub">${nonStrikerLine}</div>` +
+          `</div>` +
+          `<div class="main-score">` +
+            `<div class="score-title">${text(data.team1 || data.batting_team)} vs ${text(data.team2 || data.bowling_team)}</div>` +
+            `<div class="score-big ${popClass}">${text(data.runs)}/${text(data.wickets)}</div>` +
+            `<div class="score-meta">${text(data.overs_display)} ov${data.innings ? ` · INN ${text(data.innings)}` : ""}</div>` +
+          `</div>` +
+          `<div class="team-box right">` +
+            `<div class="team-name team2">${text(data.bowling_team)}</div>` +
+            `<div class="bowler-panel">` +
+              `<div class="team-sub">${bowlerLine}</div>` +
+              `<div class="balls-row">${overBalls}</div>` +
+            `</div>` +
+            `<div class="team-sub">${data.innings === 2 ? `Target ${text(data.target)}` : "Fielding"}</div>` +
+          `</div>` +
+        `</div>` +
+        `<div class="statline">${chasePill}</div>`
+      );
+    }
+
+    function relayHasScores(snap) {
+      const i1 = snap.innings_1 || {};
+      const i2 = snap.innings_2 || {};
+      const ok = (x) => x && ((x.score != null && String(x.score).trim() !== "") || (x.runs != null && !Number.isNaN(Number(x.runs))));
+      return ok(i1) || ok(i2);
+    }
+    function relayInningsRuns(inv) {
+      if (!inv || typeof inv !== "object") return null;
+      const r = inv.runs;
+      if (r != null && r !== "" && !Number.isNaN(Number(r))) return Number(r);
+      const sc = String(inv.score || "").trim();
+      const m = sc.match(/^(\d+)\s*\/\s*\d+/);
+      if (m) return Number(m[1]);
+      return null;
+    }
+    function relayChaseHtml(i1, i2, s2) {
+      const r1 = relayInningsRuns(i1);
+      const r2 = relayInningsRuns(i2);
+      if (r1 === null || r2 === null) return "";
+      if (!String(s2 || "").trim()) return "";
+      const target = r1 + 1;
+      const need = Math.max(0, target - r2);
+      const tail = r2 >= target
+        ? ` · <span class="relay-chase-muted">Target reached</span>`
+        : ` · <span class="relay-chase-muted">Need ${need} to win</span>`;
+      return `<div class="relay-widget-chase" role="status" aria-live="polite">Target <strong>${text(String(target))}</strong>${tail}</div>`;
+    }
+    function relayMatchResultLine(snap) {
+      const st = text(snap.status || "");
+      if (st !== "—" && /won by/i.test(st)) return `<div class="relay-widget-result">${st}</div>`;
+      return "";
+    }
+    function relayStaleLine(stale) {
+      return stale ? `<div class="relay-widget-stale">Score sync delayed</div>` : "";
+    }
+    function relayWidgetSide(sideClass, team, score, overs, popClass) {
+      const ov = overs && overs !== "—" ? `<div class="relay-widget-ov">${text(overs)} ov</div>` : "";
+      return (
+        `<div class="relay-widget-side ${sideClass}">` +
+          `<div class="relay-widget-name">${shortTeamName(team)}</div>` +
+          `<div class="relay-widget-score ${popClass}">${score || "—"}</div>` +
+          ov +
+        `</div>`
+      );
+    }
+    function formatBatsmanLine(b, fallbackLabel) {
+      if (!b || b.runs == null) return "";
+      const nm = (b.name && String(b.name).trim()) ? String(b.name).trim() : fallbackLabel;
+      const balls = b.balls != null ? ` (${b.balls})` : "";
+      const strike = b.on_strike ? " on-strike" : "";
+      return `<div class="relay-board-bat${strike}"><span class="bat-name">${text(nm)}</span>${text(String(b.runs))}${balls}</div>`;
+    }
+    function renderRelayScoreboard(data, resultRow) {
+      const b = data.relay_bundle || {};
+      const snap = b.snapshot || {};
+      const live = snap.live || {};
+      const errNote = b.last_error ? `<div class="relay-widget-wait" style="color:#fca5a5;">${text(b.last_error)}</div>` : "";
+      if (live.runs == null) return null;
+      const scoreKey = `${live.runs}-${live.wickets}-${live.overs}-${(live.batsman_1||{}).runs}-${(live.batsman_2||{}).runs}`;
+      const popClass = scoreKey !== lastRelayKey ? "score-pop" : "";
+      lastRelayKey = scoreKey;
+      const team = text(live.batting_team || snap.fixture_title || "—");
+      const wk = live.wickets != null ? text(String(live.wickets)) : "0";
+      const total = `<span class="${popClass}">${text(String(live.runs))}/${wk}</span>`;
+      const overs = live.overs ? `${text(live.overs)} ov` : "";
+      const bat1 = formatBatsmanLine(live.batsman_1, "Bat 1");
+      const bat2 = formatBatsmanLine(live.batsman_2, "Bat 2");
+      const batters = (bat1 || bat2) ? `<div class="relay-board-batters">${bat1}${bat2}</div>` : "";
+      let chaseHtml = "";
+      if (live.target != null) {
+        const need = live.runs_required != null ? ` · Need ${text(String(live.runs_required))}` : "";
+        chaseHtml = `<div class="relay-widget-chase" role="status">Target <strong>${text(String(live.target))}</strong>${need}</div>`;
+      } else {
+        chaseHtml = relayChaseHtml(snap.innings_1, snap.innings_2, snap.innings_2?.score);
+      }
+      let inns1Line = "";
+      const i1 = snap.innings_1;
+      if (i1 && i1.score && live.innings_phase === 2) {
+        inns1Line = `<div class="relay-board-inns1">${text(i1.team)} ${text(i1.score)}</div>`;
+      }
+      return (
+        resultRow +
+        `<div class="relay-widget">` +
+          relayStaleLine(b.stale) + relayMatchResultLine(snap) +
+          `<div class="relay-board-main">` +
+            `<div class="relay-board-team">${team}</div>` +
+            `<div class="relay-board-total">${total}</div>` +
+            `<div class="relay-board-meta">${overs}</div>` +
+            batters + inns1Line +
+          `</div>` +
+          chaseHtml + errNote +
+        `</div>`
+      );
+    }
+    function renderRelayScore(data, resultRow) {
+      const b = data.relay_bundle || {};
+      const snap = b.snapshot || {};
+      const board = renderRelayScoreboard(data, resultRow);
+      if (board) return board;
+      const errNote = b.last_error ? `<div class="relay-widget-wait" style="color:#fca5a5;">${text(b.last_error)}</div>` : "";
+      if (!relayHasScores(snap)) {
+        const ft = text(snap.fixture_title || "");
+        const teams = ft !== "—" ? ft : `${text(snap.innings_1?.team || data.team1)} vs ${text(snap.innings_2?.team || data.team2)}`;
+        const startAt = [snap.fixture_date, snap.fixture_start_time].filter((v) => v && String(v).trim()).join(" · ");
+        const startMsg = startAt ? `Starts ${startAt}` : "Awaiting innings score";
+        return resultRow + `<div class="relay-widget">${relayStaleLine(b.stale)}<div class="relay-widget-wait">${shortTeamName(teams, 40)}</div><div class="relay-widget-wait">${startMsg}</div>${errNote}</div>`;
+      }
+      const i1 = snap.innings_1 || {};
+      const i2 = snap.innings_2 || {};
+      const scoreKey = `${i1.score || ""}|${i2.score || ""}|${snap.status || ""}|${b.stale}`;
+      const popClass = scoreKey !== lastRelayKey ? "score-pop" : "";
+      lastRelayKey = scoreKey;
+      const ft = text(snap.fixture_title || "");
+      let t1 = i1.team || data.batting_team || data.team1;
+      let t2 = i2.team || data.bowling_team || data.team2;
+      if ((!t2 || t2 === "—") && ft !== "—" && ft.toLowerCase().includes(" vs ")) {
+        const parts = ft.split(/\s+vs\.?\s+/i);
+        if (parts.length >= 2) { if (!t1 || t1 === "—") t1 = parts[0].trim(); t2 = parts[1].trim(); }
+      }
+      const s1 = i1.score != null ? text(i1.score) : (i1.runs != null ? `${i1.runs}/${i1.wickets}` : "");
+      const s2 = i2.score != null ? text(i2.score) : (i2.runs != null ? `${i2.runs}/${i2.wickets}` : "");
+      const o1 = i1.overs_display || i1.overs;
+      const o2 = i2.overs_display || i2.overs;
+      const chaseHtml = relayChaseHtml(i1, i2, s2);
+      const side1 = relayWidgetSide("team1-side", t1, s1 || "—", o1, popClass);
+      const side2 = relayWidgetSide("team2-side", t2, s2 || "—", o2, "");
+      return resultRow + `<div class="relay-widget">${relayStaleLine(b.stale)}${relayMatchResultLine(snap)}<div class="relay-widget-match">${side1}<div class="relay-widget-vs">vs</div>${side2}</div>${chaseHtml}${errNote}</div>`;
+    }
+    function renderMainScoreBlock(data, resultRow) {
+      const b = data.relay_bundle || {};
+      if (b.enabled) return renderRelayScore(data, resultRow);
+      return renderMainScore(data, resultRow);
+    }
+    function renderOverlay(data) {
+      const rb = data.relay_bundle || {};
+      const relayOn = !!rb.enabled;
+      document.body.classList.toggle("relay-active", relayOn);
+      setTheme(data);
+      const content = document.getElementById("content");
+      const resultRow = (data.match_complete && data.match_result)
+        ? `<div class="row result">${text(data.match_result)}</div>` : "";
+      if (relayOn) { content.innerHTML = renderRelayScore(data, resultRow); return; }
+      maybeFlash(data);
+      renderMomentum(data);
+      renderPressure(data);
+      content.innerHTML = renderMainScoreBlock(data, resultRow);
+    }
+
+    /* ── In production this fetches from /score every 2s.
+          For Lovable preview we render mock data once, then poll live. ── */
+    async function fetchScore() {
+      try {
+        const res = await fetch(withMatch("/score"));
+        if (!res.ok) throw new Error("non-200");
+        lastData = await res.json();
+        failCount = 0;
+        document.getElementById("stale").style.display = "none";
+        renderOverlay(lastData);
+      } catch (e) {
+        failCount += 1;
+        if (failCount >= 3) document.getElementById("stale").style.display = "block";
+        if (lastData) { renderOverlay(lastData); return; }
+        /* Fallback to mock data so Lovable can render the scoreboard */
+        renderOverlay(MOCK_DATA);
+      }
+    }
+
+    fetchScore();
+    setInterval(fetchScore, 2000);
+  </script>
+</body>
+</html>

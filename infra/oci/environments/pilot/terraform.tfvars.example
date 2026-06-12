@@ -1,0 +1,18 @@
+tenancy_ocid     = "ocid1.tenancy.oc1..aaaaaaaazcq3tff6fcexqjypaobay72bsgky2wopr2lqpmkxc26iteu2kqwa"
+user_ocid        = "ocid1.user.oc1..aaaaaaaapknwmquszsip4vlh7ci6ufre6w4fe5mih5wmowrwdkunkhmh5gjq"
+fingerprint      = "aa:bb:cc:..."
+private_key_path = "C:/Users/gkris/.oci/oci_api_key.pem"
+region           = "uk-london-1"
+compartment_id   = "ocid1.compartment.oc1..aaaaaaaasy562rh237qtrxn72cqjlrqlfvtdnf22vqu3zu7iqaxaoedwtsqa"
+
+ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC6IhJMtCHy6mC/ubzU98HIgjUIMQbZCZXjFruBa95373jeYB8hxRM3VjoGRhU3qcT8XsPajtM56lbYyb8liZLKE88nQjJM1rYQLf93pMlojk2kDhQ6QuGyhjxYpuawUZlHmUpqIKO3e1Ih/e4eeNng9hAm51t718UXKxY6EUu6mIwuzjqQKrDX4K3KMzY0BAg3hzxYEPR+k61luMp666Zc4F84oVzyjNA4TVI4WZsa318Ndovt4bq7jzHDqxGslBDZ/myj5YbwVc1wxTLT/Yi4IPFSt0WSJzc7zqxHl0W5VKgkwTzIRQ2Rts8H3lu/4IaaEAWGgBNTDGrwBloWxxzJsRZRqDpA9QRrHpQ/uxYiohbFg33x2PibrH4xrZWIIFO5PfW3WkzbgycCetZqUSdQ0g4GO1pRHZGkAR0ukJjehd1sjNj7Rbfm7rydxmuOH2MViMV+9k9qIyIyOUACilE+zpnxKF1JGGpOi6sDy1qXtgAFdv7tGHnY4pToOYZr3zbvHsPqjm5efBVz2vreK12DH5FdF1P7YOqT3Z4rP5hr2ia+YBbmN9P6fynHI+6d8meKW6CmklMcfcQQxWpbB9bUBtlH2Gq5ZPBkpn2ofu+n3vbJ1ncy8n1Rfp41+h9QLUgE9ajPCN+KPAJVs1JoDzWL/B4RDI6Lpsrudm56q7cGdw== oci-cricket"
+
+github_repo     = "https://github.com/g-krish93/score"
+public_base_url = "https://cricrelay.co.uk/"
+
+# Optional overrides (defaults = Always Free A1: VM.Standard.A1.Flex, 1 OCPU, 6 GB)
+# instance_shape        = "VM.Standard.E2.1.Micro" # Always Free x86 (1 GB RAM — very tight)
+# instance_shape        = "VM.Standard.E4.Flex"    # paid x86 Flex
+# instance_ocpus        = 1
+# instance_memory_gbs   = 6
+# vcn_cidr              = "10.42.0.0/16"

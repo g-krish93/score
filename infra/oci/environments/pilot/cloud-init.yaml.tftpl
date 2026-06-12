@@ -1,0 +1,51 @@
+#cloud-config
+package_update: true
+packages:
+  - python3
+  - python3-pip
+  - git
+  - nginx
+
+write_files:
+  - path: /var/lib/cloud/scripts/per-once/10-cricket-bootstrap.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      dnf install -y python3 python3-pip git nginx
+
+      if [[ ! -d /app/.git ]]; then
+        rm -rf /app
+        git clone ${github_repo} /app
+      fi
+      cd /app
+      pip3 install --break-system-packages --ignore-installed -r requirements.txt
+      chown -R opc:opc /app
+
+      umask 077
+      {
+        echo "PORT=5000"
+        echo "PUBLIC_BASE_URL=${public_base_url}"
+        echo "RELAY_AUTO_POLL=1"
+      } >/app/.env
+      chown opc:opc /app/.env
+
+      if [[ -f /app/deploy/persist-auth-env.sh ]]; then
+        bash /app/deploy/persist-auth-env.sh
+      fi
+
+      if [[ -f /app/deploy/nginx-cricrelay.conf ]]; then
+        install -m 644 /app/deploy/nginx-cricrelay.conf /etc/nginx/conf.d/cricrelay.conf
+      fi
+
+      if [[ -f /app/deploy/cricket.service ]]; then
+        install -m 644 /app/deploy/cricket.service /etc/systemd/system/cricket.service
+      fi
+
+      systemctl daemon-reload
+      systemctl enable cricket nginx
+      systemctl restart cricket || true
+      systemctl restart nginx
+
+runcmd:
+  - /var/lib/cloud/scripts/per-once/10-cricket-bootstrap.sh
