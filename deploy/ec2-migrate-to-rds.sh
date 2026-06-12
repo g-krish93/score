@@ -45,10 +45,11 @@ echo "Found SQLite at: $SQLITE_PATH"
 pip3 install --quiet psycopg2-binary
 
 # Create schema on PostgreSQL first (Flask apply_migrations handles columns)
-cd "$APP"
-python3 - <<'PYEOF'
+# Flask app lives at /app/server/app.py — run from that directory
+cd "$APP/server"
+PYTHONPATH="$APP/server" python3 - <<'PYEOF'
 import os, sys
-sys.path.insert(0, "/app")
+sys.path.insert(0, os.getcwd())
 os.environ.setdefault("FLASK_ENV", "production")
 from app import app, db
 with app.app_context():
@@ -59,6 +60,7 @@ print("Schema ready on PostgreSQL.")
 PYEOF
 
 # Migrate data
+cd "$APP"
 python3 - <<PYEOF
 import os, sqlite3, psycopg2
 
