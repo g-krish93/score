@@ -78,6 +78,10 @@ resource "aws_instance" "cricket" {
     # Tag so Data Lifecycle Manager picks this volume up for daily snapshots (backups.tf).
     tags = { Backup = "cricrelay" }
   }
+
+  lifecycle {
+    ignore_changes = [ami, user_data]
+  }
 }
 
 resource "aws_eip" "cricket_ip" {
