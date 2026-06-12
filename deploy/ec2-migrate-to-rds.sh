@@ -74,7 +74,7 @@ echo "App stopped for data migration."
 pip3 install --quiet psycopg2-binary
 
 python3 << PYEOF
-import sqlite3, psycopg2, os, sys
+import sqlite3, psycopg2, sys
 
 SQLITE_PATH = "$SQLITE_PATH"
 PG_DSN = "$DB_URL"
@@ -84,57 +84,48 @@ sq.row_factory = sqlite3.Row
 pg = psycopg2.connect(PG_DSN)
 cur = pg.cursor()
 
-# Orgs
-rows = sq.execute("SELECT * FROM cricrelay_org").fetchall()
-print(f"Migrating {len(rows)} organisation(s)...")
-for r in rows:
-    d = dict(r)
-    cols = list(d.keys())
-    vals = list(d.values())
-    placeholders = ",".join(["%s"] * len(cols))
-    col_str = ",".join(cols)
-    try:
-        cur.execute(
-            f"INSERT INTO cricrelay_org ({col_str}) VALUES ({placeholders}) ON CONFLICT (id) DO NOTHING",
-            vals,
-        )
-    except Exception as e:
-        print(f"  Skipping org {d.get('id')}: {e}")
-        pg.rollback()
+def bool_cols_for(table):
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name=%s AND data_type='boolean'",
+        (table,),
+    )
+    return {row[0] for row in cur.fetchall()}
 
-pg.commit()
+def migrate_table(table):
+    bools = bool_cols_for(table)
+    rows = sq.execute(f"SELECT * FROM {table}").fetchall()
+    print(f"Migrating {len(rows)} row(s) from {table}...")
+    ok = 0
+    for r in rows:
+        d = dict(r)
+        cols = list(d.keys())
+        vals = [bool(v) if c in bools and v is not None else v
+                for c, v in zip(cols, d.values())]
+        ph = ",".join(["%s"] * len(cols))
+        try:
+            cur.execute(
+                f"INSERT INTO {table} ({','.join(cols)}) VALUES ({ph}) ON CONFLICT (id) DO NOTHING",
+                vals,
+            )
+            ok += 1
+        except Exception as e:
+            print(f"  Skipping {d.get('id')}: {e}")
+            pg.rollback()
+    pg.commit()
+    return len(rows), ok
 
-# Matches
-rows = sq.execute("SELECT * FROM cricrelay_match").fetchall()
-print(f"Migrating {len(rows)} match(es)...")
-for r in rows:
-    d = dict(r)
-    cols = list(d.keys())
-    vals = list(d.values())
-    placeholders = ",".join(["%s"] * len(cols))
-    col_str = ",".join(cols)
-    try:
-        cur.execute(
-            f"INSERT INTO cricrelay_match ({col_str}) VALUES ({placeholders}) ON CONFLICT (id) DO NOTHING",
-            vals,
-        )
-    except Exception as e:
-        print(f"  Skipping match {d.get('id')}: {e}")
-        pg.rollback()
+sq_orgs, ok_orgs = migrate_table("cricrelay_org")
+sq_matches, ok_matches = migrate_table("cricrelay_match")
 
-pg.commit()
-
-# Verify
 cur.execute("SELECT COUNT(*) FROM cricrelay_org"); pg_orgs = cur.fetchone()[0]
 cur.execute("SELECT COUNT(*) FROM cricrelay_match"); pg_matches = cur.fetchone()[0]
-sq_orgs = sq.execute("SELECT COUNT(*) FROM cricrelay_org").fetchone()[0]
-sq_matches = sq.execute("SELECT COUNT(*) FROM cricrelay_match").fetchone()[0]
 
 print(f"Orgs:    SQLite={sq_orgs}  PostgreSQL={pg_orgs}")
 print(f"Matches: SQLite={sq_matches}  PostgreSQL={pg_matches}")
 
 if pg_orgs < sq_orgs or pg_matches < sq_matches:
-    print("WARNING: row count mismatch", file=sys.stderr)
+    print("ERROR: row count mismatch", file=sys.stderr)
     sys.exit(1)
 
 print("Data migration complete.")
