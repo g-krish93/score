@@ -3,8 +3,6 @@ package uk.co.cricrelay.mobile.ui
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,7 +32,6 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -47,7 +44,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,9 +62,14 @@ fun PressableScale(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) AppMotion.PressScale else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "pressableScale",
+    )
     Box(
         modifier = modifier
-            .scale(if (pressed && enabled) 0.97f else 1f)
+            .scale(scale)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -154,17 +158,38 @@ fun StreamTile(
     modifier: Modifier = Modifier,
 ) {
     val borderColor = if (highlighted) AppColors.Live.copy(alpha = 0.5f) else AppColors.GlassBorder
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val haptic = LocalHapticFeedback.current
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) AppMotion.PressScale else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "tileScale",
+    )
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .scale(scale)
             .clip(RoundedCornerShape(AppSpacing.radiusLg))
             .background(AppColors.Surface.copy(alpha = if (highlighted) 0.92f else 0.85f))
             .border(1.dp, borderColor, RoundedCornerShape(AppSpacing.radiusLg))
             .then(
                 if (onLongClick != null) {
-                    Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                    Modifier.combinedClickable(
+                        interactionSource = interaction,
+                        indication = null,
+                        onClick = onClick,
+                        onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onLongClick()
+                        },
+                    )
                 } else {
-                    Modifier.clickable(onClick = onClick)
+                    Modifier.clickable(
+                        interactionSource = interaction,
+                        indication = null,
+                        onClick = onClick,
+                    )
                 },
             ),
     ) {
@@ -201,18 +226,7 @@ fun StatusChip(
     color: Color = if (ok) AppColors.Success else AppColors.Warning,
     pulse: Boolean = false,
 ) {
-    val alpha = if (pulse) {
-        val transition = rememberInfiniteTransition(label = "pulse")
-        val anim by transition.animateFloat(
-            initialValue = 0.6f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-            label = "pulseAlpha",
-        )
-        anim
-    } else {
-        1f
-    }
+    val alpha = rememberPulseAlpha(active = pulse, min = 0.6f, max = 1f, durationMs = 900, label = "statusChip")
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(20.dp))
@@ -253,7 +267,7 @@ fun InfoBanner(
             Spacer(Modifier.width(8.dp))
             Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = AppColors.OnBackground, modifier = Modifier.weight(1f))
             if (onDismiss != null) {
-                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                PressableIconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Outlined.Close, contentDescription = "Dismiss", modifier = Modifier.size(18.dp))
                 }
             }
@@ -281,17 +295,14 @@ fun LiveTimerBadge(elapsedSeconds: Long, paused: Boolean, modifier: Modifier = M
     val mins = elapsedSeconds / 60
     val secs = elapsedSeconds % 60
     val tint = if (paused) AppColors.Warning else AppColors.Live
-    val dotAlpha = if (paused) {
-        1f
-    } else {
-        val transition = rememberInfiniteTransition(label = "liveDot")
-        transition.animateFloat(
-            initialValue = 0.35f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
-            label = "liveDotAlpha",
-        ).value
-    }
+    val livePulse = rememberPulseAlpha(
+        active = !paused,
+        min = 0.35f,
+        max = 1f,
+        durationMs = 700,
+        label = "liveDot",
+    )
+    val dotAlpha = if (paused) 1f else livePulse
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(20.dp))
@@ -337,7 +348,11 @@ fun CameraCircleButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed && enabled) 0.9f else 1f, label = "circleScale")
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.94f else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "circleScale",
+    )
     Box(
         modifier = modifier
             .size(size.dp)
@@ -394,17 +409,24 @@ fun CameraShutterButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed && enabled && !busy) 0.9f else 1f, label = "shutterScale")
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled && !busy) 0.94f else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "shutterScale",
+    )
 
-    val glowAlpha = if (enabled && !live && !busy) {
-        val transition = rememberInfiniteTransition(label = "shutterGlow")
-        transition.animateFloat(
-            initialValue = 0.25f,
-            targetValue = 0.6f,
-            animationSpec = infiniteRepeatable(tween(1300), RepeatMode.Reverse),
-            label = "glow",
-        ).value
-    } else if (live) 0.55f else 0.18f
+    val pulseGlow = rememberPulseAlpha(
+        active = enabled && !live && !busy,
+        min = 0.25f,
+        max = 0.6f,
+        durationMs = 1300,
+        label = "shutterGlow",
+    )
+    val glowAlpha = when {
+        live -> 0.55f
+        busy || !enabled -> 0.18f
+        else -> pulseGlow
+    }
 
     val haloColor = if (live) AppColors.Live else AppColors.Accent
     val ringColor = when {
@@ -482,7 +504,11 @@ fun CameraToolButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.9f else 1f, label = "toolScale")
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "toolScale",
+    )
     Column(
         modifier = modifier
             .scale(scale)
@@ -566,7 +592,11 @@ fun CameraQuickToggle(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, label = "quickToggleScale")
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.96f else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "quickToggleScale",
+    )
     val tint = if (active) AppColors.Accent else Color.White.copy(alpha = 0.9f)
     Row(
         modifier = modifier
@@ -597,11 +627,23 @@ fun DestinationChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) AppMotion.PressScale else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "destChipScale",
+    )
     Row(
         modifier = modifier
+            .scale(scale)
             .clip(RoundedCornerShape(20.dp))
             .background(Color.Black.copy(alpha = 0.45f))
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick,
+            )
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

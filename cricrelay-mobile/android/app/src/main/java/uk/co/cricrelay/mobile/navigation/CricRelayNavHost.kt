@@ -1,5 +1,12 @@
 package uk.co.cricrelay.mobile.navigation
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
+import uk.co.cricrelay.mobile.ui.AppMotion
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
@@ -29,6 +36,32 @@ fun CricRelayNavHost(
             else -> HomeRoute
         },
         modifier = modifier,
+        // Forward pushes slide in from the right; pops slide back out — with a soft
+        // fade so screens never hard-cut.
+        enterTransition = {
+            slideIntoContainer(
+                AnimatedContentTransitionScope.SlideDirection.Start,
+                animationSpec = tween(AppMotion.NavEnterMs, easing = AppMotion.EaseOut),
+            ) + fadeIn(AppMotion.enterSpec(AppMotion.NavEnterMs))
+        },
+        exitTransition = {
+            slideOutOfContainer(
+                AnimatedContentTransitionScope.SlideDirection.Start,
+                animationSpec = tween(AppMotion.NavExitMs, easing = AppMotion.EaseOut),
+            ) + fadeOut(AppMotion.exitSpec(AppMotion.NavExitMs))
+        },
+        popEnterTransition = {
+            slideIntoContainer(
+                AnimatedContentTransitionScope.SlideDirection.End,
+                animationSpec = tween(AppMotion.NavEnterMs, easing = AppMotion.EaseOut),
+            ) + fadeIn(AppMotion.enterSpec(AppMotion.NavEnterMs))
+        },
+        popExitTransition = {
+            slideOutOfContainer(
+                AnimatedContentTransitionScope.SlideDirection.End,
+                animationSpec = tween(AppMotion.NavExitMs, easing = AppMotion.EaseOut),
+            ) + fadeOut(AppMotion.exitSpec(AppMotion.NavExitMs))
+        },
     ) {
         composable<LoginRoute> {
             LoginScreen(
@@ -87,7 +120,22 @@ fun CricRelayNavHost(
                 onBack = { navController.popBackStack() },
             )
         }
-        composable<StudioRoute> { entry ->
+        composable<StudioRoute>(
+            // The studio "grows" out of the tapped tile: zoom + fade instead of a slide,
+            // so entering the camera feels like stepping into the broadcast.
+            enterTransition = {
+                scaleIn(
+                    initialScale = AppMotion.EnterScale,
+                    animationSpec = AppMotion.enterSpec(280),
+                ) + fadeIn(AppMotion.enterSpec(280))
+            },
+            popExitTransition = {
+                scaleOut(
+                    targetScale = AppMotion.ExitScale,
+                    animationSpec = AppMotion.exitSpec(220),
+                ) + fadeOut(AppMotion.exitSpec(220))
+            },
+        ) { entry ->
             val route = entry.toRoute<StudioRoute>()
             StudioScreen(
                 matchSlug = route.matchSlug,

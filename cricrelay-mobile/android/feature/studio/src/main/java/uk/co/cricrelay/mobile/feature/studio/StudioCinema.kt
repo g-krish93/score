@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.co.cricrelay.mobile.ui.AppColors
+import uk.co.cricrelay.mobile.ui.AppMotion
 import uk.co.cricrelay.mobile.ui.AppSpacing
 import uk.co.cricrelay.mobile.ui.AppTypography
 import uk.co.cricrelay.mobile.ui.GhostButton
@@ -78,8 +79,14 @@ fun GoLiveCountdown(
         AnimatedContent(
             targetState = count,
             transitionSpec = {
-                (fadeIn(tween(180)) + scaleIn(initialScale = 1.7f, animationSpec = tween(280))) togetherWith
-                    (fadeOut(tween(140)) + scaleOut(targetScale = 0.6f, animationSpec = tween(140)))
+                (fadeIn(AppMotion.enterSpec(200)) + scaleIn(
+                    initialScale = 1.12f,
+                    animationSpec = AppMotion.enterSpec(220),
+                )) togetherWith
+                    (fadeOut(AppMotion.exitSpec(140)) + scaleOut(
+                        targetScale = AppMotion.ExitScale,
+                        animationSpec = AppMotion.exitSpec(140),
+                    ))
             },
             label = "goLiveCount",
         ) { n ->

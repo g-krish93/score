@@ -1,5 +1,8 @@
 package uk.co.cricrelay.mobile.ui
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
@@ -69,6 +72,44 @@ object AppSpacing {
 
     /** Minimum comfortable touch target (Material guidance, Fitts's law). */
     val touchTarget = 48.dp
+}
+
+/**
+ * Shared motion tokens — strong ease-out for enters, faster exits, press feedback ≤160ms.
+ * Nothing scales from zero; entrances start at [EnterScale] so elements feel physically present.
+ */
+object AppMotion {
+    val EaseOut = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
+    val EaseInOut = CubicBezierEasing(0.77f, 0f, 0.175f, 1f)
+
+    const val PressMs = 160
+    const val ExitMs = 160
+    const val EnterMs = 240
+    const val SheetEnterMs = 260
+    const val SheetExitMs = 180
+    const val NavEnterMs = 260
+    const val NavExitMs = 180
+    const val MoodMs = 1200
+    const val MoodReducedMs = 320
+
+    /** Minimum visible scale for enter animations — never pop from nothing. */
+    const val EnterScale = 0.95f
+    const val ExitScale = 0.96f
+    const val PressScale = 0.97f
+
+    fun pressFloatSpec(): FiniteAnimationSpec<Float> = tween(PressMs, easing = EaseOut)
+
+    fun enterSpec(durationMs: Int = EnterMs): FiniteAnimationSpec<Float> =
+        tween(durationMs, easing = EaseOut)
+
+    fun exitSpec(durationMs: Int = ExitMs): FiniteAnimationSpec<Float> =
+        tween(durationMs, easing = EaseOut)
+
+    fun colorSpec(durationMs: Int = EnterMs): FiniteAnimationSpec<Color> =
+        tween(durationMs, easing = EaseOut)
+
+    fun moodColorSpec(reducedMotion: Boolean): FiniteAnimationSpec<Color> =
+        tween(if (reducedMotion) MoodReducedMs else MoodMs, easing = EaseOut)
 }
 
 private val DarkScheme = darkColorScheme(

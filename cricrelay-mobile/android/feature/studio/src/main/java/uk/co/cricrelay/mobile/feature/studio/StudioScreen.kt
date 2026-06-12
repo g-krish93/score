@@ -33,6 +33,8 @@ import uk.co.cricrelay.mobile.ui.CricRelayBottomSheet
 import uk.co.cricrelay.mobile.ui.ErrorBanner
 import uk.co.cricrelay.mobile.ui.LoadingState
 import uk.co.cricrelay.mobile.ui.PrimaryButton
+import uk.co.cricrelay.mobile.ui.BackdropMood
+import uk.co.cricrelay.mobile.ui.StudioBackdrop
 
 @Composable
 fun StudioScreen(
@@ -148,19 +150,19 @@ fun StudioScreen(
                 }
             }
             state.match == null -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(
-                        modifier = Modifier.padding(AppSpacing.lg),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                StudioBackdrop(mood = BackdropMood.Caution) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        ErrorBanner(state.error ?: "Could not open this stream")
-                        Spacer(Modifier.height(AppSpacing.lg))
-                        PrimaryButton(text = "Back", onClick = onBack)
+                        Column(
+                            modifier = Modifier.padding(AppSpacing.lg),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            ErrorBanner(state.error ?: "Could not open this stream")
+                            Spacer(Modifier.height(AppSpacing.lg))
+                            PrimaryButton(text = "Back", onClick = onBack)
+                        }
                     }
                 }
             }
@@ -259,8 +261,6 @@ fun StudioScreen(
         onDismiss = viewModel::closeSheet,
     ) {
         StudioMenuSheet(
-            prefs = state.overlayPrefs,
-            onSave = viewModel::updateOverlayPrefs,
             onRestartPreview = viewModel::prepareCamera,
             onDismiss = viewModel::closeSheet,
         )

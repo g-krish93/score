@@ -15,21 +15,24 @@ import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import android.os.ParcelUuid
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.IOException
 import java.nio.charset.Charset
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,7 +52,7 @@ data class PcsBleUiState(
 class PcsBleRelayManager @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
-    private val handler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val http = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(12, TimeUnit.SECONDS)
@@ -155,7 +158,7 @@ class PcsBleRelayManager @Inject constructor(
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             val connected = newState == BluetoothProfile.STATE_CONNECTED
-            handler.post {
+            scope.launch {
                 _state.update {
                     it.copy(
                         status = if (connected) {
@@ -215,7 +218,7 @@ class PcsBleRelayManager @Inject constructor(
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartFailure(errorCode: Int) {
-            handler.post {
+            scope.launch {
                 _state.update { it.copy(status = "Advertise failed ($errorCode)") }
             }
         }
@@ -223,17 +226,20 @@ class PcsBleRelayManager @Inject constructor(
 
     private fun onPacket(data: ByteArray) {
         val line = decodePacket(data) ?: return
-        synchronized(recentPackets) {
+        val recentSnapshot = synchronized(recentPackets) {
             recentPackets.addFirst(line)
             while (recentPackets.size > 12) recentPackets.removeLast()
+            recentPackets.toList()
         }
-        _state.update {
-            it.copy(
-                packetCount = it.packetCount + 1,
-                recentPackets = recentPackets.toList(),
-            )
+        scope.launch {
+            _state.update {
+                it.copy(
+                    packetCount = it.packetCount + 1,
+                    recentPackets = recentSnapshot,
+                )
+            }
+            postToServer(line)
         }
-        postToServer(line)
     }
 
     private fun decodePacket(data: ByteArray): String? {
@@ -250,7 +256,7 @@ class PcsBleRelayManager @Inject constructor(
 
     private fun looksLikePcs(s: String) = s.length >= 3 && s.substring(0, 3).all { it.isLetter() }
 
-    private fun postToServer(line: String) {
+    private suspend fun postToServer(line: String) {
         val url = _state.value.ingestUrl
         if (url.isBlank()) return
         val token = _state.value.bearerToken
@@ -263,26 +269,22 @@ class PcsBleRelayManager @Inject constructor(
                 if (token.startsWith("Bearer ")) token else "Bearer $token",
             )
         }
-        http.newCall(builder.build()).enqueue(object : okhttp3.Callback {
-            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
-                handler.post {
-                    _state.update { it.copy(postFail = it.postFail + 1, status = "POST failed: ${e.message}") }
-                }
+        try {
+            val response = withContext(Dispatchers.IO) {
+                http.newCall(builder.build()).execute()
             }
-
-            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-                response.close()
-                handler.post {
-                    _state.update {
-                        if (response.isSuccessful) {
-                            it.copy(postedOk = it.postedOk + 1)
-                        } else {
-                            it.copy(postFail = it.postFail + 1, status = "POST HTTP ${response.code}")
-                        }
+            response.use {
+                _state.update {
+                    if (response.isSuccessful) {
+                        it.copy(postedOk = it.postedOk + 1)
+                    } else {
+                        it.copy(postFail = it.postFail + 1, status = "POST HTTP ${response.code}")
                     }
                 }
             }
-        })
+        } catch (e: IOException) {
+            _state.update { it.copy(postFail = it.postFail + 1, status = "POST failed: ${e.message}") }
+        }
     }
 
     private companion object {

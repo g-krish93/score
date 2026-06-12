@@ -31,9 +31,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -49,11 +47,14 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -69,6 +70,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
+import uk.co.cricrelay.mobile.ui.AppMotion
 import uk.co.cricrelay.mobile.ui.AppColors
 import uk.co.cricrelay.mobile.ui.AppGradients
 import uk.co.cricrelay.mobile.ui.AppSpacing
@@ -81,6 +83,10 @@ import uk.co.cricrelay.mobile.ui.GlassPanel
 import uk.co.cricrelay.mobile.ui.InfoBanner
 import uk.co.cricrelay.mobile.ui.LoadingState
 import uk.co.cricrelay.mobile.ui.PrimaryButton
+import uk.co.cricrelay.mobile.ui.PressableIconButton
+import uk.co.cricrelay.mobile.ui.PressableScale
+import uk.co.cricrelay.mobile.ui.PressableTextButton
+import uk.co.cricrelay.mobile.ui.rememberPulseAlpha
 import uk.co.cricrelay.mobile.ui.ScreenTopBar
 import uk.co.cricrelay.mobile.ui.SecondaryButton
 import uk.co.cricrelay.mobile.ui.SectionLabel
@@ -144,21 +150,38 @@ fun HomeScreen(
                     )
                 }
                 Row {
-                    IconButton(onClick = { viewModel.refresh() }) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
+                    PressableIconButton(onClick = { viewModel.refresh() }) {
+                        Icon(
+                            Icons.Outlined.Refresh,
+                            contentDescription = "Refresh",
+                            tint = AppColors.OnBackground,
+                        )
                     }
-                    IconButton(onClick = onOpenPcsBle) {
-                        Icon(Icons.Outlined.Bluetooth, contentDescription = "PCS BLE")
+                    PressableIconButton(onClick = onOpenPcsBle) {
+                        Icon(
+                            Icons.Outlined.Bluetooth,
+                            contentDescription = "PCS BLE",
+                            tint = AppColors.Accent,
+                        )
                     }
                     Box {
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Icon(Icons.Outlined.MoreVert, contentDescription = "Menu")
+                        PressableIconButton(onClick = { menuExpanded = true }) {
+                            Icon(
+                                Icons.Outlined.MoreVert,
+                                contentDescription = "Menu",
+                                tint = AppColors.OnBackground,
+                            )
                         }
                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                             DropdownMenuItem(
                                 text = { Text("Sign out") },
                                 leadingIcon = {
-                                    Icon(Icons.Outlined.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Icon(
+                                        Icons.Outlined.Logout,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                        tint = AppColors.OnBackground,
+                                    )
                                 },
                                 onClick = {
                                     menuExpanded = false
@@ -235,14 +258,16 @@ fun HomeScreen(
                         } else {
                             item { SectionLabel("Your streams") }
                             items(state.streams, key = { it.slug }) { stream ->
-                                StreamTile(
-                                    title = stream.label,
-                                    subtitle = stream.slug,
-                                    chips = streamStatusChips(stream),
-                                    highlighted = stream.broadcast.isStreaming,
-                                    onClick = { onOpenStudio(stream.slug) },
-                                    onLongClick = { viewModel.openManagement(stream.slug, stream.label) },
-                                )
+                                Box(modifier = Modifier.animateItem()) {
+                                    StreamTile(
+                                        title = stream.label,
+                                        subtitle = stream.slug,
+                                        chips = streamStatusChips(stream),
+                                        highlighted = stream.broadcast.isStreaming,
+                                        onClick = { onOpenStudio(stream.slug) },
+                                        onLongClick = { viewModel.openManagement(stream.slug, stream.label) },
+                                    )
+                                }
                             }
                         }
                         item { SectionLabel("YouTube & Twitch") }
@@ -295,14 +320,25 @@ fun HomeScreen(
                 }
             }
 
-            if (state.streams.isNotEmpty()) {
+            AnimatedVisibility(
+                visible = state.streams.isNotEmpty(),
+                enter = fadeIn(AppMotion.enterSpec()) +
+                    scaleIn(
+                        initialScale = AppMotion.EnterScale,
+                        animationSpec = AppMotion.enterSpec(),
+                    ),
+                exit = fadeOut(AppMotion.exitSpec()) +
+                    scaleOut(
+                        targetScale = AppMotion.ExitScale,
+                        animationSpec = AppMotion.exitSpec(),
+                    ),
+                modifier = Modifier.align(Alignment.End),
+            ) {
                 FloatingActionButton(
                     onClick = { createSheet = true },
                     containerColor = AppColors.Primary,
                     contentColor = AppColors.OnPrimary,
-                    modifier = Modifier
-                        .align(Alignment.End)
-                        .padding(AppSpacing.lg),
+                    modifier = Modifier.padding(AppSpacing.lg),
                 ) {
                     Icon(Icons.Outlined.Add, contentDescription = "Create stream")
                 }
@@ -371,7 +407,7 @@ fun HomeScreen(
             title = { Text("Delete this stream?") },
             text = { Text("“${state.renameLabel.ifBlank { state.managementSlug }}” and its overlay settings will be removed. This cannot be undone.") },
             confirmButton = {
-                TextButton(
+                PressableTextButton(
                     onClick = {
                         confirmDelete = false
                         state.managementSlug?.let(viewModel::deleteStream)
@@ -381,7 +417,7 @@ fun HomeScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) {
+                PressableTextButton(onClick = { confirmDelete = false }) {
                     Text("Cancel", color = AppColors.OnBackgroundMuted)
                 }
             },
@@ -399,17 +435,17 @@ private fun ActionCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(AppSpacing.radiusMd))
-            .background(AppColors.SurfaceElevated.copy(alpha = 0.7f))
-            .border(1.dp, AppColors.Border, RoundedCornerShape(AppSpacing.radiusMd))
-            .clickable(onClick = onClick)
-            .padding(AppSpacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
-    ) {
+    PressableScale(onClick = onClick, modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(AppSpacing.radiusMd))
+                .background(AppColors.SurfaceElevated.copy(alpha = 0.7f))
+                .border(1.dp, AppColors.Border, RoundedCornerShape(AppSpacing.radiusMd))
+                .padding(AppSpacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
+        ) {
         Box(
             modifier = Modifier
                 .size(42.dp)
@@ -429,6 +465,7 @@ private fun ActionCard(
             contentDescription = null,
             tint = AppColors.OnBackgroundDim,
         )
+        }
     }
 }
 
@@ -442,31 +479,36 @@ private fun OAuthCard(
     onDisconnect: () -> Unit,
 ) {
     GlassPanel(modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(AppSpacing.radiusSm))
-                    .background(brandColor.copy(alpha = 0.16f)),
-                contentAlignment = Alignment.Center,
+        PressableScale(onClick = onConnect, modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(icon, contentDescription = null, tint = brandColor, modifier = Modifier.size(22.dp))
-            }
-            Spacer(Modifier.width(AppSpacing.md))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = AppTypography.titleMedium)
-                if (status.label.isNotBlank()) {
-                    Text(status.label, style = AppTypography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                        .background(brandColor.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(icon, contentDescription = null, tint = brandColor, modifier = Modifier.size(22.dp))
                 }
+                Spacer(Modifier.width(AppSpacing.md))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(title, style = AppTypography.titleMedium)
+                    if (status.label.isNotBlank()) {
+                        Text(status.label, style = AppTypography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                StatusChip(
+                    label = when {
+                        status.ready -> "Ready"
+                        status.connected -> "Connected"
+                        else -> "Not linked"
+                    },
+                    ok = status.ready || status.connected,
+                )
             }
-            StatusChip(
-                label = when {
-                    status.ready -> "Ready"
-                    status.connected -> "Connected"
-                    else -> "Not linked"
-                },
-                ok = status.ready || status.connected,
-            )
         }
         Spacer(Modifier.height(AppSpacing.md))
         if (status.connected) {
@@ -568,6 +610,19 @@ private fun greeting(): String {
     }
 }
 
+/** Animates an int from 0 up to [target] on first composition, then tracks changes. */
+@Composable
+private fun countUp(target: Int): Int {
+    var started by remember { mutableStateOf(false) }
+    val value by animateIntAsState(
+        targetValue = if (started) target else 0,
+        animationSpec = tween(700),
+        label = "countUp",
+    )
+    LaunchedEffect(Unit) { started = true }
+    return value
+}
+
 /** Glanceable, at-a-glance dashboard row — live count, slot usage, linked destinations. */
 @Composable
 private fun GlanceRow(
@@ -582,20 +637,20 @@ private fun GlanceRow(
     ) {
         GlanceCard(
             modifier = Modifier.weight(1f),
-            value = liveCount.toString(),
+            value = countUp(liveCount).toString(),
             label = "Live now",
             accent = AppColors.Live,
             pulse = liveCount > 0,
         )
         GlanceCard(
             modifier = Modifier.weight(1f),
-            value = "$slotsUsed/$slotsTotal",
+            value = "${countUp(slotsUsed)}/$slotsTotal",
             label = "Streams",
             accent = AppColors.Accent,
         )
         GlanceCard(
             modifier = Modifier.weight(1f),
-            value = linkedCount.toString(),
+            value = countUp(linkedCount).toString(),
             label = "Linked",
             accent = AppColors.AccentBlue,
         )
@@ -610,17 +665,7 @@ private fun GlanceCard(
     modifier: Modifier = Modifier,
     pulse: Boolean = false,
 ) {
-    val glow = if (pulse) {
-        val transition = rememberInfiniteTransition(label = "glance")
-        transition.animateFloat(
-            initialValue = 0.5f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-            label = "glanceGlow",
-        ).value
-    } else {
-        1f
-    }
+    val glow = rememberPulseAlpha(active = pulse, min = 0.5f, max = 1f, durationMs = 900, label = "glance")
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(AppSpacing.radiusLg))
@@ -654,13 +699,7 @@ private fun LiveNowCard(
     subtitle: String,
     onClick: () -> Unit,
 ) {
-    val transition = rememberInfiniteTransition(label = "liveNow")
-    val pulse by transition.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
-        label = "liveNowPulse",
-    )
+    val pulse = rememberPulseAlpha(active = true, min = 0.45f, max = 1f, durationMs = 800, label = "liveNow")
     Box(
         modifier = Modifier
             .fillMaxWidth()

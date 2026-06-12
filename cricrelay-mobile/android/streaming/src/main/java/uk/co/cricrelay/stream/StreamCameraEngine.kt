@@ -45,6 +45,8 @@ object StreamCameraEngine : ConnectChecker {
         val bgColor: String = "",
         val textColor: String = "",
         val opacity: Float = 1.0f,
+        val watermarkEnabled: Boolean = true,
+        val watermarkText: String = "Visit cricrelay.co.uk",
     )
 
     private const val MAX_WIDTH = 1280
@@ -62,7 +64,9 @@ object StreamCameraEngine : ConnectChecker {
     private var appContext: Context? = null
     private var imageFilter: ImageObjectFilterRender? = null
     private var watermarkFilter: ImageObjectFilterRender? = null
-    // TODO(paywall): read from session once Stripe is wired — all users are free for now
+    private var appliedWatermarkText: String? = null
+    // TODO(paywall): once Stripe is wired, free-tier streams force the watermark on
+    // regardless of the admin toggle — for now the toggle in Board Edit wins.
     private const val IS_FREE_USER = true
     private var overlayCapture: OverlayWebViewCapture? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -245,6 +249,7 @@ object StreamCameraEngine : ConnectChecker {
     ): Boolean {
         if (camera?.isStreaming == true) return false
         runOnMainSync {
+            dropStaleGlFilterRefs()
             try {
                 camera?.stopPreview()
             } catch (_: Exception) {
@@ -462,6 +467,9 @@ object StreamCameraEngine : ConnectChecker {
                     CricrelayLog.d("preview ready ${streamWidth}x${streamHeight} onPreview=${camera?.isOnPreview}")
                     activity?.let { CameraPreviewHost.elevateComposeUi(it) }
                     resumeOverlayPreviewIfNeeded()
+                    // Re-establish the watermark after every (re)prepare — covers rotation
+                    // and streams with no scoreboard (where the capture loop never runs).
+                    ensureWatermarkFilter()
                 }
             }
         }
@@ -475,6 +483,7 @@ object StreamCameraEngine : ConnectChecker {
                 overlayUrl = url
             }
             overlayLayout = layout
+            ensureWatermarkFilter()
             if (overlayUrl.isEmpty()) return@runOnMain
             ensureOverlayCapture()?.apply {
                 setStyle(layout.fontScale, layout.bgColor, layout.textColor)
@@ -633,6 +642,7 @@ object StreamCameraEngine : ConnectChecker {
             val previousRotation = streamRotation
             applyActivityRotation()
             if (!cam.isStreaming && previousRotation != streamRotation) {
+                dropStaleGlFilterRefs()
                 try {
                     cam.stopPreview()
                 } catch (_: Exception) {
@@ -640,6 +650,7 @@ object StreamCameraEngine : ConnectChecker {
                 encoderPrepared = false
                 resetFocusState()
             } else {
+                ensureWatermarkFilter()
                 return true
             }
         }
@@ -712,6 +723,9 @@ object StreamCameraEngine : ConnectChecker {
                 "preparePreviewOnMain done: onPreview=$ready in=${streamWidth}x${streamHeight} " +
                     "rot=$streamRotation portrait=$streamIsPortrait encodedFrame=${effW}x${effH}",
             )
+            if (ready) {
+                ensureWatermarkFilter()
+            }
             ready
         } catch (t: Exception) {
             encoderPrepared = false
@@ -769,6 +783,7 @@ object StreamCameraEngine : ConnectChecker {
                 "Go Live re-sync encoder rotation $preparedVideoRotation -> $streamRotation",
             )
             try {
+                dropStaleGlFilterRefs()
                 cam.stopPreview()
                 encoderPrepared = false
                 resetFocusState()
@@ -1002,6 +1017,15 @@ object StreamCameraEngine : ConnectChecker {
         thrown?.let { throw it }
     }
 
+    /**
+     * stopPreview / prepareVideo tears down the GL filter chain; drop refs so the next
+     * ensure* call re-attaches filters instead of reusing detached objects.
+     */
+    private fun dropStaleGlFilterRefs() {
+        watermarkFilter = null
+        imageFilter = null
+    }
+
     private fun clearOverlayFilter() {
         val cam = camera ?: return
         imageFilter?.let { filter ->
@@ -1014,9 +1038,31 @@ object StreamCameraEngine : ConnectChecker {
         clearWatermarkFilter()
     }
 
-    private fun buildWatermarkBitmap(): Bitmap {
-        val w = 480
-        val h = 80
+    private const val WATERMARK_TEXT_SIZE = 34f
+    private const val WATERMARK_BMP_HEIGHT = 80
+    private const val WATERMARK_HEIGHT_PCT = 5.5f
+    // The preview renders AspectRatioMode.Fill (aspect-fill), so the frame edges are cropped
+    // off-screen — portrait crops the sides, landscape crops top/bottom. These keep the
+    // watermark inside the crop-safe zone in BOTH orientations on tall (up to ~22:9) phones:
+    // right edge pulled in from 100%, and pushed down from the very top.
+    private const val WATERMARK_RIGHT_EDGE_PCT = 84f
+    private const val WATERMARK_TOP_PCT = 13f
+    private const val WATERMARK_MAX_WIDTH_PCT = 68f
+
+    private fun watermarkTextPaint(): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        alpha = 200
+        textSize = WATERMARK_TEXT_SIZE
+        isFakeBoldText = true
+        textAlign = Paint.Align.CENTER
+    }
+
+    private fun watermarkBitmapWidth(text: String): Int =
+        (watermarkTextPaint().measureText(text) + 48f).toInt().coerceAtLeast(160)
+
+    private fun buildWatermarkBitmap(text: String): Bitmap {
+        val w = watermarkBitmapWidth(text)
+        val h = WATERMARK_BMP_HEIGHT
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -1024,31 +1070,39 @@ object StreamCameraEngine : ConnectChecker {
             alpha = 130
         }
         canvas.drawRoundRect(0f, 0f, w.toFloat(), h.toFloat(), 14f, 14f, bg)
-        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            alpha = 200
-            textSize = 34f
-            isFakeBoldText = true
-            textAlign = Paint.Align.CENTER
-        }
-        canvas.drawText("cricrelay.co.uk", w / 2f, h / 2f + 12f, text)
+        canvas.drawText(text, w / 2f, h / 2f + 12f, watermarkTextPaint())
         return bmp
     }
 
     private fun ensureWatermarkFilter() {
-        if (!IS_FREE_USER) return
         val cam = camera ?: return
-        if (watermarkFilter != null) return
+        val wantText = overlayLayout.watermarkText.trim()
+        if (!overlayLayout.watermarkEnabled || wantText.isEmpty()) {
+            clearWatermarkFilter()
+            return
+        }
         if (!cam.isOnPreview && !cam.isStreaming) return
-        try {
-            val filter = ImageObjectFilterRender()
-            cam.glInterface.addFilter(filter)
-            filter.setImage(buildWatermarkBitmap())
-            applyWatermarkSprite(filter)
-            watermarkFilter = filter
+        val filter = watermarkFilter ?: try {
+            ImageObjectFilterRender().also {
+                cam.glInterface.addFilter(it)
+                watermarkFilter = it
+            }
         } catch (e: Exception) {
             CricrelayLog.w("Watermark filter failed: ${e.message}")
+            return
         }
+        // Rebuild the bitmap only when the text changes (expensive)…
+        if (appliedWatermarkText != wantText) {
+            try {
+                filter.setImage(buildWatermarkBitmap(wantText))
+                appliedWatermarkText = wantText
+            } catch (e: Exception) {
+                CricrelayLog.w("Watermark image failed: ${e.message}")
+            }
+        }
+        // …but always re-apply the sprite geometry so it tracks orientation / resolution
+        // changes (same cadence as the scoreboard sprite).
+        applyWatermarkSprite(filter)
     }
 
     private fun clearWatermarkFilter() {
@@ -1060,14 +1114,27 @@ object StreamCameraEngine : ConnectChecker {
             }
         }
         watermarkFilter = null
+        appliedWatermarkText = null
     }
 
     private fun applyWatermarkSprite(filter: ImageObjectFilterRender) {
         val canvasW = if (streamIsPortrait) streamHeight else streamWidth
         val canvasH = if (streamIsPortrait) streamWidth else streamHeight
         filter.setDefaultScale(canvasW, canvasH)
-        filter.setScale(22f, 7f)
-        filter.setPosition(76f, 2f)
+        val sprite = WatermarkSpriteLayout.compute(
+            WatermarkSpriteLayout.Params(
+                canvasW = canvasW,
+                canvasH = canvasH,
+                bitmapWidth = watermarkBitmapWidth(appliedWatermarkText ?: ""),
+                bitmapHeight = WATERMARK_BMP_HEIGHT,
+                heightPct = WATERMARK_HEIGHT_PCT,
+                rightEdgePct = WATERMARK_RIGHT_EDGE_PCT,
+                topPct = WATERMARK_TOP_PCT,
+                maxWidthPct = WATERMARK_MAX_WIDTH_PCT,
+            ),
+        )
+        filter.setScale(sprite.scaleX, sprite.scaleY)
+        filter.setPosition(sprite.positionX, sprite.positionY)
     }
 
     private fun ensureOverlayFilter() {

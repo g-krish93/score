@@ -1,6 +1,13 @@
 package uk.co.cricrelay.mobile.feature.studio
 
 import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,17 +28,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.SmartDisplay
 import androidx.compose.material.icons.outlined.SportsEsports
-import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.co.cricrelay.mobile.ui.AppColors
+import uk.co.cricrelay.mobile.ui.AppMotion
 import uk.co.cricrelay.mobile.ui.AppSpacing
 import uk.co.cricrelay.mobile.ui.AppTypography
 import uk.co.cricrelay.mobile.ui.GhostButton
@@ -52,7 +59,6 @@ import uk.co.cricrelay.mobile.ui.LabeledSlider
 import uk.co.cricrelay.mobile.ui.PrimaryButton
 import uk.co.cricrelay.mobile.ui.SecondaryButton
 import uk.co.cricrelay.mobile.ui.SelectableOptionCard
-import uk.co.cricrelay.mobile.ui.SettingRow
 import uk.co.cricrelay.mobile.ui.SheetHeader
 import uk.co.cricrelay.mobile.ui.StudioTextField
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
@@ -101,48 +107,65 @@ fun DestinationSheet(
             onClick = { onSelect(StreamDestination.Custom) },
         )
     }
-    if (state.destination == StreamDestination.Custom) {
-        Spacer(Modifier.height(AppSpacing.md))
-        StudioTextField(
-            value = rtmpUrl,
-            onValueChange = { rtmpUrl = it },
-            label = "RTMP server URL",
-            modifier = Modifier.padding(horizontal = AppSpacing.lg),
-        )
-        Spacer(Modifier.height(AppSpacing.sm))
-        StudioTextField(
-            value = streamKey,
-            onValueChange = { streamKey = it },
-            label = "Stream key",
-            isPassword = true,
-            modifier = Modifier.padding(horizontal = AppSpacing.lg),
-        )
-        Spacer(Modifier.height(AppSpacing.sm))
-        StudioTextField(
-            value = watchUrl,
-            onValueChange = { watchUrl = it },
-            label = "Watch URL (optional)",
-            modifier = Modifier.padding(horizontal = AppSpacing.lg),
-        )
-        Spacer(Modifier.height(AppSpacing.md))
-        PrimaryButton(
-            text = "Save stream key",
-            onClick = {
-                onSaveCustom(rtmpUrl, streamKey, watchUrl)
-                onDismiss()
-            },
-            modifier = Modifier.padding(horizontal = AppSpacing.lg),
-        )
-    } else {
-        Spacer(Modifier.height(AppSpacing.md))
-        PrimaryButton(
-            text = "Use ${state.destination.label}",
-            onClick = {
-                onSelect(state.destination)
-                onDismiss()
-            },
-            modifier = Modifier.padding(horizontal = AppSpacing.lg),
-        )
+    AnimatedVisibility(
+        visible = state.destination == StreamDestination.Custom,
+        enter = expandVertically(
+            animationSpec = tween(AppMotion.SheetEnterMs, easing = AppMotion.EaseOut),
+        ) + fadeIn(AppMotion.enterSpec(AppMotion.SheetEnterMs)),
+        exit = shrinkVertically(
+            animationSpec = tween(AppMotion.SheetExitMs, easing = AppMotion.EaseOut),
+        ) + fadeOut(AppMotion.exitSpec(AppMotion.SheetExitMs)),
+    ) {
+        Column {
+            Spacer(Modifier.height(AppSpacing.md))
+            StudioTextField(
+                value = rtmpUrl,
+                onValueChange = { rtmpUrl = it },
+                label = "RTMP server URL",
+                modifier = Modifier.padding(horizontal = AppSpacing.lg),
+            )
+            Spacer(Modifier.height(AppSpacing.sm))
+            StudioTextField(
+                value = streamKey,
+                onValueChange = { streamKey = it },
+                label = "Stream key",
+                isPassword = true,
+                modifier = Modifier.padding(horizontal = AppSpacing.lg),
+            )
+            Spacer(Modifier.height(AppSpacing.sm))
+            StudioTextField(
+                value = watchUrl,
+                onValueChange = { watchUrl = it },
+                label = "Watch URL (optional)",
+                modifier = Modifier.padding(horizontal = AppSpacing.lg),
+            )
+            Spacer(Modifier.height(AppSpacing.md))
+            PrimaryButton(
+                text = "Save stream key",
+                onClick = {
+                    onSaveCustom(rtmpUrl, streamKey, watchUrl)
+                    onDismiss()
+                },
+                modifier = Modifier.padding(horizontal = AppSpacing.lg),
+            )
+        }
+    }
+    AnimatedVisibility(
+        visible = state.destination != StreamDestination.Custom,
+        enter = fadeIn(AppMotion.enterSpec(AppMotion.SheetEnterMs)),
+        exit = fadeOut(AppMotion.exitSpec(AppMotion.SheetExitMs)),
+    ) {
+        Column {
+            Spacer(Modifier.height(AppSpacing.md))
+            PrimaryButton(
+                text = "Use ${state.destination.label}",
+                onClick = {
+                    onSelect(state.destination)
+                    onDismiss()
+                },
+                modifier = Modifier.padding(horizontal = AppSpacing.lg),
+            )
+        }
     }
 }
 
@@ -189,6 +212,8 @@ fun OverlaySheet(
     var bg by remember { mutableStateOf(prefs.bgColor) }
     var text by remember { mutableStateOf(prefs.textColor) }
     var overlayTheme by remember { mutableStateOf(prefs.theme.ifBlank { "classic" }) }
+    var watermarkEnabled by remember { mutableStateOf(prefs.watermarkEnabled) }
+    var watermarkText by remember { mutableStateOf(prefs.watermarkText) }
 
     SheetHeader(
         title = "Board Edit",
@@ -300,6 +325,42 @@ fun OverlaySheet(
     }
 
     Spacer(Modifier.height(AppSpacing.md))
+
+    // Watermark (admin): burned into the encoded stream, top-right.
+    Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Stream watermark", style = AppTypography.titleSmall)
+                Text(
+                    "Shown top-right on the broadcast",
+                    style = AppTypography.bodySmall,
+                )
+            }
+            Switch(
+                checked = watermarkEnabled,
+                onCheckedChange = { watermarkEnabled = it },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = AppColors.OnPrimary,
+                    checkedTrackColor = AppColors.Primary,
+                    uncheckedThumbColor = AppColors.OnBackgroundDim,
+                    uncheckedTrackColor = AppColors.SurfaceElevated,
+                ),
+            )
+        }
+        if (watermarkEnabled) {
+            Spacer(Modifier.height(AppSpacing.sm))
+            StudioTextField(
+                value = watermarkText,
+                onValueChange = { watermarkText = it },
+                label = "Watermark text",
+            )
+        }
+    }
+
+    Spacer(Modifier.height(AppSpacing.md))
     PrimaryButton(
         text = "Save board",
         onClick = {
@@ -313,6 +374,9 @@ fun OverlaySheet(
                     bgColor = bg,
                     textColor = text,
                     theme = overlayTheme,
+                    watermarkEnabled = watermarkEnabled,
+                    watermarkText = watermarkText.trim()
+                        .ifBlank { OverlayLayoutPrefs.WATERMARK_DEFAULT_TEXT },
                 ),
             )
             onDismiss()
@@ -382,7 +446,25 @@ fun ScoringSheet(
 
 /** One row of the pre-flight checklist: pass/fail icon, label, hint when failing. */
 @Composable
-private fun PreflightRow(label: String, ok: Boolean, hint: String? = null) {
+private fun PreflightRow(label: String, ok: Boolean, index: Int, hint: String? = null) {
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(index * 90L)
+        shown = true
+    }
+    AnimatedVisibility(
+        visible = shown,
+        enter = fadeIn(AppMotion.enterSpec(AppMotion.SheetEnterMs)) +
+            slideInVertically(
+                animationSpec = tween(AppMotion.SheetEnterMs, easing = AppMotion.EaseOut),
+            ) { it / 4 },
+    ) {
+        PreflightRowContent(label = label, ok = ok, hint = hint)
+    }
+}
+
+@Composable
+private fun PreflightRowContent(label: String, ok: Boolean, hint: String? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -426,16 +508,19 @@ fun PreflightSheet(
         PreflightRow(
             label = "Camera ready",
             ok = state.previewReady,
+            index = 0,
             hint = "Wait for the preview, or restart it from the menu",
         )
         PreflightRow(
             label = state.destinationLabel,
             ok = state.destinationReady,
+            index = 1,
             hint = "Set a destination or paste a stream key first",
         )
         PreflightRow(
             label = "Scoreboard on stream",
             ok = state.match?.overlayEmbedUrl?.isNotBlank() == true,
+            index = 2,
             hint = "Overlay URL missing — check the stream setup",
         )
     }
@@ -456,44 +541,10 @@ fun PreflightSheet(
 
 @Composable
 fun StudioMenuSheet(
-    prefs: OverlayLayoutPrefs,
-    onSave: (OverlayLayoutPrefs) -> Unit,
     onRestartPreview: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     SheetHeader(title = "Broadcast menu")
-    Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
-        SettingRow(
-            title = "Video stabilization",
-            subtitle = "Smooths handheld camera shake",
-            icon = Icons.Outlined.Vibration,
-            iconTint = AppColors.Accent,
-        ) {
-            Switch(
-                checked = prefs.videoStabilization,
-                onCheckedChange = { onSave(prefs.copy(videoStabilization = it)) },
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = AppColors.Accent,
-                    checkedThumbColor = Color.White,
-                ),
-            )
-        }
-        SettingRow(
-            title = "Keep screen on",
-            subtitle = "Stops the phone sleeping mid-broadcast",
-            icon = Icons.Outlined.LightMode,
-            iconTint = AppColors.Warning,
-        ) {
-            Switch(
-                checked = prefs.keepScreenOn,
-                onCheckedChange = { onSave(prefs.copy(keepScreenOn = it)) },
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = AppColors.Accent,
-                    checkedThumbColor = Color.White,
-                ),
-            )
-        }
-    }
     Spacer(Modifier.height(AppSpacing.sm))
     SecondaryButton(
         text = "Restart camera preview",

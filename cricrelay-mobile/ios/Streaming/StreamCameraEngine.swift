@@ -15,6 +15,8 @@ final class StreamCameraEngine: NSObject {
         var anchorY: Float = 0.85
         var bottomMarginFraction: Float = 0.02
         var horizontalInsetFraction: Float = 0.02
+        var watermarkEnabled: Bool = true
+        var watermarkText: String = "Visit cricrelay.co.uk"
     }
 
     private let mixer = MediaMixer()
@@ -24,6 +26,8 @@ final class StreamCameraEngine: NSObject {
     private var overlayCapture: OverlayWebViewCapture?
     private var overlayTimer: Timer?
     private var overlayObject: ImageScreenObject?
+    private var watermarkObject: ImageScreenObject?
+    private var appliedWatermarkText: String?
     private var overlayLayout = OverlayLayout()
     private var overlayUrl = ""
     private var streamWidth = 1280
@@ -99,6 +103,7 @@ final class StreamCameraEngine: NSObject {
             if !overlayUrl.isEmpty {
                 overlayCapture?.loadUrl(overlayUrl)
             }
+            await ensureWatermarkObject()
             previewReady = true
             emit("preview_ready", "\(width)x\(height)")
         } catch {
@@ -117,7 +122,10 @@ final class StreamCameraEngine: NSObject {
         overlayUrl = url
         overlayLayout = layout
         overlayCapture?.loadUrl(url)
-        Task { await ensureOverlayObject() }
+        Task {
+            await ensureOverlayObject()
+            await ensureWatermarkObject()
+        }
     }
 
     func startStream(
@@ -163,6 +171,7 @@ final class StreamCameraEngine: NSObject {
                 overlayCapture?.loadUrl(overlayUrl)
             }
             await ensureOverlayObject()
+            await ensureWatermarkObject()
             startOverlayRefresh()
 
             let (base, name) = splitRtmp(endpoint)
@@ -288,6 +297,61 @@ final class StreamCameraEngine: NSObject {
             }
             applyOverlayLayout()
         }.value
+    }
+
+    /// Adds (or refreshes) the brand watermark in the top-right of the encoded frame.
+    /// Removed when disabled or text is blank.
+    private func ensureWatermarkObject() async {
+        let enabled = overlayLayout.watermarkEnabled
+        let text = overlayLayout.watermarkText.trimmingCharacters(in: .whitespaces)
+        if !enabled || text.isEmpty {
+            await Task { @ScreenActor in
+                if let obj = watermarkObject {
+                    try? await mixer.screen.removeChild(obj)
+                    watermarkObject = nil
+                    appliedWatermarkText = nil
+                }
+            }.value
+            return
+        }
+        guard appliedWatermarkText != text || watermarkObject == nil else { return }
+        guard let cg = buildWatermarkImage(text)?.cgImage else { return }
+        await Task { @ScreenActor in
+            if watermarkObject == nil {
+                let obj = ImageScreenObject()
+                obj.horizontalAlignment = .right
+                obj.verticalAlignment = .top
+                obj.layoutMargin = UIEdgeInsets(top: 18, left: 0, bottom: 0, right: 18)
+                watermarkObject = obj
+                try? await mixer.screen.addChild(obj)
+            }
+            watermarkObject?.cgImage = cg
+            appliedWatermarkText = text
+        }.value
+    }
+
+    /// Renders the watermark text onto a translucent rounded pill (white text, ~82%).
+    private func buildWatermarkImage(_ text: String) -> UIImage? {
+        let font = UIFont.systemFont(ofSize: 30, weight: .bold)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: UIColor.white.withAlphaComponent(0.85),
+        ]
+        let textSize = (text as NSString).size(withAttributes: attrs)
+        let padH: CGFloat = 22
+        let padV: CGFloat = 12
+        let size = CGSize(width: textSize.width + padH * 2, height: textSize.height + padV * 2)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            let rect = CGRect(origin: .zero, size: size)
+            let path = UIBezierPath(roundedRect: rect, cornerRadius: 12)
+            UIColor.black.withAlphaComponent(0.5).setFill()
+            path.fill()
+            (text as NSString).draw(
+                at: CGPoint(x: padH, y: padV),
+                withAttributes: attrs
+            )
+        }
     }
 
     @ScreenActor

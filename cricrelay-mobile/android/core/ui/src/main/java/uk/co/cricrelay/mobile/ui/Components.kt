@@ -1,7 +1,13 @@
 package uk.co.cricrelay.mobile.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -16,6 +22,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -78,13 +85,14 @@ fun StudioBackdrop(
     mood: BackdropMood = BackdropMood.Idle,
     content: @Composable () -> Unit,
 ) {
+    val reducedMotion = rememberReducedMotion()
     val auroraA by animateColorAsState(
         targetValue = when (mood) {
             BackdropMood.Idle -> AppColors.Accent
             BackdropMood.OnAir -> AppColors.Primary
             BackdropMood.Caution -> AppColors.Warning
         },
-        animationSpec = tween(1200),
+        animationSpec = AppMotion.moodColorSpec(reducedMotion),
         label = "auroraA",
     )
     val auroraB by animateColorAsState(
@@ -93,22 +101,24 @@ fun StudioBackdrop(
             BackdropMood.OnAir -> AppColors.PrimaryDeep
             BackdropMood.Caution -> AppColors.Error
         },
-        animationSpec = tween(1200),
+        animationSpec = AppMotion.moodColorSpec(reducedMotion),
         label = "auroraB",
     )
     val drift = rememberInfiniteTransition(label = "aurora")
-    val tA by drift.animateFloat(
+    val driftA by drift.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(14000, easing = LinearEasing), RepeatMode.Reverse),
         label = "auroraDriftA",
     )
-    val tB by drift.animateFloat(
+    val driftB by drift.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(19000, easing = LinearEasing), RepeatMode.Reverse),
         label = "auroraDriftB",
     )
+    val tA = if (reducedMotion) 0.35f else driftA
+    val tB = if (reducedMotion) 0.35f else driftB
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -179,6 +189,32 @@ fun ErrorBanner(message: String, modifier: Modifier = Modifier) {
 }
 
 /**
+ * Error banner that slides in instead of snapping. Pass the nullable error straight
+ * from state — the last message is kept so the exit animation doesn't show a blank.
+ */
+@Composable
+fun AnimatedErrorBanner(message: String?, modifier: Modifier = Modifier) {
+    var lastMessage by remember { mutableStateOf(message ?: "") }
+    if (message != null) lastMessage = message
+    AnimatedVisibility(
+        visible = message != null,
+        enter = expandVertically(
+            animationSpec = tween(AppMotion.SheetEnterMs, easing = AppMotion.EaseOut),
+        ) +
+            fadeIn(AppMotion.enterSpec(AppMotion.SheetEnterMs)) +
+            slideInVertically(
+                animationSpec = tween(AppMotion.SheetEnterMs, easing = AppMotion.EaseOut),
+            ) { -it / 4 },
+        exit = shrinkVertically(
+            animationSpec = tween(AppMotion.SheetExitMs, easing = AppMotion.EaseOut),
+        ) +
+            fadeOut(AppMotion.exitSpec(AppMotion.SheetExitMs)),
+    ) {
+        ErrorBanner(lastMessage, modifier)
+    }
+}
+
+/**
  * Primary call-to-action: gradient fill, generous touch target, press-scale feedback.
  * Only one of these should carry a screen's main intent (Hick's law).
  */
@@ -193,7 +229,11 @@ fun PrimaryButton(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val active = enabled && !loading
-    val scale by animateFloatAsState(if (pressed && active) 0.97f else 1f, label = "ctaScale")
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && active) AppMotion.PressScale else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "ctaScale",
+    )
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -245,7 +285,11 @@ fun SecondaryButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed && enabled) 0.97f else 1f, label = "secScale")
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) AppMotion.PressScale else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "secScale",
+    )
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -277,7 +321,11 @@ fun DangerButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed && enabled) 0.97f else 1f, label = "dangerScale")
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) AppMotion.PressScale else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "dangerScale",
+    )
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -299,6 +347,67 @@ fun DangerButton(
     }
 }
 
+/**
+ * Icon button with press-scale feedback. Wraps Material [IconButton] so touch
+ * targets and semantics stay correct.
+ */
+@Composable
+fun PressableIconButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) AppMotion.PressScale else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "iconBtnScale",
+    )
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.scale(scale),
+        enabled = enabled,
+        interactionSource = interaction,
+    ) {
+        content()
+    }
+}
+
+/** Text-only action with press-scale — replaces Material TextButton for consistency. */
+@Composable
+fun PressableTextButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+    content: @Composable () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) AppMotion.PressScale else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "textBtnScale",
+    )
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .clip(RoundedCornerShape(AppSpacing.radiusSm))
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            )
+            .padding(contentPadding),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
+    }
+}
+
 /** Borderless low-emphasis action ("Cancel", "Back"). */
 @Composable
 fun GhostButton(
@@ -306,12 +415,24 @@ fun GhostButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) AppMotion.PressScale else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "ghostScale",
+    )
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(48.dp)
+            .scale(scale)
             .clip(RoundedCornerShape(AppSpacing.radiusMd))
-            .clickable(onClick = onClick),
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Text(text, color = AppColors.OnBackgroundMuted, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
@@ -350,7 +471,7 @@ fun StudioTextField(
         },
         trailingIcon = if (isPassword) {
             {
-                IconButton(onClick = { revealed = !revealed }) {
+                PressableIconButton(onClick = { revealed = !revealed }) {
                     Icon(
                         if (revealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                         contentDescription = if (revealed) "Hide password" else "Show password",
@@ -405,7 +526,7 @@ fun ScreenTopBar(
             .padding(horizontal = AppSpacing.sm, vertical = AppSpacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(AppSpacing.touchTarget)) {
+        PressableIconButton(onClick = onBack, modifier = Modifier.size(AppSpacing.touchTarget)) {
             Icon(
                 Icons.AutoMirrored.Outlined.ArrowBack,
                 contentDescription = "Back",
@@ -443,21 +564,36 @@ fun SelectableOptionCard(
     enabled: Boolean = true,
 ) {
     val borderColor by animateColorAsState(
-        if (selected) AppColors.Accent.copy(alpha = 0.8f) else AppColors.Border,
+        targetValue = if (selected) AppColors.Accent.copy(alpha = 0.8f) else AppColors.Border,
+        animationSpec = AppMotion.colorSpec(),
         label = "optBorder",
     )
     val bgColor by animateColorAsState(
-        if (selected) AppColors.Accent.copy(alpha = 0.08f) else AppColors.SurfaceElevated.copy(alpha = 0.6f),
+        targetValue = if (selected) AppColors.Accent.copy(alpha = 0.08f) else AppColors.SurfaceElevated.copy(alpha = 0.6f),
+        animationSpec = AppMotion.colorSpec(),
         label = "optBg",
+    )
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) AppMotion.PressScale else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "optScale",
     )
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .scale(scale)
             .clip(RoundedCornerShape(AppSpacing.radiusMd))
             .background(bgColor)
             .border(1.dp, borderColor, RoundedCornerShape(AppSpacing.radiusMd))
             .alpha(if (enabled) 1f else 0.45f)
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            )
             .padding(horizontal = AppSpacing.md, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),

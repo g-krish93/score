@@ -1768,3 +1768,83 @@ label.cr-label {
 .cr-dialog::backdrop {
   background: rgba(2, 8, 23, 0.72);
 }
+
+/* ── App download section ─────────────────────────────────────── */
+.cr-section--app .cr-lead {
+  color: var(--cr-muted);
+  margin: 0 0 28px;
+  max-width: 56ch;
+}
+
+.cr-app-cards {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 560px) {
+  .cr-app-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.cr-app-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--cr-border);
+  border-radius: var(--cr-radius);
+  background: var(--cr-card);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.cr-app-card:hover {
+  border-color: var(--cr-border-strong);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+}
+
+.cr-app-card__icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cr-app-card__icon--android {
+  background: rgba(61, 220, 132, 0.14);
+  color: #3ddc84;
+}
+
+.cr-app-card__icon--ios {
+  background: rgba(87, 199, 255, 0.14);
+  color: #57c7ff;
+}
+
+.cr-app-card__body {
+  flex: 1;
+}
+
+.cr-app-card__platform {
+  margin: 0 0 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cr-muted);
+}
+
+.cr-app-card__desc {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--cr-muted);
+  line-height: 1.5;
+}
+
+.cr-app-card .cr-btn {
+  align-self: flex-start;
+  margin-top: auto;
+}

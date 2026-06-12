@@ -3,7 +3,12 @@ package uk.co.cricrelay.mobile.feature.auth
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,7 +43,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -46,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -60,18 +65,30 @@ import uk.co.cricrelay.mobile.ui.AppColors
 import uk.co.cricrelay.mobile.ui.AppGradients
 import uk.co.cricrelay.mobile.ui.AppSpacing
 import uk.co.cricrelay.mobile.ui.AppTypography
-import uk.co.cricrelay.mobile.ui.ErrorBanner
+import uk.co.cricrelay.mobile.ui.AnimatedErrorBanner
 import uk.co.cricrelay.mobile.ui.GhostButton
 import uk.co.cricrelay.mobile.ui.PrimaryButton
+import uk.co.cricrelay.mobile.ui.PressableTextButton
+import uk.co.cricrelay.mobile.ui.rememberReducedMotion
 import uk.co.cricrelay.mobile.ui.StudioBackdrop
 import uk.co.cricrelay.mobile.ui.StudioTextField
 
-/** Glowing brand mark shared by login and onboarding. */
+/** Glowing brand mark shared by login and onboarding. Breathes gently while idle. */
 @Composable
 private fun BrandMark(modifier: Modifier = Modifier, size: Int = 72) {
+    val reducedMotion = rememberReducedMotion()
+    val transition = rememberInfiniteTransition(label = "brandBreathe")
+    val pulse by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.04f,
+        animationSpec = infiniteRepeatable(tween(2600), RepeatMode.Reverse),
+        label = "brandPulse",
+    )
+    val breathe = if (reducedMotion) 1f else pulse
     Box(
         modifier = modifier
             .size(size.dp)
+            .scale(breathe)
             .shadow(
                 elevation = 22.dp,
                 shape = RoundedCornerShape(AppSpacing.radiusLg),
@@ -143,10 +160,8 @@ fun LoginScreen(
                 isPassword = true,
                 leadingIcon = Icons.Outlined.Lock,
             )
-            state.error?.let {
-                Spacer(Modifier.height(AppSpacing.md))
-                ErrorBanner(it)
-            }
+            if (state.error != null) Spacer(Modifier.height(AppSpacing.md))
+            AnimatedErrorBanner(state.error)
             Spacer(Modifier.height(AppSpacing.lg))
             PrimaryButton(
                 text = "Sign in to studio",
@@ -154,7 +169,7 @@ fun LoginScreen(
                 loading = state.loading,
             )
             Spacer(Modifier.height(AppSpacing.md))
-            TextButton(onClick = onSignUp) {
+            PressableTextButton(onClick = onSignUp) {
                 Text(
                     "Don't have an account? Sign up",
                     style = AppTypography.bodyMedium,
@@ -233,10 +248,8 @@ fun RegisterScreen(
                 isPassword = true,
                 leadingIcon = Icons.Outlined.Lock,
             )
-            state.error?.let {
-                Spacer(Modifier.height(AppSpacing.md))
-                ErrorBanner(it)
-            }
+            if (state.error != null) Spacer(Modifier.height(AppSpacing.md))
+            AnimatedErrorBanner(state.error)
             Spacer(Modifier.height(AppSpacing.md))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -257,7 +270,7 @@ fun RegisterScreen(
                         style = AppTypography.bodySmall,
                         color = AppColors.OnBackgroundMuted,
                     )
-                    TextButton(
+                    PressableTextButton(
                         onClick = {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(privacyUrl)))
                         },
@@ -278,7 +291,7 @@ fun RegisterScreen(
                 loading = state.loading,
             )
             Spacer(Modifier.height(AppSpacing.md))
-            TextButton(onClick = onBackToLogin) {
+            PressableTextButton(onClick = onBackToLogin) {
                 Text(
                     "Already have an account? Sign in",
                     style = AppTypography.bodyMedium,

@@ -234,6 +234,9 @@ data class OverlayLayoutPrefs(
     @SerialName("overlay_opacity") val opacity: Double = 1.0,
     @SerialName("video_stabilization") val videoStabilization: Boolean = true,
     @SerialName("keep_screen_on") val keepScreenOn: Boolean = true,
+    // Brand watermark burned into the stream; admin-configurable.
+    @SerialName("watermark_enabled") val watermarkEnabled: Boolean = true,
+    @SerialName("watermark_text") val watermarkText: String = WATERMARK_DEFAULT_TEXT,
 ) {
     /** Reference board size used when tuning default typography. */
     fun clampedWidthFraction(): Double = widthFraction.coerceIn(WIDTH_MIN, WIDTH_MAX)
@@ -260,6 +263,7 @@ data class OverlayLayoutPrefs(
         const val HEIGHT_MAX = 0.28
         const val FONT_MIN = 0.6
         const val FONT_MAX = 2.0
+        const val WATERMARK_DEFAULT_TEXT = "Visit cricrelay.co.uk"
 
         private val validThemes = setOf("classic", "neon", "minimal", "compact", "ai", "stadium")
 
@@ -285,6 +289,9 @@ data class OverlayLayoutPrefs(
             opacity = json.string("overlay_opacity")?.toDoubleOrNull() ?: 1.0,
             videoStabilization = json.bool("video_stabilization") != false,
             keepScreenOn = json.bool("keep_screen_on") != false,
+            watermarkEnabled = json.bool("watermark_enabled") != false,
+            watermarkText = json.string("watermark_text")?.takeIf { it.isNotBlank() }
+                ?: WATERMARK_DEFAULT_TEXT,
         )
     }
 
@@ -302,6 +309,8 @@ data class OverlayLayoutPrefs(
         put("overlay_opacity", opacity)
         put("video_stabilization", videoStabilization)
         put("keep_screen_on", keepScreenOn)
+        put("watermark_enabled", watermarkEnabled)
+        put("watermark_text", watermarkText)
     }
 }
 

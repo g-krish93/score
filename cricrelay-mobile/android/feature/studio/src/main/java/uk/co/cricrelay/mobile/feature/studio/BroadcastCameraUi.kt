@@ -1,5 +1,13 @@
 package uk.co.cricrelay.mobile.feature.studio
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -48,9 +56,11 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.mobile.ui.AppColors
+import uk.co.cricrelay.mobile.ui.AppMotion
 import uk.co.cricrelay.mobile.ui.BroadcastGradientScrim
 import uk.co.cricrelay.mobile.ui.CameraCircleButton
 import uk.co.cricrelay.mobile.ui.CameraQuickToggle
@@ -147,6 +157,9 @@ fun BroadcastCameraUi(
             }
         }
 
+        // Watermark is burned into the camera GL surface (see StreamCameraEngine), so it's
+        // already visible on this preview — no separate Compose overlay needed.
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -196,6 +209,41 @@ fun BroadcastCameraUi(
         }
         state.recap?.let { recap ->
             StreamRecapOverlay(recap = recap, onDismiss = onDismissRecap, onShare = onShare)
+        }
+    }
+}
+
+/**
+ * Pause/resume button that scales + fades in when streaming starts. Extracted to its own
+ * composable so the call sites' Row/Column scope doesn't shadow the plain AnimatedVisibility
+ * overload (the scoped overloads would otherwise win and fail to resolve).
+ */
+@Composable
+private fun PauseReveal(
+    visible: Boolean,
+    paused: Boolean,
+    size: Int,
+    onPause: () -> Unit,
+    modifier: Modifier = Modifier,
+    belowSpacing: Dp = 0.dp,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(AppMotion.enterSpec()) +
+            scaleIn(initialScale = AppMotion.EnterScale, animationSpec = AppMotion.enterSpec()),
+        exit = fadeOut(AppMotion.exitSpec()) +
+            scaleOut(targetScale = AppMotion.ExitScale, animationSpec = AppMotion.exitSpec()),
+        modifier = modifier,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CameraCircleButton(onClick = onPause, size = size) {
+                Icon(
+                    if (paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
+                    contentDescription = "Pause",
+                    tint = Color.White,
+                )
+            }
+            if (belowSpacing > 0.dp) Spacer(Modifier.height(belowSpacing))
         }
     }
 }
@@ -306,23 +354,53 @@ private fun StudioTopBar(
             Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Color.White)
         }
         Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            if (state.streaming) {
-                LiveTimerBadge(state.liveElapsedSeconds, state.paused)
-            } else {
-                DestinationChip(
-                    label = state.destinationLabel,
-                    ready = state.destinationReady,
-                    onClick = onDestination,
-                )
+            AnimatedContent(
+                targetState = state.streaming,
+                transitionSpec = {
+                    (fadeIn(AppMotion.enterSpec()) + scaleIn(
+                        initialScale = AppMotion.EnterScale,
+                        animationSpec = AppMotion.enterSpec(),
+                    )) togetherWith
+                        (fadeOut(AppMotion.exitSpec()) + scaleOut(
+                            targetScale = AppMotion.ExitScale,
+                            animationSpec = AppMotion.exitSpec(),
+                        ))
+                },
+                label = "topBarStatus",
+            ) { streaming ->
+                if (streaming) {
+                    LiveTimerBadge(state.liveElapsedSeconds, state.paused)
+                } else {
+                    DestinationChip(
+                        label = state.destinationLabel,
+                        ready = state.destinationReady,
+                        onClick = onDestination,
+                    )
+                }
             }
         }
-        if (state.streaming && onShare != null) {
-            CameraCircleButton(onClick = onShare) {
-                Icon(Icons.Outlined.IosShare, contentDescription = "Share", tint = Color.White)
-            }
-        } else {
-            CameraCircleButton(onClick = onMenu) {
-                Icon(Icons.Outlined.MoreHoriz, contentDescription = "Menu", tint = Color.White)
+        AnimatedContent(
+            targetState = state.streaming && onShare != null,
+            transitionSpec = {
+                (fadeIn(AppMotion.enterSpec()) + scaleIn(
+                    initialScale = AppMotion.EnterScale,
+                    animationSpec = AppMotion.enterSpec(),
+                )) togetherWith
+                    (fadeOut(AppMotion.exitSpec()) + scaleOut(
+                        targetScale = AppMotion.ExitScale,
+                        animationSpec = AppMotion.exitSpec(),
+                    ))
+            },
+            label = "topBarAction",
+        ) { shareMode ->
+            if (shareMode && onShare != null) {
+                CameraCircleButton(onClick = onShare) {
+                    Icon(Icons.Outlined.IosShare, contentDescription = "Share", tint = Color.White)
+                }
+            } else {
+                CameraCircleButton(onClick = onMenu) {
+                    Icon(Icons.Outlined.MoreHoriz, contentDescription = "Menu", tint = Color.White)
+                }
             }
         }
     }
@@ -366,6 +444,24 @@ private fun StudioStatusMessages(state: StudioUiState, modifier: Modifier = Modi
                     .padding(12.dp),
             )
         }
+    }
+}
+
+/** Shutter caption that crossfades between states instead of snapping. */
+@Composable
+private fun ShutterLabel(state: StudioUiState) {
+    AnimatedContent(
+        targetState = shutterLabel(state),
+        transitionSpec = {
+            fadeIn(AppMotion.enterSpec(250)) togetherWith fadeOut(AppMotion.exitSpec(150))
+        },
+        label = "shutterLabel",
+    ) { label ->
+        Text(
+            label,
+            color = shutterLabelColor(state),
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
@@ -424,15 +520,13 @@ private fun PortraitControls(
                 horizontalArrangement = Arrangement.Center,
             ) {
                 Box(modifier = Modifier.size(72.dp)) {
-                    if (state.streaming) {
-                        CameraCircleButton(onClick = onPause, size = 48, modifier = Modifier.align(Alignment.Center)) {
-                            Icon(
-                                if (state.paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
-                                contentDescription = "Pause",
-                                tint = Color.White,
-                            )
-                        }
-                    }
+                    PauseReveal(
+                        visible = state.streaming,
+                        paused = state.paused,
+                        size = 48,
+                        onPause = onPause,
+                        modifier = Modifier.align(Alignment.Center),
+                    )
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CameraShutterButton(
@@ -442,11 +536,7 @@ private fun PortraitControls(
                         onClick = onShutter,
                     )
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        shutterLabel(state),
-                        color = shutterLabelColor(state),
-                        fontWeight = FontWeight.Bold,
-                    )
+                    ShutterLabel(state)
                 }
                 Spacer(Modifier.size(72.dp))
             }
@@ -523,16 +613,13 @@ private fun LandscapeControls(
                 vertical = true,
             )
             Spacer(Modifier.height(16.dp))
-            if (state.streaming) {
-                CameraCircleButton(onClick = onPause, size = 44) {
-                    Icon(
-                        if (state.paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
-                        contentDescription = "Pause",
-                        tint = Color.White,
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-            }
+            PauseReveal(
+                visible = state.streaming,
+                paused = state.paused,
+                size = 44,
+                onPause = onPause,
+                belowSpacing = 12.dp,
+            )
             CameraShutterButton(
                 live = state.streaming,
                 busy = state.busy,
@@ -540,11 +627,7 @@ private fun LandscapeControls(
                 onClick = onShutter,
             )
             Spacer(Modifier.height(6.dp))
-            Text(
-                shutterLabel(state),
-                color = shutterLabelColor(state),
-                fontWeight = FontWeight.Bold,
-            )
+            ShutterLabel(state)
         }
     }
 }

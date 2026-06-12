@@ -61,5 +61,7 @@ fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.toEngineLayout(): uk.co.cric
         bgColor = bgColor,
         textColor = textColor,
         opacity = opacity.toFloat().coerceIn(0.2f, 1.0f),
+        watermarkEnabled = watermarkEnabled,
+        watermarkText = watermarkText,
     )
 }

@@ -20,7 +20,7 @@
         <a class="cr-btn cr-btn-primary" href="{{ url_for('register_page') }}">Start free</a>
         <a class="cr-btn cr-btn-secondary" href="{{ url_for('login_page') }}">Log in</a>
         {% else %}
-        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard') }}">Open streams</a>
+        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard') }}">Open dashboard</a>
         {% endif %}
       </div>
     </div>
@@ -32,15 +32,15 @@
       <div class="cr-steps">
         <div class="cr-step">
           <h3>1) Register your club</h3>
-          <p>Add club name and Play-Cricket URL one time.</p>
+          <p>Create your club account, then invite teammates with one code — each gets their own login.</p>
         </div>
         <div class="cr-step">
-          <h3>2) Add match ID</h3>
-          <p>Create a live stream from fixture number.</p>
+          <h3>2) Download the app</h3>
+          <p>Install CricRelay on your phone and log in. The phone is your studio — camera, scorecard, go live.</p>
         </div>
         <div class="cr-step">
-          <h3>3) Go live</h3>
-          <p>Open the Stream app and hit Go Live — or paste overlay URL in OBS (advanced).</p>
+          <h3>3) Track it on your dashboard</h3>
+          <p>Every stream is recorded with viewer stats and final score, for the whole club and each member.</p>
         </div>
       </div>
     </div>
@@ -66,18 +66,74 @@
     </div>
   </section>
 
+  <section class="cr-section cr-section--app" id="app">
+    <div class="cr-section-inner">
+      <h2>Get the app</h2>
+      <p class="cr-lead">Broadcast directly from your phone — no laptop, no OBS required.</p>
+      <div class="cr-app-cards">
+
+        {# ── Android ── #}
+        <div class="cr-app-card">
+          <div class="cr-app-card__icon cr-app-card__icon--android">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="32" height="32" aria-hidden="true"><path d="M17.523 15.341a.914.914 0 0 1-.916-.912.913.913 0 0 1 .916-.912.913.913 0 0 1 .916.912.914.914 0 0 1-.916.912Zm-11.046 0a.914.914 0 0 1-.916-.912.913.913 0 0 1 .916-.912.913.913 0 0 1 .916.912.914.914 0 0 1-.916.912ZM17.78 9.32l1.832-3.174a.38.38 0 0 0-.14-.52.383.383 0 0 0-.523.14l-1.855 3.213A11.4 11.4 0 0 0 12 8.06c-1.835 0-3.568.44-5.094 1.22L5.05 6.065a.383.383 0 0 0-.523-.14.38.38 0 0 0-.14.52L6.22 9.32C3.6 10.74 1.84 13.424 1.84 16.5H22.16c0-3.076-1.76-5.76-4.38-7.18Z"/></svg>
+          </div>
+          <div class="cr-app-card__body">
+            <p class="cr-app-card__platform">Android</p>
+            {% if app_builds.android.available %}
+            <p class="cr-app-card__desc">Download the APK — sideload it or open directly on your Android phone.</p>
+            {% else %}
+            <p class="cr-app-card__desc">APK build will be available here once CI publishes it.</p>
+            {% endif %}
+          </div>
+          {% if app_builds.android.available %}
+          <a class="cr-btn cr-btn-primary" href="{{ url_for('download_stream_apk') }}">
+            Download APK
+          </a>
+          {% else %}
+          <span class="cr-btn cr-btn-secondary" aria-disabled="true" style="opacity:.5;cursor:default;">Coming soon</span>
+          {% endif %}
+        </div>
+
+        {# ── iOS ── #}
+        <div class="cr-app-card">
+          <div class="cr-app-card__icon cr-app-card__icon--ios">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="32" height="32" aria-hidden="true"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11Z"/></svg>
+          </div>
+          <div class="cr-app-card__body">
+            <p class="cr-app-card__platform">iPhone &amp; iPad</p>
+            {% if app_builds.ios.ota_install_url %}
+            <p class="cr-app-card__desc">Install directly on your iPhone via Safari — no App Store needed. Tap the button on your iPhone.</p>
+            {% else %}
+            <p class="cr-app-card__desc">Join the TestFlight beta for early access while we prepare the App Store release.</p>
+            {% endif %}
+          </div>
+          {% if app_builds.ios.ota_install_url %}
+          <a class="cr-btn cr-btn-primary" href="{{ app_builds.ios.ota_install_url }}">
+            Install on iPhone
+          </a>
+          {% else %}
+          <a class="cr-btn cr-btn-secondary" href="https://testflight.apple.com/join/PLACEHOLDER" target="_blank" rel="noopener">
+            Join TestFlight
+          </a>
+          {% endif %}
+        </div>
+
+      </div>
+    </div>
+  </section>
+
   <section class="cr-cta-band" aria-label="Primary call to action">
     <div class="cr-cta-inner">
       <div>
         <h2 class="cr-cta-title">Start your first stream</h2>
-        <p class="cr-cta-lead">Register → add match ID → paste overlay link. Done.</p>
+        <p class="cr-cta-lead">Register your club → download the app → go live. Done.</p>
       </div>
       <div class="cr-cta-actions">
         {% if not logged_in %}
         <a class="cr-btn cr-btn-primary" href="{{ url_for('register_page') }}">Start free</a>
         <a class="cr-btn cr-btn-secondary" href="{{ url_for('login_page') }}">Log in</a>
         {% else %}
-        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard') }}">Go to streams</a>
+        <a class="cr-btn cr-btn-primary" href="{{ url_for('dashboard') }}">Go to dashboard</a>
         {% endif %}
       </div>
     </div>

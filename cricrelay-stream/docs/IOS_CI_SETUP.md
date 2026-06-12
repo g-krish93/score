@@ -1,14 +1,39 @@
 # iOS CI signing — full setup guide
 
-GitHub Actions needs **5 secrets** to build an installable iPhone app (IPA). Without them, CI only checks that the iOS project compiles.
+GitHub Actions builds the native SwiftUI `cricrelay-mobile/ios` app. There are **two distribution paths** — choose one or both:
+
+| Path | Who installs | Setup effort |
+|------|-------------|--------------|
+| **TestFlight** ✅ recommended | Any invited tester via TestFlight app | 8 secrets (includes 3 extra ASC API secrets) |
+| **Ad Hoc OTA** (fallback) | Registered iPhones only, via Safari link on cricrelay.co.uk | 5 secrets (original path) |
+
+CI chooses automatically: if `ASC_API_KEY_BASE64` is set → TestFlight; otherwise → Ad Hoc OTA.
+
+---
+
+## Required secrets — both paths
 
 | GitHub secret | What it is | You create it |
 |---------------|------------|---------------|
-| `APPLE_TEAM_ID` | 10-character Apple team ID | Developer portal |
-| `APPLE_CERTIFICATE_BASE64` | Distribution certificate as base64 | Export `.p12` from Keychain |
+| `APPLE_TEAM_ID` | 10-character Apple team ID | Developer portal → Membership |
+| `APPLE_CERTIFICATE_BASE64` | Apple Distribution certificate as base64 | Export `.p12` from Keychain |
 | `APPLE_CERTIFICATE_PASSWORD` | Password you chose when exporting `.p12` | You choose at export |
-| `APPLE_PROVISIONING_PROFILE_BASE64` | Ad Hoc profile as base64 | Developer portal → download |
-| `KEYCHAIN_PASSWORD` | Any long random string | You invent (e.g. `openssl rand -hex 32`) |
+| `KEYCHAIN_PASSWORD` | Any long random string CI uses for a temp keychain | `openssl rand -hex 32` |
+
+## Additional secrets — TestFlight path only
+
+| GitHub secret | What it is | You create it |
+|---------------|------------|---------------|
+| `APPLE_APPSTORE_PROFILE_BASE64` | App Store provisioning profile as base64 | Developer portal → Profiles |
+| `ASC_API_KEY_ID` | App Store Connect API key ID (10 chars) | App Store Connect → Users → Keys |
+| `ASC_API_ISSUER_ID` | API key issuer ID (UUID) | Same page as above |
+| `ASC_API_KEY_BASE64` | API private key `.p8` file as base64 | Download once at creation |
+
+## Additional secret — Ad Hoc OTA path only
+
+| GitHub secret | What it is | You create it |
+|---------------|------------|---------------|
+| `APPLE_PROVISIONING_PROFILE_BASE64` | Ad Hoc provisioning profile as base64 | Developer portal → Profiles |
 
 **App bundle ID (must match):** `uk.co.cricrelay.stream`
 
@@ -209,49 +234,86 @@ When all five are set, the **build-ios** job should produce `static/cricrelay-st
 
 ---
 
-## Part 10 — Install on iPhone
+## Part 10 — App Store Connect API key (TestFlight path only)
 
-1. Sign in to **CricRelay Stream** (or club dashboard on cricrelay.co.uk).
-2. Tap **Install on iPhone** / **iPhone (install)** — must use **Safari**.
-3. Allow the install → **Settings** → **General** → **VPN & Device Management** → trust your developer name.
-4. Open **CricRelay Live**.
+This is what lets CI upload the IPA to TestFlight without a Mac.
 
-If install is blocked, the phone’s UDID is probably not on the Ad Hoc profile.
+1. Open [App Store Connect](https://appstoreconnect.apple.com) → **Users and Access** → **Integrations** → **App Store Connect API**.
+2. Click **+** → Name: `CricRelay CI` → Access: **App Manager** → **Generate**.
+3. **Download the `.p8` file immediately** (you cannot download it again — if lost, generate a new key).
+4. Note the **Key ID** (10 chars, e.g. `ABC1234567`) → GitHub secret `ASC_API_KEY_ID`.
+5. Note the **Issuer ID** (UUID at the top of the Keys page) → GitHub secret `ASC_API_ISSUER_ID`.
+6. Base64 the `.p8` key file on Windows:
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\AuthKey_ABC1234567.p8")) | Set-Clipboard
+   ```
+   → paste into GitHub secret `ASC_API_KEY_BASE64`.
+
+### Create the app record in App Store Connect (first time only)
+
+Before the first TestFlight upload, the app must exist:
+
+1. [App Store Connect](https://appstoreconnect.apple.com) → **My Apps** → **+** → **New App**.
+2. **Platform:** iOS.
+3. **Name:** `CricRelay Live`.
+4. **Bundle ID:** `uk.co.cricrelay.stream` (select from list — must match your App ID from Part 3).
+5. **SKU:** `cricrelay-live` (any unique string).
+6. Create. The app record is ready — you don’t need to fill in screenshots yet.
 
 ---
 
-## Checklist
+## Part 11 — App Store provisioning profile (TestFlight path)
+
+You need a separate **App Store** profile (different from Ad Hoc):
+
+1. Portal → **Profiles** → **+** → **Distribution** → **App Store** → Continue.
+2. **App ID:** `uk.co.cricrelay.stream`.
+3. **Certificate:** select your Apple Distribution cert → Continue.
+4. **Profile name:** `CricRelay Live App Store` → Generate → Download.
+5. Base64 on Windows:
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\CricRelay_Live_App_Store.mobileprovision")) | Set-Clipboard
+   ```
+   → paste into GitHub secret `APPLE_APPSTORE_PROFILE_BASE64`.
+
+---
+
+## Part 12 — Install on iPhone (TestFlight)
+
+1. Testers install the **TestFlight** app from the App Store on their iPhone.
+2. In App Store Connect → **TestFlight** → **Internal Testing** → add testers by Apple ID email.
+3. Testers receive an email invite → open in TestFlight → install **CricRelay Live**.
+
+No UDID registration required. You can invite up to 10,000 external testers after a brief Apple review (~24 hours).
+
+---
+
+## Checklist — TestFlight (recommended)
 
 - [ ] Apple Developer Program active
 - [ ] `APPLE_TEAM_ID` in GitHub
-- [ ] App ID `uk.co.cricrelay.stream` created
-- [ ] All test iPhones registered under **Devices**
+- [ ] App ID `uk.co.cricrelay.stream` registered
 - [ ] Apple Distribution certificate created and exported as `.p12`
-- [ ] `APPLE_CERTIFICATE_BASE64` + `APPLE_CERTIFICATE_PASSWORD` in GitHub
-- [ ] Ad Hoc profile downloaded with app + cert + devices
+- [ ] `APPLE_CERTIFICATE_BASE64` + `APPLE_CERTIFICATE_PASSWORD` + `KEYCHAIN_PASSWORD` in GitHub
+- [ ] App Store provisioning profile downloaded
+- [ ] `APPLE_APPSTORE_PROFILE_BASE64` in GitHub
+- [ ] App Store Connect API key created
+- [ ] `ASC_API_KEY_ID` + `ASC_API_ISSUER_ID` + `ASC_API_KEY_BASE64` in GitHub
+- [ ] App record created in App Store Connect (`uk.co.cricrelay.stream`)
+- [ ] Push to `main` → GitHub Actions **build-ios** job green
+- [ ] TestFlight shows new build — invite testers by email
+
+## Checklist — Ad Hoc OTA (fallback, devices must be pre-registered)
+
+- [ ] Apple Developer Program active
+- [ ] `APPLE_TEAM_ID` in GitHub
+- [ ] All test iPhones registered under **Devices** in developer portal
+- [ ] Apple Distribution certificate + `.p12` exported
+- [ ] `APPLE_CERTIFICATE_BASE64` + `APPLE_CERTIFICATE_PASSWORD` + `KEYCHAIN_PASSWORD` in GitHub
+- [ ] Ad Hoc profile (with registered devices) downloaded
 - [ ] `APPLE_PROVISIONING_PROFILE_BASE64` in GitHub
-- [ ] `KEYCHAIN_PASSWORD` in GitHub
-- [ ] GitHub Actions **build-ios** job green
+- [ ] Push to `main` → **build-ios** job green
 - [ ] Install link works in Safari on a registered iPhone
-
----
-
-## Easier alternative: TestFlight (best for many volunteers, still no Mac)
-
-| | Ad Hoc + OTA | TestFlight |
-|---|--------------|------------|
-| Mac needed? | No (Windows + OpenSSL) | No for day-to-day |
-| Per-phone UDID? | Yes | No — invite by email |
-| Install | Safari link from your site | TestFlight app |
-| First-time setup | 5 GitHub secrets | App Store Connect app record + first upload |
-
-**TestFlight path on Windows:**
-
-1. Create the app in [App Store Connect](https://appstoreconnect.apple.com) (browser, Windows OK).
-2. Still create distribution cert + profile as above **or** let the first upload create them (App Store distribution profile).
-3. After GitHub Actions produces an IPA (once secrets work), download the IPA artifact from Actions.
-4. Install **Transporter** from the [Microsoft Store](https://apps.microsoft.com/detail/9p5zmbj36f6m) on Windows and upload the IPA to App Store Connect.
-5. Add testers by email in TestFlight — they install Apple’s **TestFlight** app on iPhone/iPad.
 
 TestFlight is usually better for **many rotating volunteers**. Ad Hoc is better for **a few club phones** without App Store review wait.
 

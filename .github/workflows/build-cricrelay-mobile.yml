@@ -123,16 +123,222 @@ jobs:
   build-ios:
     needs: validate
     runs-on: macos-14
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # Ad Hoc OTA secrets (existing path)
+      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      # App Store Connect / TestFlight secrets (extra; leave unset to skip TF upload)
+      ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+      ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+      ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
+      # App Store provisioning profile (only required when ASC secrets are set)
+      APPLE_APPSTORE_PROFILE_BASE64: ${{ secrets.APPLE_APPSTORE_PROFILE_BASE64 }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Note on iOS build
-        run: |
-          echo "iOS SwiftUI shell + StreamCamera sources are in cricrelay-mobile/ios/"
-          echo "Wire Xcode project + KMP framework export for signed IPA (see cricrelay-stream/docs/IOS_CI_SETUP.md patterns)"
-
-      - name: Swift compile check (sources present)
+      - name: Verify iOS sources
         run: |
           test -f cricrelay-mobile/ios/CricRelay/CricRelayApp.swift
           test -f cricrelay-mobile/ios/Streaming/StreamCameraEngine.swift
-          echo "iOS sources validated"
+          test -f cricrelay-mobile/ios/project.yml
+          echo "iOS sources OK"
+
+      - name: Detect build mode
+        id: check_secrets
+        run: |
+          if [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_CERTIFICATE_BASE64:-}" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "unsigned=false" >> "$GITHUB_OUTPUT"
+            echo "✅ Signing secrets found — signed build"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "unsigned=true" >> "$GITHUB_OUTPUT"
+            echo "ℹ️  No signing secrets — building unsigned IPA for Sideloadly"
+          fi
+
+      # ── Tooling ────────────────────────────────────────────────────────────
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: cricrelay-mobile/ios
+        run: |
+          APPLE_TEAM_ID="${APPLE_TEAM_ID:-UNSIGNED}" xcodegen generate
+          ls -la CricRelayLive.xcodeproj/
+
+      # ── Code signing ────────────────────────────────────────────────────────
+      - name: Import certificate + provisioning profile
+        if: steps.check_secrets.outputs.unsigned == 'false'
+        run: |
+          set -euo pipefail
+
+          # Write certificate
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > /tmp/distribution.p12
+
+          # Determine which profile to install (App Store > Ad Hoc)
+          if [ -n "${ASC_API_KEY_BASE64:-}" ] && [ -n "${APPLE_APPSTORE_PROFILE_BASE64:-}" ]; then
+            echo "$APPLE_APPSTORE_PROFILE_BASE64" | base64 --decode > /tmp/profile.mobileprovision
+            echo "EXPORT_OPTIONS=cricrelay-mobile/ios/ExportOptionsTestFlight.plist" >> "$GITHUB_ENV"
+            echo "DIST_MODE=testflight" >> "$GITHUB_ENV"
+            echo "PROV_PROFILE_NAME=CricRelay Live App Store" >> "$GITHUB_ENV"
+          else
+            echo "$APPLE_PROVISIONING_PROFILE_BASE64" | base64 --decode > /tmp/profile.mobileprovision
+            echo "EXPORT_OPTIONS=cricrelay-mobile/ios/ExportOptionsAdHoc.plist" >> "$GITHUB_ENV"
+            echo "DIST_MODE=adhoc" >> "$GITHUB_ENV"
+            echo "PROV_PROFILE_NAME=CricRelay Live Ad Hoc" >> "$GITHUB_ENV"
+          fi
+
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import /tmp/distribution.p12 \
+            -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+          # Install provisioning profile
+          PROFILE_UUID=$(security cms -D -i /tmp/profile.mobileprovision \
+            | plutil -extract UUID xml1 - -o - \
+            | xmllint --xpath "//string/text()" -)
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp /tmp/profile.mobileprovision \
+            ~/Library/MobileDevice/Provisioning\ Profiles/"${PROFILE_UUID}".mobileprovision
+          echo "Installed profile ${PROFILE_UUID}"
+
+      # ── Build (signed) ──────────────────────────────────────────────────────
+      - name: Build and archive (signed)
+        if: steps.check_secrets.outputs.unsigned == 'false'
+        working-directory: cricrelay-mobile/ios
+        run: |
+          set -euo pipefail
+
+          xcodebuild archive \
+            -project CricRelayLive.xcodeproj \
+            -scheme CricRelayLive \
+            -configuration Release \
+            -archivePath /tmp/CricRelayLive.xcarchive \
+            APPLE_TEAM_ID="${APPLE_TEAM_ID}" \
+            PROVISIONING_PROFILE_SPECIFIER="${PROV_PROFILE_NAME}" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            DEVELOPMENT_TEAM="${APPLE_TEAM_ID}" \
+            | xcpretty || true
+
+          ls -la /tmp/CricRelayLive.xcarchive/
+
+      - name: Export IPA (signed)
+        if: steps.check_secrets.outputs.unsigned == 'false'
+        run: |
+          set -euo pipefail
+
+          xcodebuild -exportArchive \
+            -archivePath /tmp/CricRelayLive.xcarchive \
+            -exportPath /tmp/ipa-export \
+            -exportOptionsPlist "${EXPORT_OPTIONS}" \
+            APPLE_TEAM_ID="${APPLE_TEAM_ID}" \
+            | xcpretty || true
+
+          IPA_PATH=$(find /tmp/ipa-export -name "*.ipa" | head -1)
+          echo "IPA_PATH=${IPA_PATH}" >> "$GITHUB_ENV"
+          ls -lh "${IPA_PATH}"
+
+      # ── Build (unsigned — for Sideloadly free install) ──────────────────────
+      - name: Build and archive (unsigned)
+        if: steps.check_secrets.outputs.unsigned == 'true'
+        working-directory: cricrelay-mobile/ios
+        run: |
+          set -euo pipefail
+
+          xcodebuild archive \
+            -project CricRelayLive.xcodeproj \
+            -scheme CricRelayLive \
+            -configuration Release \
+            -archivePath /tmp/CricRelayLive.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty || true
+
+          ls -la /tmp/CricRelayLive.xcarchive/
+
+      - name: Package unsigned IPA (for Sideloadly)
+        if: steps.check_secrets.outputs.unsigned == 'true'
+        run: |
+          set -euo pipefail
+
+          APP_PATH=$(find /tmp/CricRelayLive.xcarchive/Products/Applications -name "*.app" | head -1)
+          mkdir -p /tmp/unsigned-payload/Payload
+          cp -r "${APP_PATH}" /tmp/unsigned-payload/Payload/
+          cd /tmp/unsigned-payload
+          zip -r /tmp/CricRelayLive-unsigned.ipa Payload
+          echo "IPA_PATH=/tmp/CricRelayLive-unsigned.ipa" >> "$GITHUB_ENV"
+          ls -lh /tmp/CricRelayLive-unsigned.ipa
+          echo ""
+          echo "✅ Unsigned IPA ready. Install with Sideloadly (sideloadly.io) on Windows."
+
+      # ── Upload: TestFlight ──────────────────────────────────────────────────
+      - name: Set up App Store Connect API key
+        if: steps.check_secrets.outputs.unsigned == 'false' && env.DIST_MODE == 'testflight'
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$ASC_API_KEY_BASE64" | base64 --decode \
+            > ~/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8
+
+      - name: Upload to TestFlight
+        if: steps.check_secrets.outputs.unsigned == 'false' && env.DIST_MODE == 'testflight'
+        run: |
+          set -euo pipefail
+          xcrun altool --upload-app \
+            --type ios \
+            --file "${IPA_PATH}" \
+            --apiKey "${ASC_API_KEY_ID}" \
+            --apiIssuer "${ASC_API_ISSUER_ID}" \
+            --show-progress
+          echo "✅  IPA uploaded to TestFlight. Check App Store Connect to add testers."
+
+      # ── Upload: Ad Hoc OTA (EC2 fallback) ──────────────────────────────────
+      - name: Copy IPA for OTA deployment
+        if: steps.check_secrets.outputs.unsigned == 'false' && env.DIST_MODE == 'adhoc'
+        run: cp "${IPA_PATH}" static/cricrelay-stream.ipa
+
+      - name: Upload IPA to EC2 (ad-hoc OTA)
+        if: steps.check_secrets.outputs.unsigned == 'false' && env.DIST_MODE == 'adhoc'
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_KEY }}
+          source: "static/cricrelay-stream.ipa"
+          target: "/app/static"
+
+      - name: Commit IPA for EC2 git pull (ad-hoc OTA)
+        if: steps.check_secrets.outputs.unsigned == 'false' && env.DIST_MODE == 'adhoc'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add static/cricrelay-stream.ipa
+          if git diff --staged --quiet; then
+            echo "IPA unchanged"
+            exit 0
+          fi
+          git commit -m "chore: update CricRelay iOS IPA (ad-hoc OTA) [skip deploy]"
+          git pull --rebase --autostash origin main
+          git push origin HEAD:main
+
+      # ── Artifact (always — signed or unsigned) ──────────────────────────────
+      - name: Upload IPA artifact
+        if: env.IPA_PATH != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: cricrelay-live-ipa
+          path: ${{ env.IPA_PATH }}
