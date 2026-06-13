@@ -21,7 +21,6 @@ import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlin.math.hypot
 
 /**
  * Camera RTMP + scoreboard overlay (RootEncoder / RtmpCamera2).
@@ -99,12 +98,12 @@ object StreamCameraEngine : ConnectChecker {
     private var deviceTier = DeviceCapabilities.Tier.HIGH
     private var overlayRefreshMs = 500L
     private var surfaceValid = true
+    // True while the encoder renders to the offscreen GL interface (screen locked / app
+    // backgrounded without PiP). Keeps the broadcast alive when the SurfaceView surface is gone.
+    private var backgroundRendering = false
     private var overlayPausedForMemory = false
     private var overlayCaptureInFlight = false
     private var focusLocked = false
-    private var lastFocusTapX = -1f
-    private var lastFocusTapY = -1f
-    private var lastFocusTapAt = 0L
 
     val isStreaming: Boolean
         get() = camera?.isStreaming == true
@@ -150,11 +149,101 @@ object StreamCameraEngine : ConnectChecker {
             }
             surfaceValid = false
             if (camera?.isStreaming == true) {
-                stopOverlayRefresh()
+                // Surface gone while live — keep the encoder fed via the offscreen GL interface
+                // instead of letting the SurfaceView's GL thread starve (the freeze bug).
+                onEnterBackground()
                 return@runOnMain
             }
             encoderPrepared = false
         }
+    }
+
+    /**
+     * Screen locked / app backgrounded without PiP: swap the live encoder from the on-screen
+     * SurfaceView to RootEncoder's offscreen GL interface so frames keep flowing. No-op unless
+     * we're actually streaming. Filters live on the glInterface, so they must be re-attached
+     * after the swap — [reattachBurnInsAfterSwap] does that.
+     */
+    fun onEnterBackground() {
+        runOnMain {
+            val cam = camera ?: return@runOnMain
+            if (!cam.isStreaming || backgroundRendering) return@runOnMain
+            val ctx = appContext ?: return@runOnMain
+            try {
+                stopOverlayRefresh()
+                cam.replaceView(ctx)
+                backgroundRendering = true
+                surfaceValid = false
+                dropStaleGlFilterRefs()
+                CricrelayLog.d("onEnterBackground: encoder -> offscreen GL")
+            } catch (e: Exception) {
+                CricrelayLog.w("onEnterBackground replaceView failed: ${e.message}")
+                return@runOnMain
+            }
+            reattachBurnInsAfterSwap()
+        }
+    }
+
+    /**
+     * Foreground / preview surface restored: swap the live encoder back to the on-screen view.
+     * If no valid surface is available yet, defer to [onPreviewSurfaceReady] which retries once the
+     * SurfaceView reports a usable size.
+     */
+    fun onExitBackground() {
+        runOnMain {
+            if (!backgroundRendering) return@runOnMain
+            if (camera?.isStreaming != true) {
+                backgroundRendering = false
+                return@runOnMain
+            }
+            val view = openGlView ?: return@runOnMain
+            if (!isPreviewSurfaceValid(view) || view.width < 64 || view.height < 64) {
+                view.post { onPreviewSurfaceReady() }
+                return@runOnMain
+            }
+            restoreOnViewRendering(view)
+        }
+    }
+
+    private fun restoreOnViewRendering(view: OpenGlView) {
+        val cam = camera ?: return
+        if (!cam.isStreaming) {
+            backgroundRendering = false
+            return
+        }
+        try {
+            cam.replaceView(view)
+            backgroundRendering = false
+            surfaceValid = true
+            dropStaleGlFilterRefs()
+            CricrelayLog.d("onExitBackground: encoder -> on-screen view")
+        } catch (e: Exception) {
+            CricrelayLog.w("restoreOnViewRendering replaceView failed: ${e.message}")
+            return
+        }
+        activity?.let { CameraPreviewHost.elevateComposeUi(it) }
+        reattachBurnInsAfterSwap()
+    }
+
+    /** After a glInterface swap the scoreboard + watermark filters are gone — rebuild them. */
+    private fun reattachBurnInsAfterSwap() {
+        mainHandler.postDelayed({
+            val cam = camera ?: return@postDelayed
+            if (cam.isStreaming != true) return@postDelayed
+            ensureWatermarkFilter()
+            if (overlayUrl.isNotEmpty() && !streamPaused) {
+                ensureOverlayFilter()
+                if (lastOverlayBitmap != null) applyOverlaySprite()
+                startOverlayRefresh()
+            }
+        }, 300)
+    }
+
+    /** Effective encoded frame size (post rotation swap) — used for the PiP aspect ratio. */
+    fun currentStreamAspect(): Pair<Int, Int> {
+        val w = if (streamIsPortrait) streamHeight else streamWidth
+        val h = if (streamIsPortrait) streamWidth else streamHeight
+        return w.coerceAtLeast(1) to h.coerceAtLeast(1)
     }
 
     /** System low memory — pause expensive overlay capture until restored. */
@@ -189,7 +278,21 @@ object StreamCameraEngine : ConnectChecker {
         appContext = act.applicationContext
         audioManager = act.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         activity = act
-        if (openGlView === view && camera != null) return
+        if (openGlView === view && camera != null) {
+            // Same view re-attached (e.g. returning from background) — restore on-view rendering.
+            if (backgroundRendering) onExitBackground()
+            return
+        }
+        if (camera?.isStreaming == true) {
+            // A live stream must survive a preview re-bind (returning from lock / PiP / navigation).
+            // Never releaseCamera() here — that stops RTMP. Re-point the encoder at the new view.
+            openGlView = view
+            view.setBackgroundColor(Color.TRANSPARENT)
+            view.setAspectRatioMode(AspectRatioMode.Fill)
+            backgroundRendering = true
+            onExitBackground()
+            return
+        }
         if (openGlView !== view) {
             releaseCamera()
         }
@@ -209,6 +312,15 @@ object StreamCameraEngine : ConnectChecker {
 
     fun detachView(view: OpenGlView) {
         if (openGlView !== view) return
+        if (camera?.isStreaming == true) {
+            // Preview surface going away while live (navigated away / Compose disposed):
+            // keep broadcasting from the offscreen GL interface instead of stopping RTMP.
+            runOnMainSync {
+                onEnterBackground()
+                openGlView = null
+            }
+            return
+        }
         runOnMainSync { releaseCamera() }
     }
 
@@ -355,7 +467,6 @@ object StreamCameraEngine : ConnectChecker {
         var ok = false
         runOnMainSync {
             focusLocked = false
-            lastFocusTapAt = 0L
             try {
                 ok = camera?.enableAutoFocus() == true
             } catch (_: Exception) {
@@ -366,12 +477,32 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     /**
-     * Tap once to focus; tap again on the same spot within ~900ms to lock focus (disable AF).
-     * If focus is locked, the next tap unlocks and focuses at the new point.
+     * Freeze autofocus at its current (converged) distance so a fielder, umpire, or passer-by
+     * crossing between the camera and the pitch can't pull focus off the strip. The operator
+     * frames + taps the pitch (continuous AF converges), then locks — turning AF off holds the
+     * lens where it is. At long range the depth of field comfortably spans both ends of the
+     * pitch, so one locked distance keeps the whole strip sharp. [unlockFocus] resumes AF.
+     */
+    fun lockFocus(): Boolean {
+        var ok = false
+        runOnMainSync {
+            val cam = camera ?: return@runOnMainSync
+            try {
+                ok = cam.disableAutoFocus()
+            } catch (_: Exception) {
+                ok = false
+            }
+            focusLocked = ok
+        }
+        return ok
+    }
+
+    /**
+     * Tap to focus at a point (continuous AF). Tapping always releases an existing lock so the
+     * operator can re-aim and re-lock. Returns the focus result and the resulting lock state.
      */
     fun tapToFocusAt(viewWidth: Int, viewHeight: Int, x: Float, y: Float): Map<String, Any> {
         var focused = false
-        var locked = focusLocked
         runOnMainSync {
             val cam = camera ?: return@runOnMainSync
             val view = openGlView ?: return@runOnMainSync
@@ -381,12 +512,6 @@ object StreamCameraEngine : ConnectChecker {
 
             val px = x.coerceIn(0f, w.toFloat())
             val py = y.coerceIn(0f, h.toFloat())
-            val now = System.currentTimeMillis()
-            val slop = 48f * view.context.resources.displayMetrics.density
-            val doubleTap = !focusLocked &&
-                now - lastFocusTapAt < 900 &&
-                lastFocusTapX >= 0f &&
-                hypot(px - lastFocusTapX, py - lastFocusTapY) < slop
 
             if (focusLocked) {
                 try {
@@ -411,29 +536,12 @@ object StreamCameraEngine : ConnectChecker {
             } finally {
                 event.recycle()
             }
-
-            if (doubleTap && focused) {
-                try {
-                    if (cam.disableAutoFocus()) {
-                        focusLocked = true
-                    }
-                } catch (_: Exception) {
-                }
-            }
-
-            lastFocusTapX = px
-            lastFocusTapY = py
-            lastFocusTapAt = now
-            locked = focusLocked
         }
-        return mapOf("focused" to focused, "locked" to locked)
+        return mapOf("focused" to focused, "locked" to focusLocked)
     }
 
     private fun resetFocusState() {
         focusLocked = false
-        lastFocusTapAt = 0L
-        lastFocusTapX = -1f
-        lastFocusTapY = -1f
     }
 
     /** Called from OpenGlView SurfaceHolder.Callback when holder.surface is valid. */
@@ -454,6 +562,11 @@ object StreamCameraEngine : ConnectChecker {
                 if (!isPreviewSurfaceValid(gl)) {
                     CricrelayLog.w("onPreviewSurfaceReady: surface not valid yet, retrying")
                     gl.postDelayed({ onPreviewSurfaceReady() }, 120)
+                    return@runOnMain
+                }
+                if (backgroundRendering && camera?.isStreaming == true) {
+                    // Returning from offscreen rendering: swap the live encoder back to this view.
+                    restoreOnViewRendering(gl)
                     return@runOnMain
                 }
                 if (prepareInFlight || camera?.isStreaming == true) return@runOnMain
@@ -840,6 +953,7 @@ object StreamCameraEngine : ConnectChecker {
     private fun stopStreamInternal() {
         pendingOverlayAfterConnect = false
         streamPaused = false
+        backgroundRendering = false
         removePauseBlackFilter()
         stopOverlayRefresh()
         clearOverlayFilter()
@@ -1024,6 +1138,10 @@ object StreamCameraEngine : ConnectChecker {
     private fun dropStaleGlFilterRefs() {
         watermarkFilter = null
         imageFilter = null
+        // Force the watermark bitmap to be re-uploaded on the next ensureWatermarkFilter(): a fresh
+        // ImageObjectFilterRender has no texture, and ensureWatermarkFilter only calls setImage when
+        // the text changes. Without this, the watermark goes blank after a glInterface swap.
+        appliedWatermarkText = null
     }
 
     private fun clearOverlayFilter() {

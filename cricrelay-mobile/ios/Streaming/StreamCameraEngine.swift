@@ -42,6 +42,14 @@ final class StreamCameraEngine: NSObject {
     private var streamRotation = 0
     private var statusHandler: ((String, String) -> Void)?
 
+    // Background handling: iOS suspends camera capture in the background, so while live we keep the
+    // audio session alive and composite a branded standby slate over the (frozen) camera frame so
+    // viewers see a clean card + commentary instead of a stuck image. Best-effort — if iOS suspends
+    // the encoder under the audio background mode, the stream pauses and reconnects on foreground.
+    private var backgroundTaskId = UIBackgroundTaskIdentifier.invalid
+    private var standbyObject: ImageScreenObject?
+    private var lifecycleObserversRegistered = false
+
     var isViewAttached: Bool { hkView != nil }
 
     var isPreviewReady: Bool { isViewAttached && devicesAttached && previewReady }
@@ -62,6 +70,7 @@ final class StreamCameraEngine: NSObject {
     }
 
     func attachView(_ view: MTHKView) {
+        registerLifecycleObservers()
         hkView = view
         view.videoGravity = .resizeAspectFill
         if overlayCapture == nil, let host = topViewController() {
@@ -194,6 +203,8 @@ final class StreamCameraEngine: NSObject {
         publishing = false
         streamPaused = false
         UIApplication.shared.isIdleTimerDisabled = false
+        await hideStandbySlate()
+        endBackgroundTaskIfNeeded()
         if let stream = rtmpStream {
             try? await stream.close()
         }
@@ -241,6 +252,112 @@ final class StreamCameraEngine: NSObject {
         }
         let maxZoom = min(Double(device.activeFormat.videoMaxZoomFactor), 10)
         return (1, maxZoom, Double(device.videoZoomFactor))
+    }
+
+    // MARK: - Focus
+
+    // Device configuration runs off the main thread on a serial queue, so two lockForConfiguration
+    // calls can never overlap. lock/unlock report the real device result (the view model owns the
+    // user-facing lock state) so the padlock can never show a state the camera didn't reach.
+    private let cameraConfigQueue = DispatchQueue(label: "uk.co.cricrelay.camera.config")
+
+    private func backCamera() -> AVCaptureDevice? {
+        AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+    }
+
+    /// Active interface orientation. UIApplication is main-only — hence the main-actor isolation.
+    @MainActor
+    private func currentInterfaceOrientation() -> UIInterfaceOrientation {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.interfaceOrientation ?? .portrait
+    }
+
+    /// Map a normalized view point (origin top-left, current UI orientation) into the camera's
+    /// point-of-interest space (origin top-left in the sensor's native landscape). Standard back-
+    /// camera transforms — worth a device check, though exact placement is uncritical at range.
+    @MainActor
+    private func sensorPOI(nx: CGFloat, ny: CGFloat) -> CGPoint {
+        switch currentInterfaceOrientation() {
+        case .landscapeLeft:      return CGPoint(x: 1 - nx, y: 1 - ny)
+        case .landscapeRight:     return CGPoint(x: nx, y: ny)
+        case .portraitUpsideDown: return CGPoint(x: 1 - ny, y: nx)
+        default:                  return CGPoint(x: ny, y: 1 - nx) // portrait
+        }
+    }
+
+    /// Focus + meter at a point given in view coordinates, resuming continuous AF/AE (releasing any
+    /// lock) so the operator can re-aim before locking again. The HaishinKit preview has no
+    /// AVCaptureVideoPreviewLayer to convert through, so we map the view point ourselves. Runs on the
+    /// main actor (the orientation read needs it); the device write hops to the camera queue.
+    @MainActor
+    func tapToFocus(viewWidth: Int, viewHeight: Int, x: Float, y: Float) {
+        guard viewWidth > 0, viewHeight > 0 else { return }
+        let nx = CGFloat(max(0, min(x / Float(viewWidth), 1)))
+        let ny = CGFloat(max(0, min(y / Float(viewHeight), 1)))
+        let poi = sensorPOI(nx: nx, ny: ny)
+        cameraConfigQueue.async { [weak self] in
+            guard let device = self?.backCamera() else { return }
+            do {
+                try device.lockForConfiguration()
+                if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = poi }
+                if device.isFocusModeSupported(.continuousAutoFocus) {
+                    device.focusMode = .continuousAutoFocus
+                } else if device.isFocusModeSupported(.autoFocus) {
+                    device.focusMode = .autoFocus
+                }
+                if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = poi }
+                if device.isExposureModeSupported(.continuousAutoExposure) {
+                    device.exposureMode = .continuousAutoExposure
+                }
+                device.unlockForConfiguration()
+            } catch {
+                // ignore focus errors
+            }
+        }
+    }
+
+    /// Freeze focus *and* exposure at their current values so a fielder, umpire, or passer-by
+    /// crossing between the camera and the pitch can't pull either off the strip. AVFoundation's
+    /// `.locked` modes hold the converged lens position and exposure until [unlockFocus] resumes
+    /// continuous metering. Returns whether the lock actually took.
+    func lockFocus() async -> Bool {
+        await configureDevice { device in
+            if device.isFocusModeSupported(.locked) { device.focusMode = .locked }
+            if device.isExposureModeSupported(.locked) { device.exposureMode = .locked }
+            return device.focusMode == .locked || device.exposureMode == .locked
+        }
+    }
+
+    /// Hand focus + exposure back to continuous metering. Returns whether it took.
+    func unlockFocus() async -> Bool {
+        await configureDevice { device in
+            if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
+            if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
+            return device.focusMode == .continuousAutoFocus || device.exposureMode == .continuousAutoExposure
+        }
+    }
+
+    /// Lock the back camera for configuration on the serial queue, run `body` while the config is
+    /// held, then resume the caller with its result. Returns false if the camera is unavailable.
+    private func configureDevice(_ body: @escaping (AVCaptureDevice) -> Bool) async -> Bool {
+        await withCheckedContinuation { continuation in
+            cameraConfigQueue.async { [weak self] in
+                guard let device = self?.backCamera() else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                var ok = false
+                do {
+                    try device.lockForConfiguration()
+                    ok = body(device)
+                    device.unlockForConfiguration()
+                } catch {
+                    ok = false
+                }
+                continuation.resume(returning: ok)
+            }
+        }
     }
 
     // MARK: - Private
@@ -414,5 +531,117 @@ final class StreamCameraEngine: NSObject {
         UIApplication.shared.connectedScenes
             .compactMap { ($0 as? UIWindowScene)?.keyWindow?.rootViewController }
             .first
+    }
+
+    // MARK: - Background lifecycle
+
+    private func registerLifecycleObservers() {
+        guard !lifecycleObserversRegistered else { return }
+        lifecycleObserversRegistered = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+    }
+
+    @objc private func appDidEnterBackground() {
+        guard publishing else { return }
+        beginBackgroundTaskIfNeeded()
+        // Keep the audio session active (UIBackgroundModes: audio) so commentary keeps flowing,
+        // and cover the suspended camera with a branded standby slate.
+        Task { await showStandbySlate() }
+    }
+
+    @objc private func appWillEnterForeground() {
+        Task { await hideStandbySlate() }
+        endBackgroundTaskIfNeeded()
+    }
+
+    private func beginBackgroundTaskIfNeeded() {
+        guard backgroundTaskId == .invalid else { return }
+        backgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "cricrelay-stream") { [weak self] in
+            self?.endBackgroundTaskIfNeeded()
+        }
+    }
+
+    private func endBackgroundTaskIfNeeded() {
+        guard backgroundTaskId != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTaskId)
+        backgroundTaskId = .invalid
+    }
+
+    private func showStandbySlate() async {
+        guard publishing, let cg = buildStandbyImage()?.cgImage else { return }
+        await Task { @ScreenActor in
+            if standbyObject == nil {
+                let obj = ImageScreenObject()
+                obj.horizontalAlignment = .center
+                obj.verticalAlignment = .center
+                standbyObject = obj
+                try? await mixer.screen.addChild(obj)
+            }
+            standbyObject?.cgImage = cg
+        }.value
+    }
+
+    private func hideStandbySlate() async {
+        await Task { @ScreenActor in
+            if let obj = standbyObject {
+                try? await mixer.screen.removeChild(obj)
+                standbyObject = nil
+            }
+        }.value
+    }
+
+    /// Full-frame Floodlight-branded standby card shown while the app is backgrounded.
+    private func buildStandbyImage() -> UIImage? {
+        let size = CGSize(width: streamWidth, height: streamHeight)
+        let ink = UIColor(red: 0x0A / 255, green: 0x0E / 255, blue: 0x15 / 255, alpha: 1)
+        let gold = UIColor(red: 0xFF / 255, green: 0xC2 / 255, blue: 0x33 / 255, alpha: 1)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            ink.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+
+            let titleFont = UIFont.systemFont(ofSize: size.height * 0.06, weight: .bold)
+            let subFont = UIFont.systemFont(ofSize: size.height * 0.035, weight: .medium)
+            let brandFont = UIFont.systemFont(ofSize: size.height * 0.03, weight: .heavy)
+            let para = NSMutableParagraphStyle()
+            para.alignment = .center
+
+            let title = "Screen locked"
+            let subtitle = "Back shortly — commentary continues"
+            let brand = "CricRelay"
+
+            let titleSize = (title as NSString).size(withAttributes: [.font: titleFont])
+            let subSize = (subtitle as NSString).size(withAttributes: [.font: subFont])
+            let brandSize = (brand as NSString).size(withAttributes: [.font: brandFont])
+            let gap = size.height * 0.03
+            let blockHeight = titleSize.height + subSize.height + brandSize.height + gap * 2
+            var y = (size.height - blockHeight) / 2
+
+            (title as NSString).draw(
+                in: CGRect(x: 0, y: y, width: size.width, height: titleSize.height),
+                withAttributes: [.font: titleFont, .foregroundColor: gold, .paragraphStyle: para]
+            )
+            y += titleSize.height + gap
+            (subtitle as NSString).draw(
+                in: CGRect(x: 0, y: y, width: size.width, height: subSize.height),
+                withAttributes: [.font: subFont, .foregroundColor: UIColor.white.withAlphaComponent(0.85), .paragraphStyle: para]
+            )
+            y += subSize.height + gap
+            (brand as NSString).draw(
+                in: CGRect(x: 0, y: y, width: size.width, height: brandSize.height),
+                withAttributes: [.font: brandFont, .foregroundColor: UIColor.white.withAlphaComponent(0.6), .paragraphStyle: para]
+            )
+        }
     }
 }

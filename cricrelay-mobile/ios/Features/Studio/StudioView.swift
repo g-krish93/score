@@ -5,16 +5,40 @@ import HaishinKit
 // MARK: - Camera preview UIViewRepresentable
 
 struct CameraPreviewView: UIViewRepresentable {
+    /// Single-finger tap on the preview, reported with its location and the view's size. A
+    /// UITapGestureRecognizer only fires for a stationary one-finger tap, so it never collides with
+    /// a two-finger pinch-to-zoom — no movement thresholds or timing windows needed.
+    var onTap: (CGPoint, CGSize) -> Void = { _, _ in }
+
+    func makeCoordinator() -> Coordinator { Coordinator(onTap: onTap) }
+
     func makeUIView(context: Context) -> MTHKView {
         let view = MTHKView(frame: .zero)
         StreamCameraEngine.shared.attachView(view)
+        let tap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTap(_:))
+        )
+        view.addGestureRecognizer(tap)
         return view
     }
 
-    func updateUIView(_ uiView: MTHKView, context: Context) {}
+    func updateUIView(_ uiView: MTHKView, context: Context) {
+        context.coordinator.onTap = onTap
+    }
 
-    static func dismantleUIView(_ uiView: MTHKView, coordinator: ()) {
+    static func dismantleUIView(_ uiView: MTHKView, coordinator: Coordinator) {
         StreamCameraEngine.shared.detachView(uiView)
+    }
+
+    final class Coordinator: NSObject {
+        var onTap: (CGPoint, CGSize) -> Void
+        init(onTap: @escaping (CGPoint, CGSize) -> Void) { self.onTap = onTap }
+
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard let view = gesture.view else { return }
+            onTap(gesture.location(in: view), view.bounds.size)
+        }
     }
 }
 
@@ -38,18 +62,23 @@ struct StudioView: View {
             Color.black.ignoresSafeArea()
 
             if cameraPermissionGranted {
-                CameraPreviewView()
-                    .ignoresSafeArea()
-                    .gesture(
-                        MagnificationGesture()
-                            .onChanged { scale in
-                                let newZoom = zoom * Float(scale)
-                                viewModel.setZoom(newZoom)
-                            }
-                            .onEnded { scale in
-                                zoom = max(1, zoom * Float(scale))
-                            }
-                    )
+                CameraPreviewView(onTap: { point, size in
+                    // UITapGestureRecognizer fires on the main thread, but its callback is a
+                    // nonisolated context — hop onto the main actor for the @MainActor view model.
+                    Task { @MainActor in viewModel.tapToFocus(at: point, viewSize: size) }
+                })
+                .ignoresSafeArea()
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { scale in
+                            let newZoom = zoom * Float(scale)
+                            viewModel.setZoom(newZoom)
+                        }
+                        .onEnded { scale in
+                            zoom = max(1, zoom * Float(scale))
+                        }
+                )
+                .overlay { focusReticle }
             } else {
                 permissionDeniedView
             }
@@ -159,10 +188,62 @@ struct StudioView: View {
         .padding(.top, 56)
     }
 
+    // MARK: - Focus reticle
+
+    @ViewBuilder
+    private var focusReticle: some View {
+        if let point = viewModel.focusIndicator {
+            let color = viewModel.focusLocked ? CricTheme.primary : Color.white
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(color, lineWidth: 1.5)
+                .frame(width: 76, height: 76)
+                .overlay {
+                    if viewModel.focusLocked {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(color)
+                    }
+                }
+                .position(point)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+        }
+    }
+
+    // MARK: - Focus lock pill
+
+    private var focusLockPill: some View {
+        Button {
+            Task { await viewModel.toggleFocusLock() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: viewModel.focusLocked ? "lock.fill" : "lock.open")
+                    .font(.system(size: 14, weight: .semibold))
+                Text(viewModel.focusLocked ? "Pitch locked" : "Focus lock")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(viewModel.focusLocked ? CricTheme.onPrimary : .white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                viewModel.focusLocked ? AnyShapeStyle(CricTheme.primary) : AnyShapeStyle(.ultraThinMaterial),
+                in: Capsule()
+            )
+        }
+        .buttonStyle(PressableScaleStyle())
+        .animation(CricMotion.enter(), value: viewModel.focusLocked)
+    }
+
     // MARK: - Bottom controls
 
     private var bottomControls: some View {
         VStack(spacing: 0) {
+            // Focus lock — frame + tap the pitch, then lock so a fielder crossing the frame
+            // can't pull focus or exposure off the strip.
+            focusLockPill
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 12)
+
             // Tool row
             HStack(spacing: 0) {
                 toolButton("Destination", icon: "arrow.triangle.branch") {

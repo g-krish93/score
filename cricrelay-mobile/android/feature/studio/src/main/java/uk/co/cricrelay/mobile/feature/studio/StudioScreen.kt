@@ -192,6 +192,7 @@ fun StudioScreen(
                             ),
                         )
                     },
+                    onToggleFocusLock = viewModel::onToggleFocusLock,
                     onShare = state.watchUrl.takeIf { it.isNotBlank() }?.let { url ->
                         {
                             context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {

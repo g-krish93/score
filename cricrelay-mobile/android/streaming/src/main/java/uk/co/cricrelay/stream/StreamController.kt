@@ -27,7 +27,14 @@ class StreamController @Inject constructor() {
     private val _status = MutableStateFlow(StreamStatus())
     val status: StateFlow<StreamStatus> = _status.asStateFlow()
 
+    /** True while the Activity is in Picture-in-Picture, so the Studio UI can collapse to camera-only. */
+    private val _pipMode = MutableStateFlow(false)
+    val pipMode: StateFlow<Boolean> = _pipMode.asStateFlow()
+
     private var activity: Activity? = null
+
+    val isStreaming: Boolean
+        get() = StreamCameraEngine.isStreaming
 
     init {
         StreamCameraEngine.setStatusListener { event, message ->
@@ -47,6 +54,19 @@ class StreamController @Inject constructor() {
     fun detachActivity() {
         activity = null
     }
+
+    fun setPipMode(active: Boolean) {
+        _pipMode.value = active
+    }
+
+    /** Screen locked / left the app without PiP — keep the encoder fed offscreen. */
+    fun onEnterBackground() = StreamCameraEngine.onEnterBackground()
+
+    /** Foreground / surface restored — swap the encoder back to the on-screen preview. */
+    fun onExitBackground() = StreamCameraEngine.onExitBackground()
+
+    /** Effective encoded frame size (w to h) for the PiP aspect ratio. */
+    fun currentStreamAspect(): Pair<Int, Int> = StreamCameraEngine.currentStreamAspect()
 
     fun preparePreview(
         width: Int = 1280,
@@ -146,6 +166,12 @@ class StreamController @Inject constructor() {
 
     fun tapToFocusAt(viewWidth: Int, viewHeight: Int, x: Float, y: Float) =
         StreamCameraEngine.tapToFocusAt(viewWidth, viewHeight, x, y)
+
+    fun lockFocus(): Boolean = StreamCameraEngine.lockFocus()
+
+    fun unlockFocus(): Boolean = StreamCameraEngine.unlockFocus()
+
+    fun isFocusLocked(): Boolean = StreamCameraEngine.isFocusLocked()
 
     fun setVideoStabilization(enabled: Boolean) = StreamCameraEngine.setVideoStabilization(enabled)
 

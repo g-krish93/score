@@ -71,9 +71,11 @@ data class StudioUiState(
     val liveElapsedSeconds: Long = 0,
     val focusX: Float? = null,
     val focusY: Float? = null,
+    val focusLocked: Boolean = false,
     val overlayPreview: androidx.compose.ui.graphics.ImageBitmap? = null,
     val goLiveCountdown: Int? = null,
     val recap: StreamRecap? = null,
+    val inPip: Boolean = false,
 ) {
     val destinationLabel: String
         get() = when (destination) {
@@ -97,6 +99,7 @@ class StudioViewModel @Inject constructor(
     private var matchDayJob: Job? = null
     private var liveTimerJob: Job? = null
     private var countdownJob: Job? = null
+    private var focusReticleJob: Job? = null
     private var matchSlug: String = ""
     private var permissionsGranted = false
     private var previewSurfaceBound = false
@@ -134,6 +137,10 @@ class StudioViewModel @Inject constructor(
                         previewReady = status.previewReady,
                         streaming = status.streaming,
                         paused = status.paused,
+                        // Engine is the source of truth for the focus lock: a re-prepare (e.g.
+                        // rotating before Go Live) clears it inside resetFocusState(), so mirror
+                        // the real state here rather than letting the padlock drift out of sync.
+                        focusLocked = streamController.isFocusLocked(),
                         statusMessage = when {
                             status.streaming -> it.statusMessage
                             status.previewReady && it.statusMessage == "Starting camera…" -> ""
@@ -152,6 +159,14 @@ class StudioViewModel @Inject constructor(
                             loading = false,
                         )
                     }
+                }
+            }
+        }
+        viewModelScope.launch {
+            streamController.pipMode.collect { pip ->
+                // In PiP the window is tiny: collapse to camera-only and dismiss any open sheet.
+                _uiState.update {
+                    it.copy(inPip = pip, activeSheet = if (pip) StudioSheet.None else it.activeSheet)
                 }
             }
         }
@@ -381,11 +396,28 @@ class StudioViewModel @Inject constructor(
     }
 
     fun onPreviewTap(x: Float, y: Float, width: Int, height: Int) {
-        streamController.tapToFocusAt(width, height, x, y)
-        _uiState.update { it.copy(focusX = x, focusY = y) }
-        viewModelScope.launch {
+        val result = streamController.tapToFocusAt(width, height, x, y)
+        val locked = result["locked"] as? Boolean ?: false
+        _uiState.update { it.copy(focusX = x, focusY = y, focusLocked = locked) }
+        focusReticleJob?.cancel()
+        focusReticleJob = viewModelScope.launch {
             delay(1_500)
-            _uiState.update { it.copy(focusX = null, focusY = null) }
+            // Keep the reticle on screen while locked so the operator can see what's held.
+            if (!_uiState.value.focusLocked) {
+                _uiState.update { it.copy(focusX = null, focusY = null) }
+            }
+        }
+    }
+
+    /** Toggle the pitch focus lock: freeze AF on the strip, or hand it back to continuous AF. */
+    fun onToggleFocusLock() {
+        if (_uiState.value.focusLocked) {
+            streamController.unlockFocus()
+            focusReticleJob?.cancel()
+            _uiState.update { it.copy(focusLocked = false, focusX = null, focusY = null) }
+        } else {
+            val ok = streamController.lockFocus()
+            _uiState.update { it.copy(focusLocked = ok) }
         }
     }
 

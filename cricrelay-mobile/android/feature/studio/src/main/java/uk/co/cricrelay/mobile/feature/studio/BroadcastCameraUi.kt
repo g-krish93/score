@@ -10,6 +10,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -36,6 +38,8 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Pause
@@ -57,7 +61,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.mobile.ui.AppColors
 import uk.co.cricrelay.mobile.ui.AppMotion
@@ -83,6 +89,7 @@ fun BroadcastCameraUi(
     onShare: (() -> Unit)?,
     onToggleStabilization: () -> Unit,
     onToggleKeepScreenOn: () -> Unit,
+    onToggleFocusLock: () -> Unit,
     onPreviewTap: (Float, Float, Int, Int) -> Unit,
     onPinchZoom: (Float) -> Unit,
     onPreviewSurfaceBound: () -> Unit = {},
@@ -116,6 +123,12 @@ fun BroadcastCameraUi(
             modifier = Modifier.fillMaxSize(),
             onPreviewSurfaceBound = onPreviewSurfaceBound,
         )
+
+        if (state.inPip) {
+            // Picture-in-Picture: the floating window is too small for any chrome. Show only the
+            // camera — the scoreboard + watermark are already burned into the GL frame.
+            return@BoxWithConstraints
+        }
 
         // Thin scoreboard strip in the preview (before streaming). Portrait: above the
         // bottom controls. Landscape: full width along the bottom (controls are on the right).
@@ -186,6 +199,7 @@ fun BroadcastCameraUi(
                     onShare = onShare,
                     onToggleStabilization = onToggleStabilization,
                     onToggleKeepScreenOn = onToggleKeepScreenOn,
+                    onToggleFocusLock = onToggleFocusLock,
                 )
             } else {
                 PortraitControls(
@@ -200,7 +214,15 @@ fun BroadcastCameraUi(
                     onShare = onShare,
                     onToggleStabilization = onToggleStabilization,
                     onToggleKeepScreenOn = onToggleKeepScreenOn,
+                    onToggleFocusLock = onToggleFocusLock,
                 )
+            }
+
+            // Drawn last so a low tap's reticle sits above the scrim + controls, never behind them.
+            state.focusX?.let { fx ->
+                state.focusY?.let { fy ->
+                    FocusReticle(xPx = fx, yPx = fy, locked = state.focusLocked)
+                }
             }
         }
 
@@ -291,15 +313,24 @@ private fun ToolButtons(
     }
 }
 
-/** Stabilize / Keep-screen-on quick toggles, surfaced next to Go Live (no menu dig). */
+/** Focus lock / Stabilize / Keep-screen-on quick toggles, surfaced next to Go Live (no menu dig). */
 @Composable
 private fun QuickToggles(
     state: StudioUiState,
     onToggleStabilization: () -> Unit,
     onToggleKeepScreenOn: () -> Unit,
+    onToggleFocusLock: () -> Unit,
     modifier: Modifier = Modifier,
     vertical: Boolean = false,
 ) {
+    val focusLock: @Composable () -> Unit = {
+        CameraQuickToggle(
+            label = if (state.focusLocked) "Locked" else "Focus",
+            active = state.focusLocked,
+            icon = if (state.focusLocked) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+            onClick = onToggleFocusLock,
+        )
+    }
     val stabilize: @Composable () -> Unit = {
         CameraQuickToggle(
             label = "Stabilize",
@@ -322,7 +353,7 @@ private fun QuickToggles(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            stabilize(); screenOn()
+            focusLock(); stabilize(); screenOn()
         }
     } else {
         Row(
@@ -330,7 +361,35 @@ private fun QuickToggles(
             horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            stabilize(); screenOn()
+            focusLock(); stabilize(); screenOn()
+        }
+    }
+}
+
+/**
+ * Square focus reticle drawn at the tapped point. Turns gold with a padlock badge when the
+ * pitch focus is locked, so the operator can see at a glance that AF is held on the strip.
+ */
+@Composable
+private fun FocusReticle(xPx: Float, yPx: Float, locked: Boolean) {
+    val density = LocalDensity.current
+    val ringSize = 76.dp
+    val halfPx = with(density) { ringSize.toPx() / 2f }
+    val color = if (locked) AppColors.Accent else Color.White
+    Box(
+        modifier = Modifier
+            .offset { IntOffset((xPx - halfPx).roundToInt(), (yPx - halfPx).roundToInt()) }
+            .size(ringSize)
+            .border(1.5.dp, color, RoundedCornerShape(8.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (locked) {
+            Icon(
+                Icons.Outlined.Lock,
+                contentDescription = "Focus locked",
+                tint = color,
+                modifier = Modifier.size(20.dp),
+            )
         }
     }
 }
@@ -493,6 +552,7 @@ private fun PortraitControls(
     onShare: (() -> Unit)?,
     onToggleStabilization: () -> Unit,
     onToggleKeepScreenOn: () -> Unit,
+    onToggleFocusLock: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -511,6 +571,7 @@ private fun PortraitControls(
                 state = state,
                 onToggleStabilization = onToggleStabilization,
                 onToggleKeepScreenOn = onToggleKeepScreenOn,
+                onToggleFocusLock = onToggleFocusLock,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(14.dp))
@@ -557,6 +618,7 @@ private fun LandscapeControls(
     onShare: (() -> Unit)?,
     onToggleStabilization: () -> Unit,
     onToggleKeepScreenOn: () -> Unit,
+    onToggleFocusLock: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -610,6 +672,7 @@ private fun LandscapeControls(
                 state = state,
                 onToggleStabilization = onToggleStabilization,
                 onToggleKeepScreenOn = onToggleKeepScreenOn,
+                onToggleFocusLock = onToggleFocusLock,
                 vertical = true,
             )
             Spacer(Modifier.height(16.dp))

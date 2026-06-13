@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import CoreGraphics
 
 @MainActor
 final class StudioViewModel: ObservableObject {
@@ -48,6 +49,11 @@ final class StudioViewModel: ObservableObject {
     // Settings
     @Published var keepScreenOn = true
     @Published var videoStabilization = true
+
+    // Focus lock
+    @Published var focusLocked = false
+    @Published var focusIndicator: CGPoint?
+    private var focusIndicatorTask: Task<Void, Never>?
 
     @Published var error: String?
 
@@ -237,6 +243,46 @@ final class StudioViewModel: ObservableObject {
 
     func setZoom(_ level: Float) {
         StreamCameraEngine.shared.setZoom(level: level)
+    }
+
+    // MARK: - Focus lock
+
+    /// Tap the preview to focus + meter at that point (continuous AF/AE). Releases any lock so
+    /// the operator can re-aim before locking again.
+    func tapToFocus(at point: CGPoint, viewSize: CGSize) {
+        guard viewSize.width > 0, viewSize.height > 0 else { return }
+        StreamCameraEngine.shared.tapToFocus(
+            viewWidth: Int(viewSize.width),
+            viewHeight: Int(viewSize.height),
+            x: Float(point.x),
+            y: Float(point.y)
+        )
+        focusLocked = false
+        showFocusIndicator(at: point)
+    }
+
+    /// Freeze focus + exposure on the pitch (or hand them back to continuous AF/AE). Reflects the
+    /// real device result so the padlock only shows "locked" if the camera actually locked.
+    func toggleFocusLock() async {
+        if focusLocked {
+            _ = await StreamCameraEngine.shared.unlockFocus()
+            focusLocked = false
+            focusIndicatorTask?.cancel()
+            focusIndicator = nil
+        } else {
+            focusLocked = await StreamCameraEngine.shared.lockFocus()
+        }
+    }
+
+    private func showFocusIndicator(at point: CGPoint) {
+        focusIndicator = point
+        focusIndicatorTask?.cancel()
+        focusIndicatorTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self, !Task.isCancelled else { return }
+            // Keep the reticle on screen while locked so the operator can see what's held.
+            if !self.focusLocked { self.focusIndicator = nil }
+        }
     }
 
     // MARK: - Camera restart
