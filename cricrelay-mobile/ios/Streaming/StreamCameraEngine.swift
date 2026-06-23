@@ -561,7 +561,18 @@ final class StreamCameraEngine: NSObject {
     }
 
     @objc private func appWillEnterForeground() {
-        Task { await hideStandbySlate() }
+        Task {
+            await hideStandbySlate()
+            // iOS suspends camera capture in the background, so on return we re-kick the mixer and
+            // overlay refresh to bring the live frame back immediately instead of leaving viewers on
+            // the standby slate. This is the iOS-appropriate counterpart to Android's PiP: Apple has
+            // no over-apps camera overlay, but the goal is the same — don't lose the broadcast when
+            // the operator leaves the app.
+            if publishing && !streamPaused {
+                await mixer.startRunning()
+                startOverlayRefresh()
+            }
+        }
         endBackgroundTaskIfNeeded()
     }
 

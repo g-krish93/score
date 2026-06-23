@@ -46,8 +46,11 @@ struct DestinationSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { dismiss() }
-                        .foregroundStyle(CricTheme.accent)
+                    Button("Save") {
+                        viewModel.persistCustomRtmp()
+                        dismiss()
+                    }
+                    .foregroundStyle(CricTheme.accent)
                 }
             }
         }
