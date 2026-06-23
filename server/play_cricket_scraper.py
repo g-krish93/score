@@ -265,6 +265,51 @@ def parse_totals_summary_lines(full_text: str) -> list[InningsScore]:
     return out
 
 
+def batting_order_runs(full_text: str) -> list[int]:
+    """Runs for each innings in true batting order (1st innings first).
+
+    Play-Cricket's header summary lists the *currently batting* (2nd) innings
+    first while a chase is live, but the detailed scorecard body always renders
+    the ``Total:`` blocks in batting order. Those totals are the authoritative
+    signal for which innings batted first.
+    """
+    return [int(m.group("runs")) for m in TOTAL_SUMMARY_RE.finditer(full_text)]
+
+
+def order_innings_by_batting(
+    innings_found: list[InningsScore], full_text: str
+) -> tuple[Optional[InningsScore], Optional[InningsScore]]:
+    """Return (innings_1, innings_2) in batting order.
+
+    The header parsers preserve team names but can list the innings in reverse
+    (live-chase) order, which makes the chase target collapse to the batting
+    side's own score + 1. Re-rank the parsed innings against the scorecard
+    ``Total:`` blocks so the first-batting side is always ``innings_1``. A single
+    detected total is enough to pin the first innings; if none are found we keep
+    the original parse order rather than guess.
+    """
+    i1 = innings_found[0] if len(innings_found) >= 1 else None
+    i2 = innings_found[1] if len(innings_found) >= 2 else None
+    if not (i1 and i2):
+        return i1, i2
+
+    order = batting_order_runs(full_text)
+    if len(order) < 1:
+        return i1, i2
+
+    last = len(order)
+
+    def rank(inv: InningsScore) -> int:
+        try:
+            return order.index(inv.runs)
+        except ValueError:
+            return last
+
+    # Stable sort keeps the original order on ties (e.g. both innings equal).
+    ranked = sorted([i1, i2], key=rank)
+    return ranked[0], ranked[1]
+
+
 def parse_match_snapshot(url: str, html: str) -> MatchSnapshot:
     soup = BeautifulSoup(html, "html.parser")
     raw_lines = [
@@ -358,8 +403,7 @@ def parse_match_snapshot(url: str, html: str) -> MatchSnapshot:
         for innings in parse_totals_summary_lines(blob):
             push_innings(innings)
 
-    innings_1 = innings_found[0] if len(innings_found) >= 1 else None
-    innings_2 = innings_found[1] if len(innings_found) >= 2 else None
+    innings_1, innings_2 = order_innings_by_batting(innings_found, "\n".join(lines))
 
     return MatchSnapshot(
         source_url=url,
