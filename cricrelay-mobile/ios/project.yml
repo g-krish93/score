@@ -95,15 +95,34 @@ targets:
           DEVELOPMENT_TEAM: "$(APPLE_TEAM_ID)"
           PROVISIONING_PROFILE_SPECIFIER: "$(PROVISIONING_PROFILE_SPECIFIER)"
 
+  CricRelayLiveTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "15.0"
+
+    sources:
+      - path: Tests
+
+    dependencies:
+      - target: CricRelayLive
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.co.cricrelay.stream.tests
+        SWIFT_VERSION: "5.9"
+
 schemes:
   CricRelayLive:
     build:
       targets:
         CricRelayLive: all
+        CricRelayLiveTests: [test]
     run:
       config: Debug
     test:
       config: Debug
+      targets:
+        - CricRelayLiveTests
     profile:
       config: Release
     analyze:

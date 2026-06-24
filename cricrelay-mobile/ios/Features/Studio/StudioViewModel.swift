@@ -59,6 +59,7 @@ final class StudioViewModel: ObservableObject {
 
     private let api = CricRelayAPI.shared
     private var pollingTask: Task<Void, Never>?
+    private var streamStartDate: Date?
 
     init(matchSlug: String) {
         self.matchSlug = matchSlug
@@ -180,6 +181,7 @@ final class StudioViewModel: ObservableObject {
         )
         streaming = StreamCameraEngine.shared.isStreaming
         if streaming {
+            streamStartDate = Date()
             try? await api.updateBroadcastStatus(
                 slug: matchSlug,
                 status: "streaming",
@@ -196,12 +198,14 @@ final class StudioViewModel: ObservableObject {
     // MARK: - Stop live
 
     func stopLive() async {
+        let duration = streamStartDate.map { Int(Date().timeIntervalSince($0)) } ?? 0
+        streamStartDate = nil
         await StreamCameraEngine.shared.stopStream()
         streaming = false
         paused = false
         try? await api.stopLive(platform: destination == "custom" ? nil : destination)
         try? await api.updateBroadcastStatus(slug: matchSlug, status: "idle")
-        recap = StreamRecap(title: match?.label ?? "Stream", watchUrl: watchUrl)
+        recap = StreamRecap(title: match?.label ?? "Stream", watchUrl: watchUrl, durationSeconds: duration)
         watchUrl = ""
     }
 

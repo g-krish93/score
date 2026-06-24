@@ -378,9 +378,16 @@ struct StudioView: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(CricTheme.accent)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Stream ended")
-                    .font(.subheadline.bold())
-                    .foregroundStyle(.white)
+                HStack(spacing: 6) {
+                    Text("Stream ended")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.white)
+                    if recap.durationSeconds > 0 {
+                        Text("· \(formattedDuration(recap.durationSeconds))")
+                            .font(.subheadline)
+                            .foregroundStyle(CricTheme.textMuted)
+                    }
+                }
                 if !recap.watchUrl.isEmpty {
                     Text(recap.watchUrl)
                         .font(.caption)
@@ -389,6 +396,14 @@ struct StudioView: View {
                 }
             }
             Spacer()
+            if !recap.watchUrl.isEmpty {
+                ShareLink(item: recap.watchUrl) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.caption)
+                        .foregroundStyle(CricTheme.accent)
+                }
+                .padding(.trailing, 4)
+            }
             Button { viewModel.dismissRecap() } label: {
                 Image(systemName: "xmark")
                     .font(.caption)
@@ -399,6 +414,16 @@ struct StudioView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
+    }
+
+    private func formattedDuration(_ seconds: Int) -> String {
+        let h = seconds / 3600
+        let m = (seconds % 3600) / 60
+        let s = seconds % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        }
+        return String(format: "%d:%02d", m, s)
     }
 
     // MARK: - Error banner

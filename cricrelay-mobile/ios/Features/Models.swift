@@ -198,6 +198,25 @@ struct OverlayLayoutPrefs: Codable {
         watermarkText = wm.isEmpty ? OverlayLayoutPrefs.watermarkDefaultText : wm
     }
 
+    // Reference fractions matching the default init — used to compute preview scale.
+    static let defaultWidthFraction = 0.92
+    static let defaultHeightFraction = 0.16
+
+    /// Scale factor for the overlay preview widget along X (1.0 = default board width).
+    func boardDisplayScaleX() -> Double {
+        widthFraction / OverlayLayoutPrefs.defaultWidthFraction
+    }
+
+    /// Scale factor for the overlay preview widget along Y (1.0 = default board height).
+    func boardDisplayScaleY() -> Double {
+        heightFraction / OverlayLayoutPrefs.defaultHeightFraction
+    }
+
+    /// Font scale applied to overlay text. Independent of board dimensions.
+    func effectiveFontScale() -> Double {
+        fontScale
+    }
+
     func toEngineLayout() -> StreamCameraEngine.OverlayLayout {
         StreamCameraEngine.OverlayLayout(
             heightFraction: Float(heightFraction),
@@ -236,4 +255,5 @@ struct MatchDayStatus: Codable {
 struct StreamRecap {
     let title: String
     let watchUrl: String
+    let durationSeconds: Int
 }

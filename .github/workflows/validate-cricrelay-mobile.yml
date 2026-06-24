@@ -38,6 +38,35 @@ jobs:
           chmod +x gradlew
           ./gradlew :shared:check :app:assembleRelease --no-daemon
 
+  ios-tests:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          brew install xcodegen
+          gem install xcpretty --no-document
+
+      - name: Generate Xcode project
+        working-directory: cricrelay-mobile/ios
+        run: xcodegen generate
+
+      - name: Run iOS unit tests
+        working-directory: cricrelay-mobile/ios
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project CricRelayLive.xcodeproj \
+            -scheme CricRelayLive \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -configuration Debug \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            -resultBundlePath /tmp/test-results.xcresult \
+            2>&1 | xcpretty --color
+          echo "iOS tests passed ✅"
+
   server:
     runs-on: ubuntu-latest
     steps:
