@@ -122,7 +122,7 @@ jobs:
 
   build-ios:
     needs: validate
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       # Ad Hoc OTA secrets (existing path)
