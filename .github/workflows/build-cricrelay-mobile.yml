@@ -234,8 +234,7 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM="${APPLE_TEAM_ID}" \
-            SWIFT_STRICT_CONCURRENCY=minimal \
-            | xcpretty || true
+            SWIFT_STRICT_CONCURRENCY=minimal
 
           ls -la /tmp/CricRelayLive.xcarchive/
 
@@ -248,8 +247,7 @@ jobs:
             -archivePath /tmp/CricRelayLive.xcarchive \
             -exportPath /tmp/ipa-export \
             -exportOptionsPlist "${EXPORT_OPTIONS}" \
-            APPLE_TEAM_ID="${APPLE_TEAM_ID}" \
-            | xcpretty || true
+            APPLE_TEAM_ID="${APPLE_TEAM_ID}"
 
           IPA_PATH=$(find /tmp/ipa-export -name "*.ipa" | head -1)
           echo "IPA_PATH=${IPA_PATH}" >> "$GITHUB_ENV"
@@ -270,8 +268,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            SWIFT_STRICT_CONCURRENCY=minimal \
-            | xcpretty || true
+            SWIFT_STRICT_CONCURRENCY=minimal
 
           ls -la /tmp/CricRelayLive.xcarchive/
 
