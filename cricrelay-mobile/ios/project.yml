@@ -14,7 +14,13 @@ options:
 packages:
   HaishinKit:
     url: https://github.com/HaishinKit/HaishinKit.swift
-    from: "2.0.0"
+    # Pinned to 2.2.4 (the last release built against the Xcode 16.x SDK).
+    # 2.1.0 first split out the RTMPHaishinKit product the app imports, and
+    # 2.2.5 (iOS 26 / Xcode 26 era) added kVTCompressionPropertyKey_VariableBitRate
+    # and Swift 6 Notification.next() concurrency code that fail to compile on the
+    # macos-15 runner's Xcode 16.4 toolchain. 2.2.4 is the newest version that has
+    # the RTMPHaishinKit product without either breaking change.
+    exactVersion: "2.2.4"
 
 settings:
   base:
