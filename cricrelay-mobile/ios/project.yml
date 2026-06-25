@@ -14,13 +14,12 @@ options:
 packages:
   HaishinKit:
     url: https://github.com/HaishinKit/HaishinKit.swift
-    # Pinned to 2.2.4 (the last release built against the Xcode 16.x SDK).
-    # 2.1.0 first split out the RTMPHaishinKit product the app imports, and
-    # 2.2.5 (iOS 26 / Xcode 26 era) added kVTCompressionPropertyKey_VariableBitRate
-    # and Swift 6 Notification.next() concurrency code that fail to compile on the
-    # macos-15 runner's Xcode 16.4 toolchain. 2.2.4 is the newest version that has
-    # the RTMPHaishinKit product without either breaking change.
-    exactVersion: "2.2.4"
+    # Pinned to 2.2.0: last version before kVTCompressionPropertyKey_VariableBitRate
+    # was added (in 2.2.1). That symbol is absent from the iOS 18.5 SDK shipped with
+    # Xcode 16.4 on the macos-15 runner, causing a compile error. 2.2.0 still has the
+    # RTMPHaishinKit product (introduced in 2.1.0) and uses Combine-based notification
+    # (no Notification.next() non-sendable Swift 6 issue introduced in 2.2.5).
+    exactVersion: "2.2.0"
 
 settings:
   base:
