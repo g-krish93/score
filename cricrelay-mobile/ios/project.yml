@@ -14,7 +14,7 @@ options:
 packages:
   HaishinKit:
     url: https://github.com/HaishinKit/HaishinKit.swift
-    from: "2.0.0"
+    exactVersion: "2.0.0"
 
 settings:
   base:

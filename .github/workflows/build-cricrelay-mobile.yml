@@ -232,6 +232,7 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM="${APPLE_TEAM_ID}" \
+            SWIFT_STRICT_CONCURRENCY=minimal \
             | xcpretty || true
 
           ls -la /tmp/CricRelayLive.xcarchive/
@@ -267,6 +268,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
+            SWIFT_STRICT_CONCURRENCY=minimal \
             | xcpretty || true
 
           ls -la /tmp/CricRelayLive.xcarchive/
