@@ -6,7 +6,7 @@ name: CricRelayLive
 options:
   bundleIdPrefix: uk.co.cricrelay
   deploymentTarget:
-    iOS: "15.0"
+    iOS: "16.0"
   xcodeVersion: "15"
   createIntermediateGroups: true
   groupSortPosition: top
@@ -14,12 +14,12 @@ options:
 packages:
   HaishinKit:
     url: https://github.com/HaishinKit/HaishinKit.swift
-    exactVersion: "2.0.0"
+    from: "2.0.0"
 
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
     TARGETED_DEVICE_FAMILY: "1,2"
     ENABLE_BITCODE: false
     DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
