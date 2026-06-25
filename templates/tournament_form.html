@@ -1,0 +1,80 @@
+{% extends "base_marketing.html" %}
+{% block title %}{{ 'Edit' if tournament else 'New' }} Tournament — {{ org.name }} — CricRelay{% endblock %}
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <div class="cr-dash-top">
+    <div>
+      <h1>{{ 'Edit Tournament' if tournament else 'New Tournament' }}</h1>
+      <p class="cr-muted">Club: <strong>{{ org.name }}</strong></p>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for cat, m in messages %}
+      <div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  <div class="cr-card" style="max-width:560px;">
+    <form method="post">
+      <label class="cr-label">Tournament Name *</label>
+      <input class="cr-input" type="text" name="name" value="{{ tournament.name if tournament else '' }}" required placeholder="e.g. Summer T20 League 2026">
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+        <div>
+          <label class="cr-label">Format</label>
+          <select class="cr-input" name="format" id="fmt-select" onchange="toggleCustomOvers(this.value)">
+            {% for fmt in ['T20', 'ODI', 'Test', 'Custom'] %}
+            <option value="{{ fmt }}" {% if tournament and tournament.format == fmt %}selected{% endif %}>{{ fmt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div id="custom-overs-wrap" style="display:{{ 'block' if tournament and tournament.format == 'Custom' else 'none' }}">
+          <label class="cr-label">Overs per innings</label>
+          <input class="cr-input" type="number" name="custom_overs" min="1" max="100"
+                 value="{{ tournament.custom_overs if tournament and tournament.custom_overs else '' }}" placeholder="e.g. 10">
+        </div>
+      </div>
+
+      <label class="cr-label" style="margin-top:16px;">Tournament Type</label>
+      <select class="cr-input" name="tournament_type">
+        {% for tt in ['League', 'Knockout', 'Group+Knockout'] %}
+        <option value="{{ tt }}" {% if tournament and tournament.tournament_type == tt %}selected{% endif %}>{{ tt }}</option>
+        {% endfor %}
+      </select>
+
+      <label class="cr-label" style="margin-top:16px;">Location <span class="cr-muted">(optional)</span></label>
+      <input class="cr-input" type="text" name="location" value="{{ tournament.location if tournament and tournament.location else '' }}" placeholder="e.g. Hamfield Ground">
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+        <div>
+          <label class="cr-label">Start Date</label>
+          <input class="cr-input" type="date" name="start_date"
+                 value="{{ tournament.start_date.isoformat() if tournament and tournament.start_date else '' }}">
+        </div>
+        <div>
+          <label class="cr-label">End Date</label>
+          <input class="cr-input" type="date" name="end_date"
+                 value="{{ tournament.end_date.isoformat() if tournament and tournament.end_date else '' }}">
+        </div>
+      </div>
+
+      <label class="cr-label" style="margin-top:16px;display:flex;align-items:center;gap:10px;cursor:pointer;">
+        <input type="checkbox" name="is_public" value="1" {% if not tournament or tournament.is_public %}checked{% endif %}
+               style="width:16px;height:16px;">
+        Make this tournament publicly visible
+      </label>
+
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button type="submit" class="cr-btn">{{ 'Save Changes' if tournament else 'Create Tournament' }}</button>
+        <a href="{{ url_for('cricket.tournaments_list') }}" class="cr-btn cr-btn-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</main>
+<script>
+function toggleCustomOvers(v) {
+  document.getElementById('custom-overs-wrap').style.display = v === 'Custom' ? 'block' : 'none';
+}
+</script>
+{% endblock %}

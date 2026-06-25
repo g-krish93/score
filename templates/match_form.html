@@ -1,0 +1,61 @@
+{% extends "base_marketing.html" %}
+{% block title %}{{ 'Edit Match' if match else 'New Match' }} — {{ tournament.name }} — CricRelay{% endblock %}
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <div class="cr-dash-top">
+    <div>
+      <h1>{{ 'Edit Match' if match else 'New Match' }}</h1>
+      <p class="cr-muted">{{ tournament.name }} · {{ tournament.format }}</p>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for cat, m in messages %}
+      <div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  <div class="cr-card" style="max-width:520px;">
+    {% if teams|length < 2 %}
+    <div class="cr-flash error">You need at least 2 teams enrolled in this tournament before creating a match.
+      <a href="{{ url_for('cricket.tournament_teams_manage', t_slug=tournament.slug) }}">Add teams</a>
+    </div>
+    {% else %}
+    <form method="post">
+      <label class="cr-label">Team 1 *</label>
+      <select class="cr-input" name="team1_id" required>
+        {% for team in teams %}
+        <option value="{{ team.id }}" {% if match and match.team1_id == team.id %}selected{% endif %}>{{ team.name }}</option>
+        {% endfor %}
+      </select>
+
+      <label class="cr-label" style="margin-top:16px;">Team 2 *</label>
+      <select class="cr-input" name="team2_id" required>
+        {% for team in teams %}
+        <option value="{{ team.id }}" {% if match and match.team2_id == team.id %}selected{% endif %}>{{ team.name }}</option>
+        {% endfor %}
+      </select>
+
+      <label class="cr-label" style="margin-top:16px;">Date & Time <span class="cr-muted">(optional)</span></label>
+      <input class="cr-input" type="datetime-local" name="match_date"
+             value="{{ match.match_date.strftime('%Y-%m-%dT%H:%M') if match and match.match_date else '' }}">
+
+      <label class="cr-label" style="margin-top:16px;">Venue <span class="cr-muted">(optional)</span></label>
+      <input class="cr-input" type="text" name="venue"
+             value="{{ match.venue if match and match.venue else '' }}"
+             placeholder="e.g. Hamfield Ground">
+
+      <label class="cr-label" style="margin-top:16px;">Overs <span class="cr-muted">(leave blank to use tournament default)</span></label>
+      <input class="cr-input" type="number" name="overs" min="1" max="100"
+             value="{{ match.overs if match and match.overs else '' }}"
+             placeholder="{{ tournament.custom_overs or (50 if tournament.format == 'ODI' else 20) }}">
+
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button type="submit" class="cr-btn">{{ 'Save Changes' if match else 'Create Match' }}</button>
+        <a href="{{ url_for('cricket.tournament_matches', t_slug=tournament.slug) }}" class="cr-btn cr-btn-secondary">Cancel</a>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

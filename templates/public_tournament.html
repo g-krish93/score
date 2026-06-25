@@ -1,0 +1,120 @@
+{% extends "base_marketing.html" %}
+{% block title %}{{ tournament.name }} — {{ org.name }}{% endblock %}
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+
+  <!-- Hero -->
+  <div class="cr-dash-top" style="background:var(--cr-surface);border-radius:12px;padding:28px 24px;margin-bottom:24px;">
+    <div>
+      <p class="cr-muted" style="margin:0 0 4px;font-size:0.85rem;">{{ org.name }}</p>
+      <h1 style="margin:0 0 6px;">{{ tournament.name }}</h1>
+      <p class="cr-muted" style="margin:0;">
+        {{ tournament.format }}{% if tournament.format == 'Custom' %} ({{ tournament.custom_overs }} overs){% endif %}
+        · {{ tournament.tournament_type }}
+        {% if tournament.location %} · {{ tournament.location }}{% endif %}
+        {% if tournament.start_date %} · {{ tournament.start_date.strftime('%d %b %Y') }}{% endif %}
+      </p>
+    </div>
+  </div>
+
+  <!-- Tab Navigation -->
+  <div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--cr-border);padding-bottom:0;">
+    {% set tabs = [('fixtures','Fixtures'), ('points','Points Table'), ('leaderboard','Leaderboard')] %}
+    {% for tid, label in tabs %}
+    <button onclick="showTab('{{ tid }}')" id="tab-{{ tid }}"
+            class="cr-btn cr-btn-secondary cr-btn-sm"
+            style="border-radius:6px 6px 0 0;border-bottom:none;">
+      {{ label }}
+    </button>
+    {% endfor %}
+  </div>
+
+  <!-- Fixtures Tab -->
+  <div id="pane-fixtures">
+    {% if not matches %}
+    <div class="cr-card" style="text-align:center;padding:30px;"><p class="cr-muted">No fixtures scheduled yet.</p></div>
+    {% else %}
+    <div style="display:grid;gap:10px;">
+      {% for m in matches %}
+      {% set sc = {'scheduled':'#93c5fd','live':'#86efac','completed':'#d1d5db','abandoned':'#fca5a5','no_result':'#9ca3af'} %}
+      <div class="cr-card" style="padding:14px 18px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+          <div>
+            <span class="cr-badge" style="background:transparent;border:1px solid {{ sc.get(m.status,'#9ca3af') }};color:{{ sc.get(m.status,'#9ca3af') }};margin-right:8px;">{{ m.status.upper() }}</span>
+            {% if m.match_date %}<span class="cr-muted" style="font-size:0.82rem;">{{ m.match_date.strftime('%d %b %Y') }}</span>{% endif %}
+          </div>
+          <div style="font-size:1rem;font-weight:600;">
+            <span style="color:{{ m.team1.color }};">{{ m.team1.name }}</span>
+            <span class="cr-muted"> vs </span>
+            <span style="color:{{ m.team2.color }};">{{ m.team2.name }}</span>
+          </div>
+          <div>
+            {% if m.result_summary %}<span class="cr-muted" style="font-size:0.85rem;">{{ m.result_summary }}</span>{% endif %}
+            {% if m.status == 'completed' %}
+            <a href="{{ url_for('cricket.public_scorecard', org_slug=org.slug, match_id=m.id) }}" class="cr-btn cr-btn-secondary cr-btn-sm" style="margin-left:8px;">Scorecard</a>
+            {% elif m.status == 'live' and m.score_match_slug %}
+            <a href="/m/{{ m.score_match_slug }}/stream" class="cr-btn cr-btn-sm" style="margin-left:8px;" target="_blank">Live ▶</a>
+            {% endif %}
+          </div>
+        </div>
+        {% if m.venue %}<p class="cr-muted" style="margin:6px 0 0;font-size:0.8rem;">@ {{ m.venue }}</p>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Points Table Tab -->
+  <div id="pane-points" style="display:none;">
+    {% if not points_table %}
+    <div class="cr-card" style="text-align:center;padding:30px;"><p class="cr-muted">No completed matches yet.</p></div>
+    {% else %}
+    <div class="cr-card" style="overflow-x:auto;">
+      <table class="cr-table" style="width:100%;">
+        <thead>
+          <tr>
+            <th>#</th><th>Team</th><th>P</th><th>W</th><th>L</th><th>NR</th><th>Pts</th><th>NRR</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in points_table %}
+          <tr {% if loop.index <= 2 %}style="background:rgba(34,211,168,0.06);"{% endif %}>
+            <td>{{ loop.index }}</td>
+            <td>
+              <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ row.team.color }};margin-right:6px;"></span>
+              <strong>{{ row.team.name }}</strong>
+            </td>
+            <td>{{ row.played }}</td>
+            <td>{{ row.won }}</td>
+            <td>{{ row.lost }}</td>
+            <td>{{ row.nr }}</td>
+            <td><strong>{{ row.points }}</strong></td>
+            <td style="{% if row.nrr > 0 %}color:#86efac;{% elif row.nrr < 0 %}color:#fca5a5;{% endif %}">
+              {{ '+' if row.nrr > 0 else '' }}{{ row.nrr }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Leaderboard Tab -->
+  <div id="pane-leaderboard" style="display:none;">
+    <p style="text-align:center;margin:20px 0;">
+      <a href="{{ url_for('cricket.public_leaderboard', org_slug=org.slug, t_slug=tournament.slug) }}" class="cr-btn">View Full Leaderboard</a>
+    </p>
+  </div>
+
+</main>
+<script>
+function showTab(id) {
+  ['fixtures','points','leaderboard'].forEach(t => {
+    document.getElementById('pane-'+t).style.display = t === id ? 'block' : 'none';
+    document.getElementById('tab-'+t).style.borderBottom = t === id ? '2px solid #22d3a8' : 'none';
+  });
+}
+showTab('fixtures');
+</script>
+{% endblock %}

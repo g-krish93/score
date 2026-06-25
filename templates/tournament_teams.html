@@ -1,0 +1,72 @@
+{% extends "base_marketing.html" %}
+{% block title %}Teams — {{ tournament.name }} — CricRelay{% endblock %}
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <div class="cr-dash-top">
+    <div>
+      <h1>{{ tournament.name }} — Teams</h1>
+      <p class="cr-muted">Club: <strong>{{ org.name }}</strong></p>
+    </div>
+    <a href="{{ url_for('cricket.tournament_matches', t_slug=tournament.slug) }}" class="cr-btn">View Fixtures →</a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for cat, m in messages %}
+      <div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  <!-- Add team to tournament -->
+  {% set available = all_teams | rejectattr('id', 'in', enrolled_ids) | list %}
+  {% if available %}
+  <div class="cr-card" style="max-width:480px;margin-bottom:20px;">
+    <h3 style="margin:0 0 12px;">Add Team to Tournament</h3>
+    <form method="post" action="{{ url_for('cricket.tournament_team_add', t_slug=tournament.slug) }}" style="display:flex;gap:10px;">
+      <select class="cr-input" name="team_id" style="flex:1;">
+        {% for team in available %}
+        <option value="{{ team.id }}">{{ team.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="cr-btn">Add</button>
+    </form>
+  </div>
+  {% else %}
+  <div class="cr-card" style="max-width:480px;margin-bottom:20px;padding:12px 16px;">
+    <p class="cr-muted" style="margin:0;">All existing teams are enrolled. <a href="{{ url_for('cricket.team_new') }}">Create a new team</a> to add more.</p>
+  </div>
+  {% endif %}
+
+  <!-- Enrolled teams -->
+  <div class="cr-card" style="max-width:700px;">
+    <h3 style="margin:0 0 14px;">Enrolled Teams ({{ tournament.teams|length }})</h3>
+    {% if not tournament.teams %}
+    <p class="cr-muted">No teams enrolled yet.</p>
+    {% else %}
+    <table class="cr-table" style="width:100%;">
+      <thead><tr><th>Team</th><th>Players</th><th></th></tr></thead>
+      <tbody>
+        {% for team in tournament.teams %}
+        <tr>
+          <td>
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ team.color }};margin-right:6px;"></span>
+            <strong>{{ team.name }}</strong>
+          </td>
+          <td>{{ team.players.count() }}</td>
+          <td>
+            <form method="post" action="{{ url_for('cricket.tournament_team_remove', t_slug=tournament.slug, team_id=team.id) }}"
+                  onsubmit="return confirm('Remove {{ team.name }} from tournament?');">
+              <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm" style="color:#ef4444;">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  <div style="margin-top:20px;">
+    <a href="{{ url_for('cricket.tournaments_list') }}" class="cr-btn cr-btn-secondary">← Tournaments</a>
+  </div>
+</main>
+{% endblock %}

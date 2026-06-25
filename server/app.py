@@ -37,6 +37,12 @@ from sqlalchemy import inspect, text
 
 from .models_cricrelay import (
     ClubUser,
+    CricInnings,
+    CricMatch,
+    CricPlayer,
+    CricPlayerMatchStat,
+    CricTeam,
+    CricTournament,
     Organization,
     RelayMatch,
     Sponsor,
@@ -71,6 +77,7 @@ from .stream_api import (
 from . import twitch_stream as tw
 from . import youtube_stream as yt
 from .rate_limit import auth_limiter
+from .cricket_mgmt import cricket_bp, _extract_match_stats, _state_path
 
 load_dotenv()
 
@@ -116,6 +123,7 @@ if not _db_url:
 app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
+app.register_blueprint(cricket_bp)
 
 
 @app.context_processor
@@ -137,6 +145,16 @@ def inject_seo_context():
             if raw_theme in {"original", "light", "dark"}:
                 ui_theme = raw_theme
     return {"canonical_url": canonical_url, "current_year": year, "ui_theme": ui_theme}
+
+
+@app.template_filter("from_json")
+def from_json_filter(value):
+    if not value:
+        return None
+    try:
+        return json.loads(value)
+    except Exception:
+        return None
 
 
 DEFAULT_MATCH_ID = "default"
@@ -407,6 +425,18 @@ def migrate_twitch_columns():
             altered = True
     if altered:
         db.session.commit()
+
+
+def migrate_cricket_tables():
+    """Create new cricket tournament management tables (additive, never modifies existing tables)."""
+    insp = inspect(db.engine)
+    new_tables = [
+        "cric_team", "cric_player", "cric_tournament",
+        "cric_tournament_teams", "cric_match", "cric_innings",
+        "cric_player_match_stat",
+    ]
+    if not all(insp.has_table(t) for t in new_tables):
+        db.create_all()
 
 
 def _youtube_redirect_uri() -> str:
@@ -3440,6 +3470,7 @@ with app.app_context():
     migrate_twitch_columns()
     migrate_play_cricket_base_url_nullable()
     migrate_consent_given_at_column()
+    migrate_cricket_tables()
 
 with state_lock:
     try:

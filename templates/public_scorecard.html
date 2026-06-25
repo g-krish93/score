@@ -1,0 +1,110 @@
+{% extends "base_marketing.html" %}
+{% block title %}Scorecard — {{ match.team1.name }} vs {{ match.team2.name }}{% endblock %}
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <!-- Match Header -->
+  <div class="cr-card" style="margin-bottom:20px;text-align:center;padding:20px;">
+    <p class="cr-muted" style="margin:0 0 4px;font-size:0.85rem;">{{ match.tournament.name }} · {{ org.name }}</p>
+    <h1 style="margin:0 0 6px;font-size:1.4rem;">
+      <span style="color:{{ match.team1.color }};">{{ match.team1.name }}</span>
+      <span class="cr-muted"> vs </span>
+      <span style="color:{{ match.team2.color }};">{{ match.team2.name }}</span>
+    </h1>
+    {% if match.match_date %}<p class="cr-muted" style="margin:0;font-size:0.85rem;">{{ match.match_date.strftime('%d %b %Y') }}{% if match.venue %} @ {{ match.venue }}{% endif %}</p>{% endif %}
+    {% if match.result_summary %}
+    <div style="margin-top:12px;padding:10px 16px;background:var(--cr-surface);border-radius:8px;font-weight:600;">
+      {{ match.result_summary }}
+    </div>
+    {% endif %}
+  </div>
+
+  {% for innings in innings_list %}
+  {% set ps = player_stats.get(innings.innings_number, {}) %}
+  <div class="cr-card" style="margin-bottom:20px;">
+    <h3 style="margin:0 0 14px;border-bottom:1px solid var(--cr-border);padding-bottom:10px;">
+      <span style="color:{{ innings.batting_team.color }};">{{ innings.batting_team.name }}</span>
+      — Innings {{ innings.innings_number }}
+      <span class="cr-muted" style="font-size:0.9rem;margin-left:10px;">
+        {{ innings.total_runs }}/{{ innings.total_wickets }} ({{ innings.total_overs }} ov)
+      </span>
+    </h3>
+
+    <!-- Batting Card -->
+    <h4 style="margin:0 0 8px;">Batting</h4>
+    <div style="overflow-x:auto;margin-bottom:16px;">
+      <table class="cr-table" style="width:100%;min-width:500px;">
+        <thead>
+          <tr><th>Batter</th><th>Dismissal</th><th>R</th><th>B</th><th>4s</th><th>6s</th><th>SR</th></tr>
+        </thead>
+        <tbody>
+          {% for s in ps.get('batting', []) %}
+          <tr>
+            <td>
+              <strong>{{ s.player.name if s.player else s.raw_name }}</strong>
+              {% if s.batting_position == 1 or s.batting_position == 2 %}<span class="cr-muted" style="font-size:0.75rem;"> (opener)</span>{% endif %}
+            </td>
+            <td class="cr-muted" style="font-size:0.85rem;">
+              {% if not s.dismissal_kind or s.dismissal_kind == 'not_out' %}not out
+              {% else %}{{ s.dismissal_kind.replace('_', ' ') }}{% endif %}
+            </td>
+            <td><strong>{{ s.runs_scored }}</strong></td>
+            <td>{{ s.balls_faced or '—' }}</td>
+            <td>{{ s.fours }}</td>
+            <td>{{ s.sixes }}</td>
+            <td>{{ ((s.runs_scored / s.balls_faced * 100) | round(1)) if s.balls_faced else '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="cr-muted" style="text-align:center;">No batting data</td></tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight:600;">
+            <td colspan="2">Total</td>
+            <td>{{ innings.total_runs }}/{{ innings.total_wickets }}</td>
+            <td colspan="4" class="cr-muted">({{ innings.total_overs }} overs, {{ innings.extras }} extras)</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- Bowling Card -->
+    <h4 style="margin:0 0 8px;">Bowling</h4>
+    <div style="overflow-x:auto;">
+      <table class="cr-table" style="width:100%;min-width:400px;">
+        <thead>
+          <tr><th>Bowler</th><th>O</th><th>M</th><th>R</th><th>W</th><th>Eco</th></tr>
+        </thead>
+        <tbody>
+          {% for s in ps.get('bowling', []) %}
+          <tr>
+            <td><strong>{{ s.player.name if s.player else s.raw_name }}</strong></td>
+            <td>{{ s.overs_bowled }}</td>
+            <td>{{ s.maidens }}</td>
+            <td>{{ s.runs_conceded }}</td>
+            <td><strong>{{ s.wickets_taken }}</strong></td>
+            <td>{{ ((s.runs_conceded / s.overs_bowled) | round(2)) if s.overs_bowled else '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="cr-muted" style="text-align:center;">No bowling data</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if innings.fall_of_wickets %}
+    {% set fow = innings.fall_of_wickets | from_json %}
+    {% if fow %}
+    <p style="margin-top:14px;font-size:0.85rem;">
+      <span class="cr-muted">Fall of wickets: </span>
+      {% for w in fow %}{{ w.runs }}/{{ w.wicket }}{% if not loop.last %}, {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <div style="margin-top:10px;">
+    <a href="{{ url_for('cricket.public_tournament', org_slug=org.slug, t_slug=match.tournament.slug) }}" class="cr-btn cr-btn-secondary">← Tournament</a>
+  </div>
+</main>
+{% endblock %}

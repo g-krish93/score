@@ -1,0 +1,57 @@
+{% extends "base_marketing.html" %}
+{% block title %}Teams — {{ org.name }} — CricRelay{% endblock %}
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <div class="cr-dash-top">
+    <div>
+      <h1>Teams</h1>
+      <p class="cr-muted">Club: <strong>{{ org.name }}</strong></p>
+    </div>
+    <a href="{{ url_for('cricket.team_new') }}" class="cr-btn">+ New Team</a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for cat, m in messages %}
+      <div class="cr-flash {% if cat == 'error' %}error{% elif cat == 'warning' %}cr-flash-warn{% else %}success{% endif %}">{{ m }}</div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  {% if not teams %}
+  <div class="cr-card" style="text-align:center;padding:40px;">
+    <p class="cr-muted">No teams yet. Create your first team to get started.</p>
+    <a href="{{ url_for('cricket.team_new') }}" class="cr-btn" style="margin-top:12px;">+ New Team</a>
+  </div>
+  {% else %}
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;">
+    {% for team in teams %}
+    <div class="cr-card" style="border-left:4px solid {{ team.color }};">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+        {% if team.logo_url %}
+        <img src="{{ team.logo_url }}" alt="{{ team.name }}" style="width:40px;height:40px;object-fit:contain;border-radius:4px;">
+        {% else %}
+        <div style="width:40px;height:40px;border-radius:50%;background:{{ team.color }};display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:16px;">{{ team.name[0] }}</div>
+        {% endif %}
+        <div>
+          <h3 style="margin:0;font-size:1rem;">{{ team.name }}</h3>
+          <p class="cr-muted" style="margin:0;font-size:0.8rem;">{{ team.players.count() }} player{{ 's' if team.players.count() != 1 else '' }}</p>
+        </div>
+      </div>
+      {% if team.description %}<p class="cr-muted" style="font-size:0.85rem;margin-bottom:12px;">{{ team.description }}</p>{% endif %}
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        <a href="{{ url_for('cricket.team_players', team_slug=team.slug) }}" class="cr-btn cr-btn-sm">Manage Players</a>
+        <a href="{{ url_for('cricket.team_edit', team_slug=team.slug) }}" class="cr-btn cr-btn-secondary cr-btn-sm">Edit</a>
+        <form method="post" action="{{ url_for('cricket.team_delete', team_slug=team.slug) }}" onsubmit="return confirm('Delete team {{ team.name }}? This cannot be undone.');">
+          <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm" style="color:#ef4444;">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div style="margin-top:24px;">
+    <a href="{{ url_for('cricket.tournaments_list') }}" class="cr-btn cr-btn-secondary">View Tournaments</a>
+    <a href="{{ url_for('dashboard') }}" class="cr-btn cr-btn-secondary" style="margin-left:8px;">← Dashboard</a>
+  </div>
+</main>
+{% endblock %}
