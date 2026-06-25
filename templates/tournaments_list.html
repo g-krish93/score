@@ -1,0 +1,68 @@
+{% extends "base_marketing.html" %}
+{% block title %}Tournaments — {{ org.name }} — CricRelay{% endblock %}
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <div class="cr-dash-top">
+    <div>
+      <h1>Tournaments</h1>
+      <p class="cr-muted">Club: <strong>{{ org.name }}</strong></p>
+    </div>
+    <a href="{{ url_for('cricket.tournament_new') }}" class="cr-btn">+ New Tournament</a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for cat, m in messages %}
+      <div class="cr-flash {% if cat == 'error' %}error{% elif cat == 'warning' %}cr-flash-warn{% else %}success{% endif %}">{{ m }}</div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  {% if not tournaments %}
+  <div class="cr-card" style="text-align:center;padding:40px;">
+    <p class="cr-muted">No tournaments yet. Create one to start scheduling matches.</p>
+    <a href="{{ url_for('cricket.tournament_new') }}" class="cr-btn" style="margin-top:12px;">+ New Tournament</a>
+  </div>
+  {% else %}
+  <div style="display:grid;gap:16px;">
+    {% for t in tournaments %}
+    <div class="cr-card">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+          <h3 style="margin:0 0 4px;">
+            {{ t.name }}
+            {% if t.is_public %}<span class="cr-badge" style="background:#064e3b;color:#6ee7b7;margin-left:8px;">Public</span>{% endif %}
+          </h3>
+          <p class="cr-muted" style="margin:0;font-size:0.85rem;">
+            {{ t.format }}{% if t.format == 'Custom' %} ({{ t.custom_overs }} overs){% endif %}
+            · {{ t.tournament_type }}
+            {% if t.location %} · {{ t.location }}{% endif %}
+            {% if t.start_date %} · Starts {{ t.start_date.strftime('%d %b %Y') }}{% endif %}
+          </p>
+          <p class="cr-muted" style="margin:4px 0 0;font-size:0.85rem;">
+            {{ t.teams|length }} team{{ 's' if t.teams|length != 1 else '' }}
+            · {{ t.matches.count() }} match{{ 'es' if t.matches.count() != 1 else '' }}
+          </p>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          <a href="{{ url_for('cricket.tournament_matches', t_slug=t.slug) }}" class="cr-btn cr-btn-sm">Matches</a>
+          <a href="{{ url_for('cricket.tournament_teams_manage', t_slug=t.slug) }}" class="cr-btn cr-btn-secondary cr-btn-sm">Teams</a>
+          <a href="{{ url_for('cricket.tournament_edit', t_slug=t.slug) }}" class="cr-btn cr-btn-secondary cr-btn-sm">Edit</a>
+          {% if t.is_public %}
+          <a href="{{ url_for('cricket.public_tournament', org_slug=org.slug, t_slug=t.slug) }}" class="cr-btn cr-btn-secondary cr-btn-sm" target="_blank">Public Page ↗</a>
+          {% endif %}
+          <form method="post" action="{{ url_for('cricket.tournament_delete', t_slug=t.slug) }}"
+                onsubmit="return confirm('Delete {{ t.name }}? All matches and stats will be lost.');">
+            <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm" style="color:#ef4444;">Delete</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div style="margin-top:24px;">
+    <a href="{{ url_for('cricket.teams_list') }}" class="cr-btn cr-btn-secondary">Manage Teams</a>
+    <a href="{{ url_for('dashboard') }}" class="cr-btn cr-btn-secondary" style="margin-left:8px;">← Dashboard</a>
+  </div>
+</main>
+{% endblock %}
