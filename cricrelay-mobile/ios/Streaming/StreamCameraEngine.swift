@@ -153,7 +153,7 @@ final class StreamCameraEngine: NSObject {
         overlayLayout = layout
         self.overlayUrl = overlayUrl
 
-        let endpoint = StreamRtmpPlugin.buildEndpoint(rtmpUrl: rtmpUrl, streamKey: streamKey)
+        let endpoint = StreamCameraEngine.buildRtmpEndpoint(rtmpUrl: rtmpUrl, streamKey: streamKey)
         guard endpoint.hasPrefix("rtmp://") else {
             emit("error", "Invalid RTMP URL")
             return
@@ -584,7 +584,7 @@ final class StreamCameraEngine: NSObject {
             if standbyObject == nil {
                 let obj = ImageScreenObject()
                 obj.horizontalAlignment = .center
-                obj.verticalAlignment = .center
+                obj.verticalAlignment = .middle
                 standbyObject = obj
                 try? await mixer.screen.addChild(obj)
             }
@@ -599,6 +599,16 @@ final class StreamCameraEngine: NSObject {
                 standbyObject = nil
             }
         }.value
+    }
+
+    private static func buildRtmpEndpoint(rtmpUrl: String, streamKey: String) -> String {
+        var server = rtmpUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        while server.hasSuffix("/") { server.removeLast() }
+        let key = streamKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if server.isEmpty { return "" }
+        if key.isEmpty { return server }
+        if server.hasSuffix("/\(key)") { return server }
+        return "\(server)/\(key)"
     }
 
     /// Full-frame Floodlight-branded standby card shown while the app is backgrounded.
