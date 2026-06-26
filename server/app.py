@@ -158,6 +158,11 @@ match_contexts = {}
 SCORING_DUAL_WRITE = (os.getenv("SCORING_DUAL_WRITE", "") or "").strip().lower() in {
     "1", "true", "yes", "on",
 }
+# When on (and the event log is being dual-written), each /score read folds the
+# log through the core and logs any field that diverges from the legacy engine.
+SCORING_SHADOW_COMPARE = (os.getenv("SCORING_SHADOW_COMPARE", "") or "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
 _event_store = None
 
 
@@ -195,6 +200,25 @@ def _dual_write_ball(match_id, ball_type, run_bonus, out_batter, dismissal_kind)
         )
     except Exception:
         app.logger.exception("scoring dual-write (ball) failed; ignored")
+
+
+def _shadow_compare(match_id, legacy_state):
+    if not SCORING_SHADOW_COMPARE:
+        return
+    try:
+        from cricrelay_core import derived, reduce
+        from server.scoring_shadow import diffs
+
+        events = _scoring_event_store().load(match_id)
+        if not events:
+            return
+        divergences = diffs(legacy_state, derived(reduce(events)))
+        if divergences:
+            app.logger.warning(
+                "scoring shadow diff [%s]: %s", match_id, "; ".join(divergences)
+            )
+    except Exception:
+        app.logger.exception("scoring shadow-compare failed; ignored")
 
 
 def blank_state():
@@ -2024,6 +2048,7 @@ def relay_pcs_ingest():
 @app.get("/score")
 def score():
     with match_context():
+        _shadow_compare(current_match_id, state)
         return jsonify(with_calculated_values(state))
 
 
