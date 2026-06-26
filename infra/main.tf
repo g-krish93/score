@@ -1,4 +1,14 @@
 terraform {
+  # Remote state: versioned, encrypted, private S3 bucket with native S3 state
+  # locking (use_lockfile, Terraform >= 1.10). Replaces local state-in-repo.
+  backend "s3" {
+    bucket       = "cricrelay-tfstate-973646734579"
+    key          = "infra/terraform.tfstate"
+    region       = "eu-west-2"
+    encrypt      = true
+    use_lockfile = true
+  }
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
