@@ -1220,16 +1220,21 @@ def register_page():
 
 
 @app.route("/login", methods=["GET", "POST"])
-@auth_limiter.limit_auth(scope="login", html_template="cricrelay_login.html")
+@auth_limiter.limit_auth(scope="login", html_template="cricrelay_login.html", count_on_attempt=False)
 def login_page():
     if request.method == "GET":
         return render_template("cricrelay_login.html")
     email = (request.form.get("email") or "").strip().lower()
     password = request.form.get("password") or ""
+    if auth_limiter.is_limited("login", email=email):
+        flash("Too many attempts. Please wait 15 minutes and try again.", "error")
+        return render_template("cricrelay_login.html"), 429
     org = Organization.query.filter_by(email=email).first()
     if not org or not org.check_password(password):
+        auth_limiter.record_failed("login", email=email)
         flash("Invalid email or password.", "error")
         return render_template("cricrelay_login.html"), 401
+    auth_limiter.clear_on_success("login", email=email)
     session["org_id"] = org.id
     return redirect(url_for("dashboard"))
 
@@ -2691,16 +2696,20 @@ def dashboard_twitch_disconnect():
 
 
 @app.post("/api/auth/login")
-@auth_limiter.limit_auth(scope="api-login", json_endpoint=True)
+@auth_limiter.limit_auth(scope="api-login", json_endpoint=True, count_on_attempt=False)
 def api_stream_login():
     data = request.get_json(silent=True) or {}
     email = (data.get("email") or "").strip().lower()
     password = data.get("password") or ""
     if not email or not password:
         return jsonify({"error": "email and password required"}), 400
+    if auth_limiter.is_limited("api-login", email=email):
+        return jsonify({"error": "Too many attempts. Please wait 15 minutes and try again."}), 429
     org = Organization.query.filter_by(email=email).first()
     if not org or not org.check_password(password):
+        auth_limiter.record_failed("api-login", email=email)
         return jsonify({"error": "invalid credentials"}), 401
+    auth_limiter.clear_on_success("api-login", email=email)
     return jsonify(
         {
             "ok": True,
