@@ -1247,6 +1247,51 @@ def public_live_score(match_id):
     )
 
 
+def _live_snapshot(slug):
+    """Read-only current scoreboard for a match — no persist, no torn reads."""
+    with state_lock:
+        if current_match_id == slug:
+            data = copy.deepcopy(state)
+        else:
+            path = state_path_for(slug)
+            if path.exists():
+                with path.open(encoding="utf-8") as fh:
+                    data = merge_missing_state_keys(json.load(fh))
+            else:
+                data = blank_state()
+    return with_calculated_values(data)
+
+
+@app.get("/live/<match_id>/events")
+def public_live_events(match_id):
+    """Server-Sent Events stream of the live score — pushes within ~1s of a
+    change over a single connection; the page falls back to polling if SSE is
+    unavailable. NOTE: holds a worker for the connection's lifetime, so prod
+    needs threaded workers or the dedicated Redis-pub/sub pusher. The connection
+    self-recycles after 5 minutes (the client reconnects automatically)."""
+    slug = sanitize_match_id(match_id)
+
+    def stream():
+        import time as _t
+
+        last = None
+        deadline = _t.time() + 300
+        while _t.time() < deadline:
+            payload = json.dumps(_live_snapshot(slug), separators=(",", ":"))
+            if payload != last:
+                last = payload
+                yield f"data: {payload}\n\n"
+            else:
+                yield ": keep-alive\n\n"
+            _t.sleep(1)
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/robots.txt")
 def robots_txt():
     root = request.url_root.rstrip("/")
@@ -3562,4 +3607,4 @@ with state_lock:
 
 if __name__ == "__main__":
     port = safe_num(os.getenv("PORT", "5000"), 5000)
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, threaded=True)

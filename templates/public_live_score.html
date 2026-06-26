@@ -179,17 +179,40 @@
       $('thisOver').innerHTML = over.map((b) => `<span class="${ballClass(b)}">${b}</span>`).join('');
     }
 
+    function setLive(ok) {
+      const b = $('liveBadge');
+      if (ok) { b.classList.remove('is-stale'); $('liveText').textContent = 'Live'; }
+      else { b.classList.add('is-stale'); $('liveText').textContent = 'Reconnecting'; }
+    }
+
     let failures = 0;
     async function poll() {
       try {
         const r = await fetch(`/score?match=${encodeURIComponent(MATCH_ID)}`, { cache: 'no-store' });
         if (!r.ok) throw new Error(r.status);
         render(await r.json());
-        failures = 0;
-        $('liveBadge').classList.remove('is-stale'); $('liveText').textContent = 'Live';
+        failures = 0; setLive(true);
       } catch (e) {
-        if (++failures >= 2) { $('liveBadge').classList.add('is-stale'); $('liveText').textContent = 'Reconnecting'; }
+        if (++failures >= 2) setLive(false);
       }
+    }
+
+    // Realtime via Server-Sent Events; fall back to polling if SSE is
+    // unavailable (old browser, buffering proxy, etc.).
+    function start() {
+      if (window.EventSource) {
+        let gotMessage = false;
+        try {
+          const es = new EventSource(`/live/${encodeURIComponent(MATCH_ID)}/events`);
+          es.onmessage = (e) => { gotMessage = true; try { render(JSON.parse(e.data)); setLive(true); } catch (_) {} };
+          es.onerror = () => {
+            if (!gotMessage) { es.close(); poll(); setInterval(poll, 5000); }
+            else { setLive(false); }
+          };
+          return;
+        } catch (_) {}
+      }
+      poll(); setInterval(poll, 5000);
     }
 
     // Share controls
@@ -200,8 +223,7 @@
       try { await navigator.clipboard.writeText(SHARE_URL); const t = $('toast'); t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1600); } catch (_) {}
     });
 
-    poll();
-    setInterval(poll, 5000);
+    start();
   </script>
 </body>
 </html>
