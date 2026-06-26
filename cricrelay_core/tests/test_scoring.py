@@ -101,6 +101,15 @@ def test_wicket_brings_in_next_batter():
     assert inn.bowlers["X"].wickets == 1
 
 
+def test_no_ball_with_runs_credits_striker_and_a_ball_faced():
+    inn = reduce([_start(), Delivery(Outcome.NO_BALL, runs=4)]).current
+    assert inn.runs == 5  # 1 penalty + 4 off the bat
+    assert inn.extras == 1  # only the penalty is an extra
+    assert inn.legal_balls == 0  # a no-ball is re-bowled
+    assert inn.batters["A"].runs == 4
+    assert inn.batters["A"].balls == 1
+
+
 def test_innings_closes_when_all_out():
     order = ("A", "B", "C")  # all out at 2 wickets
     events = [_start(order=order), Delivery(Outcome.WICKET), Delivery(Outcome.WICKET)]

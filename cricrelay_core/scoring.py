@@ -144,8 +144,12 @@ def apply_delivery(inn: InningsState, d: Delivery) -> None:
         runs_to_team = extra
         cross = d.runs % 2 == 1
     elif o is Outcome.NO_BALL:
-        extra = 1 + d.runs
-        runs_to_team = extra
+        # No-ball: a 1-run penalty (extra) plus any runs off the bat credited to
+        # the striker, who faces the delivery (it is not a legal ball of the over
+        # but does count as a ball faced). Matches the legacy engine.
+        runs_to_bat = d.runs
+        extra = 1
+        runs_to_team = 1 + d.runs
         cross = d.runs % 2 == 1
     elif o is Outcome.BYE or o is Outcome.LEG_BYE:
         extra = d.runs
@@ -157,7 +161,9 @@ def apply_delivery(inn: InningsState, d: Delivery) -> None:
 
     striker_stat = inn.batters[inn.striker]
     striker_stat.runs += runs_to_bat
-    if legal:
+    # The striker faces every legal ball and also a no-ball (a ball faced), but
+    # not a wide.
+    if legal or o is Outcome.NO_BALL:
         striker_stat.balls += 1
 
     bowler_stat = inn.bowlers[inn.bowler]
