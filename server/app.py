@@ -37,14 +37,19 @@ from sqlalchemy import inspect, text
 
 from .models_cricrelay import (
     ClubUser,
+    Fixture,
     Organization,
+    Player,
     RelayMatch,
     Sponsor,
     StreamSession,
+    Team,
+    Tournament,
     build_play_cricket_scrape_url,
     canonicalize_play_cricket_scrape_url,
     db,
     normalize_play_cricket_club_root,
+    slugify_competition_name,
     slugify_org_name,
 )
 from .pcs_protocol import (
@@ -1866,6 +1871,418 @@ def dashboard_relay_delete():
         return redirect(url_for("dashboard"))
     flash("Stream removed. Add a new match any time.", "success")
     return redirect(url_for("dashboard"))
+
+
+# --- Competition module (native mode): tournaments, teams, players, fixtures ---
+# Additive feature. All mutating routes are @login_required and scoped to the
+# caller's org; the only public surface is the read-only GET /t/<slug>.
+
+
+def _tournament_for_org(org: Organization, tournament_id: str) -> Tournament | None:
+    if not org or not tournament_id:
+        return None
+    return Tournament.query.filter_by(id=tournament_id, organization_id=org.id).first()
+
+
+def _team_in_tournament(tournament: Tournament, team_id: str) -> Team | None:
+    if not tournament or not team_id:
+        return None
+    return Team.query.filter_by(id=team_id, tournament_id=tournament.id).first()
+
+
+def _unique_tournament_slug(name: str) -> str:
+    base = slugify_competition_name(name)
+    slug = base
+    for _ in range(24):
+        if not Tournament.query.filter_by(slug=slug).first():
+            return slug
+        slug = f"{base}-{secrets.token_hex(2)}"
+    return f"{base}-{secrets.token_hex(4)}"
+
+
+def _parse_date_opt(raw: str):
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _parse_datetime_opt(raw: str):
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def compute_points_table(teams: list[Team], fixtures: list[Fixture]) -> list[dict]:
+    """Standings + Net Run Rate, computed only from completed fixtures.
+
+    Points: win = 2, tie/no-result = 1, loss = 0. NRR = runs scored per over
+    faced minus runs conceded per over bowled (overs = balls / 6).
+    """
+    rows: dict[str, dict] = {}
+    for t in teams:
+        rows[t.id] = {
+            "team": t,
+            "played": 0,
+            "won": 0,
+            "lost": 0,
+            "drawn": 0,
+            "points": 0,
+            "_rf": 0, "_bf": 0, "_ra": 0, "_ba": 0,
+        }
+
+    for fx in fixtures:
+        if fx.status != "completed" or not fx.result_json:
+            continue
+        try:
+            data = json.loads(fx.result_json)
+        except (ValueError, TypeError):
+            continue
+        home, away = rows.get(fx.home_team_id), rows.get(fx.away_team_id)
+        if not home or not away:
+            continue
+        h = data.get("home") or {}
+        a = data.get("away") or {}
+        hr, hb = int(h.get("runs", 0)), int(h.get("balls", 0))
+        ar, ab = int(a.get("runs", 0)), int(a.get("balls", 0))
+
+        home["played"] += 1
+        away["played"] += 1
+        home["_rf"] += hr; home["_bf"] += hb; home["_ra"] += ar; home["_ba"] += ab
+        away["_rf"] += ar; away["_bf"] += ab; away["_ra"] += hr; away["_ba"] += hb
+
+        outcome = (data.get("outcome") or "").strip().lower()
+        if outcome == "home":
+            home["won"] += 1; away["lost"] += 1
+        elif outcome == "away":
+            away["won"] += 1; home["lost"] += 1
+        else:  # tie or no-result
+            home["drawn"] += 1; away["drawn"] += 1
+
+    out = []
+    for r in rows.values():
+        r["points"] = r["won"] * 2 + r["drawn"]
+        rf_rate = (r["_rf"] / (r["_bf"] / 6)) if r["_bf"] else 0.0
+        ra_rate = (r["_ra"] / (r["_ba"] / 6)) if r["_ba"] else 0.0
+        r["nrr"] = round(rf_rate - ra_rate, 3)
+        out.append(r)
+    out.sort(key=lambda r: (-r["points"], -r["nrr"], r["team"].name.lower()))
+    return out
+
+
+def _tournament_view(org: Organization, tournament: Tournament) -> dict:
+    teams = Team.query.filter_by(tournament_id=tournament.id).order_by(Team.name).all()
+    fixtures = Fixture.query.filter_by(tournament_id=tournament.id).all()
+    players_by_team: dict[str, list] = {t.id: [] for t in teams}
+    if teams:
+        for p in Player.query.filter(
+            Player.team_id.in_([t.id for t in teams])
+        ).order_by(Player.name).all():
+            players_by_team.setdefault(p.team_id, []).append(p)
+    team_names = {t.id: t for t in teams}
+    fixtures_sorted = sorted(
+        fixtures, key=lambda f: (f.scheduled_at or datetime.max, f.created_at or datetime.max)
+    )
+    return {
+        "tournament": tournament,
+        "teams": teams,
+        "players_by_team": players_by_team,
+        "team_names": team_names,
+        "fixtures": fixtures_sorted,
+        "points_table": compute_points_table(teams, fixtures),
+    }
+
+
+@app.get("/dashboard/tournaments")
+@login_required
+def dashboard_tournaments():
+    org = _org_from_session()
+    tournaments = (
+        Tournament.query.filter_by(organization_id=org.id)
+        .order_by(Tournament.created_at.desc())
+        .all()
+    )
+    return render_template(
+        "dashboard_tournaments.html",
+        org=org,
+        tournaments=tournaments,
+        view=None,
+    )
+
+
+@app.get("/dashboard/tournaments/<tournament_id>")
+@login_required
+def dashboard_tournament_manage(tournament_id):
+    org = _org_from_session()
+    tournament = _tournament_for_org(org, tournament_id)
+    if not tournament:
+        flash("Unknown tournament for your club.", "error")
+        return redirect(url_for("dashboard_tournaments"))
+    tournaments = (
+        Tournament.query.filter_by(organization_id=org.id)
+        .order_by(Tournament.created_at.desc())
+        .all()
+    )
+    return render_template(
+        "dashboard_tournaments.html",
+        org=org,
+        tournaments=tournaments,
+        view=_tournament_view(org, tournament),
+    )
+
+
+@app.post("/dashboard/tournaments")
+@login_required
+def dashboard_create_tournament():
+    org = _org_from_session()
+    name = (request.form.get("name") or "").strip()[:200]
+    if not name:
+        flash("Tournament name is required.", "error")
+        return redirect(url_for("dashboard_tournaments"))
+    fmt = (request.form.get("format") or "T20").strip()[:24] or "T20"
+    try:
+        overs = max(1, min(int(request.form.get("overs") or 20), 200))
+    except (ValueError, TypeError):
+        overs = 20
+    tournament = Tournament(
+        organization_id=org.id,
+        name=name,
+        slug=_unique_tournament_slug(name),
+        format=fmt,
+        overs=overs,
+        starts_on=_parse_date_opt(request.form.get("starts_on")),
+    )
+    db.session.add(tournament)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Could not create that tournament (conflict).", "error")
+        return redirect(url_for("dashboard_tournaments"))
+    flash("Tournament created — add teams next.", "success")
+    return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+
+
+@app.post("/dashboard/tournaments/<tournament_id>/teams")
+@login_required
+def dashboard_add_team(tournament_id):
+    org = _org_from_session()
+    tournament = _tournament_for_org(org, tournament_id)
+    if not tournament:
+        flash("Unknown tournament for your club.", "error")
+        return redirect(url_for("dashboard_tournaments"))
+    name = (request.form.get("name") or "").strip()[:120]
+    if not name:
+        flash("Team name is required.", "error")
+        return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+    short = (request.form.get("short_name") or "").strip()[:8] or None
+    db.session.add(Team(tournament_id=tournament.id, name=name, short_name=short))
+    db.session.commit()
+    flash(f"Team “{name}” added.", "success")
+    return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+
+
+@app.post("/dashboard/tournaments/<tournament_id>/players")
+@login_required
+def dashboard_add_player(tournament_id):
+    org = _org_from_session()
+    tournament = _tournament_for_org(org, tournament_id)
+    if not tournament:
+        flash("Unknown tournament for your club.", "error")
+        return redirect(url_for("dashboard_tournaments"))
+    team = _team_in_tournament(tournament, (request.form.get("team_id") or "").strip())
+    if not team:
+        flash("Pick a team in this tournament first.", "error")
+        return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+    name = (request.form.get("name") or "").strip()[:120]
+    if not name:
+        flash("Player name is required.", "error")
+        return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+    db.session.add(Player(team_id=team.id, name=name))
+    db.session.commit()
+    flash(f"Player “{name}” added to {team.name}.", "success")
+    return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+
+
+@app.post("/dashboard/tournaments/<tournament_id>/fixtures")
+@login_required
+def dashboard_add_fixture(tournament_id):
+    org = _org_from_session()
+    tournament = _tournament_for_org(org, tournament_id)
+    if not tournament:
+        flash("Unknown tournament for your club.", "error")
+        return redirect(url_for("dashboard_tournaments"))
+    home = _team_in_tournament(tournament, (request.form.get("home_team_id") or "").strip())
+    away = _team_in_tournament(tournament, (request.form.get("away_team_id") or "").strip())
+    if not home or not away or home.id == away.id:
+        flash("Pick two different teams for the fixture.", "error")
+        return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+    db.session.add(
+        Fixture(
+            tournament_id=tournament.id,
+            home_team_id=home.id,
+            away_team_id=away.id,
+            scheduled_at=_parse_datetime_opt(request.form.get("scheduled_at")),
+        )
+    )
+    db.session.commit()
+    flash("Fixture added.", "success")
+    return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+
+
+@app.post("/dashboard/tournaments/<tournament_id>/generate-fixtures")
+@login_required
+def dashboard_generate_fixtures(tournament_id):
+    org = _org_from_session()
+    tournament = _tournament_for_org(org, tournament_id)
+    if not tournament:
+        flash("Unknown tournament for your club.", "error")
+        return redirect(url_for("dashboard_tournaments"))
+    teams = Team.query.filter_by(tournament_id=tournament.id).order_by(Team.created_at).all()
+    if len(teams) < 2:
+        flash("Add at least two teams before generating fixtures.", "error")
+        return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+    created = 0
+    for i in range(len(teams)):
+        for j in range(i + 1, len(teams)):
+            db.session.add(
+                Fixture(
+                    tournament_id=tournament.id,
+                    home_team_id=teams[i].id,
+                    away_team_id=teams[j].id,
+                )
+            )
+            created += 1
+    db.session.commit()
+    flash(f"Generated {created} round-robin fixture(s).", "success")
+    return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+
+
+def _fixture_for_org(org: Organization, tournament: Tournament, fixture_id: str) -> Fixture | None:
+    if not tournament or not fixture_id:
+        return None
+    return Fixture.query.filter_by(id=fixture_id, tournament_id=tournament.id).first()
+
+
+@app.post("/dashboard/tournaments/<tournament_id>/fixtures/<fixture_id>/start-match")
+@login_required
+def dashboard_start_fixture_match(tournament_id, fixture_id):
+    org = _org_from_session()
+    tournament = _tournament_for_org(org, tournament_id)
+    fixture = _fixture_for_org(org, tournament, fixture_id) if tournament else None
+    if not fixture:
+        flash("Unknown fixture for your club.", "error")
+        return redirect(url_for("dashboard_tournaments"))
+    if fixture.score_match_slug:
+        flash("This fixture is already linked to a live match.", "error")
+        return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+    mid = f"native-{secrets.token_hex(4)}"
+    base_slug = sanitize_match_id(f"{org.slug}-{tournament.slug}-{secrets.token_hex(2)}")
+    score_slug = base_slug
+    for _ in range(16):
+        if not RelayMatch.query.filter_by(score_match_slug=score_slug).first():
+            break
+        score_slug = sanitize_match_id(f"{base_slug}-{secrets.token_hex(2)}")
+    home = _team_in_tournament(tournament, fixture.home_team_id)
+    away = _team_in_tournament(tournament, fixture.away_team_id)
+    label = f"{home.name if home else 'Home'} vs {away.name if away else 'Away'}"[:120]
+    row = RelayMatch(
+        organization_id=org.id,
+        play_cricket_match_id=mid,
+        full_scrape_url="",
+        score_match_slug=score_slug,
+        label=label,
+        paused=False,
+        relay_source="native",
+    )
+    db.session.add(row)
+    fixture.score_match_slug = score_slug
+    fixture.status = "live"
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Could not start the match (conflict).", "error")
+        return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+    flash("Native match started — score it from the scorer page.", "success")
+    return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+
+
+@app.post("/dashboard/tournaments/<tournament_id>/fixtures/<fixture_id>/result")
+@login_required
+def dashboard_record_fixture_result(tournament_id, fixture_id):
+    org = _org_from_session()
+    tournament = _tournament_for_org(org, tournament_id)
+    fixture = _fixture_for_org(org, tournament, fixture_id) if tournament else None
+    if not fixture:
+        flash("Unknown fixture for your club.", "error")
+        return redirect(url_for("dashboard_tournaments"))
+
+    def _num(field, default=0):
+        try:
+            return max(0, int(request.form.get(field) or default))
+        except (ValueError, TypeError):
+            return default
+
+    home = {"runs": _num("home_runs"), "wkts": _num("home_wkts"), "balls": _num("home_balls")}
+    away = {"runs": _num("away_runs"), "wkts": _num("away_wkts"), "balls": _num("away_balls")}
+    if home["runs"] > away["runs"]:
+        outcome, winner = "home", fixture.home_team_id
+    elif away["runs"] > home["runs"]:
+        outcome, winner = "away", fixture.away_team_id
+    else:
+        outcome, winner = "tie", None
+    home_t = _team_in_tournament(tournament, fixture.home_team_id)
+    away_t = _team_in_tournament(tournament, fixture.away_team_id)
+    if outcome == "tie":
+        result_text = "Match tied"
+    else:
+        win_t = home_t if outcome == "home" else away_t
+        margin = abs(home["runs"] - away["runs"])
+        result_text = f"{(win_t.name if win_t else 'Winner')} won by {margin} run(s)"
+    fixture.result_json = json.dumps(
+        {
+            "home": home,
+            "away": away,
+            "outcome": outcome,
+            "winner_team_id": winner,
+            "result_text": result_text,
+        }
+    )
+    fixture.status = "completed"
+    db.session.commit()
+    flash("Result recorded — standings updated.", "success")
+    return redirect(url_for("dashboard_tournament_manage", tournament_id=tournament.id))
+
+
+@app.get("/t/<slug>")
+def public_tournament(slug):
+    """Public, no-login tournament page: squads, schedule, points table + NRR."""
+    norm = normalize_public_club_slug(slug)
+    tournament = Tournament.query.filter_by(slug=norm).first()
+    if not tournament:
+        abort(404)
+    org = db.session.get(Organization, tournament.organization_id)
+    view = _tournament_view(org, tournament)
+    return render_template(
+        "public_tournament.html",
+        tournament=tournament,
+        org=org,
+        teams=view["teams"],
+        players_by_team=view["players_by_team"],
+        team_names=view["team_names"],
+        fixtures=view["fixtures"],
+        points_table=view["points_table"],
+    )
 
 
 @app.get("/stream")

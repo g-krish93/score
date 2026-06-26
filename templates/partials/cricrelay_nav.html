@@ -8,6 +8,7 @@
     {% if session.get('org_id') %}
     <nav class="cr-nav cr-nav--app" aria-label="Primary">
       <a href="{{ url_for('dashboard') }}" class="cr-navlink {% if request.endpoint in ('dashboard', 'dashboard_legacy_redirect') %}is-active{% endif %}">Dashboard</a>
+      <a href="{{ url_for('dashboard_tournaments') }}" class="cr-navlink {% if request.endpoint in ('dashboard_tournaments', 'dashboard_tournament_manage') %}is-active{% endif %}">Tournaments</a>
       {% include 'partials/cricrelay_theme_toggle.html' %}
       <form action="{{ url_for('logout') }}" method="post" class="cr-nav-form"><button type="submit" class="cr-navlink cr-navlink-btn">Log out</button></form>
     </nav>

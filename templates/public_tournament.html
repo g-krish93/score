@@ -1,0 +1,104 @@
+{% extends "base_marketing.html" %}
+{% block title %}{{ tournament.name }} — {{ org.name if org else 'CricRelay' }}{% endblock %}
+{% block meta_description %}{{ tournament.name }}: teams, fixtures and the live points table, powered by CricRelay.{% endblock %}
+{% block site_nav %}{% endblock %}
+{% block site_footer %}{% endblock %}
+{% block body_extra_class %}cr-public-body{% endblock %}
+
+{% block extra_head %}
+<style>
+  .pt-wrap { width: 100%; max-width: 760px; margin: 0 auto; padding: clamp(16px, 4vw, 28px); }
+  .pt-hero { text-align: center; margin-bottom: 22px; }
+  .pt-eyebrow { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--cr-accent); margin: 0 0 6px; }
+  .pt-title { font-size: clamp(1.6rem, 6vw, 2.4rem); font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+  .pt-sub { color: var(--cr-muted); margin: 6px 0 0; }
+  .pt-card { background: var(--cr-card); border: 1px solid var(--cr-border); border-radius: var(--cr-radius);
+    padding: clamp(16px, 4vw, 22px); margin-bottom: 16px; box-shadow: 0 24px 60px -34px rgba(0,0,0,0.7); }
+  .pt-card h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--cr-muted); margin: 0 0 12px; }
+  .pt-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  .pt-table th, .pt-table td { padding: 8px 8px; border-bottom: 1px solid var(--cr-border); text-align: left; }
+  .pt-table th { color: var(--cr-muted); font-weight: 600; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .pt-table td.num, .pt-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pt-table tr:last-child td { border-bottom: 0; }
+  .pt-fx { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--cr-border); }
+  .pt-fx:last-child { border-bottom: 0; }
+  .pt-fx-when { color: var(--cr-muted); font-size: 0.8rem; }
+  .pt-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; }
+  .pt-pill.live { color: #05221b; background: var(--cr-accent); }
+  .pt-pill.completed { color: var(--cr-muted); border: 1px solid var(--cr-border); }
+  .pt-pill.scheduled { color: var(--cr-muted); border: 1px solid var(--cr-border); }
+  .pt-watch { color: var(--cr-accent); text-decoration: none; font-weight: 600; font-size: 0.88rem; }
+  .pt-squad { margin: 6px 0; }
+  .pt-squad b { color: var(--cr-text); }
+  .pt-foot { text-align: center; color: var(--cr-muted); font-size: 0.82rem; margin-top: 18px; }
+  .pt-foot a { color: var(--cr-accent); text-decoration: none; }
+  .pt-muted { color: var(--cr-muted); }
+</style>
+{% endblock %}
+
+{% block page_shell %}
+<main id="main-content" class="pt-wrap">
+  <header class="pt-hero">
+    <p class="pt-eyebrow">{{ org.name if org else 'CricRelay' }}</p>
+    <h1 class="pt-title">{{ tournament.name }}</h1>
+    <p class="pt-sub">{{ tournament.format }} · {{ tournament.overs }} overs{% if tournament.starts_on %} · from {{ tournament.starts_on.strftime('%d %b %Y') }}{% endif %}</p>
+  </header>
+
+  <section class="pt-card">
+    <h2>Points table</h2>
+    <table class="pt-table">
+      <thead><tr><th>#</th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">L</th><th class="num">T/NR</th><th class="num">Pts</th><th class="num">NRR</th></tr></thead>
+      <tbody>
+        {% for r in points_table %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ r.team.name }}</td>
+          <td class="num">{{ r.played }}</td>
+          <td class="num">{{ r.won }}</td>
+          <td class="num">{{ r.lost }}</td>
+          <td class="num">{{ r.drawn }}</td>
+          <td class="num"><strong>{{ r.points }}</strong></td>
+          <td class="num">{{ '%+.3f'|format(r.nrr) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="pt-muted">No completed games yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="pt-card">
+    <h2>Schedule</h2>
+    {% for fx in fixtures %}
+    {% set home = team_names.get(fx.home_team_id) %}
+    {% set away = team_names.get(fx.away_team_id) %}
+    <div class="pt-fx">
+      <div>
+        <div>{{ home.name if home else '?' }} <span class="pt-muted">vs</span> {{ away.name if away else '?' }}</div>
+        {% if fx.scheduled_at %}<div class="pt-fx-when">{{ fx.scheduled_at.strftime('%a %d %b · %H:%M') }}</div>{% endif %}
+      </div>
+      <div style="text-align:right;">
+        <span class="pt-pill {{ fx.status }}">{{ fx.status }}</span>
+        {% if fx.score_match_slug %}<div><a class="pt-watch" href="{{ url_for('public_live_score', match_id=fx.score_match_slug) }}">Watch live →</a></div>{% endif %}
+      </div>
+    </div>
+    {% else %}
+    <p class="pt-muted">Fixtures will appear here once they're scheduled.</p>
+    {% endfor %}
+  </section>
+
+  {% if teams %}
+  <section class="pt-card">
+    <h2>Teams &amp; squads</h2>
+    {% for team in teams %}
+    <div class="pt-squad">
+      <b>{{ team.name }}</b>{% if team.short_name %} <span class="pt-muted">({{ team.short_name }})</span>{% endif %}
+      <div class="pt-muted">{{ players_by_team.get(team.id, [])|map(attribute='name')|join(', ') or 'Squad to be announced' }}</div>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  <p class="pt-foot">Live scoring &amp; streaming on <a href="/">CricRelay</a></p>
+</main>
+{% endblock %}
