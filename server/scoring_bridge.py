@@ -6,16 +6,13 @@ event so the new engine can be shadow-compared against the legacy one.
 
 Coverage:
 - Standard deliveries (., 1-6, W, Wd, Nb, Bye, Lb) map directly.
-
-Known gaps (documented so shadow-compare surfaces them rather than silently
-recording wrong data):
-- A Wd/Nb that ALSO carries a run_out/stumped dismissal: the wicket is not yet
-  representable as a single core event, so only the extra runs are captured.
-  TODO: extend cricrelay_core.events to carry a dismissal alongside an extra.
+- A Wd/Nb/Bye/Lb that ALSO carries a run_out/stumped dismissal is expressed as a
+  single Delivery with ``extra_wicket=True`` (the extra runs count, the named
+  batter is out, the bowler is not credited) — matching the legacy engine.
 """
 from __future__ import annotations
 
-from cricrelay_core import Delivery, Outcome, StartInnings
+from cricrelay_core import Delivery, Outcome, Penalty, Retire, StartInnings
 
 _BALL_OUTCOME = {
     ".": Outcome.DOT,
@@ -41,13 +38,27 @@ def ball_to_delivery(
     dismissal_kind: str = "",
 ) -> Delivery:
     outcome = _BALL_OUTCOME[ball_type]  # KeyError on unknown type -> caller logs
-    runs = int(run_bonus) if outcome in _EXTRA_OUTCOMES else 0
+    is_extra = outcome in _EXTRA_OUTCOMES
+    runs = int(run_bonus) if is_extra else 0
+    # A run-out/stumping recorded on an extra is a wicket on that extra.
+    extra_wicket = bool(is_extra and dismissal_kind)
     return Delivery(
         outcome=outcome,
         runs=runs,
         out_batter=out_batter or "striker",
         dismissal_kind=dismissal_kind or "",
+        extra_wicket=extra_wicket,
     )
+
+
+def penalty_event(runs: int, to_batting: bool = True) -> Penalty:
+    """Map a legacy penalty action to a core Penalty event."""
+    return Penalty(runs=int(runs), to_batting=bool(to_batting))
+
+
+def retire_event(batter: str = "striker", out: bool = False) -> Retire:
+    """Map a legacy retire action to a core Retire event."""
+    return Retire(batter=batter or "striker", out=bool(out))
 
 
 def setup_to_start_innings(state: dict) -> StartInnings:

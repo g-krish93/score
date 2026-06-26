@@ -82,12 +82,18 @@ class Delivery:
     `runs` carries the *extra* runs for Wd/Nb/Bye/Lb (e.g. a wide that ran for
     two = Outcome.WIDE with runs=2). For runs off the bat use the run outcomes
     (ONE..SIX) and leave `runs` at 0.
+
+    `extra_wicket` represents a dismissal that happens *on* an extra (a run-out or
+    stumping off a wide/no-ball): the extra runs still count and the named batter
+    is out, but the bowler is not credited (matching the legacy engine). For a
+    normal wicket use Outcome.WICKET instead.
     """
 
     outcome: Outcome
     runs: int = 0
     out_batter: str = "striker"  # "striker" | "non_striker"
     dismissal_kind: str = ""  # bowled | caught | run_out | stumped | ...
+    extra_wicket: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.outcome, Outcome):
@@ -96,9 +102,51 @@ class Delivery:
             raise ValueError("runs cannot be negative")
         if self.out_batter not in ("striker", "non_striker"):
             raise ValueError("out_batter must be 'striker' or 'non_striker'")
+        if self.extra_wicket and self.outcome not in (
+            Outcome.WIDE,
+            Outcome.NO_BALL,
+            Outcome.BYE,
+            Outcome.LEG_BYE,
+        ):
+            raise ValueError("extra_wicket is only valid on an extra delivery")
 
 
-# The closed set of events the reducer understands. New event types (Penalty,
-# BatterRetired, BowlerChange, Correction) slot in here and in scoring.apply —
-# nothing else in the codebase needs to change.
-Event = StartInnings | Delivery
+@dataclass(frozen=True)
+class Penalty:
+    """Penalty runs awarded to a side without a ball being bowled.
+
+    `to_batting` True adds the runs to the batting team's total (counted as
+    extras); False adds them to the bowling team's *other* innings is not modelled
+    here — penalties against the batting side are recorded by the opposing
+    innings. Most club cases are 5 penalty runs to the batting side.
+    """
+
+    runs: int
+    to_batting: bool = True
+
+    def __post_init__(self) -> None:
+        if self.runs <= 0:
+            raise ValueError("penalty runs must be positive")
+
+
+@dataclass(frozen=True)
+class Retire:
+    """A batter leaves the crease without being dismissed (retired hurt/out).
+
+    The next batter from the order comes in. `out` marks "retired out" (cannot
+    return and counts toward the all-out total is *not* applied — retirements
+    never add to the wicket tally); a retired-hurt batter may return via a later
+    correction, which is outside this event's scope.
+    """
+
+    batter: str = "striker"  # "striker" | "non_striker"
+    out: bool = False
+
+    def __post_init__(self) -> None:
+        if self.batter not in ("striker", "non_striker"):
+            raise ValueError("batter must be 'striker' or 'non_striker'")
+
+
+# The closed set of events the reducer understands. New event types slot in here
+# and in scoring.apply — nothing else in the codebase needs to change.
+Event = StartInnings | Delivery | Penalty | Retire

@@ -53,6 +53,24 @@ def test_bridge_feeds_core_to_a_consistent_score():
     assert m.current.runs == 9
 
 
+def test_extra_with_dismissal_maps_to_extra_wicket():
+    d = ball_to_delivery("Wd", 1, out_batter="non_striker", dismissal_kind="run_out")
+    assert d.outcome is Outcome.WIDE and d.runs == 1
+    assert d.extra_wicket is True and d.dismissal_kind == "run_out"
+
+
+def test_extra_without_dismissal_is_not_a_wicket():
+    assert ball_to_delivery("Nb", 2).extra_wicket is False
+
+
+def test_penalty_and_retire_mappers():
+    from server.scoring_bridge import penalty_event, retire_event
+
+    assert penalty_event(5).runs == 5
+    r = retire_event("non_striker", out=True)
+    assert r.batter == "non_striker" and r.out is True
+
+
 def _run_standalone() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failures = 0

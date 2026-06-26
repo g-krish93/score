@@ -8,7 +8,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .events import BAT_RUNS, LEGAL_BALLS, Delivery, Event, Outcome, StartInnings
+from .events import (
+    BAT_RUNS,
+    LEGAL_BALLS,
+    Delivery,
+    Event,
+    Outcome,
+    Penalty,
+    Retire,
+    StartInnings,
+)
 
 
 class InvalidEvent(Exception):
@@ -180,6 +189,21 @@ def apply_delivery(inn: InningsState, d: Delivery) -> None:
             inn.striker = replacement
         else:
             inn.non_striker = replacement
+    elif d.extra_wicket:
+        # Run-out or stumping off an extra (wide/no-ball/bye/leg-bye): the extra
+        # runs already counted above; the named batter is out but the bowler is
+        # NOT credited (matches the legacy engine).
+        inn.wickets += 1
+        out_name = inn.striker if d.out_batter == "striker" else inn.non_striker
+        _ensure_batter(inn, out_name)
+        inn.batters[out_name].out = True
+        inn.batters[out_name].dismissal = d.dismissal_kind or "run_out"
+        replacement = _next_batter(inn)
+        _ensure_batter(inn, replacement)
+        if d.out_batter == "striker":
+            inn.striker = replacement
+        else:
+            inn.non_striker = replacement
 
     if cross:
         inn.striker, inn.non_striker = inn.non_striker, inn.striker
@@ -193,6 +217,35 @@ def apply_delivery(inn: InningsState, d: Delivery) -> None:
             inn.current_over = []
 
     _maybe_close(inn)
+
+
+def apply_penalty(inn: InningsState, p: Penalty) -> None:
+    """Award penalty runs to the current innings (counted as extras)."""
+    if inn.closed:
+        raise InvalidEvent("cannot apply penalty: innings is closed")
+    inn.runs += p.runs
+    inn.extras += p.runs
+    _maybe_close(inn)
+
+
+def apply_retire(inn: InningsState, r: Retire) -> None:
+    """Retire the named batter (hurt/out) and bring in the next batter.
+
+    Retirements never change the wicket tally.
+    """
+    if inn.closed:
+        raise InvalidEvent("cannot retire: innings is closed")
+    name = inn.striker if r.batter == "striker" else inn.non_striker
+    if name:
+        _ensure_batter(inn, name)
+        inn.batters[name].out = r.out
+        inn.batters[name].dismissal = "retired out" if r.out else "retired hurt"
+    replacement = _next_batter(inn)
+    _ensure_batter(inn, replacement)
+    if r.batter == "striker":
+        inn.striker = replacement
+    else:
+        inn.non_striker = replacement
 
 
 def reduce(events: list[Event]) -> MatchState:
@@ -210,6 +263,14 @@ def reduce(events: list[Event]) -> MatchState:
             if match.current is None:
                 raise InvalidEvent("delivery recorded before any innings started")
             apply_delivery(match.current, e)
+        elif isinstance(e, Penalty):
+            if match.current is None:
+                raise InvalidEvent("penalty recorded before any innings started")
+            apply_penalty(match.current, e)
+        elif isinstance(e, Retire):
+            if match.current is None:
+                raise InvalidEvent("retire recorded before any innings started")
+            apply_retire(match.current, e)
         else:  # pragma: no cover - guarded by the Event union
             raise InvalidEvent(f"unknown event type: {type(e).__name__}")
     return match

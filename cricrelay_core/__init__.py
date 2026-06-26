@@ -13,6 +13,8 @@ from .events import (
     Delivery,
     Event,
     Outcome,
+    Penalty,
+    Retire,
     StartInnings,
 )
 from .ports import EventStore, InMemoryEventStore
@@ -30,6 +32,8 @@ __all__ = [
     "Outcome",
     "Delivery",
     "StartInnings",
+    "Penalty",
+    "Retire",
     "Event",
     "LEGAL_BALLS",
     "BAT_RUNS",

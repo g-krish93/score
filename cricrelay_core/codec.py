@@ -6,7 +6,7 @@ here when a new event type is added to events.Event.
 """
 from __future__ import annotations
 
-from .events import Delivery, Event, Outcome, StartInnings
+from .events import Delivery, Event, Outcome, Penalty, Retire, StartInnings
 
 
 def to_dict(event: Event) -> dict:
@@ -27,7 +27,12 @@ def to_dict(event: Event) -> dict:
             "runs": event.runs,
             "out_batter": event.out_batter,
             "dismissal_kind": event.dismissal_kind,
+            "extra_wicket": event.extra_wicket,
         }
+    if isinstance(event, Penalty):
+        return {"t": "Penalty", "runs": event.runs, "to_batting": event.to_batting}
+    if isinstance(event, Retire):
+        return {"t": "Retire", "batter": event.batter, "out": event.out}
     raise ValueError(f"cannot serialize event: {type(event).__name__}")
 
 
@@ -48,5 +53,10 @@ def from_dict(d: dict) -> Event:
             runs=d.get("runs", 0),
             out_batter=d.get("out_batter", "striker"),
             dismissal_kind=d.get("dismissal_kind", ""),
+            extra_wicket=d.get("extra_wicket", False),
         )
+    if kind == "Penalty":
+        return Penalty(runs=d["runs"], to_batting=d.get("to_batting", True))
+    if kind == "Retire":
+        return Retire(batter=d.get("batter", "striker"), out=d.get("out", False))
     raise ValueError(f"unknown event payload type: {kind!r}")
