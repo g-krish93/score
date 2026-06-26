@@ -1212,6 +1212,41 @@ def public_club_page(slug):
     )
 
 
+@app.get("/live/<match_id>")
+def public_live_score(match_id):
+    """Public, no-login, shareable live-score page — works for relay and native matches."""
+    slug = sanitize_match_id(match_id)
+    if slug != match_id:
+        return redirect(url_for("public_live_score", match_id=slug), code=301)
+    with match_context(slug):
+        snapshot = with_calculated_values(state)
+    label = slug
+    row = RelayMatch.query.filter_by(score_match_slug=slug).first()
+    if row and row.label:
+        label = row.label
+    if snapshot.get("match_started") and snapshot.get("batting_team"):
+        team1 = snapshot.get("team1") or snapshot.get("batting_team")
+        team2 = snapshot.get("team2") or snapshot.get("bowling_team")
+        share_title = f"{team1} vs {team2}".strip(" vs")
+        share_desc = (
+            f"{snapshot.get('batting_team')} {snapshot.get('runs', 0)}/"
+            f"{snapshot.get('wickets', 0)} ({snapshot.get('overs_display', '0.0')}) — live"
+        )
+    else:
+        share_title = f"{label} — live score"
+        share_desc = "Follow the live cricket score on CricRelay."
+    share_url = url_for("public_live_score", match_id=slug, _external=True)
+    return render_template(
+        "public_live_score.html",
+        match_id=slug,
+        match_label=label,
+        snapshot=snapshot,
+        share_title=share_title,
+        share_desc=share_desc,
+        share_url=share_url,
+    )
+
+
 @app.get("/robots.txt")
 def robots_txt():
     root = request.url_root.rstrip("/")
