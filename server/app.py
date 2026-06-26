@@ -163,6 +163,12 @@ SCORING_DUAL_WRITE = (os.getenv("SCORING_DUAL_WRITE", "") or "").strip().lower()
 SCORING_SHADOW_COMPARE = (os.getenv("SCORING_SHADOW_COMPARE", "") or "").strip().lower() in {
     "1", "true", "yes", "on",
 }
+# The public live page uses SSE only when this is on — otherwise it polls. An SSE
+# stream holds a gunicorn worker for its lifetime, so keep this OFF until the
+# prod workers are threaded (or the Redis pub/sub pusher is in front).
+PUBLIC_LIVE_SSE = (os.getenv("PUBLIC_LIVE_SSE", "") or "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
 _event_store = None
 
 
@@ -1244,6 +1250,7 @@ def public_live_score(match_id):
         share_title=share_title,
         share_desc=share_desc,
         share_url=share_url,
+        enable_sse=PUBLIC_LIVE_SSE,
     )
 
 
@@ -1269,6 +1276,8 @@ def public_live_events(match_id):
     unavailable. NOTE: holds a worker for the connection's lifetime, so prod
     needs threaded workers or the dedicated Redis-pub/sub pusher. The connection
     self-recycles after 5 minutes (the client reconnects automatically)."""
+    if not PUBLIC_LIVE_SSE:
+        abort(404)
     slug = sanitize_match_id(match_id)
 
     def stream():
