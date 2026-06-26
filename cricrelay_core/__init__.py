@@ -6,6 +6,7 @@ boundary — this is what keeps changes here from rippling outward.
 """
 from __future__ import annotations
 
+from .codec import from_dict, to_dict
 from .events import (
     BAT_RUNS,
     LEGAL_BALLS,
@@ -34,6 +35,8 @@ __all__ = [
     "BAT_RUNS",
     "reduce",
     "derived",
+    "to_dict",
+    "from_dict",
     "MatchState",
     "InningsState",
     "BatterStat",
