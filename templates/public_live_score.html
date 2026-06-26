@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>{{ share_title }} · CricRelay</title>
+  <meta name="description" content="{{ share_desc }}" />
+
+  <!-- Open Graph / Twitter: the link preview shows the live score itself. -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="CricRelay" />
+  <meta property="og:title" content="{{ share_title }}" />
+  <meta property="og:description" content="{{ share_desc }}" />
+  <meta property="og:url" content="{{ share_url }}" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="{{ share_title }}" />
+  <meta name="twitter:description" content="{{ share_desc }}" />
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='cricrelay.css') }}" />
+  <style>
+    :root { --lv-pad: clamp(16px, 4vw, 28px); }
+    .lv-body {
+      margin: 0; min-height: 100svh;
+      background:
+        radial-gradient(900px 460px at 80% -12%, rgba(34, 211, 168, 0.16), transparent 60%),
+        radial-gradient(800px 460px at 12% -10%, rgba(56, 189, 248, 0.12), transparent 60%),
+        var(--cr-bg);
+      color: var(--cr-text); font-family: var(--cr-font);
+      display: flex; flex-direction: column; align-items: center;
+    }
+    .lv-wrap { width: 100%; max-width: 520px; padding: var(--lv-pad); }
+    .lv-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+    .lv-brand { display: inline-flex; align-items: center; gap: 9px; font-weight: 700; letter-spacing: -0.02em; }
+    .lv-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cr-accent); box-shadow: 0 0 0 0 var(--cr-accent-glow); }
+    .lv-live { display: inline-flex; align-items: center; gap: 7px; font-size: 0.72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em; color: var(--cr-accent); }
+    .lv-live .lv-dot { background: var(--cr-danger); animation: lv-pulse 1.6s infinite; }
+    .lv-live.is-stale .lv-dot { background: var(--cr-muted); animation: none; }
+    @keyframes lv-pulse { 0% { box-shadow: 0 0 0 0 rgba(248,113,113,0.5);} 70% { box-shadow: 0 0 0 9px rgba(248,113,113,0);} 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0);} }
+
+    .lv-card { background: var(--cr-card); border: 1px solid var(--cr-border); border-radius: var(--cr-radius);
+      padding: clamp(18px, 5vw, 26px); box-shadow: 0 24px 60px -30px rgba(0,0,0,0.7); }
+    .lv-teams { font-size: 0.82rem; color: var(--cr-muted); margin-bottom: 4px; }
+    .lv-batting { font-size: 1.05rem; font-weight: 600; margin-bottom: 10px; }
+    .lv-score { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .lv-runs { font-size: clamp(2.8rem, 13vw, 4rem); font-weight: 800; line-height: 1; letter-spacing: -0.03em; }
+    .lv-overs { font-size: 1.05rem; color: var(--cr-muted); }
+    .lv-meta { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 12px; font-size: 0.85rem; color: var(--cr-muted); }
+    .lv-meta b { color: var(--cr-text); font-weight: 600; }
+    .lv-chase { margin-top: 14px; padding: 11px 14px; border-radius: var(--cr-radius-sm);
+      background: var(--cr-accent-dim); color: var(--cr-text); font-size: 0.92rem; font-weight: 600; }
+    .lv-result { background: rgba(251,191,36,0.14); color: var(--cr-warning); }
+
+    .lv-section { margin-top: 16px; }
+    .lv-h { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--cr-muted); margin-bottom: 8px; }
+    .lv-batter { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--cr-border); font-size: 0.95rem; }
+    .lv-batter:last-child { border-bottom: 0; }
+    .lv-batter .on { color: var(--cr-accent); }
+    .lv-batter .fig { color: var(--cr-muted); }
+    .lv-over { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 4px; }
+    .lv-ball { min-width: 30px; height: 30px; padding: 0 6px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 0.82rem; background: var(--cr-bg-elevated); border: 1px solid var(--cr-border); }
+    .lv-ball.b4 { background: rgba(56,189,248,0.18); border-color: rgba(56,189,248,0.4); color: #7dd3fc; }
+    .lv-ball.b6 { background: rgba(34,211,168,0.18); border-color: var(--cr-border-strong); color: var(--cr-accent); }
+    .lv-ball.bw { background: rgba(248,113,113,0.18); border-color: rgba(248,113,113,0.4); color: var(--cr-danger); }
+    .lv-ball.bx { color: var(--cr-warning); }
+
+    .lv-share { display: flex; gap: 10px; margin-top: 18px; }
+    .lv-btn { flex: 1; appearance: none; cursor: pointer; border: 1px solid var(--cr-border);
+      background: var(--cr-card); color: var(--cr-text); font-family: inherit; font-weight: 600; font-size: 0.92rem;
+      border-radius: var(--cr-radius-sm); padding: 12px 14px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+    .lv-btn.primary { background: var(--cr-accent); color: #05221b; border-color: transparent; }
+    .lv-btn:active { transform: translateY(1px); }
+    .lv-empty { text-align: center; color: var(--cr-muted); padding: 28px 0; }
+    .lv-foot { text-align: center; margin-top: 22px; font-size: 0.8rem; color: var(--cr-muted); }
+    .lv-foot a { color: var(--cr-accent); text-decoration: none; }
+    .lv-toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(20px);
+      background: var(--cr-text); color: var(--cr-bg); padding: 9px 16px; border-radius: 999px; font-size: 0.85rem; font-weight: 600;
+      opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; }
+    .lv-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body class="lv-body">
+  <main class="lv-wrap">
+    <div class="lv-top">
+      <span class="lv-brand"><span class="lv-dot"></span> CricRelay</span>
+      <span class="lv-live" id="liveBadge"><span class="lv-dot"></span> <span id="liveText">Live</span></span>
+    </div>
+
+    <section class="lv-card" id="card">
+      <div class="lv-empty" id="empty">Waiting for the match to start…</div>
+
+      <div id="live" hidden>
+        <div class="lv-teams" id="teams"></div>
+        <div class="lv-batting" id="battingTeam"></div>
+        <div class="lv-score">
+          <span class="lv-runs" id="runs">0/0</span>
+          <span class="lv-overs" id="overs">(0.0)</span>
+        </div>
+        <div class="lv-meta">
+          <span>CRR <b id="crr">0.00</b></span>
+          <span id="extrasWrap">Extras <b id="extras">0</b></span>
+        </div>
+        <div class="lv-chase" id="chase" hidden></div>
+
+        <div class="lv-section" id="battersSection" hidden>
+          <div class="lv-h">At the crease</div>
+          <div id="batters"></div>
+        </div>
+
+        <div class="lv-section" id="overSection" hidden>
+          <div class="lv-h">This over</div>
+          <div class="lv-over" id="thisOver"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="lv-share">
+      <button class="lv-btn primary" id="shareBtn">Share</button>
+      <a class="lv-btn" id="waBtn" target="_blank" rel="noopener">WhatsApp</a>
+    </div>
+
+    <p class="lv-foot">Live scoring & streaming on <a href="/">CricRelay</a></p>
+  </main>
+
+  <div class="lv-toast" id="toast">Link copied</div>
+
+  <script>
+    const MATCH_ID = {{ match_id|tojson }};
+    const SHARE_URL = {{ share_url|tojson }};
+    const $ = (id) => document.getElementById(id);
+
+    function ballClass(b) {
+      const t = String(b);
+      if (t === '4') return 'lv-ball b4';
+      if (t === '6') return 'lv-ball b6';
+      if (t.startsWith('W')) return 'lv-ball bw';
+      if (/[a-z]/i.test(t) && t !== '.') return 'lv-ball bx';
+      return 'lv-ball';
+    }
+
+    function batterRow(name, squad, isStriker) {
+      const p = (squad || []).find((x) => x && x.name === name);
+      if (!name || !p) return '';
+      const cls = isStriker ? 'on' : '';
+      const star = isStriker ? ' *' : '';
+      return `<div class="lv-batter"><span class="${cls}">${name}${star}</span>` +
+             `<span class="fig">${p.runs ?? 0} (${p.balls ?? 0})</span></div>`;
+    }
+
+    function render(d) {
+      const started = d.match_started && !!(d.batting_team);
+      $('empty').hidden = started;
+      $('live').hidden = !started;
+      if (!started) return;
+
+      $('teams').textContent = `${d.team1 || ''} vs ${d.team2 || ''}`.trim().replace(/^vs |vs $/,'');
+      $('battingTeam').textContent = d.batting_team || '';
+      $('runs').textContent = `${d.runs ?? 0}/${d.wickets ?? 0}`;
+      $('overs').textContent = `(${d.overs_display ?? '0.0'})`;
+      $('crr').textContent = (d.crr ?? 0).toFixed ? Number(d.crr).toFixed(2) : d.crr;
+      $('extras').textContent = d.extras ?? 0;
+
+      const chase = $('chase');
+      if (d.match_complete && d.match_result) {
+        chase.hidden = false; chase.className = 'lv-chase lv-result'; chase.textContent = d.match_result;
+      } else if (d.innings === 2 && d.runs_needed != null && d.balls_remaining != null) {
+        chase.hidden = false; chase.className = 'lv-chase';
+        const rrr = d.rrr != null ? ` · RRR ${Number(d.rrr).toFixed(2)}` : '';
+        chase.textContent = `Need ${d.runs_needed} from ${d.balls_remaining} balls${rrr}`;
+      } else { chase.hidden = true; }
+
+      const batters = batterRow(d.striker, d.batting_squad, true) + batterRow(d.non_striker, d.batting_squad, false);
+      $('battersSection').hidden = !batters;
+      $('batters').innerHTML = batters;
+
+      const over = d.current_over || [];
+      $('overSection').hidden = over.length === 0;
+      $('thisOver').innerHTML = over.map((b) => `<span class="${ballClass(b)}">${b}</span>`).join('');
+    }
+
+    function setLive(ok) {
+      const b = $('liveBadge');
+      if (ok) { b.classList.remove('is-stale'); $('liveText').textContent = 'Live'; }
+      else { b.classList.add('is-stale'); $('liveText').textContent = 'Reconnecting'; }
+    }
+
+    let failures = 0;
+    async function poll() {
+      try {
+        const r = await fetch(`/score?match=${encodeURIComponent(MATCH_ID)}`, { cache: 'no-store' });
+        if (!r.ok) throw new Error(r.status);
+        render(await r.json());
+        failures = 0; setLive(true);
+      } catch (e) {
+        if (++failures >= 2) setLive(false);
+      }
+    }
+
+    // Realtime via Server-Sent Events; fall back to polling if SSE is
+    // unavailable (old browser, buffering proxy, etc.).
+    function start() {
+      if (window.EventSource) {
+        let gotMessage = false;
+        try {
+          const es = new EventSource(`/live/${encodeURIComponent(MATCH_ID)}/events`);
+          es.onmessage = (e) => { gotMessage = true; try { render(JSON.parse(e.data)); setLive(true); } catch (_) {} };
+          es.onerror = () => {
+            if (!gotMessage) { es.close(); poll(); setInterval(poll, 5000); }
+            else { setLive(false); }
+          };
+          return;
+        } catch (_) {}
+      }
+      poll(); setInterval(poll, 5000);
+    }
+
+    // Share controls
+    const waText = encodeURIComponent(`Follow the live score: ${SHARE_URL}`);
+    $('waBtn').href = `https://wa.me/?text=${waText}`;
+    $('shareBtn').addEventListener('click', async () => {
+      if (navigator.share) { try { await navigator.share({ title: 'Live score', url: SHARE_URL }); return; } catch (_) {} }
+      try { await navigator.clipboard.writeText(SHARE_URL); const t = $('toast'); t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1600); } catch (_) {}
+    });
+
+    start();
+  </script>
+</body>
+</html>

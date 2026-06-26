@@ -1,0 +1,39 @@
+#!/bin/bash
+# Bootstraps Postgres + Redis as Docker containers. The DB password is read at
+# boot from SSM SecureString using the instance role — it is never baked into
+# user_data or Terraform state. Avoid `set -x` here so the password is never
+# echoed into the cloud-init logs.
+set -euo pipefail
+
+# --- Docker ---
+dnf install -y docker
+systemctl enable --now docker
+
+# --- AWS CLI (to read the DB password from SSM) ---
+if ! command -v aws >/dev/null 2>&1; then
+  dnf install -y awscli || {
+    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+    dnf install -y unzip
+    unzip -q /tmp/awscliv2.zip -d /tmp
+    /tmp/aws/install
+  }
+fi
+
+PGPASS="$(aws ssm get-parameter --name '${pg_password_param}' --with-decryption --region ${region} --query 'Parameter.Value' --output text)"
+
+mkdir -p /var/lib/cricrelay/pg /var/lib/cricrelay/redis
+
+# --- Postgres 16 ---
+docker run -d --name postgres --restart always \
+  -e POSTGRES_USER=cricrelay \
+  -e POSTGRES_DB=cricrelay \
+  -e POSTGRES_PASSWORD="$PGPASS" \
+  -p 5432:5432 \
+  -v /var/lib/cricrelay/pg:/var/lib/postgresql/data \
+  postgres:16
+
+# --- Redis 7 (append-only persistence) ---
+docker run -d --name redis --restart always \
+  -p 6379:6379 \
+  -v /var/lib/cricrelay/redis:/data \
+  redis:7 redis-server --appendonly yes

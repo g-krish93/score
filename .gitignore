@@ -9,6 +9,8 @@ __pycache__/
 *.tfstate
 *.tfstate.backup
 .terraform.lock.hcl
+*.tfplan
+infra/infra-tfplan
 venv/
 .venv/
 pcs-ble-relay-android/.gradle/

@@ -149,6 +149,78 @@ current_match_id = DEFAULT_MATCH_ID
 match_contexts = {}
 
 
+# --- Strangler cut-over: dual-write scoring events to the new core/store ---
+# Default OFF. When SCORING_DUAL_WRITE is enabled and EVENT_STORE_DSN is set,
+# each scored ball is ALSO recorded as an event in the new Postgres event store
+# (cricrelay_core + cricrelay_store), so the new engine can be shadow-compared
+# against the legacy engine before any cut-over. This NEVER affects the live
+# response: every failure is swallowed and the legacy engine stays authoritative.
+SCORING_DUAL_WRITE = (os.getenv("SCORING_DUAL_WRITE", "") or "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
+# When on (and the event log is being dual-written), each /score read folds the
+# log through the core and logs any field that diverges from the legacy engine.
+SCORING_SHADOW_COMPARE = (os.getenv("SCORING_SHADOW_COMPARE", "") or "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
+_event_store = None
+
+
+def _scoring_event_store():
+    global _event_store
+    if _event_store is None:
+        from cricrelay_store import PostgresEventStore
+
+        store = PostgresEventStore(os.environ["EVENT_STORE_DSN"])
+        store.init_schema()
+        _event_store = store
+    return _event_store
+
+
+def _dual_write_setup(match_id, snapshot):
+    if not SCORING_DUAL_WRITE:
+        return
+    try:
+        from server.scoring_bridge import setup_to_start_innings
+
+        _scoring_event_store().append(match_id, setup_to_start_innings(snapshot))
+    except Exception:
+        app.logger.exception("scoring dual-write (setup) failed; ignored")
+
+
+def _dual_write_ball(match_id, ball_type, run_bonus, out_batter, dismissal_kind):
+    if not SCORING_DUAL_WRITE:
+        return
+    try:
+        from server.scoring_bridge import ball_to_delivery
+
+        _scoring_event_store().append(
+            match_id,
+            ball_to_delivery(ball_type, run_bonus, out_batter, dismissal_kind),
+        )
+    except Exception:
+        app.logger.exception("scoring dual-write (ball) failed; ignored")
+
+
+def _shadow_compare(match_id, legacy_state):
+    if not SCORING_SHADOW_COMPARE:
+        return
+    try:
+        from cricrelay_core import derived, reduce
+        from server.scoring_shadow import diffs
+
+        events = _scoring_event_store().load(match_id)
+        if not events:
+            return
+        divergences = diffs(legacy_state, derived(reduce(events)))
+        if divergences:
+            app.logger.warning(
+                "scoring shadow diff [%s]: %s", match_id, "; ".join(divergences)
+            )
+    except Exception:
+        app.logger.exception("scoring shadow-compare failed; ignored")
+
+
 def blank_state():
     return {
         "team1": "",
@@ -1140,6 +1212,86 @@ def public_club_page(slug):
     )
 
 
+@app.get("/live/<match_id>")
+def public_live_score(match_id):
+    """Public, no-login, shareable live-score page — works for relay and native matches."""
+    slug = sanitize_match_id(match_id)
+    if slug != match_id:
+        return redirect(url_for("public_live_score", match_id=slug), code=301)
+    with match_context(slug):
+        snapshot = with_calculated_values(state)
+    label = slug
+    row = RelayMatch.query.filter_by(score_match_slug=slug).first()
+    if row and row.label:
+        label = row.label
+    if snapshot.get("match_started") and snapshot.get("batting_team"):
+        team1 = snapshot.get("team1") or snapshot.get("batting_team")
+        team2 = snapshot.get("team2") or snapshot.get("bowling_team")
+        share_title = f"{team1} vs {team2}".strip(" vs")
+        share_desc = (
+            f"{snapshot.get('batting_team')} {snapshot.get('runs', 0)}/"
+            f"{snapshot.get('wickets', 0)} ({snapshot.get('overs_display', '0.0')}) — live"
+        )
+    else:
+        share_title = f"{label} — live score"
+        share_desc = "Follow the live cricket score on CricRelay."
+    share_url = url_for("public_live_score", match_id=slug, _external=True)
+    return render_template(
+        "public_live_score.html",
+        match_id=slug,
+        match_label=label,
+        snapshot=snapshot,
+        share_title=share_title,
+        share_desc=share_desc,
+        share_url=share_url,
+    )
+
+
+def _live_snapshot(slug):
+    """Read-only current scoreboard for a match — no persist, no torn reads."""
+    with state_lock:
+        if current_match_id == slug:
+            data = copy.deepcopy(state)
+        else:
+            path = state_path_for(slug)
+            if path.exists():
+                with path.open(encoding="utf-8") as fh:
+                    data = merge_missing_state_keys(json.load(fh))
+            else:
+                data = blank_state()
+    return with_calculated_values(data)
+
+
+@app.get("/live/<match_id>/events")
+def public_live_events(match_id):
+    """Server-Sent Events stream of the live score — pushes within ~1s of a
+    change over a single connection; the page falls back to polling if SSE is
+    unavailable. NOTE: holds a worker for the connection's lifetime, so prod
+    needs threaded workers or the dedicated Redis-pub/sub pusher. The connection
+    self-recycles after 5 minutes (the client reconnects automatically)."""
+    slug = sanitize_match_id(match_id)
+
+    def stream():
+        import time as _t
+
+        last = None
+        deadline = _t.time() + 300
+        while _t.time() < deadline:
+            payload = json.dumps(_live_snapshot(slug), separators=(",", ":"))
+            if payload != last:
+                last = payload
+                yield f"data: {payload}\n\n"
+            else:
+                yield ": keep-alive\n\n"
+            _t.sleep(1)
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/robots.txt")
 def robots_txt():
     root = request.url_root.rstrip("/")
@@ -1976,6 +2128,7 @@ def relay_pcs_ingest():
 @app.get("/score")
 def score():
     with match_context():
+        _shadow_compare(current_match_id, state)
         return jsonify(with_calculated_values(state))
 
 
@@ -2024,6 +2177,7 @@ def setup():
         last_action = None
         action_history = []
         redo_history = []
+        _dual_write_setup(current_match_id, state)
         save_state()
         return jsonify(with_calculated_values(state))
 
@@ -2065,6 +2219,7 @@ def ball():
             return jsonify({"error": "innings already complete"}), 400
         push_history()
         last_action = {"state_snapshot": copy.deepcopy(state)}
+        _dual_write_ball(current_match_id, ball_type, run_bonus, out_batter, dismissal_kind)
         striker = get_batter(state["striker"])
         non_striker = get_batter(state["non_striker"])
         bowler = get_bowler(state["current_bowler"])
@@ -3452,4 +3607,4 @@ with state_lock:
 
 if __name__ == "__main__":
     port = safe_num(os.getenv("PORT", "5000"), 5000)
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, threaded=True)
