@@ -1,0 +1,44 @@
+{% extends "base_marketing.html" %}
+{% block title %}{{ team.name }} — {{ org.name }}{% endblock %}
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <!-- Team Header -->
+  <div class="cr-card" style="border-left:6px solid {{ team.color }};margin-bottom:24px;padding:20px 24px;">
+    <div style="display:flex;align-items:center;gap:16px;">
+      {% if team.logo_url %}
+      <img src="{{ team.logo_url }}" alt="{{ team.name }}" style="width:64px;height:64px;object-fit:contain;border-radius:8px;">
+      {% else %}
+      <div style="width:64px;height:64px;border-radius:50%;background:{{ team.color }};display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:#fff;">{{ team.name[0] }}</div>
+      {% endif %}
+      <div>
+        <h1 style="margin:0 0 4px;">{{ team.name }}</h1>
+        <p class="cr-muted" style="margin:0;">{{ org.name }}{% if team.description %} · {{ team.description }}{% endif %}</p>
+        <p class="cr-muted" style="margin:4px 0 0;font-size:0.85rem;">{{ players|length }} player{{ 's' if players|length != 1 else '' }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Players -->
+  <div class="cr-card">
+    <h3 style="margin:0 0 14px;">Squad</h3>
+    {% if not players %}
+    <p class="cr-muted">No players registered yet.</p>
+    {% else %}
+    <table class="cr-table" style="width:100%;">
+      <thead><tr><th>#</th><th>Name</th><th>Role</th><th>Batting</th></tr></thead>
+      <tbody>
+        {% set role_labels = {'batsman':'Batsman','bowler':'Bowler','all_rounder':'All-Rounder','wicket_keeper':'Keeper'} %}
+        {% for p in players %}
+        <tr>
+          <td>{{ p.jersey_number or '—' }}</td>
+          <td><strong>{{ p.name }}</strong></td>
+          <td><span class="cr-badge">{{ role_labels.get(p.role, p.role) }}</span></td>
+          <td>{{ p.batting_style.capitalize() if p.batting_style else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

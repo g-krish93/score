@@ -1,0 +1,61 @@
+{% extends "base_marketing.html" %}
+{% block title %}Leaderboard — {{ tournament.name }}{% endblock %}
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <div style="margin-bottom:20px;">
+    <a href="{{ url_for('cricket.public_tournament', org_slug=org.slug, t_slug=tournament.slug) }}" class="cr-btn cr-btn-secondary cr-btn-sm">← {{ tournament.name }}</a>
+  </div>
+  <h1>{{ tournament.name }} — Leaderboard</h1>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+    <!-- Top Batters -->
+    <div class="cr-card">
+      <h3 style="margin:0 0 14px;">Most Runs</h3>
+      {% if top_batters %}
+      <table class="cr-table" style="width:100%;">
+        <thead><tr><th>#</th><th>Player</th><th>M</th><th>Runs</th><th>Avg</th><th>SR</th><th>HS</th></tr></thead>
+        <tbody>
+          {% for b in top_batters %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td><strong>{{ b.name }}</strong></td>
+            <td>{{ b.matches }}</td>
+            <td><strong>{{ b.runs }}</strong></td>
+            <td>{{ b.avg }}</td>
+            <td>{{ b.sr }}</td>
+            <td>{{ b.highest }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="cr-muted">No batting data yet.</p>
+      {% endif %}
+    </div>
+
+    <!-- Top Bowlers -->
+    <div class="cr-card">
+      <h3 style="margin:0 0 14px;">Most Wickets</h3>
+      {% if top_bowlers %}
+      <table class="cr-table" style="width:100%;">
+        <thead><tr><th>#</th><th>Player</th><th>M</th><th>Wkts</th><th>Avg</th><th>Eco</th></tr></thead>
+        <tbody>
+          {% for b in top_bowlers %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td><strong>{{ b.name }}</strong></td>
+            <td>{{ b.matches }}</td>
+            <td><strong>{{ b.wickets }}</strong></td>
+            <td>{{ b.avg }}</td>
+            <td>{{ b.economy }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="cr-muted">No bowling data yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</main>
+{% endblock %}

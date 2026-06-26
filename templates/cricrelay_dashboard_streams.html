@@ -84,21 +84,16 @@
     <p class="cr-help" style="margin:10px 0 0;">Setup guide: <code class="cr-code">docs/TWITCH_SETUP.md</code> in the repo.</p>
   </div>
 
-  <div class="cr-card">
-    <h2>PCS BLE → live stream (R&amp;D)</h2>
-    <p class="cr-muted" style="margin:0 0 10px;">Same Bluetooth path as a ground scoreboard, but your phone sends scores to CricRelay instead of LEDs.</p>
+  <div class="cr-card cr-card-highlight">
+    <h2>Tournament → live stream</h2>
+    <p class="cr-muted" style="margin:0 0 10px;">Score a tournament match using your own scoring system and stream it live — no Play-Cricket dependency.</p>
     <ol class="cr-help" style="margin:0 0 12px;padding-left:20px;line-height:1.5;">
-      <li>Create a <strong>PCS BLE stream</strong> below.</li>
-      <li>Install the <strong>relay APK</strong> → paste <strong>ingest URL</strong> + <strong>Bearer token</strong> from the stream row.</li>
-      <li>In the app: <strong>Advertise as scoreboard</strong> (recommended) or scan — PCS → External Scoreboard → Generic → <strong>BT-Scoreboard</strong>.</li>
-      <li>In OBS: browser source = <strong>overlay URL</strong> from the stream row (not the ingest URL).</li>
+      <li>Create a <strong>tournament</strong> and add teams in <a href="{{ url_for('cricket.tournaments_list') }}">Tournaments</a>.</li>
+      <li>Add a match and click <strong>Start Scoring</strong> to open the ball-by-ball scorer.</li>
+      <li>Come back here and add the match as a <strong>Tournament stream</strong> below — the overlay updates live as you score.</li>
+      <li>In OBS: add the overlay URL as a Browser Source.</li>
     </ol>
-    <p class="cr-help" style="margin:0 0 10px;">PCS sends packets like <code class="cr-code">BTN</code>, <code class="cr-code">BTS42/3</code>, <code class="cr-code">B1S45</code> (batsman runs), <code class="cr-code">OVB12.4</code>. On the phone app use <strong>Advertise as scoreboard</strong>, then PCS → External scoreboard → Generic → BT-Scoreboard.</p>
-    {% if pcs_apk_available %}
-    <a class="cr-btn cr-btn-primary" href="{{ pcs_apk_download_url }}">Download relay APK</a>
-    {% else %}
-    <a class="cr-btn cr-btn-secondary" href="{{ pcs_apk_download_url }}">APK download</a>
-    {% endif %}
+    <a class="cr-btn cr-btn-primary" href="{{ url_for('cricket.tournaments_list') }}">Manage Tournaments</a>
   </div>
 
   <div class="cr-card">
@@ -260,7 +255,7 @@
       </table>
     </div>
     {% else %}
-    <p class="cr-muted">No streams yet — start one from a fixture or PCS BLE below.</p>
+    <p class="cr-muted">No streams yet — start one from a Play-Cricket fixture or a Tournament match below.</p>
     {% endif %}
   </div>
 
@@ -335,13 +330,18 @@
   </div>
 
   <div class="cr-card">
-    <h2>Start PCS BLE stream (R&amp;D)</h2>
-    <p class="cr-muted" style="margin:0 0 12px;">No Play-Cricket URL — scores come from the relay app at the ground.</p>
-    <form method="post" action="{{ url_for('dashboard_add_match') }}">
-      <input type="hidden" name="relay_source" value="pcs_ble">
-      <label class="cr-label" for="pcs_stream_label">Stream label</label>
-      <input class="cr-input" id="pcs_stream_label" name="stream_label" maxlength="120" required placeholder="e.g. 1st XI vs Club B — Saturday">
-      <button type="submit" class="cr-btn cr-btn-secondary" style="margin-top:16px;">Create PCS BLE stream</button>
+    <h2>Start Tournament match stream</h2>
+    <p class="cr-muted" style="margin:0 0 12px;">Stream a match you're scoring in your own tournament — no external scraping needed.</p>
+    <form method="post" action="{{ url_for('dashboard_add_match') }}" id="tournament-stream-form">
+      <input type="hidden" name="relay_source" value="manual">
+      <label class="cr-label" for="t_stream_label">Stream label</label>
+      <input class="cr-input" id="t_stream_label" name="stream_label" maxlength="120" required placeholder="e.g. 1st XI vs Club B — Saturday">
+      <label class="cr-label" for="t_match_slug" style="margin-top:12px;">Score match slug <span class="cr-muted">(from Tournament → Start Scoring)</span></label>
+      <input class="cr-input" id="t_match_slug" name="play_cricket_match_id" required placeholder="e.g. t-summer-league-hamfield-vs-norton-abc12345">
+      <p class="cr-help" style="margin:6px 0 0;font-size:0.82rem;">
+        Find this under <a href="{{ url_for('cricket.tournaments_list') }}">Tournaments → Fixtures</a> after clicking "Start Scoring".
+      </p>
+      <button type="submit" class="cr-btn cr-btn-primary" style="margin-top:16px;">Create Tournament stream</button>
     </form>
   </div>
   {% endif %}

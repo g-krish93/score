@@ -1,0 +1,99 @@
+{% extends "base_marketing.html" %}
+{% block title %}Fixtures — {{ tournament.name }} — CricRelay{% endblock %}
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <div class="cr-dash-top">
+    <div>
+      <h1>{{ tournament.name }} — Fixtures</h1>
+      <p class="cr-muted">{{ tournament.format }}{% if tournament.format == 'Custom' %} ({{ tournament.custom_overs }} ov){% endif %} · {{ tournament.tournament_type }}</p>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <a href="{{ url_for('cricket.match_new', t_slug=tournament.slug) }}" class="cr-btn">+ Add Match</a>
+      {% if tournament.is_public %}
+      <a href="{{ url_for('cricket.public_tournament', org_slug=org.slug, t_slug=tournament.slug) }}" class="cr-btn cr-btn-secondary" target="_blank">Public Page ↗</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for cat, m in messages %}
+      <div class="cr-flash {% if cat == 'error' %}error{% elif cat == 'warning' %}cr-flash-warn{% else %}success{% endif %}">{{ m }}</div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  {% if not matches %}
+  <div class="cr-card" style="text-align:center;padding:40px;">
+    <p class="cr-muted">No matches yet. Add teams first, then create fixtures.</p>
+    {% if tournament.teams|length < 2 %}
+    <a href="{{ url_for('cricket.tournament_teams_manage', t_slug=tournament.slug) }}" class="cr-btn" style="margin-top:12px;">Add Teams First</a>
+    {% else %}
+    <a href="{{ url_for('cricket.match_new', t_slug=tournament.slug) }}" class="cr-btn" style="margin-top:12px;">+ Add First Match</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <div style="display:grid;gap:12px;">
+    {% for m in matches %}
+    {% set status_colors = {'scheduled':'#1e3a5f', 'live':'#14532d', 'completed':'#1c1c2e', 'abandoned':'#3b1c1c', 'no_result':'#2d2d2d'} %}
+    {% set status_text = {'scheduled':'#93c5fd', 'live':'#86efac', 'completed':'#a5b4fc', 'abandoned':'#fca5a5', 'no_result':'#9ca3af'} %}
+    <div class="cr-card" style="border-left:4px solid {{ status_text.get(m.status, '#6b7280') }};">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+            <span class="cr-badge" style="background:{{ status_colors.get(m.status,'#1c1c2e') }};color:{{ status_text.get(m.status,'#9ca3af') }};">
+              {{ m.status.upper() }}
+            </span>
+            {% if m.match_date %}<span class="cr-muted" style="font-size:0.82rem;">{{ m.match_date.strftime('%d %b %Y %H:%M') }}</span>{% endif %}
+            {% if m.venue %}<span class="cr-muted" style="font-size:0.82rem;">@ {{ m.venue }}</span>{% endif %}
+          </div>
+          <h3 style="margin:0;font-size:1rem;">
+            <span style="color:{{ m.team1.color }};">{{ m.team1.name }}</span>
+            <span class="cr-muted"> vs </span>
+            <span style="color:{{ m.team2.color }};">{{ m.team2.name }}</span>
+          </h3>
+          {% if m.result_summary %}<p class="cr-muted" style="margin:4px 0 0;font-size:0.85rem;">{{ m.result_summary }}</p>{% endif %}
+          {% if m.score_match_slug %}
+          <p class="cr-muted" style="margin:4px 0 0;font-size:0.8rem;">Scoring slug: <code class="cr-code">{{ m.score_match_slug }}</code></p>
+          {% endif %}
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;">
+          {% if not m.score_match_slug %}
+          <form method="post" action="{{ url_for('cricket.match_link_scoring', t_slug=tournament.slug, m_id=m.id) }}">
+            <button type="submit" class="cr-btn cr-btn-sm">▶ Start Scoring</button>
+          </form>
+          {% else %}
+          <a href="/m/{{ m.score_match_slug }}/input" class="cr-btn cr-btn-sm">▶ Open Scorer</a>
+          <a href="/m/{{ m.score_match_slug }}/stream" class="cr-btn cr-btn-secondary cr-btn-sm" target="_blank">Overlay</a>
+          <form method="post" action="{{ url_for('cricket.match_extract_stats', t_slug=tournament.slug, m_id=m.id) }}">
+            <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm">Extract Stats</button>
+          </form>
+          {% endif %}
+          {% if m.status == 'completed' %}
+          <a href="{{ url_for('cricket.public_scorecard', org_slug=org.slug, match_id=m.id) }}" class="cr-btn cr-btn-secondary cr-btn-sm" target="_blank">Scorecard</a>
+          {% endif %}
+          <a href="{{ url_for('cricket.match_edit', t_slug=tournament.slug, m_id=m.id) }}" class="cr-btn cr-btn-secondary cr-btn-sm">Edit</a>
+          <!-- Status update -->
+          <form method="post" action="{{ url_for('cricket.match_status_update', t_slug=tournament.slug, m_id=m.id) }}" style="display:flex;gap:6px;">
+            <select class="cr-input" name="status" style="font-size:0.8rem;padding:4px 8px;">
+              {% for s in ['scheduled','live','completed','abandoned','no_result'] %}
+              <option value="{{ s }}" {% if m.status == s %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm">Set</button>
+          </form>
+          <form method="post" action="{{ url_for('cricket.match_delete', t_slug=tournament.slug, m_id=m.id) }}"
+                onsubmit="return confirm('Delete this match?');">
+            <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm" style="color:#ef4444;">Delete</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div style="margin-top:24px;display:flex;gap:10px;">
+    <a href="{{ url_for('cricket.tournament_teams_manage', t_slug=tournament.slug) }}" class="cr-btn cr-btn-secondary">Manage Teams</a>
+    <a href="{{ url_for('cricket.tournaments_list') }}" class="cr-btn cr-btn-secondary">← Tournaments</a>
+  </div>
+</main>
+{% endblock %}

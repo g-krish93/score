@@ -1,0 +1,99 @@
+{% extends "base_marketing.html" %}
+{% block title %}{{ team.name }} Players — {{ org.name }} — CricRelay{% endblock %}
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <div class="cr-dash-top">
+    <div>
+      <h1 style="display:flex;align-items:center;gap:10px;">
+        <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:{{ team.color }};"></span>
+        {{ team.name }} — Players
+      </h1>
+      <p class="cr-muted">Club: <strong>{{ org.name }}</strong></p>
+    </div>
+    <a href="{{ url_for('cricket.teams_list') }}" class="cr-btn cr-btn-secondary">← All Teams</a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for cat, m in messages %}
+      <div class="cr-flash {% if cat == 'error' %}error{% elif cat == 'warning' %}cr-flash-warn{% else %}success{% endif %}">{{ m }}</div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  <!-- Add Player Form -->
+  <div class="cr-card" style="max-width:700px;margin-bottom:24px;">
+    <h3 style="margin:0 0 14px;">Add Player</h3>
+    <form method="post" action="{{ url_for('cricket.player_add', team_slug=team.slug) }}">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 60px auto;gap:10px;align-items:end;">
+        <div>
+          <label class="cr-label">Name *</label>
+          <input class="cr-input" type="text" name="name" required placeholder="Player name">
+        </div>
+        <div>
+          <label class="cr-label">Role</label>
+          <select class="cr-input" name="role">
+            <option value="batsman">Batsman</option>
+            <option value="bowler">Bowler</option>
+            <option value="all_rounder">All-Rounder</option>
+            <option value="wicket_keeper">Wicket-Keeper</option>
+          </select>
+        </div>
+        <div>
+          <label class="cr-label">Batting</label>
+          <select class="cr-input" name="batting_style">
+            <option value="">—</option>
+            <option value="right">Right-Hand</option>
+            <option value="left">Left-Hand</option>
+          </select>
+        </div>
+        <div>
+          <label class="cr-label">#</label>
+          <input class="cr-input" type="number" name="jersey_number" min="1" max="99" placeholder="—">
+        </div>
+        <div>
+          <button type="submit" class="cr-btn cr-btn-sm" style="white-space:nowrap;">Add</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- Players Table -->
+  {% if not players %}
+  <div class="cr-card" style="text-align:center;padding:30px;">
+    <p class="cr-muted">No players yet. Add players above.</p>
+  </div>
+  {% else %}
+  <div class="cr-card" style="max-width:800px;">
+    <table class="cr-table" style="width:100%;">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Role</th>
+          <th>Batting</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for player in players %}
+        <tr>
+          <td>{{ player.jersey_number or '—' }}</td>
+          <td><strong>{{ player.name }}</strong></td>
+          <td>
+            {% set role_labels = {'batsman': 'Batsman', 'bowler': 'Bowler', 'all_rounder': 'All-Rounder', 'wicket_keeper': 'Keeper'} %}
+            <span class="cr-badge">{{ role_labels.get(player.role, player.role) }}</span>
+          </td>
+          <td>{{ player.batting_style.capitalize() if player.batting_style else '—' }}</td>
+          <td>
+            <form method="post" action="{{ url_for('cricket.player_remove', team_slug=team.slug, player_id=player.id) }}"
+                  onsubmit="return confirm('Remove {{ player.name }}?');" style="display:inline;">
+              <button type="submit" class="cr-btn cr-btn-secondary cr-btn-sm" style="color:#ef4444;">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</main>
+{% endblock %}

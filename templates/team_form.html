@@ -1,0 +1,42 @@
+{% extends "base_marketing.html" %}
+{% block title %}{{ 'Edit' if team else 'New' }} Team — {{ org.name }} — CricRelay{% endblock %}
+{% block page_shell %}
+<main id="main-content" class="cr-main">
+  <div class="cr-dash-top">
+    <div>
+      <h1>{{ 'Edit Team' if team else 'New Team' }}</h1>
+      <p class="cr-muted">Club: <strong>{{ org.name }}</strong></p>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for cat, m in messages %}
+      <div class="cr-flash {% if cat == 'error' %}error{% else %}success{% endif %}">{{ m }}</div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  <div class="cr-card" style="max-width:520px;">
+    <form method="post">
+      <label class="cr-label">Team Name *</label>
+      <input class="cr-input" type="text" name="name" value="{{ team.name if team else '' }}" required placeholder="e.g. Hamfield CC">
+
+      <label class="cr-label" style="margin-top:16px;">Team Colour</label>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="color" name="color" value="{{ team.color if team else '#22d3a8' }}" style="width:44px;height:36px;border:none;background:none;cursor:pointer;padding:0;">
+        <span class="cr-muted" style="font-size:0.85rem;">Pick a colour for the team</span>
+      </div>
+
+      <label class="cr-label" style="margin-top:16px;">Logo URL <span class="cr-muted">(optional)</span></label>
+      <input class="cr-input" type="url" name="logo_url" value="{{ team.logo_url if team and team.logo_url else '' }}" placeholder="https://example.com/logo.png">
+
+      <label class="cr-label" style="margin-top:16px;">Description <span class="cr-muted">(optional)</span></label>
+      <textarea class="cr-input" name="description" rows="3" placeholder="Short description of the team">{{ team.description if team and team.description else '' }}</textarea>
+
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button type="submit" class="cr-btn">{{ 'Save Changes' if team else 'Create Team' }}</button>
+        <a href="{{ url_for('cricket.teams_list') }}" class="cr-btn cr-btn-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</main>
+{% endblock %}

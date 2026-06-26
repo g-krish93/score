@@ -7,7 +7,9 @@
 
     {% if session.get('org_id') %}
     <nav class="cr-nav cr-nav--app" aria-label="Primary">
-      <a href="{{ url_for('dashboard') }}" class="cr-navlink {% if request.endpoint in ('dashboard', 'dashboard_legacy_redirect') %}is-active{% endif %}">Dashboard</a>
+      <a href="{{ url_for('dashboard') }}" class="cr-navlink {% if request.endpoint in ('dashboard', 'dashboard_legacy_redirect') %}is-active{% endif %}">Streams</a>
+      <a href="{{ url_for('cricket.tournaments_list') }}" class="cr-navlink {% if request.blueprint == 'cricket' and 'tournament' in (request.endpoint or '') %}is-active{% endif %}">Tournaments</a>
+      <a href="{{ url_for('cricket.teams_list') }}" class="cr-navlink {% if request.blueprint == 'cricket' and 'team' in (request.endpoint or '') %}is-active{% endif %}">Teams</a>
       {% include 'partials/cricrelay_theme_toggle.html' %}
       <form action="{{ url_for('logout') }}" method="post" class="cr-nav-form"><button type="submit" class="cr-navlink cr-navlink-btn">Log out</button></form>
     </nav>
