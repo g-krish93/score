@@ -275,3 +275,110 @@ class StreamSession(db.Model):
         if not self.viewer_sample_count:
             return 0
         return round(self.viewer_sample_sum / self.viewer_sample_count)
+
+
+def slugify_competition_name(name: str) -> str:
+    """URL slug for a tournament's public page (/t/<slug>)."""
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", (name or "").strip().lower()).strip("-")
+    return s[:64] or "cup"
+
+
+class Tournament(db.Model):
+    """A non-ECB "native mode" competition owned by one club (Organization)."""
+
+    __tablename__ = "cricrelay_tournament"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id = db.Column(
+        db.String(36), db.ForeignKey("cricrelay_org.id"), nullable=False, index=True
+    )
+    name = db.Column(db.String(200), nullable=False)
+    slug = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    format = db.Column(db.String(24), nullable=False, default="T20")  # T20 | OD | label
+    overs = db.Column(db.Integer, nullable=False, default=20)
+    starts_on = db.Column(db.Date, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "slug": self.slug,
+            "format": self.format,
+            "overs": self.overs,
+            "starts_on": self.starts_on.isoformat() if self.starts_on else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class Team(db.Model):
+    """A team competing in a tournament."""
+
+    __tablename__ = "cricrelay_team"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tournament_id = db.Column(
+        db.String(36), db.ForeignKey("cricrelay_tournament.id"), nullable=False, index=True
+    )
+    name = db.Column(db.String(120), nullable=False)
+    short_name = db.Column(db.String(8), nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "tournament_id": self.tournament_id,
+            "name": self.name,
+            "short_name": self.short_name,
+        }
+
+
+class Player(db.Model):
+    """A player on a tournament team's squad."""
+
+    __tablename__ = "cricrelay_player"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    team_id = db.Column(
+        db.String(36), db.ForeignKey("cricrelay_team.id"), nullable=False, index=True
+    )
+    name = db.Column(db.String(120), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "team_id": self.team_id, "name": self.name}
+
+
+class Fixture(db.Model):
+    """A scheduled game between two tournament teams.
+
+    ``score_match_slug`` links to a native ``RelayMatch`` (scored via the existing
+    ``/setup`` + ``/ball`` engine) so the public page can deep-link to
+    ``/live/<slug>``. ``result_json`` is the completed-game summary the points
+    table + NRR are computed from.
+    """
+
+    __tablename__ = "cricrelay_fixture"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tournament_id = db.Column(
+        db.String(36), db.ForeignKey("cricrelay_tournament.id"), nullable=False, index=True
+    )
+    home_team_id = db.Column(db.String(36), db.ForeignKey("cricrelay_team.id"), nullable=False)
+    away_team_id = db.Column(db.String(36), db.ForeignKey("cricrelay_team.id"), nullable=False)
+    scheduled_at = db.Column(db.DateTime, nullable=True)
+    score_match_slug = db.Column(db.String(120), nullable=True, index=True)
+    status = db.Column(db.String(16), nullable=False, default="scheduled")  # scheduled|live|completed
+    result_json = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "tournament_id": self.tournament_id,
+            "home_team_id": self.home_team_id,
+            "away_team_id": self.away_team_id,
+            "scheduled_at": self.scheduled_at.isoformat() if self.scheduled_at else None,
+            "score_match_slug": self.score_match_slug,
+            "status": self.status,
+        }
