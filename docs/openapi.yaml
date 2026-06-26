@@ -1,0 +1,115 @@
+openapi: 3.0.3
+info:
+  title: CricRelay API
+  version: 1.0.0
+  description: >
+    Stable, versioned contract for the CricRelay KMP app and web clients.
+    Decoupled from internal route shapes so internals can evolve without
+    breaking clients. The legacy /api/* routes remain until clients migrate.
+servers:
+  - url: https://cricrelay.co.uk/api/v1
+    description: Production
+  - url: http://localhost:5000/api/v1
+    description: Local development
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness + API version
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, api_version, service]
+                properties:
+                  ok: { type: boolean, example: true }
+                  api_version: { type: string, example: "1.0.0" }
+                  service: { type: string, example: cricrelay }
+  /matches/{match_slug}/score:
+    get:
+      operationId: getMatchScore
+      summary: Public live score for a match
+      parameters:
+        - name: match_slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Current scoreboard (empty/zeroed before the match starts)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, score]
+                properties:
+                  ok: { type: boolean }
+                  score: { $ref: "#/components/schemas/Score" }
+  /streams:
+    get:
+      operationId: listStreams
+      summary: List the authenticated club's streams
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller club's streams
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, streams]
+                properties:
+                  ok: { type: boolean }
+                  streams:
+                    type: array
+                    items: { type: object }
+        "401":
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string, example: unauthorized }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Score:
+      type: object
+      required:
+        - match_id
+        - started
+        - runs
+        - wickets
+        - overs
+      properties:
+        match_id: { type: string }
+        started: { type: boolean }
+        innings: { type: integer, nullable: true }
+        team1: { type: string }
+        team2: { type: string }
+        batting_team: { type: string }
+        bowling_team: { type: string }
+        runs: { type: integer }
+        wickets: { type: integer }
+        extras: { type: integer }
+        overs: { type: string, example: "12.3" }
+        crr: { type: number }
+        striker: { type: string }
+        non_striker: { type: string }
+        current_over:
+          type: array
+          items: { type: string }
+        target: { type: integer, nullable: true }
+        runs_needed: { type: integer, nullable: true }
+        balls_remaining: { type: integer, nullable: true }
+        rrr: { type: number, nullable: true }
+        match_complete: { type: boolean }
+        result: { type: string, nullable: true }

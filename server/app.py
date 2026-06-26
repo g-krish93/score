@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from flask import (
+    Blueprint,
     Flask,
     abort,
     flash,
@@ -3587,6 +3588,65 @@ def api_stream_setup():
             "public_base_url": _public_base_url(),
         }
     )
+
+
+# --- Versioned API (#7) ----------------------------------------------------
+# A stable, decoupled contract for the KMP app + web, isolated from internal
+# route shapes so internals can change without breaking clients. Additive: the
+# legacy /api/* routes stay until clients migrate. See docs/openapi.yaml.
+
+API_V1_VERSION = "1.0.0"
+api_v1 = Blueprint("api_v1", __name__, url_prefix="/api/v1")
+
+
+def _api_v1_score(slug: str) -> dict:
+    """Stable public score contract folded from the live snapshot."""
+    snap = _live_snapshot(slug)
+    return {
+        "match_id": slug,
+        "started": bool(snap.get("match_started")),
+        "innings": snap.get("innings"),
+        "team1": snap.get("team1") or "",
+        "team2": snap.get("team2") or "",
+        "batting_team": snap.get("batting_team") or "",
+        "bowling_team": snap.get("bowling_team") or "",
+        "runs": int(snap.get("runs", 0) or 0),
+        "wickets": int(snap.get("wickets", 0) or 0),
+        "extras": int(snap.get("extras", 0) or 0),
+        "overs": snap.get("overs_display", "0.0"),
+        "crr": snap.get("crr", 0.0),
+        "striker": snap.get("striker") or "",
+        "non_striker": snap.get("non_striker") or "",
+        "current_over": list(snap.get("current_over") or []),
+        "target": snap.get("target"),
+        "runs_needed": snap.get("runs_needed"),
+        "balls_remaining": snap.get("balls_remaining"),
+        "rrr": snap.get("rrr"),
+        "match_complete": bool(snap.get("match_complete")),
+        "result": snap.get("match_result"),
+    }
+
+
+@api_v1.get("/health")
+def api_v1_health():
+    return jsonify({"ok": True, "api_version": API_V1_VERSION, "service": "cricrelay"})
+
+
+@api_v1.get("/matches/<match_slug>/score")
+def api_v1_match_score(match_slug):
+    """Public, read-only live score for a match in the versioned contract."""
+    slug = sanitize_match_id(match_slug)
+    return jsonify({"ok": True, "score": _api_v1_score(slug)})
+
+
+@api_v1.get("/streams")
+@stream_api_auth_required
+def api_v1_streams(org: Organization):
+    """Authenticated list of the caller club's streams (Bearer token)."""
+    return jsonify({"ok": True, "streams": relay_matches_for_org(org)})
+
+
+app.register_blueprint(api_v1)
 
 
 from .relay_poller import start_relay_poller
