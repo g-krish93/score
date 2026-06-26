@@ -236,6 +236,10 @@ class RelayMatch(db.Model):
     paused = db.Column(db.Boolean, nullable=False, default=False)
     # scraper = Play-Cricket HTML poll; pcs_ble = Android PCS relay (R&D)
     relay_source = db.Column(db.String(24), nullable=False, default="scraper")
+    # Optional match-scoped scorer token (S-2): when set and enforcement is on,
+    # mutating scoring routes require this token so a volunteer can score one
+    # match without full club admin. Default NULL = not enforced for this match.
+    scorer_token = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (

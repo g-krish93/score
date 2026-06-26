@@ -378,6 +378,18 @@ def migrate_relay_source_column():
     db.session.commit()
 
 
+def migrate_scorer_token_column():
+    """Add RelayMatch.scorer_token for match-scoped scorer authz (S-2)."""
+    insp = inspect(db.engine)
+    if not insp.has_table("cricrelay_match"):
+        return
+    cols = {c["name"] for c in insp.get_columns("cricrelay_match")}
+    if "scorer_token" in cols:
+        return
+    db.session.execute(text("ALTER TABLE cricrelay_match ADD COLUMN scorer_token VARCHAR(64)"))
+    db.session.commit()
+
+
 def migrate_organization_brand_columns():
     """Add Organization public branding columns for older databases."""
     insp = inspect(db.engine)
@@ -1028,6 +1040,38 @@ def _org_from_session():
     if not oid:
         return None
     return db.session.get(Organization, oid)
+
+
+def _scorer_token_required() -> bool:
+    """Whether match-scoped scorer tokens are enforced (S-2). Default OFF."""
+    return (os.getenv("SCORER_TOKEN_REQUIRED", "") or "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def _scorer_authorized(slug: str) -> bool:
+    """Authorize a mutating scoring request for ``slug``.
+
+    Permissive by design so nothing breaks unless explicitly enabled:
+    - if enforcement is OFF (default) → allowed;
+    - if the match has no scorer_token configured → allowed;
+    - the owning club (logged-in session) may always score its own match;
+    - otherwise a matching X-Scorer-Token header / scorer_token field is required.
+    """
+    if not _scorer_token_required():
+        return True
+    row = RelayMatch.query.filter_by(score_match_slug=slug).first()
+    token = (getattr(row, "scorer_token", None) or "").strip() if row else ""
+    if not token:
+        return True
+    org = _org_from_session()
+    if org and row and row.organization_id == org.id:
+        return True
+    provided = (request.headers.get("X-Scorer-Token") or "").strip()
+    if not provided:
+        data = request.get_json(silent=True) or {}
+        provided = str(data.get("scorer_token") or request.form.get("scorer_token") or "").strip()
+    return bool(provided and secrets.compare_digest(provided, token))
 
 
 def _password_reset_serializer() -> URLSafeTimedSerializer:
@@ -1853,6 +1897,26 @@ def dashboard_relay_delete():
     return redirect(url_for("dashboard"))
 
 
+@app.post("/dashboard/relay/scorer-token")
+@login_required
+def dashboard_relay_scorer_token():
+    """Mint (or rotate) a match-scoped scorer token (S-2). Org-scoped."""
+    org = _org_from_session()
+    slug = sanitize_match_id(request.form.get("score_match_slug", ""))
+    row = RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
+    if not row:
+        flash("Unknown stream.", "error")
+        return redirect(url_for("dashboard"))
+    clear = (request.form.get("clear") or "").strip().lower() in {"1", "true", "yes", "on"}
+    row.scorer_token = None if clear else secrets.token_urlsafe(16)
+    db.session.commit()
+    if clear:
+        flash("Scorer token cleared — match scoring is open again.", "success")
+    else:
+        flash(f"New scorer token: {row.scorer_token}", "success")
+    return redirect(url_for("dashboard"))
+
+
 @app.get("/stream")
 def stream_overlay_default():
     embed = request.args.get("embed", "").strip().lower() in {"1", "true", "yes"}
@@ -2144,6 +2208,8 @@ def score():
 @app.post("/setup")
 def setup():
     global state, last_action, action_history, redo_history
+    if not _scorer_authorized(get_request_match_id()):
+        return jsonify({"error": "scorer token required"}), 403
     data = request.get_json(silent=True) or {}
     batting_names = [p.strip() for p in data.get("batting_squad", []) if str(p).strip()]
     bowling_names = [p.strip() for p in data.get("bowling_squad", []) if str(p).strip()]
@@ -2194,6 +2260,8 @@ def setup():
 @app.post("/reset-match")
 def reset_match():
     global state, last_action, action_history, redo_history
+    if not _scorer_authorized(get_request_match_id()):
+        return jsonify({"error": "scorer token required"}), 403
     with match_context():
         blocked = manual_scoring_blocked_response()
         if blocked is not None:
@@ -2209,6 +2277,8 @@ def reset_match():
 @app.post("/ball")
 def ball():
     global last_action
+    if not _scorer_authorized(get_request_match_id()):
+        return jsonify({"error": "scorer token required"}), 403
     data = request.get_json(silent=True) or {}
     ball_type = str(data.get("type", "")).strip()
     run_bonus = max(0, safe_num(data.get("runs", 0), 0))
@@ -3599,6 +3669,7 @@ with app.app_context():
     db.create_all()
     migrate_relay_match_columns()
     migrate_relay_source_column()
+    migrate_scorer_token_column()
     migrate_organization_brand_columns()
     migrate_youtube_columns()
     migrate_twitch_columns()
