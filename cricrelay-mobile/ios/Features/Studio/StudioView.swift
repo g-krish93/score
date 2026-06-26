@@ -440,7 +440,7 @@ struct StudioView: View {
                 .padding(.horizontal, 32)
             Button("Open Settings") {
                 if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
+                    Task { await UIApplication.shared.open(url) }
                 }
             }
             .font(.subheadline.weight(.semibold))

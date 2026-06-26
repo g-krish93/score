@@ -58,13 +58,15 @@ struct HomeView: View {
                             .foregroundStyle(.white)
                     }
                 }
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         showPcsBle = true
                     } label: {
                         Image(systemName: "wave.3.right")
                             .foregroundStyle(CricTheme.textMuted)
                     }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button(role: .destructive) { session.logout() } label: {
                             Label("Sign out", systemImage: "arrow.right.square")
@@ -98,7 +100,7 @@ struct HomeView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { stream in
-            Text(""\(stream.label)" will be permanently deleted.")
+            Text("\"\(stream.label)\" will be permanently deleted.")
         }
         .task { await viewModel.load() }
     }
@@ -343,7 +345,7 @@ struct HomeView: View {
                     Task {
                         if let urlStr = await viewModel.youtubeAuthorizeUrl(),
                            let url = URL(string: urlStr) {
-                            UIApplication.shared.open(url)
+                            await UIApplication.shared.open(url)
                         }
                     }
                 }
@@ -361,7 +363,7 @@ struct HomeView: View {
                     Task {
                         if let urlStr = await viewModel.twitchAuthorizeUrl(),
                            let url = URL(string: urlStr) {
-                            UIApplication.shared.open(url)
+                            await UIApplication.shared.open(url)
                         }
                     }
                 }

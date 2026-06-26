@@ -78,6 +78,7 @@ jobs:
           path: static/cricrelay-stream.apk
 
       - name: Upload APK to EC2
+        if: github.ref == 'refs/heads/main'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -88,6 +89,7 @@ jobs:
 
       - name: Commit APK for EC2 git pull
         id: commit_apk
+        if: github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -122,7 +124,7 @@ jobs:
 
   build-ios:
     needs: validate
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       # Ad Hoc OTA secrets (existing path)
@@ -232,7 +234,7 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM="${APPLE_TEAM_ID}" \
-            | xcpretty || true
+            SWIFT_STRICT_CONCURRENCY=minimal
 
           ls -la /tmp/CricRelayLive.xcarchive/
 
@@ -245,8 +247,7 @@ jobs:
             -archivePath /tmp/CricRelayLive.xcarchive \
             -exportPath /tmp/ipa-export \
             -exportOptionsPlist "${EXPORT_OPTIONS}" \
-            APPLE_TEAM_ID="${APPLE_TEAM_ID}" \
-            | xcpretty || true
+            APPLE_TEAM_ID="${APPLE_TEAM_ID}"
 
           IPA_PATH=$(find /tmp/ipa-export -name "*.ipa" | head -1)
           echo "IPA_PATH=${IPA_PATH}" >> "$GITHUB_ENV"
@@ -267,7 +268,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            | xcpretty || true
+            SWIFT_STRICT_CONCURRENCY=minimal
 
           ls -la /tmp/CricRelayLive.xcarchive/
 
@@ -312,7 +313,7 @@ jobs:
         run: cp "${IPA_PATH}" static/cricrelay-stream.ipa
 
       - name: Upload IPA to EC2 (ad-hoc OTA)
-        if: steps.check_secrets.outputs.unsigned == 'false' && env.DIST_MODE == 'adhoc'
+        if: steps.check_secrets.outputs.unsigned == 'false' && env.DIST_MODE == 'adhoc' && github.ref == 'refs/heads/main'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -322,7 +323,7 @@ jobs:
           target: "/app/static"
 
       - name: Commit IPA for EC2 git pull (ad-hoc OTA)
-        if: steps.check_secrets.outputs.unsigned == 'false' && env.DIST_MODE == 'adhoc'
+        if: steps.check_secrets.outputs.unsigned == 'false' && env.DIST_MODE == 'adhoc' && github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

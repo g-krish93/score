@@ -3,6 +3,9 @@ deploy/smtp.env.local
 *.pem
 *.log
 *.json
+# iOS asset catalog manifests are required for the AppIcon to compile,
+# despite the global *.json ignore above.
+!cricrelay-mobile/ios/**/Contents.json
 __pycache__/
 *.pyc
 .terraform/
