@@ -149,6 +149,54 @@ current_match_id = DEFAULT_MATCH_ID
 match_contexts = {}
 
 
+# --- Strangler cut-over: dual-write scoring events to the new core/store ---
+# Default OFF. When SCORING_DUAL_WRITE is enabled and EVENT_STORE_DSN is set,
+# each scored ball is ALSO recorded as an event in the new Postgres event store
+# (cricrelay_core + cricrelay_store), so the new engine can be shadow-compared
+# against the legacy engine before any cut-over. This NEVER affects the live
+# response: every failure is swallowed and the legacy engine stays authoritative.
+SCORING_DUAL_WRITE = (os.getenv("SCORING_DUAL_WRITE", "") or "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
+_event_store = None
+
+
+def _scoring_event_store():
+    global _event_store
+    if _event_store is None:
+        from cricrelay_store import PostgresEventStore
+
+        store = PostgresEventStore(os.environ["EVENT_STORE_DSN"])
+        store.init_schema()
+        _event_store = store
+    return _event_store
+
+
+def _dual_write_setup(match_id, snapshot):
+    if not SCORING_DUAL_WRITE:
+        return
+    try:
+        from server.scoring_bridge import setup_to_start_innings
+
+        _scoring_event_store().append(match_id, setup_to_start_innings(snapshot))
+    except Exception:
+        app.logger.exception("scoring dual-write (setup) failed; ignored")
+
+
+def _dual_write_ball(match_id, ball_type, run_bonus, out_batter, dismissal_kind):
+    if not SCORING_DUAL_WRITE:
+        return
+    try:
+        from server.scoring_bridge import ball_to_delivery
+
+        _scoring_event_store().append(
+            match_id,
+            ball_to_delivery(ball_type, run_bonus, out_batter, dismissal_kind),
+        )
+    except Exception:
+        app.logger.exception("scoring dual-write (ball) failed; ignored")
+
+
 def blank_state():
     return {
         "team1": "",
@@ -2024,6 +2072,7 @@ def setup():
         last_action = None
         action_history = []
         redo_history = []
+        _dual_write_setup(current_match_id, state)
         save_state()
         return jsonify(with_calculated_values(state))
 
@@ -2065,6 +2114,7 @@ def ball():
             return jsonify({"error": "innings already complete"}), 400
         push_history()
         last_action = {"state_snapshot": copy.deepcopy(state)}
+        _dual_write_ball(current_match_id, ball_type, run_bonus, out_batter, dismissal_kind)
         striker = get_batter(state["striker"])
         non_striker = get_batter(state["non_striker"])
         bowler = get_bowler(state["current_bowler"])
