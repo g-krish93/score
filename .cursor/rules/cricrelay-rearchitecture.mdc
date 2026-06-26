@@ -1,0 +1,36 @@
+---
+description: CricRelay re-architecture conventions and safety rules
+globs:
+alwaysApply: true
+---
+
+# CricRelay re-architecture — rules for agents
+
+The backlog with full, step-by-step tasks is **`docs/REARCHITECTURE_TODO.md`** — read it
+before starting any of the pending tracks (competition module, scoring cut-over, security
+hardening, API contract, mobile consolidation, realtime-at-scale).
+
+## Hard rules
+- **Additive / strangler.** Build new modules alongside the old; never change existing
+  request behaviour until a verified, flag-gated cut-over.
+- **Default-OFF flags** for anything touching a live path (see `SCORING_DUAL_WRITE`,
+  `SCORING_SHADOW_COMPARE`, `PUBLIC_LIVE_SSE` in `server/app.py`).
+- **Test every change.** Tests run standalone (`python -m <module>`) or via pytest.
+- **Feature branch + PR.** Pushing to `main` auto-deploys to prod
+  (`.github/workflows/deploy.yml`). Only docs-only commits may go to `main`, and they must
+  include `[skip deploy]` in the message.
+- **Secrets never in code or git.** DB password is in SSM `/cricrelay/datastore/pg_password`.
+  Never use the committed `score-key.pem` for anything new.
+
+## Do NOT do without explicit human approval (GATED)
+- Flip the scoring engine cut-over (serve `/score` from `cricrelay_core`).
+- Run the SQLite→Postgres migration against prod.
+- Rotate the EC2 key / rewrite git history.
+- Enable `PUBLIC_LIVE_SSE` in prod (needs threaded workers / Redis pusher first).
+- Delete the Flutter (`cricrelay-stream`) or standalone BLE-relay apps.
+
+## Architecture map
+- `cricrelay_core/` — pure event-sourced scoring engine (import only from its `__init__`).
+- `cricrelay_store/` — Postgres/Redis adapters behind `cricrelay_core.ports.EventStore`.
+- `server/app.py` — Flask monolith; new work is additive + flag-gated.
+- Datastore: self-hosted Postgres+Redis at private IP `172.31.38.51`.
