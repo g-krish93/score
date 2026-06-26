@@ -16,6 +16,7 @@ from .events import (
     StartInnings,
 )
 from .ports import EventStore, InMemoryEventStore
+from .projections import scorecard
 from .scoring import (
     BatterStat,
     BowlerStat,
@@ -35,6 +36,7 @@ __all__ = [
     "BAT_RUNS",
     "reduce",
     "derived",
+    "scorecard",
     "to_dict",
     "from_dict",
     "MatchState",

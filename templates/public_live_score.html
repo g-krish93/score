@@ -78,6 +78,14 @@
       background: var(--cr-text); color: var(--cr-bg); padding: 9px 16px; border-radius: 999px; font-size: 0.85rem; font-weight: 600;
       opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; }
     .lv-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .lv-card-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .lv-card-table td, .lv-card-table th { padding: 6px 0; border-bottom: 1px solid var(--cr-border); text-align: left; }
+    .lv-card-table tr:last-child td { border-bottom: 0; }
+    .lv-card-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .lv-card-table .nm .on { color: var(--cr-accent); font-weight: 600; }
+    .lv-card-table .how { color: var(--cr-muted); font-size: 0.78rem; }
+    .lv-card-table th { color: var(--cr-muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
   </style>
 </head>
 <body class="lv-body">
@@ -111,6 +119,16 @@
         <div class="lv-section" id="overSection" hidden>
           <div class="lv-h">This over</div>
           <div class="lv-over" id="thisOver"></div>
+        </div>
+
+        <div class="lv-section" id="battingCardSection" hidden>
+          <div class="lv-h">Batting</div>
+          <table class="lv-card-table" id="battingCard"></table>
+        </div>
+
+        <div class="lv-section" id="bowlingCardSection" hidden>
+          <div class="lv-h">Bowling</div>
+          <table class="lv-card-table" id="bowlingCard"></table>
         </div>
       </div>
     </section>
@@ -178,6 +196,52 @@
       const over = d.current_over || [];
       $('overSection').hidden = over.length === 0;
       $('thisOver').innerHTML = over.map((b) => `<span class="${ballClass(b)}">${b}</span>`).join('');
+
+      renderBattingCard(d);
+      renderBowlingCard(d);
+    }
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    }
+
+    function renderBattingCard(d) {
+      const squad = d.batting_squad || [];
+      // Only those who have batted (faced a ball, scored, or are out / at the crease).
+      const batted = squad.filter((p) => p && (
+        (p.balls || 0) > 0 || (p.runs || 0) > 0 ||
+        (p.status && p.status !== 'yet to bat') ||
+        p.name === d.striker || p.name === d.non_striker));
+      $('battingCardSection').hidden = batted.length === 0;
+      if (!batted.length) return;
+      const rows = batted.map((p) => {
+        const atCrease = p.name === d.striker || p.name === d.non_striker;
+        const star = p.name === d.striker ? ' *' : '';
+        const how = atCrease ? 'not out'
+          : (p.status && p.status !== 'yet to bat' ? p.status : '');
+        const nmeClass = atCrease ? 'on' : '';
+        return `<tr><td class="nm"><span class="${nmeClass}">${esc(p.name)}${star}</span>` +
+               `<div class="how">${esc(how)}</div></td>` +
+               `<td class="num">${p.runs ?? 0}</td><td class="num">${p.balls ?? 0}</td></tr>`;
+      }).join('');
+      $('battingCard').innerHTML =
+        `<tr><th>Batter</th><th class="num">R</th><th class="num">B</th></tr>${rows}`;
+    }
+
+    function renderBowlingCard(d) {
+      const squad = d.bowling_squad || [];
+      const bowled = squad.filter((p) => p && ((p.balls || 0) > 0 || (p.overs || 0) > 0 || (p.runs || 0) > 0));
+      $('bowlingCardSection').hidden = bowled.length === 0;
+      if (!bowled.length) return;
+      const rows = bowled.map((p) => {
+        const overs = `${p.overs ?? 0}.${(p.balls ?? 0) % 6}`;
+        return `<tr><td class="nm">${esc(p.name)}</td>` +
+               `<td class="num">${overs}</td><td class="num">${p.runs ?? 0}</td>` +
+               `<td class="num">${p.wickets ?? 0}</td></tr>`;
+      }).join('');
+      $('bowlingCard').innerHTML =
+        `<tr><th>Bowler</th><th class="num">O</th><th class="num">R</th><th class="num">W</th></tr>${rows}`;
     }
 
     function setLive(ok) {

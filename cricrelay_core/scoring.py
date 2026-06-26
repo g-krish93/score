@@ -50,6 +50,8 @@ class InningsState:
     batters: dict[str, BatterStat] = field(default_factory=dict)
     bowlers: dict[str, BowlerStat] = field(default_factory=dict)
     current_over: list[str] = field(default_factory=list)
+    # Fall of wickets: one entry per wicket as {"wickets", "runs", "batter"}.
+    fall_of_wickets: list[dict] = field(default_factory=list)
     closed: bool = False
 
 
@@ -174,6 +176,9 @@ def apply_delivery(inn: InningsState, d: Delivery) -> None:
         _ensure_batter(inn, out_name)
         inn.batters[out_name].out = True
         inn.batters[out_name].dismissal = d.dismissal_kind or "bowled"
+        inn.fall_of_wickets.append(
+            {"wickets": inn.wickets, "runs": inn.runs, "batter": out_name}
+        )
         replacement = _next_batter(inn)
         _ensure_batter(inn, replacement)
         if d.out_batter == "striker":
