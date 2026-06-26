@@ -128,6 +128,7 @@
   <script>
     const MATCH_ID = {{ match_id|tojson }};
     const SHARE_URL = {{ share_url|tojson }};
+    const SSE_ENABLED = {{ (enable_sse if enable_sse is defined else false)|tojson }};
     const $ = (id) => document.getElementById(id);
 
     function ballClass(b) {
@@ -200,7 +201,7 @@
     // Realtime via Server-Sent Events; fall back to polling if SSE is
     // unavailable (old browser, buffering proxy, etc.).
     function start() {
-      if (window.EventSource) {
+      if (SSE_ENABLED && window.EventSource) {
         let gotMessage = false;
         try {
           const es = new EventSource(`/live/${encodeURIComponent(MATCH_ID)}/events`);
