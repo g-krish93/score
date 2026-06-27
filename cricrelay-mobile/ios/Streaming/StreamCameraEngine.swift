@@ -136,15 +136,21 @@ final class StreamCameraEngine: NSObject {
     }
 
     func updateOverlay(url: String, layout: OverlayLayout) {
-        overlayUrl = url
+        // Match Android updateOverlay: an empty URL updates only the layout/watermark and must NOT
+        // clear an overlay URL already set for the preview. Saving overlay prefs before go live
+        // passes an empty embed URL, so without this guard the preview scoreboard would vanish the
+        // moment the operator tweaks overlay settings.
+        if !url.isEmpty {
+            overlayUrl = url
+            overlayCapture?.loadUrl(url)
+        }
         overlayLayout = layout
-        overlayCapture?.loadUrl(url)
         Task {
             await ensureOverlayObject()
             await ensureWatermarkObject()
             // When not yet live, drive the preview overlay so the scoreboard shows in the preview
             // (parity with Android). While live, startStream already runs the refresh loop.
-            if !publishing, !url.isEmpty {
+            if !publishing, !overlayUrl.isEmpty {
                 startOverlayRefresh()
             }
         }
