@@ -113,6 +113,14 @@ final class StreamCameraEngine: NSObject {
                 overlayCapture?.loadUrl(overlayUrl)
             }
             await ensureWatermarkObject()
+            // Composite the scoreboard overlay into the preview too (parity with Android's
+            // startPreviewOverlayPush). The overlay ImageScreenObject lives on mixer.screen, which
+            // feeds both the MTHKView preview and the RTMP output, so the operator sees the
+            // scoreboard before going live — not only once on air.
+            if !publishing, !overlayUrl.isEmpty {
+                await ensureOverlayObject()
+                startOverlayRefresh()
+            }
             previewReady = true
             emit("preview_ready", "\(width)x\(height)")
         } catch {
@@ -134,6 +142,11 @@ final class StreamCameraEngine: NSObject {
         Task {
             await ensureOverlayObject()
             await ensureWatermarkObject()
+            // When not yet live, drive the preview overlay so the scoreboard shows in the preview
+            // (parity with Android). While live, startStream already runs the refresh loop.
+            if !publishing, !url.isEmpty {
+                startOverlayRefresh()
+            }
         }
     }
 
@@ -209,6 +222,9 @@ final class StreamCameraEngine: NSObject {
             try? await stream.close()
         }
         try? await connection.close()
+        // Back to preview: keep compositing the scoreboard overlay for the operator (parity with
+        // Android, which restarts the preview overlay push once a broadcast ends).
+        startPreviewOverlayIfNeeded()
     }
 
     func pauseStream() async {
@@ -487,10 +503,26 @@ final class StreamCameraEngine: NSObject {
         }
     }
 
+    /// Compose the scoreboard overlay into the preview when not yet live (parity with Android's
+    /// startPreviewOverlayPush). No-op while publishing (startStream owns the refresh loop then) or
+    /// when there is no view / overlay URL.
+    private func startPreviewOverlayIfNeeded() {
+        guard !publishing, isViewAttached, !overlayUrl.isEmpty else { return }
+        Task {
+            await ensureOverlayObject()
+            startOverlayRefresh()
+        }
+    }
+
+    // The capture timer touches UIKit/WebKit and must live on the main run loop, so all timer
+    // lifecycle goes through the main queue regardless of which executor the caller is on.
     private func startOverlayRefresh() {
-        stopOverlayRefresh()
-        overlayTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.refreshOverlayFrame()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.overlayTimer?.invalidate()
+            self.overlayTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                self?.refreshOverlayFrame()
+            }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
             self?.refreshOverlayFrame()
@@ -498,8 +530,10 @@ final class StreamCameraEngine: NSObject {
     }
 
     private func stopOverlayRefresh() {
-        overlayTimer?.invalidate()
-        overlayTimer = nil
+        DispatchQueue.main.async { [weak self] in
+            self?.overlayTimer?.invalidate()
+            self?.overlayTimer = nil
+        }
     }
 
     private func refreshOverlayFrame() {

@@ -147,6 +147,14 @@ final class StudioViewModel: ObservableObject {
             destination = "custom"
         }
         recomputeDestinationReady()
+        syncOverlay()
+    }
+
+    /// Push the match's scoreboard overlay into the camera engine so it composites in the *preview*
+    /// before going live (parity with Android's syncOverlay / startPreviewOverlayPush).
+    private func syncOverlay() {
+        guard let url = match?.overlayEmbedUrl, !url.isEmpty else { return }
+        StreamCameraEngine.shared.updateOverlay(url: url, layout: overlayPrefs.toEngineLayout())
     }
 
     private func recomputeDestinationReady() {

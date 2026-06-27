@@ -59,25 +59,52 @@ final class PcsBleManager: NSObject, ObservableObject {
     }
 
     private func handlePacket(_ data: Data) {
+        // Only count + relay packets that decode to a PCS scoreboard line, exactly like Android's
+        // onPacket — noise/keepalives are dropped silently.
+        guard let line = decodePacket(data) else { return }
         packetCount += 1
-        let text = String(data: data, encoding: .utf8) ?? data.hexString
-        recentPackets.insert(text, at: 0)
-        if recentPackets.count > 10 { recentPackets.removeLast() }
-        Task { await relay(data: data) }
+        recentPackets.insert(line, at: 0)
+        if recentPackets.count > 12 { recentPackets.removeLast() }
+        Task { await relay(line: line) }
     }
 
-    private func relay(data: Data) async {
+    /// Decode a raw BLE packet into a PCS scoreboard text line, mirroring Android's `decodePacket`:
+    /// prefer a UTF-8 decode, else fall back to the printable-ASCII bytes; accept only when the
+    /// result is at least 3 chars and begins with 3 letters (the PCS line prefix).
+    private func decodePacket(_ data: Data) -> String? {
+        if data.isEmpty { return nil }
+        if let utf = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           utf.count >= 3, looksLikePcs(utf) {
+            return utf
+        }
+        let ascii = String(
+            data.filter { $0 >= 32 && $0 <= 126 }.map { Character(UnicodeScalar($0)) }
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (ascii.count >= 3 && looksLikePcs(ascii)) ? ascii : nil
+    }
+
+    private func looksLikePcs(_ s: String) -> Bool {
+        guard s.count >= 3 else { return false }
+        return s.prefix(3).allSatisfy { $0.isLetter }
+    }
+
+    /// POST the decoded line as `{"line": "..."}` JSON, byte-for-byte equivalent to the Android
+    /// relay so the same server ingest endpoint behaves identically across platforms.
+    private func relay(line: String) async {
         guard let url = URL(string: ingestUrl), !ingestUrl.isEmpty else {
             postFail += 1
             return
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if !bearerToken.isEmpty {
-            request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+            // Match Android: pass an existing "Bearer " prefix through untouched, otherwise add one.
+            let header = bearerToken.hasPrefix("Bearer ") ? bearerToken : "Bearer \(bearerToken)"
+            request.setValue(header, forHTTPHeaderField: "Authorization")
         }
-        request.httpBody = data
+        request.httpBody = try? JSONEncoder().encode(LinePayload(line: line))
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
@@ -89,6 +116,10 @@ final class PcsBleManager: NSObject, ObservableObject {
             postFail += 1
         }
     }
+}
+
+private struct LinePayload: Encodable {
+    let line: String
 }
 
 // MARK: - CBPeripheralManagerDelegate
