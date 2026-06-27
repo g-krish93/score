@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Umpire Scorer</string>
+    <string name="btn_wide">Wide</string>
+    <string name="btn_noball">No Ball</string>
+    <string name="btn_bye">Bye</string>
+    <string name="btn_legbye">Leg Bye</string>
+    <string name="btn_wicket">WICKET</string>
+    <string name="btn_undo">Undo</string>
+    <string name="btn_new_over">New Over</string>
+    <string name="btn_reset">Reset</string>
+    <string name="label_select_mode">Select type, then tap runs</string>
+    <string name="label_overs">Overs</string>
+</resources>
