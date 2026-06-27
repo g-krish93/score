@@ -21,10 +21,33 @@ final class StudioViewModel: ObservableObject {
     @Published var overlayEmbedUrl = ""
 
     // Destination selection (before go-live)
-    @Published var destination = "youtube"  // "youtube", "twitch", "custom"
-    @Published var customRtmpUrl = ""
-    @Published var customStreamKey = ""
+    @Published var destination = "youtube" {  // "youtube", "twitch", "custom"
+        didSet { recomputeDestinationReady() }
+    }
+    @Published var customRtmpUrl = "" {
+        didSet { recomputeDestinationReady() }
+    }
+    @Published var customStreamKey = "" {
+        didSet { recomputeDestinationReady() }
+    }
     @Published var customWatchUrl = ""
+    @Published private(set) var destinationReady = false
+
+    // Cached live platform connection state, used to gate Go Live (parity with Android, which
+    // checks youtube/twitch platform status rather than assuming a selected OAuth platform is ready).
+    private var youtubeStatus = PlatformStatus()
+    private var twitchStatus = PlatformStatus()
+
+    /// When the current broadcast started, for the recap duration.
+    private var liveStartedAt: Date?
+
+    var destinationLabel: String {
+        switch destination {
+        case "youtube": return "YouTube"
+        case "twitch": return "Twitch"
+        default: return "Custom RTMP"
+        }
+    }
 
     // Overlay
     @Published var overlayPrefs = OverlayLayoutPrefs()
@@ -71,6 +94,13 @@ final class StudioViewModel: ObservableObject {
     // MARK: - Load
 
     func load() async {
+        // Restore persisted custom RTMP credentials so a custom destination survives relaunch
+        // (parity with Android RtmpCredentialsStore).
+        let saved = RtmpCredentialsStore.load(slug: matchSlug)
+        customRtmpUrl = saved.rtmpUrl
+        customStreamKey = saved.streamKey
+        customWatchUrl = saved.watchUrl
+
         do {
             async let matchFetch = api.matchDay(slug: matchSlug)
             async let overlayFetch = api.overlayPrefs(slug: matchSlug)
@@ -88,10 +118,47 @@ final class StudioViewModel: ObservableObject {
             StreamCameraEngine.shared.setKeepScreenOnDuringStream(enabled: prefs.keepScreenOn)
             StreamCameraEngine.shared.setVideoStabilization(enabled: prefs.videoStabilization)
 
+            // Resolve the StreamMatch row (for the recap label) and real platform readiness.
+            await loadStudioExtras()
+
             // Start polling
             startPolling()
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    /// Resolve the StreamMatch row plus live YouTube/Twitch connection state, and pick a sensible
+    /// default destination — mirrors Android's loadStudioExtras so Go Live is gated on real platform
+    /// readiness rather than assuming a selected OAuth platform is connected.
+    private func loadStudioExtras() async {
+        if let streams = try? await api.listStreams() {
+            match = streams.first { $0.slug == matchSlug }
+        }
+        youtubeStatus = (try? await api.youtubeStatus()) ?? PlatformStatus()
+        twitchStatus = (try? await api.twitchStatus()) ?? PlatformStatus()
+
+        // Prefer a connected OAuth platform; fall back to custom RTMP when creds are saved.
+        if youtubeStatus.ready || youtubeStatus.connected {
+            destination = "youtube"
+        } else if twitchStatus.ready || twitchStatus.connected {
+            destination = "twitch"
+        } else if RtmpCredentialsStore.load(slug: matchSlug).isConfigured {
+            destination = "custom"
+        }
+        recomputeDestinationReady()
+    }
+
+    private func recomputeDestinationReady() {
+        switch destination {
+        case "custom":
+            destinationReady = !customRtmpUrl.isEmpty && !customStreamKey.isEmpty
+        case "youtube":
+            destinationReady = youtubeStatus.ready || youtubeStatus.connected
+        case "twitch":
+            destinationReady = twitchStatus.ready || twitchStatus.connected
+        default:
+            destinationReady = false
         }
     }
 
@@ -121,11 +188,23 @@ final class StudioViewModel: ObservableObject {
 
     // MARK: - Go live flow
 
+    /// Entry point from the shutter: if the destination isn't actually ready, send the operator to
+    /// the Destination sheet first (parity with Android's requestGoLive) instead of a preflight that
+    /// would fail. Otherwise go straight to the preflight check.
+    func requestGoLive() {
+        guard StreamCameraEngine.shared.isPreviewReady else { return }
+        recomputeDestinationReady()
+        if !streaming && !destinationReady {
+            activeSheet = .destination
+            return
+        }
+        openPreflight()
+    }
+
     func openPreflight() {
+        recomputeDestinationReady()
         preflightCameraOk = StreamCameraEngine.shared.isPreviewReady
-        preflightDestinationOk = destination == "custom"
-            ? !customRtmpUrl.isEmpty && !customStreamKey.isEmpty
-            : true  // OAuth platforms considered ready when selected
+        preflightDestinationOk = destinationReady
         preflightOverlayOk = !overlayEmbedUrl.isEmpty || !overlayPrefs.theme.isEmpty
         activeSheet = .preflight
     }
@@ -180,6 +259,7 @@ final class StudioViewModel: ObservableObject {
         )
         streaming = StreamCameraEngine.shared.isStreaming
         if streaming {
+            liveStartedAt = Date()
             try? await api.updateBroadcastStatus(
                 slug: matchSlug,
                 status: "streaming",
@@ -196,12 +276,19 @@ final class StudioViewModel: ObservableObject {
     // MARK: - Stop live
 
     func stopLive() async {
+        let duration = liveStartedAt.map { max(0, Int(Date().timeIntervalSince($0))) } ?? 0
+        liveStartedAt = nil
         await StreamCameraEngine.shared.stopStream()
         streaming = false
         paused = false
         try? await api.stopLive(platform: destination == "custom" ? nil : destination)
         try? await api.updateBroadcastStatus(slug: matchSlug, status: "idle")
-        recap = StreamRecap(title: match?.label ?? "Stream", watchUrl: watchUrl)
+        recap = StreamRecap(
+            title: match?.label ?? "Stream",
+            destinationLabel: destinationLabel,
+            durationSeconds: duration,
+            watchUrl: watchUrl
+        )
         watchUrl = ""
     }
 
@@ -221,6 +308,24 @@ final class StudioViewModel: ObservableObject {
             paused = true
             try? await api.updateBroadcastStatus(slug: matchSlug, status: "paused")
         }
+    }
+
+    // MARK: - Custom RTMP
+
+    /// Persist the custom RTMP credentials entered in the Destination sheet so they survive relaunch
+    /// (parity with Android RtmpCredentialsStore).
+    func persistCustomRtmp() {
+        customRtmpUrl = customRtmpUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        customStreamKey = customStreamKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        customWatchUrl = customWatchUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        RtmpCredentialsStore.save(
+            slug: matchSlug,
+            RtmpCredentials(
+                rtmpUrl: customRtmpUrl,
+                streamKey: customStreamKey,
+                watchUrl: customWatchUrl
+            )
+        )
     }
 
     // MARK: - Overlay

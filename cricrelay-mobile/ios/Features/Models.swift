@@ -235,5 +235,17 @@ struct MatchDayStatus: Codable {
 
 struct StreamRecap {
     let title: String
+    let destinationLabel: String
+    let durationSeconds: Int
     let watchUrl: String
+
+    /// `m:ss` for a sub-hour broadcast, `h:mm:ss` once it crosses an hour.
+    var durationText: String {
+        let h = durationSeconds / 3600
+        let m = (durationSeconds % 3600) / 60
+        let s = durationSeconds % 60
+        return h > 0
+            ? String(format: "%d:%02d:%02d", h, m, s)
+            : String(format: "%d:%02d", m, s)
+    }
 }

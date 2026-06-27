@@ -305,7 +305,7 @@ struct StudioView: View {
             if viewModel.streaming {
                 Task { await viewModel.stopLive() }
             } else {
-                viewModel.openPreflight()
+                viewModel.requestGoLive()
             }
         } label: {
             ZStack {
@@ -378,9 +378,13 @@ struct StudioView: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(CricTheme.accent)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Stream ended")
+                Text("\(recap.title) · \(recap.destinationLabel)")
                     .font(.subheadline.bold())
                     .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text("Live for \(recap.durationText)")
+                    .font(.caption)
+                    .foregroundStyle(CricTheme.textMuted)
                 if !recap.watchUrl.isEmpty {
                     Text(recap.watchUrl)
                         .font(.caption)
