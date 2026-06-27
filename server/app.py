@@ -770,6 +770,15 @@ def _pcs_relay_apk_path() -> Path:
     return static / "pcs-relay.apk"
 
 
+def _umpire_scorer_apk_path() -> Path:
+    custom = (os.getenv("UMPIRE_SCORER_APK_PATH") or "").strip()
+    if custom:
+        return Path(custom).expanduser()
+    static = Path(app.static_folder or "../static")
+    candidate = static / "umpire-scorer.apk"
+    return candidate
+
+
 def _stream_apk_path() -> Path:
     custom = (os.getenv("STREAM_APP_APK_PATH") or "").strip()
     if custom:
@@ -1557,6 +1566,8 @@ def _dashboard_fixture_data(org):
         "twitch_oauth_configured": tw.oauth_configured(),
         "twitch_live_active": bool(org.twitch_active_match_slug),
         "twitch_active_match_slug": org.twitch_active_match_slug or "",
+        "umpire_scorer_apk_available": _umpire_scorer_apk_path().is_file(),
+        "umpire_scorer_apk_download_url": url_for("download_umpire_scorer_apk"),
     }
 
 
@@ -1669,6 +1680,18 @@ def download_pcs_relay_apk():
         )
         return redirect(url_for("dashboard"))
     return _apk_download_response(path, "cricrelay-pcs-relay.apk")
+
+
+@app.get("/download/umpire-scorer.apk")
+def download_umpire_scorer_apk():
+    path = _umpire_scorer_apk_path()
+    if not path.is_file():
+        flash(
+            "Umpire Scorer APK is not on the server yet — it will appear after the next GitHub Actions build.",
+            "error",
+        )
+        return redirect(url_for("dashboard"))
+    return _apk_download_response(path, "cricrelay-umpire-scorer.apk")
 
 
 def _stream_slot_error(org: Organization) -> str | None:

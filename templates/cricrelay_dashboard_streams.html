@@ -102,6 +102,22 @@
   </div>
 
   <div class="cr-card">
+    <h2>Cricket Umpire Scorer</h2>
+    <p class="cr-muted" style="margin:0 0 10px;">Standalone Android app for umpires to record ball-by-ball deliveries on the pitch — no internet required.</p>
+    <ol class="cr-help" style="margin:0 0 12px;padding-left:20px;line-height:1.5;">
+      <li>Install the APK on any Android phone (Android 5+).</li>
+      <li>Tap <strong>0–6</strong> for a legal delivery. Tap <strong>Wide</strong> / <strong>No Ball</strong> / <strong>Bye</strong> / <strong>Leg Bye</strong> first to set the delivery type, then tap runs.</li>
+      <li>Tap <strong>WICKET</strong> (turns red) before tapping runs to flag a wicket on any delivery type.</li>
+      <li>App auto-prompts end of over after 6 legal balls. Score is saved if the app closes.</li>
+    </ol>
+    {% if umpire_scorer_apk_available %}
+    <a class="cr-btn cr-btn-primary" href="{{ umpire_scorer_apk_download_url }}">Download Umpire Scorer APK</a>
+    {% else %}
+    <a class="cr-btn cr-btn-secondary" href="{{ umpire_scorer_apk_download_url }}">APK download (building…)</a>
+    {% endif %}
+  </div>
+
+  <div class="cr-card">
     <h2>Active streams</h2>
     <p class="cr-muted" style="margin:0 0 14px;">{{ stream_slots_used }} / {{ stream_slots_total }} slots · {% if relay_auto_poll %}auto-sync every {{ relay_poll_sec }}s (scraper only){% else %}auto-sync off{% endif %}</p>
     {% if relay_rows %}

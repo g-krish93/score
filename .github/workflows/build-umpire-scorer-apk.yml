@@ -1,0 +1,50 @@
+name: Build Umpire Scorer APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cricket-umpire-scorer/**"
+      - ".github/workflows/build-umpire-scorer-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Build release APK
+        working-directory: cricket-umpire-scorer
+        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+
+      - name: Publish APK to static/
+        run: cp cricket-umpire-scorer/app/build/outputs/apk/release/app-release.apk static/umpire-scorer.apk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cricrelay-umpire-scorer-apk
+          path: static/umpire-scorer.apk
+
+      - name: Commit APK for EC2 git pull
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add static/umpire-scorer.apk
+          if git diff --staged --quiet; then
+            echo "APK unchanged"
+            exit 0
+          fi
+          git commit -m "chore: update Umpire Scorer APK [skip deploy]"
+          git push
