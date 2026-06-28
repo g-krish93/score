@@ -9,6 +9,7 @@ struct HomeView: View {
     @State private var showRenameAlert = false
     @State private var showDeleteConfirm = false
     @State private var showPcsBle = false
+    @State private var showUmpireScorer = false
     @State private var showCreateMode: CreateMode?
 
     enum CreateMode: Identifiable {
@@ -60,6 +61,14 @@ struct HomeView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
+                        showUmpireScorer = true
+                    } label: {
+                        Image(systemName: "sportscourt")
+                            .foregroundStyle(CricTheme.primary)
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
                         showPcsBle = true
                     } label: {
                         Image(systemName: "wave.3.right")
@@ -79,6 +88,7 @@ struct HomeView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $showUmpireScorer) { UmpireScorerView() }
         .sheet(isPresented: $showPcsBle) { PcsBleView() }
         .sheet(item: $showCreateMode) { mode in
             CreateStreamView(

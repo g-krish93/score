@@ -107,6 +107,7 @@ fun HomeScreen(
     onOpenStudio: (String) -> Unit,
     onCreateStream: (String) -> Unit,
     onOpenPcsBle: () -> Unit,
+    onOpenUmpireScorer: () -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
@@ -155,6 +156,13 @@ fun HomeScreen(
                             Icons.Outlined.Refresh,
                             contentDescription = "Refresh",
                             tint = AppColors.OnBackground,
+                        )
+                    }
+                    PressableIconButton(onClick = onOpenUmpireScorer) {
+                        Icon(
+                            Icons.Outlined.SportsCricket,
+                            contentDescription = "Umpire Scorer",
+                            tint = AppColors.Primary,
                         )
                     }
                     PressableIconButton(onClick = onOpenPcsBle) {

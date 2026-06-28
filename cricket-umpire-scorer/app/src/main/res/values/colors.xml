@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App background — dark cricket pitch green -->
+    <color name="bg_primary">#1B5E20</color>
+    <!-- Panel / card surface -->
+    <color name="bg_surface">#2E7D32</color>
+    <!-- Score panel -->
+    <color name="bg_score">#1A3A1C</color>
+
+    <!-- Text -->
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#A5D6A7</color>
+    <color name="text_hint">#81C784</color>
+
+    <!-- Run buttons (blue) -->
+    <color name="run_btn">#0D47A1</color>
+    <color name="run_btn_pressed">#1565C0</color>
+
+    <!-- Wide / No-ball (orange) -->
+    <color name="extras_btn">#BF360C</color>
+    <color name="extras_btn_active">#FF6D00</color>
+
+    <!-- Bye / Leg-bye (amber) -->
+    <color name="bye_btn">#E65100</color>
+    <color name="bye_btn_active">#FF9100</color>
+
+    <!-- Wicket (red) -->
+    <color name="wicket_btn">#B71C1C</color>
+    <color name="wicket_btn_active">#FF1744</color>
+
+    <!-- Control buttons (dark slate) -->
+    <color name="ctrl_btn">#37474F</color>
+    <color name="undo_btn">#546E7A</color>
+
+    <!-- Ball chips in over display -->
+    <color name="chip_dot">#33691E</color>
+    <color name="chip_runs">#1565C0</color>
+    <color name="chip_boundary">#0D47A1</color>
+    <color name="chip_wide">#BF360C</color>
+    <color name="chip_noball">#E65100</color>
+    <color name="chip_bye">#F57F17</color>
+    <color name="chip_legbye">#FF8F00</color>
+    <color name="chip_wicket">#B71C1C</color>
+    <color name="chip_empty">#2E7D32</color>
+
+    <!-- Launcher icon -->
+    <color name="ic_launcher_background">#1B5E20</color>
+</resources>

@@ -51,12 +51,37 @@ class BroadcastScoreboardLayer extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    return DraggableOverlayFrame(
-      prefs: prefs,
-      locked: locked,
-      onChanged: onChanged,
-      onDragEnd: onDragEnd,
-      preview: preview,
+    return Stack(
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final maxW = constraints.maxWidth;
+            final maxH = constraints.maxHeight;
+            if (maxW < 64 || maxH < 64) return const SizedBox.shrink();
+            final frame = prefs.frameRect(maxW, maxH);
+            return Stack(
+              children: [
+                Positioned(
+                  left: frame.left,
+                  top: frame.top,
+                  width: frame.width,
+                  height: frame.height,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: preview,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        DraggableOverlayFrame(
+          prefs: prefs,
+          locked: locked,
+          onChanged: onChanged,
+          onDragEnd: onDragEnd,
+        ),
+      ],
     );
   }
 }

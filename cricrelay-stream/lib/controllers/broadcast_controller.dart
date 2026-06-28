@@ -64,7 +64,7 @@ class BroadcastController extends ChangeNotifier {
   int encoderHeight = 720;
   int displayRotation = 0;
   int preparedEncoderRotation = -1;
-  /// GL preview rotation applied via [rotatePreviewOnly] — suppresses false orientation warnings.
+  /// GL preview rotation applied via [RtmpPlatform.updatePreviewRotation] — suppresses false orientation warnings.
   int glPreviewRotation = -1;
   bool focusLocked = false;
   DeviceProfile? deviceProfile;
@@ -220,7 +220,7 @@ class BroadcastController extends ChangeNotifier {
     }
 
     if (nativeCameraReady) {
-      final fast = await RtmpPlatform.rotatePreviewOnly(params.rotation);
+      final fast = await RtmpPlatform.updatePreviewRotation(params.rotation);
       if (fast) {
         encoderWidth = params.width;
         encoderHeight = params.height;

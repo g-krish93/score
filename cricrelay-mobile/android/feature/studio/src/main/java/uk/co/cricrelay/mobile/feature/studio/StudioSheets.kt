@@ -406,6 +406,7 @@ fun ScoringSheet(
             Triple("auto", "Auto (Play-Cricket)", "Follows the club's Play-Cricket scorer"),
             Triple("manual", "Manual scorer", "Score from the web scorer yourself"),
             Triple("ble", "PCS BLE (R&D)", "Scores relayed over Bluetooth from PCS"),
+            Triple("native", "Native Umpire", "Built-in ball-by-ball delivery scorer"),
         ).forEach { (mode, label, description) ->
             SelectableOptionCard(
                 title = label,

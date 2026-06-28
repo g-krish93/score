@@ -20,6 +20,7 @@ import uk.co.cricrelay.mobile.feature.home.CreateStreamScreen
 import uk.co.cricrelay.mobile.feature.home.HomeScreen
 import uk.co.cricrelay.mobile.feature.pcsble.PcsBleScreen
 import uk.co.cricrelay.mobile.feature.scoring.ScoringScreen
+import uk.co.cricrelay.mobile.feature.umpire.UmpireScorerScreen
 import uk.co.cricrelay.mobile.feature.studio.StudioScreen
 
 @Composable
@@ -101,6 +102,7 @@ fun CricRelayNavHost(
                 onOpenStudio = { slug -> navController.navigate(StudioRoute(slug)) },
                 onCreateStream = { mode -> navController.navigate(CreateStreamRoute(mode)) },
                 onOpenPcsBle = { navController.navigate(PcsBleRoute) },
+                onOpenUmpireScorer = { navController.navigate(UmpireScorerRoute) },
                 onLogout = {
                     navController.navigate(LoginRoute) {
                         popUpTo(HomeRoute) { inclusive = true }
@@ -152,6 +154,9 @@ fun CricRelayNavHost(
         }
         composable<PcsBleRoute> {
             PcsBleScreen(onBack = { navController.popBackStack() })
+        }
+        composable<UmpireScorerRoute> {
+            UmpireScorerScreen(onBack = { navController.popBackStack() })
         }
     }
 }
