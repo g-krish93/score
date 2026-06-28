@@ -24,4 +24,7 @@ data class ScoringRoute(val matchSlug: String)
 object PcsBleRoute
 
 @Serializable
+object UmpireScorerRoute
+
+@Serializable
 object RegisterRoute

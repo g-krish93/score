@@ -314,6 +314,27 @@ data class OverlayLayoutPrefs(
     }
 }
 
+// ── Umpire scorer shared models ───────────────────────────────────────────────
+
+enum class UmpireDeliveryMode { NORMAL, WIDE, NOBALL, BYE, LEGBYE }
+
+data class UmpireBallEvent(
+    val label: String,
+    val totalRuns: Int,
+    val isLegal: Boolean,
+    val isWicket: Boolean,
+)
+
+data class UmpireScorerState(
+    val totalRuns: Int = 0,
+    val totalWickets: Int = 0,
+    val completedOvers: Int = 0,
+    val currentOverBalls: List<UmpireBallEvent> = emptyList(),
+    val legalBallCount: Int = 0,
+    val deliveryMode: UmpireDeliveryMode = UmpireDeliveryMode.NORMAL,
+    val pendingWicket: Boolean = false,
+)
+
 internal fun JsonObject.string(key: String): String? =
     (this[key] as? JsonPrimitive)?.contentOrNull
 
