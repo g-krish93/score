@@ -1,6 +1,6 @@
 # CricRelay Architecture
 
-*Auto-updated by Stop hook. Last updated: 2026-06-29.*
+*Auto-maintained by Stop hook (`/.claude/hooks/update-architecture.sh`). Last updated: 2026-06-29.*
 
 ---
 
@@ -197,6 +197,71 @@ scraper_worker ─────────────── │
 | **Non-ECB native** | Club creates its own match; scoring entered via PCS device or in-app scoring UI |
 
 The `StudioViewModel` / `StudioView` support both modes via `ScoringConfig` — scoring mode is set per-match on the server and reflected in the Scoring sheet.
+
+---
+
+## Supporting Apps
+
+Three standalone apps complement the main mobile app:
+
+| App | Location | Tech | Purpose |
+|-----|----------|------|---------|
+| CricRelay Stream | `cricrelay-stream/` | Flutter | Lightweight RTMP streaming companion — used when the full KMP app is too heavy |
+| PCS BLE Relay (Android) | `pcs-ble-relay-android/` | Kotlin Android | Standalone APK: scan PCS device over BLE, POST score packets to server. No Flutter runtime dependency |
+| PCS BLE Relay (library) | `pcs-ble-relay/` | Dart/Flutter | BLE relay as a reusable library for embedding in Flutter hosts |
+
+Prebuilt APKs (`cricrelay-stream.apk`, `pcs-relay.apk`) are committed to `static/` and served directly from the Flask app for club download.
+
+---
+
+## Infrastructure — `infra/`
+
+Terraform-managed deployment targeting AWS (primary) with OCI migration in progress.
+
+| Resource | Purpose |
+|----------|---------|
+| EC2 / OCI compute | Gunicorn + Nginx serving Flask |
+| RDS PostgreSQL | Primary relational data store |
+| ElastiCache / Redis | Live session state, score pub/sub |
+| S3 | Automated backups, static APK hosting |
+| Nginx | Reverse proxy, TLS termination, static files |
+| systemd | `cricket.service`, daily backup timers |
+
+**Active migration:** `infra/migration-aws-oci/` contains scripts moving from AWS EC2+RDS to OCI compute+managed DB. Both targets have Terraform definitions; `infra/oci/` is the landing zone.
+
+**Deployment:** `.github/workflows/deploy.yml` (AWS) and `deploy-oci.yml` (OCI). Server push triggers Gunicorn reload; DB migrations run in the workflow via `migrate_sqlite_to_postgres.py`.
+
+**Operations:** `deploy/` holds systemd unit files, Nginx config, GDPR erasure runbook, security hardening notes, and EC2 disk-cleanup scripts.
+
+---
+
+## CI/CD — `.github/workflows/`
+
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| `build-cricrelay-mobile.yml` | Push/PR | Android Kotlin: lint, unit tests, APK + AAB |
+| `build-cricrelay-stream-apk.yml` | Push/PR | Flutter stream app APK |
+| `build-pcs-relay-apk.yml` | Push/PR | Android PCS relay APK |
+| `validate-cricrelay-mobile.yml` | PR gate | Mobile pre-merge checks |
+| `validate-cricrelay-stream.yml` | PR gate | Flutter pre-merge checks |
+| `deploy.yml` | Workflow dispatch | Flask → EC2, health check |
+| `deploy-oci.yml` | Workflow dispatch | Flask → OCI |
+| `migrate-to-rds.yml` | Workflow dispatch | DB migration to RDS |
+| `sync-stream-apk-ec2.yml` | Workflow dispatch | Sync APK builds to EC2 static dir |
+| `ci.yml` | Push | General CI checks |
+
+---
+
+## Active Design Decisions
+
+| Decision | Detail |
+|----------|--------|
+| **Freemium tiers** (June 2026) | AdMob on free tier; custom sponsor overlay slot as Pro upsell; website is the acquisition layer |
+| **Focus-lock** | iOS locks focus **and** exposure (`AVCaptureDevice` `focusMode` + `exposureMode`). Android locks focus only — RootEncoder 2.4.8 has no AE-lock API |
+| **Broadcast resilience** | Android: RootEncoder `replaceView` offscreen-GL swap + PiP overlay keeps stream alive on locked screen. iOS: best-effort standby slate only (Apple does not allow over-app overlays) |
+| **Modular-monolith migration** | Strangler pattern toward a Match spine. `cricrelay_core` scoring engine is the first extracted module; 8 parallel tracks running |
+| **Gradle module path** | `:feature:x` not `:android:feature:x` — the `android/` directory is **not** part of the Gradle path |
+| **Token auth v2** | Invite-code based club-user tokens. Multi-user per-club dashboard with `ClubUser` / `StreamSession` / `Sponsor` ORM models |
 
 ---
 
