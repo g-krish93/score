@@ -2309,6 +2309,48 @@ def stream_overlay_scoped(match_id):
     )
 
 
+@app.get("/m/<match_id>/overlay-data")
+def relay_overlay_data(match_id):
+    """
+    Serve the overlay-ready JSON schema consumed by cricket_overlay.html.
+    Transforms the Play Cricket scraper snapshot (or PCS BLE snapshot) into
+    the innings[]/striker/current_bowler schema the rich overlay expects.
+    """
+    slug = sanitize_match_id(match_id)
+    data = _live_snapshot(slug)
+    mode = (data.get("relay_mode") or "manual").strip().lower()
+    bundle = data.get("relay_bundle") or {}
+    snapshot = bundle.get("snapshot") if isinstance(bundle.get("snapshot"), dict) else None
+    stale = bool(bundle.get("stale", True))
+    last_ok = bundle.get("last_ok_at")
+
+    if snapshot and mode in {"play_cricket", "pcs_ble"}:
+        from .play_cricket_mapper import snapshot_to_overlay
+        payload = snapshot_to_overlay(snapshot, stale=stale, last_ok_at=last_ok)
+    else:
+        # Manual mode or no relay configured — return minimal pre-match shell
+        payload = {
+            "home_team": data.get("team1", ""),
+            "away_team": data.get("team2", ""),
+            "total_overs": data.get("total_overs", 0),
+            "batting_team": "",
+            "match": {"date": "", "competition": "", "status": "NOT STARTED", "toss": ""},
+            "innings": [],
+            "striker": {"name": "", "runs": 0, "balls": 0, "sr": None},
+            "non_striker": {"name": "", "runs": 0, "balls": 0},
+            "current_bowler": {"name": "", "overs": "0", "runs": 0, "wickets": 0, "econ": 0.0},
+            "current_partnership": {"runs": 0, "balls": 0},
+            "recent_over": [],
+            "target": None,
+            "stale": stale,
+            "last_updated": last_ok,
+        }
+
+    resp = jsonify(payload)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.get("/m/<match_id>")
 def legacy_overlay_redirect(match_id):
     slug = sanitize_match_id(match_id)

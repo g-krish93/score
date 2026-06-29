@@ -419,6 +419,193 @@ def parse_match_snapshot(url: str, html: str) -> MatchSnapshot:
     )
 
 
+# ── Rich scorecard parsers ────────────────────────────────────────────────────
+
+def _safe_int(text: str) -> int:
+    try:
+        return int((text or "").strip())
+    except (ValueError, TypeError):
+        return 0
+
+
+def _safe_float(text: str) -> float:
+    try:
+        return float((text or "").strip())
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def find_innings_sections(soup: BeautifulSoup) -> list[tuple[str, object]]:
+    """Return [(team_name, div_tag), ...] for each innings tab in batting order."""
+    result = []
+    for a in soup.select('a[data-toggle="tab"][href^="#innings"]'):
+        href = a.get("href", "").lstrip("#")
+        if not href:
+            continue
+        team = a.get_text(separator=" ", strip=True)
+        div = soup.find(id=href)
+        if div:
+            result.append((team, div))
+    return result
+
+
+def parse_batting_table(innings_div) -> list[dict]:
+    """Parse individual batter rows from innings div (table.standm)."""
+    result: list[dict] = []
+    if innings_div is None:
+        return result
+    table = innings_div.find("table", class_="standm")
+    if not table:
+        return result
+
+    for tr in table.select("tbody tr"):
+        tds = tr.find_all("td", recursive=False)
+        if not tds:
+            continue
+
+        # Name — from .bts a or first <a> in first cell
+        bts_div = tds[0].find(class_="bts") or tds[0].find(class_="m-player-n")
+        name_tag = (bts_div.find("a") if bts_div else None) or tds[0].find("a")
+        if not name_tag:
+            continue
+        name = name_tag.get_text(strip=True)
+        if not name:
+            continue
+
+        # Status / dismissal — Play Cricket uses <strong> inside .m-player:
+        # "b"=bowled, "c"+"b"=caught-bowled, "not out"=not-out,
+        # "retired not out"=retired, "did not bat"=dnb, "lbw"=lbw, etc.
+        # No .howout span exists in this layout.
+        m_player_div = tds[0].find(class_="m-player")
+        bowler = ""
+        fielder = ""
+        status = "not_out"
+        dismissal = "not out"
+        if m_player_div:
+            strongs = [s.get_text(strip=True).lower() for s in m_player_div.find_all("strong")]
+            first_strong = strongs[0] if strongs else ""
+            if "not out" in first_strong:
+                status, dismissal = "not_out", "not out"
+            elif "retired" in first_strong:
+                status, dismissal = "not_out", m_player_div.get_text(strip=True)
+            elif "did not bat" in first_strong or "absent" in first_strong:
+                status, dismissal = "dnb", m_player_div.get_text(strip=True)
+            else:
+                # Actual dismissal (b, c, lbw, run out, st, hit wicket, etc.)
+                status = "out"
+                dismissal = re.sub(r"\s+", " ", m_player_div.get_text(separator=" ", strip=True)).strip()
+                links = m_player_div.find_all("a")
+                if links:
+                    bowler = links[-1].get_text(strip=True)
+                if len(links) >= 2:
+                    fielder = links[0].get_text(strip=True)
+
+        # Numeric stats from td.sTD columns
+        std_tds = tr.select("td.sTD")
+        if not std_tds:
+            # Skip header/extras rows that have no stat columns
+            continue
+        runs_cell = std_tds[0]
+        strong = runs_cell.find("strong")
+        runs = _safe_int((strong or runs_cell).get_text(strip=True))
+        balls = _safe_int(std_tds[1].get_text(strip=True)) if len(std_tds) > 1 else 0
+        fours = _safe_int(std_tds[2].get_text(strip=True)) if len(std_tds) > 2 else 0
+        sixes = _safe_int(std_tds[3].get_text(strip=True)) if len(std_tds) > 3 else 0
+        sr_raw = std_tds[4].get_text(strip=True) if len(std_tds) > 4 else ""
+        sr = _safe_float(sr_raw) if sr_raw else (round(runs / balls * 100, 1) if balls > 0 else None)
+
+        result.append({
+            "name": name,
+            "runs": runs,
+            "balls": balls,
+            "fours": fours,
+            "sixes": sixes,
+            "sr": sr,
+            "dismissal": dismissal,
+            "bowler": bowler,
+            "fielder": fielder,
+            "status": status,
+        })
+    return result
+
+
+def parse_bowling_table(innings_div) -> list[dict]:
+    """Parse bowler figures from innings div (table.bowler-detail)."""
+    result: list[dict] = []
+    if innings_div is None:
+        return result
+    table = innings_div.find("table", class_="bowler-detail")
+    if not table:
+        return result
+
+    for tr in table.select("tbody tr"):
+        tds = tr.find_all("td", recursive=False)
+        if len(tds) < 4:
+            continue
+        name_tag = tds[0].find("a") or tds[0]
+        name = (name_tag.get_text(strip=True) if name_tag else "").strip()
+        if not name:
+            continue
+        overs_raw = tds[1].get_text(strip=True) if len(tds) > 1 else "0"
+        maidens = _safe_int(tds[2].get_text(strip=True)) if len(tds) > 2 else 0
+        runs = _safe_int(tds[3].get_text(strip=True)) if len(tds) > 3 else 0
+        wickets = _safe_int(tds[4].get_text(strip=True)) if len(tds) > 4 else 0
+        wides = _safe_int(tds[5].get_text(strip=True)) if len(tds) > 5 else 0
+        no_balls = _safe_int(tds[6].get_text(strip=True)) if len(tds) > 6 else 0
+        econ_raw = tds[7].get_text(strip=True) if len(tds) > 7 else ""
+        if econ_raw:
+            economy = _safe_float(econ_raw)
+        else:
+            ov = _safe_float(overs_raw)
+            economy = round(runs / ov, 2) if ov > 0 else 0.0
+
+        result.append({
+            "name": name,
+            "overs": overs_raw,
+            "maidens": maidens,
+            "runs": runs,
+            "wickets": wickets,
+            "wides": wides,
+            "no_balls": no_balls,
+            "economy": economy,
+        })
+    return result
+
+
+_EXTRAS_RE = re.compile(r"EXTRAS[:\s]+(\d+)\s*\(([^)]+)\)", re.I)
+_EXTRA_PART_RE = re.compile(r"(\d+)\s*(lb|nb|wd|w|b)(?!\w)", re.I)
+
+
+def parse_extras(innings_div) -> dict:
+    """Parse extras breakdown from innings div alert text."""
+    empty: dict = {"total": 0, "byes": 0, "leg_byes": 0, "wides": 0, "no_balls": 0}
+    if innings_div is None:
+        return empty
+    text = innings_div.get_text(separator=" ")
+    m = _EXTRAS_RE.search(text)
+    if not m:
+        return empty
+    result = dict(empty)
+    result["total"] = _safe_int(m.group(1))
+    for part in m.group(2).split(","):
+        pm = _EXTRA_PART_RE.search(part.strip())
+        if not pm:
+            continue
+        val = _safe_int(pm.group(1))
+        kind = pm.group(2).lower()
+        if kind == "lb":
+            result["leg_byes"] = val
+        elif kind == "nb":
+            result["no_balls"] = val
+        elif kind in ("wd", "w"):
+            result["wides"] = val
+        elif kind == "b":
+            result["byes"] = val
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 def _merge_snapshot_fields(target: dict, source: dict, keys: tuple[str, ...]) -> None:
     for key in keys:
         if not target.get(key) and source.get(key):
@@ -445,6 +632,9 @@ def scrape_match(url: str) -> dict:
         if raw_id and str(raw_id).strip().isdigit():
             match_id = str(raw_id).strip()
 
+    # Track which HTML contains the scorecard data for rich parsing below
+    html_with_scores = html
+
     # Scores usually live on …/website/results/<id>; match_details often has metadata only.
     if missing_scores and match_id and parsed.netloc:
         results_url = build_play_cricket_results_url(
@@ -463,6 +653,7 @@ def scrape_match(url: str) -> dict:
                     ("status", "toss_note", "fixture_title", "fixture_date", "fixture_start_time", "fixture_ground", "fixture_competition"),
                 )
                 data["source_url"] = results_url
+                html_with_scores = html_scores
             except Exception:
                 pass
             missing_scores = not data.get("innings_1") and not data.get("innings_2")
@@ -488,6 +679,29 @@ def scrape_match(url: str) -> dict:
             )
         except Exception:
             pass
+
+    # Rich scorecard parsing — re-use already-fetched HTML, no extra HTTP request
+    try:
+        soup_rich = BeautifulSoup(html_with_scores, "html.parser")
+        innings_sections = find_innings_sections(soup_rich)
+        for idx, (team, div) in enumerate(innings_sections[:2]):
+            key = f"innings_{idx + 1}"
+            data[f"{key}_tab_team"] = team  # tab text includes format, e.g. "BMACC (Twenty20)"
+            try:
+                data[f"{key}_batting"] = parse_batting_table(div)
+            except Exception:
+                data[f"{key}_batting"] = []
+            try:
+                data[f"{key}_bowling"] = parse_bowling_table(div)
+            except Exception:
+                data[f"{key}_bowling"] = []
+            try:
+                data[f"{key}_extras"] = parse_extras(div)
+            except Exception:
+                data[f"{key}_extras"] = {}
+    except Exception:
+        pass  # Rich parsing is additive; never break the basic snapshot
+
     return data
 
 

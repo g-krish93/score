@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BMACC Cricket Overlay</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width:100%; height:100%; background:transparent; overflow:hidden;
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif; }
+
+  /* ── THEMES ── */
+  :root {
+    --bg:     rgba(5,10,22,0.93);
+    --bg2:    rgba(3,6,14,0.97);
+    --border: #1a3550;
+    --accent: #4ade80;
+    --acc2:   #93c5fd;
+    --wicket: #f87171;
+    --text:   #f1f5f9;
+    --muted:  #64748b;
+    --dim:    #253347;
+    --extras: #fbbf24;
+    --warn:   #fb923c;
+    --crit:   #ef4444;
+    --ok:     #4ade80;
+  }
+  .theme-green { --bg:rgba(3,14,7,.93);  --bg2:rgba(2,9,4,.97);   --border:#14532d; --accent:#4ade80; --acc2:#86efac;  --wicket:#fca5a5; }
+  .theme-gold  { --bg:rgba(12,8,2,.93);  --bg2:rgba(8,5,1,.97);   --border:#78350f; --accent:#fbbf24; --acc2:#fde68a;  --wicket:#f87171; }
+  .theme-red   { --bg:rgba(18,4,4,.93);  --bg2:rgba(12,2,2,.97);  --border:#7f1d1d; --accent:#f87171; --acc2:#fca5a5;  --wicket:#fbbf24; }
+
+  /* ── OUTER FRAME ── */
+  #overlay { position:fixed; bottom:0; left:0; right:0; display:flex; flex-direction:column; }
+
+  #stale-bar { height:2px; background:transparent; transition:background 1s; }
+  #stale-bar.stale { background:linear-gradient(90deg,transparent,#f59e0b,transparent);
+    animation:stale-pulse 2s ease-in-out infinite; }
+
+  /* ── STALE NOTICE TICKER ── */
+  #stale-notice {
+    height:0; overflow:hidden;
+    background:rgba(180,90,0,0.18);
+    border-bottom:1px solid rgba(245,158,11,0.25);
+    transition:height .4s ease;
+    display:flex; align-items:center;
+    flex-shrink:0;
+  }
+  #stale-notice.visible { height:18px; }
+  #ticker-outer { overflow:hidden; flex:1; height:18px; display:flex; align-items:center; }
+  #ticker-inner {
+    display:inline-block; white-space:nowrap;
+    font-size:.57rem; font-weight:600; color:#f59e0b; letter-spacing:.04em;
+    animation:ticker-run 40s linear infinite;
+    will-change:transform;
+  }
+  #stale-notice-icon {
+    flex-shrink:0; padding:0 8px; font-size:.62rem; color:#f59e0b;
+    animation:stale-pulse 1.5s ease-in-out infinite;
+  }
+
+  #accent-line { height:3px;
+    background:linear-gradient(90deg,transparent 0%,var(--accent) 12%,var(--accent) 88%,transparent 100%);
+    filter:drop-shadow(0 0 6px color-mix(in srgb,var(--accent) 50%,transparent));
+    opacity:.9; }
+
+  #main-bar { flex:1; background:var(--bg); display:flex; align-items:stretch;
+    border-top:1px solid var(--border); }
+
+  /* ── LEFT: SCORE ── */
+  #score-block {
+    display:flex; flex-direction:column; justify-content:center; gap:4px;
+    padding:0 14px 0 13px; min-width:190px;
+    background:var(--bg2); border-right:1px solid var(--border);
+  }
+  #scr-top { display:flex; align-items:center; gap:7px; }
+  #team-code { font-size:.57rem; font-weight:800; color:var(--accent); letter-spacing:.16em; text-transform:uppercase; }
+  #score-nums { display:flex; align-items:flex-end; gap:1px; line-height:1; }
+  #score-runs { font-size:2.1rem; font-weight:900; color:var(--text); letter-spacing:-2px; line-height:1; }
+  #score-wkts { font-size:1.3rem; font-weight:700; color:var(--acc2); line-height:1; padding-bottom:1px; }
+  #scr-bot { display:flex; align-items:center; gap:5px; }
+  #score-overs { font-size:.64rem; color:var(--muted); font-weight:600; }
+  .sdot { width:3px; height:3px; border-radius:50%; background:var(--dim); flex-shrink:0; }
+  #score-rate { font-size:.63rem; color:var(--muted); font-weight:600; transition:color .4s; }
+  #score-rate.ok   { color:var(--ok);   }
+  #score-rate.warn { color:var(--warn); }
+  #score-rate.crit { color:var(--crit); }
+
+  /* ── CENTRE BLOCK ── */
+  #centre-block { flex:1; position:relative; overflow:hidden; display:flex; flex-direction:column; }
+
+  /* Target micro-bar (2nd innings) */
+  #target-bar {
+    display:none; flex-shrink:0; height:16px;
+    background:rgba(251,146,60,.09); border-bottom:1px solid rgba(251,146,60,.22);
+    align-items:center; padding:0 13px; gap:8px;
+  }
+  #target-bar.visible { display:flex; }
+  .tbar-lbl  { font-size:.54rem; color:var(--warn); font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+  .tbar-val  { font-size:.64rem; color:var(--text); font-weight:800; }
+  .tbar-sep  { font-size:.54rem; color:var(--dim); }
+  .tbar-mut  { font-size:.55rem; color:var(--muted); }
+
+  /* Permanent two-row area */
+  #perm-rows { flex:1; display:flex; flex-direction:column; }
+
+  /* Row 1: batters + partnership */
+  #row-batters {
+    flex:1; display:flex; align-items:center; padding:0 13px;
+    border-bottom:1px solid var(--dim);
+  }
+  .bat-blk { display:flex; align-items:center; gap:5px; padding:0 9px; }
+  .bat-blk:first-child { padding-left:0; }
+  .bat-star { color:var(--accent); font-size:.68rem; flex-shrink:0; }
+  .bat-info { display:flex; flex-direction:column; gap:0; }
+  .bat-name { font-size:.79rem; font-weight:700; color:var(--text); white-space:nowrap; line-height:1.2; }
+  .bat-name.ns { color:var(--muted); font-weight:600; }
+  .bat-sc { display:flex; align-items:baseline; gap:2px; }
+  .bat-r  { font-size:.84rem; font-weight:900; color:var(--accent); line-height:1; }
+  .bat-r.ns { color:var(--muted); }
+  .bat-b  { font-size:.62rem; color:var(--dim); }
+  .bat-sr { font-size:.52rem; color:var(--dim); margin-top:1px; }
+
+  #ptn-blk { margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; padding:0 8px 0 12px; flex-shrink:0; }
+  .ptn-lbl { font-size:.50rem; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; }
+  .ptn-val { font-size:.72rem; font-weight:800; color:var(--acc2); }
+
+  /* Row 2: recent over + bowler — position:relative so #panel-chase scopes to this row */
+  #row-lower { flex:1; display:flex; align-items:center; padding:0 13px; position:relative; overflow:hidden; }
+
+  #recent-over { display:flex; align-items:center; gap:3px; flex-shrink:0; }
+  .ov-lbl { font-size:.50rem; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; margin-right:5px; white-space:nowrap; }
+
+  /* Ball pills */
+  .ball {
+    width:21px; height:21px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:.6rem; font-weight:800; line-height:1; flex-shrink:0;
+  }
+  .ball-ph  { width:21px; height:21px; border-radius:50%; background:rgba(20,32,55,.4); border:1px dashed var(--dim); flex-shrink:0; }
+  .ball-dot { background:rgba(18,28,50,.9); color:var(--muted); border:1px solid var(--dim); }
+  .ball-1   { background:rgba(28,48,80,.9); color:var(--acc2); border:1px solid rgba(147,197,253,.2); }
+  .ball-2   { background:rgba(28,48,80,.9); color:var(--acc2); border:1px solid rgba(147,197,253,.2); }
+  .ball-3   { background:rgba(28,48,80,.9); color:var(--acc2); border:1px solid rgba(147,197,253,.2); }
+  .ball-4   { background:rgba(20,45,120,.9); color:#93c5fd; border:1px solid rgba(96,165,250,.35); }
+  .ball-6   { background:rgba(110,48,5,.9);  color:#fde68a; border:1px solid rgba(251,191,36,.3); }
+  .ball-W   { background:rgba(120,18,18,.9); color:#fca5a5; border:1px solid rgba(248,113,113,.35); animation:ball-wkt 1.6s ease-in-out infinite; }
+  .ball-Wd  { background:rgba(60,28,4,.9);   color:#fb923c; border:1px solid rgba(251,146,60,.3); font-size:.5rem; }
+  .ball-NB  { background:rgba(60,28,4,.9);   color:#fb923c; border:1px solid rgba(251,146,60,.3); font-size:.47rem; }
+
+  #vpipe-ov { width:1px; height:22px; background:var(--dim); flex-shrink:0; margin:0 10px; }
+
+  #bowl-blk { display:flex; align-items:center; gap:8px; }
+  .bowl-lbl { font-size:.50rem; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; }
+  .bowl-name { font-size:.80rem; font-weight:700; color:var(--wicket); white-space:nowrap; }
+  .bowl-fig  { font-size:.80rem; font-weight:800; color:var(--text); }
+  .bowl-sub  { font-size:.59rem; color:var(--muted); }
+
+  /* ── OVERLAY PANELS (absolute, cover centre) ── */
+  .panel {
+    position:absolute; inset:0; display:flex; align-items:center; padding:0 13px;
+    opacity:0; transform:translateY(7px);
+    transition:opacity .3s ease, transform .3s ease;
+    pointer-events:none;
+  }
+  .panel.active { opacity:1; transform:translateY(0); pointer-events:auto; }
+
+  /* Chase — scoped to #row-lower (not full-centre); no slide, fade only */
+  #panel-chase { gap:8px; background:rgb(5,10,22); flex-wrap:wrap; transform:none !important; transition:opacity .2s ease; padding:0 13px; }
+  #panel-chase.active { transform:none !important; }
+  .theme-green #panel-chase { background:rgb(3,14,7); }
+  .theme-gold  #panel-chase { background:rgb(12,8,2); }
+  .theme-red   #panel-chase { background:rgb(18,4,4); }
+
+  /* Result panel — covers full centre, shown when match is complete */
+  #panel-result { flex-direction:column; justify-content:center; gap:5px; background:var(--bg2); padding:0 14px; border-top:2px solid var(--accent); }
+  #res-row1 { display:flex; align-items:center; gap:10px; }
+  #res-winner { font-size:.92rem; font-weight:900; color:var(--accent); letter-spacing:.04em; }
+  #res-margin { font-size:.62rem; font-weight:600; color:var(--muted); letter-spacing:.04em; padding-left:3px; }
+  #res-scores { font-size:.55rem; color:var(--dim); letter-spacing:.04em; }
+  .c-pill { display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:3px 10px; border-radius:4px; border:1px solid var(--border); min-width:52px; }
+  .c-pill.ok   { border-color:var(--ok);   background:rgba(74,222,128,.07); }
+  .c-pill.warn { border-color:var(--warn); background:rgba(251,146,60,.09); }
+  .c-pill.crit { border-color:var(--crit); background:rgba(239,68,68,.13); animation:crit-flash 1.2s ease-in-out infinite; }
+  .cpv { font-size:.93rem; font-weight:900; color:var(--text); letter-spacing:-.5px; line-height:1; }
+  .cpl { font-size:.52rem; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; margin-top:1px; }
+  .c-msg { font-size:.70rem; font-weight:700; flex:1; margin-left:6px; }
+  .c-msg.ok   { color:var(--ok);   }
+  .c-msg.warn { color:var(--warn); }
+  .c-msg.crit { color:var(--crit); }
+
+  /* Wicket */
+  #panel-wicket { gap:8px; background:rgba(12,3,3,.97); border-top:2px solid rgba(239,68,68,.25); }
+  .wkt-tag  { font-size:.56rem; font-weight:800; color:var(--wicket); letter-spacing:.14em; text-transform:uppercase;
+    padding:2px 7px; border:1px solid var(--wicket); border-radius:3px; flex-shrink:0;
+    animation:wicket-pulse 1.2s ease-in-out infinite; }
+  .wkt-txt  { font-size:.82rem; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
+  .wkt-bar  { position:absolute; bottom:0; left:0; height:2px; background:var(--wicket); transition:width 1s linear; }
+
+  /* Extras */
+  #panel-extras { background:var(--bg); }
+  .ext-tag { font-size:.58rem; font-weight:700; color:var(--extras); letter-spacing:.1em; text-transform:uppercase; flex-shrink:0; }
+  .ext-val { font-size:.82rem; color:var(--text); margin-left:8px; }
+  .ext-sub { font-size:.63rem; color:var(--muted); margin-left:6px; }
+
+  /* ── PRE-MATCH PANEL ── */
+  #panel-prematch { flex-direction:column; justify-content:center; gap:3px;
+    background:rgb(5,10,22); padding:0 14px; border-top:none; }
+  .theme-green #panel-prematch { background:rgb(3,14,7); }
+  .theme-gold  #panel-prematch { background:rgb(12,8,2); }
+  .theme-red   #panel-prematch { background:rgb(18,4,4); }
+  #pm-row1 { display:flex; align-items:center; gap:8px; }
+  #pm-comp { font-size:.56rem; color:var(--muted); letter-spacing:.07em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
+  #pm-date { font-size:.56rem; color:var(--acc2); font-weight:600; flex-shrink:0; }
+  #pm-row2 { display:flex; align-items:center; gap:8px; }
+  #pm-teams { font-size:.82rem; font-weight:700; color:var(--text); white-space:nowrap; }
+  #pm-vs-sep { font-size:.60rem; color:var(--dim); margin:0 3px; }
+  #pm-toss { font-size:.60rem; color:var(--muted); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-left:8px; }
+  #pm-format { font-size:.56rem; color:var(--acc2); font-weight:600; flex-shrink:0; padding:1px 6px; border:1px solid rgba(147,197,253,.2); border-radius:3px; }
+
+  /* Left-block pre-match overrides */
+  #score-block.prematch #score-nums { flex-direction:column; align-items:flex-start; gap:0; }
+  #score-block.prematch #score-runs { font-size:1.5rem; color:var(--acc2); letter-spacing:-1px; }
+  #score-block.prematch #score-wkts { font-size:.64rem; color:var(--muted); font-weight:600; padding-bottom:0; }
+  #score-block.prematch #score-overs { color:var(--acc2); font-weight:700; }
+  #score-block.prematch #score-rate  { color:var(--muted); }
+
+  /* ── RIGHT BLOCK ── */
+  #right-block {
+    display:flex; flex-direction:column; justify-content:center; align-items:flex-end;
+    padding:0 12px 0 10px; min-width:90px;
+    background:var(--bg2); border-left:1px solid var(--border); gap:3px;
+  }
+  #live-dot { display:flex; align-items:center; gap:4px; justify-content:flex-end; }
+  #live-dot .dot { width:6px; height:6px; border-radius:50%; background:#22c55e; animation:live-blink 1.4s ease-in-out infinite; }
+  #live-dot .lbl { font-size:.54rem; font-weight:700; color:#22c55e; letter-spacing:.13em; }
+  #vs-codes  { font-size:.62rem; font-weight:700; color:var(--muted); letter-spacing:.06em; text-align:right; line-height:1.55; }
+  #inn-label { font-size:.53rem; color:var(--dim); letter-spacing:.06em; text-align:right; }
+
+  .vpipe { width:1px; height:22px; background:var(--dim); flex-shrink:0; margin:0 3px; }
+
+  /* ── KEYFRAMES ── */
+  @keyframes live-blink   { 0%,100%{opacity:1;box-shadow:0 0 4px #22c55e} 50%{opacity:.3;box-shadow:none} }
+  @keyframes wicket-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  @keyframes stale-pulse  { 0%,100%{opacity:.4} 50%{opacity:1} }
+  @keyframes crit-flash   { 0%,100%{opacity:1} 50%{opacity:.6} }
+  @keyframes ball-wkt     { 0%,100%{transform:scale(1)} 50%{transform:scale(1.12)} }
+  /* Seamless ticker: text is doubled, so -50% = one full copy scrolled off left */
+  @keyframes ticker-run   { from{transform:translateX(0)} to{transform:translateX(-50%)} }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <div id="stale-bar"></div>
+  <div id="stale-notice">
+    <span id="stale-notice-icon">⚠</span>
+    <div id="ticker-outer">
+      <div id="ticker-inner"><!-- populated by JS --></div>
+    </div>
+  </div>
+  <div id="accent-line"></div>
+  <div id="main-bar" style="height:85px">
+
+    <!-- LEFT: score -->
+    <div id="score-block">
+      <div id="scr-top">
+        <span id="team-code">—</span>
+        <div id="score-nums">
+          <span id="score-runs">—</span>
+          <span id="score-wkts">/—</span>
+        </div>
+      </div>
+      <div id="scr-bot">
+        <span id="score-overs">— ov</span>
+        <div class="sdot"></div>
+        <span id="score-rate">CRR —</span>
+      </div>
+    </div>
+
+    <!-- CENTRE -->
+    <div id="centre-block">
+
+      <!-- Target bar (2nd innings) -->
+      <div id="target-bar">
+        <span class="tbar-lbl">Target</span>
+        <span class="tbar-val" id="tbar-target">—</span>
+        <span class="tbar-sep">·</span>
+        <span class="tbar-mut" id="tbar-need">—</span>
+      </div>
+
+      <!-- Permanent 2-row layout -->
+      <div id="perm-rows">
+
+        <!-- Row 1: batters + partnership -->
+        <div id="row-batters">
+          <div class="bat-blk">
+            <span class="bat-star">★</span>
+            <div class="bat-info">
+              <div class="bat-name" id="striker-name">—</div>
+              <div class="bat-sc">
+                <span class="bat-r" id="striker-runs">—</span>
+                <span class="bat-b" id="striker-balls">(—)</span>
+              </div>
+              <div class="bat-sr" id="striker-sr">SR —</div>
+            </div>
+          </div>
+          <div class="vpipe"></div>
+          <div class="bat-blk">
+            <div class="bat-info">
+              <div class="bat-name ns" id="nonstriker-name">—</div>
+              <div class="bat-sc">
+                <span class="bat-r ns" id="nonstriker-runs">—</span>
+                <span class="bat-b" id="nonstriker-balls">(—)</span>
+              </div>
+              <div class="bat-sr" id="nonstriker-sr">SR —</div>
+            </div>
+          </div>
+          <div id="ptn-blk">
+            <div class="ptn-lbl">Partnership</div>
+            <div class="ptn-val" id="ptn-val">—(—)</div>
+          </div>
+        </div>
+
+        <!-- Row 2: cycles between last-over+bowler and chase pills (2nd inn) -->
+        <!-- #panel-chase is inside here so it only covers this row, batters always stay visible -->
+        <div id="row-lower">
+          <div id="recent-over">
+            <span class="ov-lbl" id="ov-lbl">Last over</span>
+            <div id="balls-container" style="display:flex;gap:3px;align-items:center"></div>
+          </div>
+          <div id="vpipe-ov"></div>
+          <div id="bowl-blk">
+            <div>
+              <div class="bowl-lbl">Bowling</div>
+              <div class="bowl-name" id="bowler-name">—</div>
+            </div>
+            <div style="margin-left:9px">
+              <div class="bowl-fig" id="bowler-fig">—-—</div>
+              <div class="bowl-sub" id="bowler-sub">— ov · ECN —</div>
+            </div>
+          </div>
+          <!-- Chase panel scoped to this row — shows required runs/RRR, hides over+bowler -->
+          <div class="panel" id="panel-chase"></div>
+        </div>
+
+      </div>
+
+      <!-- Overlay panels (sit above perm-rows when active) -->
+
+      <!-- PRE-MATCH: covers perm-rows before first ball -->
+      <div class="panel" id="panel-prematch">
+        <div id="pm-row1">
+          <span id="pm-comp">—</span>
+          <span id="pm-date">—</span>
+        </div>
+        <div id="pm-row2">
+          <span id="pm-teams">— <span id="pm-vs-sep">vs</span> —</span>
+          <span id="pm-toss">—</span>
+          <span id="pm-format">—</span>
+        </div>
+      </div>
+
+      <!-- Result — covers full centre when match is complete -->
+      <div class="panel" id="panel-result">
+        <div id="res-row1">
+          <span id="res-winner">—</span>
+          <span id="res-margin">—</span>
+        </div>
+        <div id="res-scores">—</div>
+      </div>
+
+      <div class="panel" id="panel-wicket">
+        <div class="wkt-tag">Wicket</div>
+        <div class="wkt-txt" id="wicket-text">—</div>
+        <div class="wkt-bar" id="wicket-timer" style="width:100%"></div>
+      </div>
+
+      <div class="panel" id="panel-extras">
+        <div class="ext-tag">Extras</div>
+        <span class="ext-val" id="extras-total">—</span>
+        <span class="ext-sub" id="extras-break">—</span>
+      </div>
+
+    </div>
+
+    <!-- RIGHT -->
+    <div id="right-block">
+      <div id="live-dot"><span class="dot"></span><span class="lbl">LIVE</span></div>
+      <div id="vs-codes">—<br>vs —</div>
+      <div id="inn-label">1st Inn</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════════════════════════
+const CFG = {
+  apiUrl:           window.API_URL
+                  || new URLSearchParams(location.search).get('apiUrl')
+                  || '/score',
+  pollMs:           15000,   // 15s — ResultsVault scraper runs every 20s, so ≤35s total lag
+  wicketDurMs:      240000,
+  wicketCycleMs:    30000,
+  extrasDurMs:      6000,
+  extrasMilestone:  5,
+  // Amber pulse line after 5 min (one over worth of expected delay)
+  staleAfterMs:     300000,
+  // Scrolling viewer notice after 8 min (hotspot/PCS dropout scenario)
+  noticeAfterMs:    480000,
+  chase: { showMs:6000, hideMs:8000, critHideMs:5000 },
+  theme: new URLSearchParams(location.search).get('theme') || 'navy',
+};
+const THEMES = { navy:'', green:'theme-green', gold:'theme-gold', red:'theme-red' };
+document.getElementById('overlay').className = THEMES[CFG.theme] || '';
+
+// ══════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════
+const S = {
+  prevWickets:   null,
+  isWicket:      false,
+  wicketTimer:   null,
+  wicketCycle:   null,
+  chaseTimer:    null,
+  staleTimer:    null,
+  noticeTimer:   null,
+  noticeRefresh: null,
+  noticeActive:  false,
+  lastOversInt:  -1,
+  lastData:      null,
+  lastFetchedAt: null,  // epoch ms of last successful poll
+};
+
+// ══════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════
+function shortName(name) {
+  if (!name) return '—';
+  const p = name.trim().split(/\s+/);
+  return p.length === 1 ? name : p[0][0] + ' ' + p.slice(1).join(' ');
+}
+
+function toCode(name) {
+  if (!name) return '—';
+  return name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase();
+}
+
+function crr(runs, overs) {
+  const [o, b=0] = String(overs).split('.').map(Number);
+  const t = o + b/6;
+  return t > 0 ? (runs/t).toFixed(2) : '0.00';
+}
+
+function strikeRate(runs, balls) {
+  return (balls > 0 && runs != null) ? ((runs / balls) * 100).toFixed(0) : null;
+}
+
+function oversInt(overs) { return parseInt(String(overs).split('.')[0], 10); }
+
+function ballsLeft(totalOvers, currentOvers) {
+  const [o, b=0] = String(currentOvers).split('.').map(Number);
+  return totalOvers * 6 - (o * 6 + b);
+}
+
+function rrr(runsNeeded, balls) {
+  return balls > 0 ? ((runsNeeded / balls) * 6).toFixed(2) : '∞';
+}
+
+// ══════════════════════════════════════════════════════════
+// MATCH TIME + PRE-MATCH HELPERS
+// ══════════════════════════════════════════════════════════
+const MONTH_IDX = {January:0,February:1,March:2,April:3,May:4,June:5,
+  July:6,August:7,September:8,October:9,November:10,December:11};
+
+function getMatchStartTime(data) {
+  // data.match.date = "27 June 2026 @ 13:00"  (BST = UTC+1 in summer)
+  try {
+    const raw = data && data.match && data.match.date;
+    if (!raw) return null;
+    const m = raw.match(/(\d{1,2})\s+(\w+)\s+(\d{4})\s+@\s+(\d{1,2}):(\d{2})/);
+    if (!m) return null;
+    const [, day, mon, year, hour, min] = m;
+    if (MONTH_IDX[mon] === undefined) return null;
+    // BST = UTC+1: subtract 1h to get UTC
+    const utc = Date.UTC(+year, MONTH_IDX[mon], +day, +hour - 1, +min);
+    return new Date(utc);
+  } catch(e) { return null; }
+}
+
+function hasMatchStarted(data) {
+  if (!data) return false;
+  const status = ((data.match && data.match.status) || '').toUpperCase();
+  if (status === 'IN PROGRESS' || status.includes('COMPLETE')) return true;
+  if (status === 'NOT STARTED') return false;
+  if (data.innings && data.innings.length > 0) return true;
+  const t = getMatchStartTime(data);
+  return t ? Date.now() >= t.getTime() : true;
+}
+
+function isPreMatch(data) {
+  if (!data) return true;
+  if (data.innings && data.innings.length > 0) return false;
+  const status = ((data.match && data.match.status) || '').toUpperCase();
+  if (status === 'IN PROGRESS' || status.includes('COMPLETE')) return false;
+  return true;
+}
+
+function countdownLabel(startTime) {
+  if (!startTime) return '';
+  const diffMs = startTime.getTime() - Date.now();
+  if (diffMs <= 0) return 'Starting soon';
+  const totalMin = Math.floor(diffMs / 60000);
+  if (totalMin < 1) return 'Starting now';
+  if (totalMin < 60) return 'Starts in ' + totalMin + 'm';
+  const h = Math.floor(totalMin / 60), mins = totalMin % 60;
+  return 'Starts in ' + h + 'h' + (mins ? ' ' + mins + 'm' : '');
+}
+
+// No delay-type detection — we never speculate about the cause.
+// One honest generic message covers rain, hotspot, PCS, anything else.
+
+// ══════════════════════════════════════════════════════════
+// STALE NOTICE TICKER
+// ══════════════════════════════════════════════════════════
+function formatTime(isoStr) {
+  if (!isoStr) return '—';
+  try {
+    // ISO string e.g. "2026-06-27T13:04:49" — parse as local time
+    const d = new Date(isoStr.replace(' ', 'T'));
+    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  } catch(e) { return isoStr.slice(11, 16) || '—'; }
+}
+
+function buildTickerMsg(data) {
+  const inn      = data && data.innings && (data.innings[1] || data.innings[0]);
+  const lastTime = data && data.last_updated ? formatTime(data.last_updated) : '—';
+  const overs    = inn ? inn.overs : '—';
+  const score    = inn ? inn.runs + '/' + inn.wickets : '—';
+  const team     = inn ? toCode(inn.batting_team || data.batting_team || '') : '—';
+  const minAgo   = S.lastFetchedAt ? Math.floor((Date.now() - S.lastFetchedAt) / 60000) : '?';
+
+  // One honest generic message — never speculates about cause
+  const msg = `  ⚠  Score not updating  ·  Last known: ${team} ${score} (${overs} ov) at ${lastTime}  ·  ${minAgo} min ago  ·  Please ask the on-field scorer to sync Play Cricket  ·  `;
+  return msg + msg; // doubled for seamless CSS loop
+}
+
+function showStaleNotice(data) {
+  if (S.noticeActive) {
+    // Refresh the message text if already visible (e.g. minAgo increased)
+    document.getElementById('ticker-inner').textContent = buildTickerMsg(data);
+    return;
+  }
+  S.noticeActive = true;
+  const msg = buildTickerMsg(data);
+  const el  = document.getElementById('ticker-inner');
+  el.textContent = msg;
+  // Scale animation speed to text length (~80px/s feels right for tickers)
+  const charWidth  = 6.5; // px per char at .57rem on Segoe UI
+  const halfWidth  = (msg.length / 2) * charWidth;
+  const durationMs = Math.max(20000, halfWidth / 80 * 1000);
+  el.style.animationDuration = (durationMs / 1000).toFixed(1) + 's';
+  document.getElementById('stale-notice').classList.add('visible');
+}
+
+function hideStaleNotice() {
+  if (!S.noticeActive) return;
+  S.noticeActive = false;
+  document.getElementById('stale-notice').classList.remove('visible');
+}
+
+// ══════════════════════════════════════════════════════════
+// RECENT OVER BALLS
+// ══════════════════════════════════════════════════════════
+function ballClass(d) {
+  const key = String(d).trim();
+  if (key === '.' || key === '0') return 'ball ball-dot';
+  if (key === 'W')  return 'ball ball-W';
+  if (key === '4')  return 'ball ball-4';
+  if (key === '6')  return 'ball ball-6';
+  if (key === 'Wd' || key === 'WD' || key === 'wd') return 'ball ball-Wd';
+  if (key === 'NB' || key === 'nb') return 'ball ball-NB';
+  if (key === '1') return 'ball ball-1';
+  if (key === '2') return 'ball ball-2';
+  if (key === '3') return 'ball ball-3';
+  return 'ball ball-1';
+}
+
+function ballLabel(d) {
+  const key = String(d).trim();
+  if (key === '.' || key === '0') return '·';
+  if (key === 'Wd' || key === 'WD' || key === 'wd') return 'Wd';
+  return key;
+}
+
+function renderRecentOver(balls) {
+  const c = document.getElementById('balls-container');
+  if (!balls || !balls.length) {
+    c.innerHTML = Array(6).fill('<div class="ball-ph"></div>').join('');
+    return;
+  }
+  const shown = balls.slice(-6);
+  let html = '';
+  for (let i = 0; i < 6; i++) {
+    if (i < shown.length) {
+      html += `<div class="${ballClass(shown[i])}">${ballLabel(shown[i])}</div>`;
+    } else {
+      html += '<div class="ball-ph"></div>';
+    }
+  }
+  c.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════════════════
+// SMART SITUATION ENGINE
+// ══════════════════════════════════════════════════════════
+function situationEngine(data) {
+  const inn = data.innings && data.innings[1];
+  if (!inn) return null;
+
+  const target     = data.target || (data.innings[0].runs + 1);
+  const runs       = inn.runs;
+  const wkts       = inn.wickets;
+  const overs      = inn.overs;
+  const totalOvers = data.total_overs || 40;
+  const needed     = target - runs;
+  const balls      = ballsLeft(totalOvers, overs);
+  const crrNum     = parseFloat(crr(runs, overs));
+  const rrrNum     = parseFloat(rrr(needed, balls));
+  const oversGone  = oversInt(overs);
+  const oversLeft  = totalOvers - oversGone;
+
+  let urgency = 'ok', message = '', pills = [];
+
+  if (needed <= 0) {
+    return { situation:'won',  urgency:'ok',   message:`${toCode(inn.batting_team)} WON!`, pills:[], needed, balls, target, rrrNum, crrNum, oversLeft };
+  }
+  if (wkts >= 10) {
+    return { situation:'lost', urgency:'crit', message:'All out', pills:[], needed, balls, target, rrrNum, crrNum, oversLeft };
+  }
+  if (needed <= 10) {
+    urgency = 'ok'; message = `${needed} to WIN`;
+    pills = [
+      { val:needed, lbl:'NEEDED', cls:'ok' },
+      { val:balls,  lbl:'BALLS',  cls:'ok' },
+      { val:rrrNum, lbl:'RRR',    cls:'ok' },
+    ];
+  } else if (oversLeft <= 3) {
+    urgency = rrrNum > crrNum + 1 ? 'crit' : 'warn';
+    message = `${needed} from ${balls} balls`;
+    pills = [
+      { val:needed, lbl:'NEEDED',  cls:urgency },
+      { val:balls,  lbl:'BALLS',   cls:urgency },
+      { val:rrrNum, lbl:'RRR',     cls:urgency },
+      { val:crrNum, lbl:'CRR',     cls:'ok'    },
+    ];
+  } else if (rrrNum > crrNum + 2) {
+    urgency = 'crit'; message = `Need ${rrrNum}/ov · Have ${crrNum}/ov`;
+    pills = [
+      { val:needed,   lbl:'NEEDED',  cls:'crit' },
+      { val:oversLeft,lbl:'OV LEFT', cls:'warn' },
+      { val:rrrNum,   lbl:'RRR',     cls:'crit' },
+    ];
+  } else if (rrrNum > crrNum + 0.5) {
+    urgency = 'warn'; message = `Behind pace · RRR ${rrrNum}`;
+    pills = [
+      { val:needed,   lbl:'NEEDED',  cls:'warn' },
+      { val:oversLeft,lbl:'OV LEFT', cls:'ok'   },
+      { val:rrrNum,   lbl:'RRR',     cls:'warn' },
+    ];
+  } else {
+    urgency = 'ok'; message = `On track · RRR ${rrrNum}`;
+    pills = [
+      { val:needed,   lbl:'NEEDED',  cls:'ok' },
+      { val:oversLeft,lbl:'OV LEFT', cls:'ok' },
+      { val:rrrNum,   lbl:'RRR',     cls:'ok' },
+    ];
+  }
+  return { urgency, message, pills, needed, balls, target, rrrNum, crrNum, oversLeft };
+}
+
+// ══════════════════════════════════════════════════════════
+// RESULT HELPERS
+// ══════════════════════════════════════════════════════════
+function isMatchComplete(data) {
+  const status = ((data.match && data.match.status) || '').toUpperCase();
+  if (status.includes('WON') || status.includes('TIED') || status.includes('ABANDONED')) return true;
+  const inn2 = data.innings && data.innings[1];
+  if (!inn2) return false;
+  if (inn2.wickets >= 10) return true;
+  const target = data.target || (data.innings[0] && data.innings[0].runs + 1);
+  if (target && inn2.runs >= target) return true;
+  return false;
+}
+
+function renderResultPanel(data) {
+  const inn1 = data.innings && data.innings[0];
+  const inn2 = data.innings && data.innings[1];
+  if (!inn1 || !inn2) return;
+
+  const target  = data.target || (inn1.runs + 1);
+  const needed  = target - inn2.runs;
+  const batting = toCode(inn2.batting_team || data.batting_team || '');
+  const bowling = toCode(inn1.batting_team || data.home_team || '');
+
+  let winner, margin;
+  if (inn2.runs >= target) {
+    const wktsLeft = 10 - inn2.wickets;
+    winner = batting + ' WON';
+    margin = 'by ' + wktsLeft + ' wicket' + (wktsLeft !== 1 ? 's' : '');
+  } else {
+    winner = bowling + ' WON';
+    margin = 'by ' + (needed - 1) + ' run' + (needed - 1 !== 1 ? 's' : '');
+  }
+
+  const inn2wkts = inn2.wickets >= 10 ? 'all out' : '/' + inn2.wickets;
+  const scores = bowling + ' ' + inn1.runs + '/' + inn1.wickets + ' (' + inn1.overs + ' ov)'
+               + '   vs   '
+               + batting + ' ' + inn2.runs + ' ' + inn2wkts + ' (' + inn2.overs + ' ov)';
+
+  document.getElementById('res-winner').textContent = winner;
+  document.getElementById('res-margin').textContent = margin;
+  document.getElementById('res-scores').textContent = scores;
+}
+
+// ══════════════════════════════════════════════════════════
+// PRE-MATCH RENDER
+// ══════════════════════════════════════════════════════════
+let countdownInterval = null;
+
+function renderPreMatch(data) {
+  const m = data.match || {};
+  const startTime = getMatchStartTime(data);
+
+  // ── Left block: show start time instead of score ──
+  const scoreBlock = document.getElementById('score-block');
+  scoreBlock.classList.add('prematch');
+
+  document.getElementById('team-code').textContent     = toCode(data.home_team || '');
+  // Show BST time large
+  const bstStr = startTime
+    ? startTime.toLocaleTimeString('en-GB', {timeZone:'Europe/London', hour:'2-digit', minute:'2-digit'})
+    : (m.date || '').slice(-5) || '—';
+  document.getElementById('score-runs').textContent    = bstStr;
+  document.getElementById('score-wkts').textContent    = 'BST';
+  document.getElementById('score-overs').textContent   = m.date ? m.date.slice(0, 11).trim() : '—';
+
+  // Countdown label — updates every 30s via the countdown interval
+  function updateCountdown() {
+    document.getElementById('score-rate').textContent = countdownLabel(startTime);
+  }
+  updateCountdown();
+  clearInterval(countdownInterval);
+  if (startTime) countdownInterval = setInterval(updateCountdown, 30000);
+
+  // ── Centre: pre-match panel ──
+  document.getElementById('pm-comp').textContent   = m.competition || '—';
+  document.getElementById('pm-date').textContent   = m.date || '—';
+
+  const home = data.home_team ? (data.home_team.replace(' CC','').trim()) : '—';
+  const away = data.away_team ? (data.away_team.replace(' CC','').trim()) : '—';
+  document.getElementById('pm-teams').innerHTML =
+    `${home} <span id="pm-vs-sep" style="color:var(--dim);font-size:.6rem;margin:0 4px">vs</span> ${away}`;
+
+  document.getElementById('pm-toss').textContent   = m.toss || 'Toss not yet taken';
+  document.getElementById('pm-format').textContent =
+    data.total_overs ? data.total_overs + '-over match' : 'Limited overs';
+
+  // ── Right block ──
+  document.getElementById('vs-codes').innerHTML  =
+    toCode(data.home_team||'') + '<br>vs ' + toCode(data.away_team||'');
+  document.getElementById('inn-label').textContent = 'Match Day';
+
+  showPanel('prematch');
+}
+
+// ══════════════════════════════════════════════════════════
+// RENDER
+// ══════════════════════════════════════════════════════════
+function render(data) {
+  if (!data) return;
+
+  // Pre-match: no innings yet — show fixture details
+  if (isPreMatch(data)) {
+    renderPreMatch(data);
+    return;
+  }
+
+  // Match underway — clear pre-match state
+  document.getElementById('score-block').classList.remove('prematch');
+  clearInterval(countdownInterval);
+  // If prematch panel was showing, clear it
+  const pmEl = document.getElementById('panel-prematch');
+  if (pmEl.classList.contains('active')) hideAllPanels();
+
+  const inn1 = data.innings && data.innings[0];
+  const inn2 = data.innings && data.innings[1];
+  const inn  = inn2 || inn1;
+  if (!inn) return;
+
+  const isSecond = !!inn2;
+  const target   = isSecond ? (data.target || inn1.runs + 1) : null;
+
+  // ── Score block ──
+  const crrVal = crr(inn.runs, inn.overs);
+  document.getElementById('score-runs').textContent  = inn.runs;
+  document.getElementById('score-wkts').textContent  = '/' + inn.wickets;
+  document.getElementById('score-overs').textContent = inn.overs + ' ov';
+  document.getElementById('score-rate').textContent  = 'CRR ' + crrVal;
+  document.getElementById('team-code').textContent   = toCode(inn.batting_team || data.batting_team || data.home_team);
+
+  // Colour CRR against RRR in 2nd innings
+  const rateEl = document.getElementById('score-rate');
+  rateEl.className = '';
+  if (isSecond && target) {
+    const need  = target - inn.runs;
+    const bleft = ballsLeft(data.total_overs || 40, inn.overs);
+    const rrrV  = parseFloat(rrr(need, bleft));
+    const crrN  = parseFloat(crrVal);
+    rateEl.className = rrrV > crrN + 2 ? 'crit' : rrrV > crrN + 0.5 ? 'warn' : 'ok';
+  }
+
+  // ── Right block ──
+  document.getElementById('vs-codes').innerHTML   = toCode(data.home_team) + '<br>vs ' + toCode(data.away_team);
+  document.getElementById('inn-label').textContent = isSecond ? '2nd Inn' : '1st Inn';
+
+  // ── Target bar ──
+  const tbar = document.getElementById('target-bar');
+  if (isSecond && target) {
+    tbar.classList.add('visible');
+    document.getElementById('tbar-target').textContent = target;
+    document.getElementById('tbar-need').textContent   = (target - inn.runs) + ' needed';
+  } else {
+    tbar.classList.remove('visible');
+  }
+
+  // ── Batters ──
+  const s  = data.striker     || {};
+  const ns = data.non_striker || {};
+
+  document.getElementById('striker-name').textContent    = shortName(s.name);
+  document.getElementById('striker-runs').textContent    = s.runs != null ? s.runs : '—';
+  document.getElementById('striker-balls').textContent   = s.balls != null ? '(' + s.balls + ')' : '(—)';
+  const sSR = strikeRate(s.runs, s.balls);
+  document.getElementById('striker-sr').textContent      = sSR ? 'SR ' + sSR : 'SR —';
+
+  document.getElementById('nonstriker-name').textContent  = shortName(ns.name);
+  document.getElementById('nonstriker-runs').textContent  = ns.runs != null ? ns.runs : '—';
+  document.getElementById('nonstriker-balls').textContent = ns.balls != null ? '(' + ns.balls + ')' : '(—)';
+  const nsSR = strikeRate(ns.runs, ns.balls);
+  document.getElementById('nonstriker-sr').textContent    = nsSR ? 'SR ' + nsSR : 'SR —';
+
+  // ── Partnership ──
+  const ptn = data.current_partnership;
+  if (ptn && ptn.runs != null) {
+    document.getElementById('ptn-val').textContent = ptn.runs + '(' + ptn.balls + ')';
+  } else {
+    // Derive approximate: sum of active batters' runs / balls
+    const pRuns  = (s.runs  || 0) + (ns.runs  || 0);
+    const pBalls = (s.balls || 0) + (ns.balls || 0);
+    document.getElementById('ptn-val').textContent = pRuns + '(' + pBalls + ')';
+  }
+
+  // ── Bowler ──
+  const b = data.current_bowler || {};
+  document.getElementById('bowler-name').textContent = shortName(b.name);
+  document.getElementById('bowler-fig').textContent  = (b.wickets || 0) + '-' + (b.runs || 0);
+  document.getElementById('bowler-sub').textContent  = (b.overs || '—') + ' ov · ECN ' + (b.econ ? Number(b.econ).toFixed(1) : '—');
+
+  // ── Recent over ──
+  // Play Cricket relay: recent_over=[] → label "Last over" + 6 placeholder dots
+  //   (score shown is end-of-last-over; no ball-by-ball breakdown from HTML scraper)
+  // PCS BLE mode: recent_over has live ball data → label "This over"
+  const balls = data.recent_over || [];
+  document.getElementById('ov-lbl').textContent = balls.length > 0 ? 'This over' : 'Last over';
+  renderRecentOver(balls);
+
+  // ── Extras text (for milestone panel) ──
+  const e = inn.extras || {};
+  document.getElementById('extras-total').textContent = 'Total: ' + (e.total || 0);
+  document.getElementById('extras-break').textContent = 'b' + (e.byes||0) + ' lb' + (e.leg_byes||0) + ' nb' + (e.no_balls||0) + ' w' + (e.wides||0);
+
+  // ── Result: match complete — show result panel, stop cycling ──
+  if (isSecond && isMatchComplete(data)) {
+    renderResultPanel(data);
+    clearTimeout(S.chaseTimer);
+    showPanel('result');
+    return;
+  }
+
+  // ── Chase panel content (populate only; manageChasePanel controls visibility) ──
+  if (isSecond) {
+    const sit = situationEngine(data);
+    if (sit) renderChasePanel(sit);
+  }
+}
+
+function renderChasePanel(sit) {
+  const el = document.getElementById('panel-chase');
+  let html = (sit.pills || []).map(p =>
+    `<div class="c-pill ${p.cls}"><div class="cpv">${p.val}</div><div class="cpl">${p.lbl}</div></div>`
+  ).join('');
+  html += `<div class="c-msg ${sit.urgency}" style="margin-left:8px">${sit.message}</div>`;
+  el.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════════════════
+// PANELS
+// ══════════════════════════════════════════════════════════
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  if (id) {
+    const el = document.getElementById('panel-' + id);
+    if (el) el.classList.add('active');
+  }
+}
+
+function hideAllPanels() {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+}
+
+// ══════════════════════════════════════════════════════════
+// WICKET ALERT
+// ══════════════════════════════════════════════════════════
+function dismissalText(b) {
+  const sc = b.runs + '(' + b.balls + ')';
+  const d  = (b.dismissal || '').trim();
+  return shortName(b.name) + ' ' + sc + (d && d !== 'not out' ? ' ' + d : '');
+}
+
+function showWickets(texts) {
+  if (!texts.length) return;
+  S.isWicket = true;
+  clearTimeout(S.chaseTimer);
+  clearInterval(S.wicketCycle);
+
+  let idx = 0;
+  const setWkt = () => { document.getElementById('wicket-text').textContent = texts[idx % texts.length]; };
+  setWkt();
+
+  const bar = document.getElementById('wicket-timer');
+  bar.style.transition = 'none';
+  bar.style.width = '100%';
+  requestAnimationFrame(() => {
+    bar.style.transition = `width ${CFG.wicketDurMs}ms linear`;
+    bar.style.width = '0%';
+  });
+
+  showPanel('wicket');
+  if (texts.length > 1) S.wicketCycle = setInterval(() => { idx++; setWkt(); }, CFG.wicketCycleMs);
+
+  clearTimeout(S.wicketTimer);
+  S.wicketTimer = setTimeout(() => {
+    clearInterval(S.wicketCycle);
+    S.isWicket = false;
+    hideAllPanels();
+    if (S.lastData) manageChasePanel(S.lastData);
+  }, CFG.wicketDurMs);
+}
+
+// ══════════════════════════════════════════════════════════
+// CHASE PANEL CYCLING (2nd innings)
+// ══════════════════════════════════════════════════════════
+function manageChasePanel(data) {
+  clearTimeout(S.chaseTimer);
+  const inn2 = data && data.innings && data.innings[1];
+  if (!inn2 || S.isWicket || isMatchComplete(data)) return;
+
+  const sit = situationEngine(data);
+  if (!sit) return;
+
+  // Show chase for 6s, then hide for 8s (5s hide if crit)
+  const hideMs = sit.urgency === 'crit' ? CFG.chase.critHideMs : CFG.chase.hideMs;
+
+  function cycle() {
+    if (S.isWicket || !S.lastData) return;
+    const d2 = S.lastData.innings && S.lastData.innings[1];
+    if (!d2) return;
+    const sit2 = situationEngine(S.lastData);
+    if (!sit2) return;
+    renderChasePanel(sit2);
+    showPanel('chase');
+    S.chaseTimer = setTimeout(() => {
+      hideAllPanels();
+      S.chaseTimer = setTimeout(cycle, sit2.urgency === 'crit' ? CFG.chase.critHideMs : CFG.chase.hideMs);
+    }, CFG.chase.showMs);
+  }
+
+  S.chaseTimer = setTimeout(cycle, 2500);
+}
+
+// ══════════════════════════════════════════════════════════
+// EXTRAS MILESTONE
+// ══════════════════════════════════════════════════════════
+function checkExtras(overs) {
+  const done = oversInt(overs);
+  if (done > 0 && done % CFG.extrasMilestone === 0 && done !== S.lastOversInt && !S.isWicket) {
+    S.lastOversInt = done;
+    showPanel('extras');
+    setTimeout(() => { if (!S.isWicket) hideAllPanels(); }, CFG.extrasDurMs);
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// STALE / NOTICE LIFECYCLE
+// ══════════════════════════════════════════════════════════
+function markFresh() {
+  S.lastFetchedAt = Date.now();
+  document.getElementById('stale-bar').classList.remove('stale');
+  hideStaleNotice();
+  clearTimeout(S.staleTimer);
+  clearTimeout(S.noticeTimer);
+  clearNoticeRefresh();
+
+  // Don't arm stale timers before the match has started — pre-match silence is expected
+  if (!hasMatchStarted(S.lastData)) return;
+
+  // After one over's worth of expected delay → amber pulse line
+  S.staleTimer = setTimeout(() => {
+    document.getElementById('stale-bar').classList.add('stale');
+    // After a further delay (8 min total from last update) → scrolling viewer notice
+    S.noticeTimer = setTimeout(() => {
+      showStaleNotice(S.lastData);
+      // Refresh the message every minute so "X min ago" stays current
+      S.noticeRefresh = setInterval(() => {
+        if (S.noticeActive && S.lastData) showStaleNotice(S.lastData);
+      }, 60000);
+    }, CFG.noticeAfterMs - CFG.staleAfterMs);
+  }, CFG.staleAfterMs);
+}
+
+function clearNoticeRefresh() {
+  clearInterval(S.noticeRefresh);
+  S.noticeRefresh = null;
+}
+
+// ══════════════════════════════════════════════════════════
+// POLL
+// ══════════════════════════════════════════════════════════
+async function poll() {
+  try {
+    const res  = await fetch(CFG.apiUrl, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+
+    const activeInn = data.innings && (data.innings[1] || data.innings[0]);
+    const newWkts   = activeInn ? activeInn.wickets : 0;
+    const prev      = S.prevWickets;
+
+    render(data);
+
+    if (data.stale) {
+      // Scraper flagged stale (both Play Cricket + ResultsVault failed) —
+      // treat as immediate notice without waiting for the client-side timer
+      document.getElementById('stale-bar').classList.add('stale');
+      showStaleNotice(data);
+    } else {
+      markFresh();
+    }
+
+    // Wicket detection
+    if (prev !== null && newWkts > prev && activeInn) {
+      const newlyOut = (activeInn.batters || [])
+        .filter(b => b.status === 'out')
+        .slice(-(newWkts - prev));
+      if (newlyOut.length) showWickets(newlyOut.map(dismissalText));
+    }
+    S.prevWickets = newWkts;
+
+    checkExtras(activeInn ? activeInn.overs : '0');
+    if (!S.isWicket) manageChasePanel(data);
+    S.lastData = data;
+
+  } catch(e) {
+    console.warn('Poll failed:', e);
+    document.getElementById('stale-bar').classList.add('stale');
+    // If we've been failing long enough, show the viewer notice immediately
+    if (S.lastFetchedAt && (Date.now() - S.lastFetchedAt) >= CFG.noticeAfterMs) {
+      showStaleNotice(S.lastData);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════
+(function init() {
+  poll();
+  setInterval(poll, CFG.pollMs);
+})();
+
+// ══════════════════════════════════════════════════════════
+// DEV HELPERS
+// Try: loadMock(2,'crit') / loadMock(2,'warn') / loadMock(2,'ok') / loadMock(1)
+// ══════════════════════════════════════════════════════════
+window.loadMock = (inn=1, urgency='warn') => {
+  const inn1 = {
+    number:1, batting_team:'Brighton Malayalee Association CC',
+    runs:182, wickets:6, overs:'38.2',
+    extras:{total:11,byes:4,leg_byes:1,no_balls:1,wides:5},
+    batters:[
+      {name:'A Clement',   runs:38,balls:32,dismissal:'c A Thilo b L Hunt',status:'out'},
+      {name:'I Ramu',      runs:33,balls:31,dismissal:'not out',           status:'batting'},
+      {name:'A P R',       runs:5, balls:6, dismissal:'b L Hunt',          status:'out'},
+      {name:'B Ramamoorthy',runs:5,balls:2, dismissal:'not out',           status:'batting'},
+    ],
+    fall_of_wickets:[{wicket:1,score:81,batter:'A Clement'},{wicket:2,score:87,batter:'A P R'}],
+  };
+  const rMap = { crit:155, warn:160, ok:170 };
+  const ovMap = { crit:'37.0', warn:'36.0', ok:'36.0' };
+  const inn2 = {
+    number:2, batting_team:'East Grinstead CC',
+    runs:rMap[urgency]||160, wickets:5, overs:ovMap[urgency]||'36.0',
+    extras:{total:8,byes:2,leg_byes:1,no_balls:1,wides:4},
+    batters:[
+      {name:'T Smith', runs:72,balls:80,dismissal:'b I Ramu',  status:'out'},
+      {name:'A Thilo', runs:44,balls:50,dismissal:'not out',   status:'batting'},
+      {name:'D Clarke',runs:12,balls:18,dismissal:'not out',   status:'batting'},
+    ],
+    fall_of_wickets:[],
+  };
+  const recentBalls = {
+    crit: ['.','.','.','W','.','.'],
+    warn: ['.','.','1','4','.','2'],
+    ok:   ['1','.','.','6','.','4'],
+  };
+  const mock = {
+    home_team:'Brighton Malayalee Association CC',
+    away_team:'East Grinstead CC',
+    batting_team: inn===2 ? 'East Grinstead CC' : 'Brighton Malayalee Association CC',
+    target:183, total_overs:40,
+    innings: inn===2 ? [inn1,inn2] : [inn1],
+    striker:        { name:'A Thilo', runs:44, balls:50 },
+    non_striker:    { name:'D Clarke',runs:12, balls:18 },
+    current_bowler: { name:'I Ramu',  wickets:2, runs:28, overs:'7.0', econ:4.0 },
+    recent_over:    inn===2 ? (recentBalls[urgency]||recentBalls.warn) : ['.','1','.','4','.','.'],
+    current_partnership: { runs: inn===2?28:38, balls: inn===2?34:46 },
+  };
+  S.prevWickets = mock.innings.slice(-1)[0].wickets;
+  S.lastData    = mock;
+  render(mock);
+  clearTimeout(S.chaseTimer);
+  if (inn===2) manageChasePanel(mock);
+};
+
+window.testWicket = () => showWickets(['A Clement 38(32) c A Thilo b L Hunt', 'A P R 5(6) b L Hunt']);
+window.testBalls  = (balls) => renderRecentOver(balls || ['.','1','Wd','4','.','W']);
+
+// testStale(N)      — simulate N minutes since last update (default 8)
+// testStale(false)  — simulate reconnect, clears everything
+window.testStale = (minsAgo = 8) => {
+  if (minsAgo === false) { clearNoticeRefresh(); markFresh(); return; }
+  S.lastFetchedAt = Date.now() - minsAgo * 60 * 1000;
+  document.getElementById('stale-bar').classList.add('stale');
+  showStaleNotice(S.lastData);
+};
+
+// loadMockPreMatch() — simulate overlay state before match starts
+window.loadMockPreMatch = () => {
+  const mock = {
+    home_team:'Brighton Malayalee Association CC',
+    away_team:'East Grinstead CC',
+    home_xi:'1st XI', away_xi:'3rd XI',
+    total_overs: 40,
+    innings: [],
+    match: {
+      date: '29 June 2026 @ 13:00',
+      competition: 'Sussex Cricket League - Division 8 Central',
+      status: 'NOT STARTED',
+      toss: 'Toss not yet taken',
+    },
+    stale: false,
+    last_updated: null,
+  };
+  S.lastData    = mock;
+  S.prevWickets = null;
+  render(mock);
+  markFresh(); // won't arm timers (match not started)
+};
+</script>
+</body>
+</html>
