@@ -51,13 +51,22 @@ final class OverlayWebViewCapture: NSObject {
 
     private func captureOnMain(width: Int, height: Int) -> UIImage? {
         guard attached else { return nil }
-        let w = max(160, min(width, 1920))
+        // Always render at the full design width (1280px) regardless of widthFraction so the
+        // CSS viewport never changes after initial load — this avoids a JS resize-event race
+        // that would leave the first captured frame at the wrong scale.
+        // HaishinKit will centre the image on the stream canvas, giving natural side margins.
+        let designW = max(width, 1280)
         let h = max(48, min(height, 600))
-        webView.frame = CGRect(x: -10_000, y: -10_000, width: w, height: h)
+        webView.frame = CGRect(x: -10_000, y: -10_000, width: designW, height: h)
         webView.setNeedsLayout()
         webView.layoutIfNeeded()
 
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: w, height: h))
+        // Render at scale 1.0 so the cgImage pixel dimensions equal the stream canvas coordinates.
+        // Without this, the device screen scale (2× / 3× on modern iPhones) makes the captured
+        // cgImage 2–3× wider than the 1280×720 stream canvas, causing the overlay to be cropped.
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: designW, height: h), format: format)
         return renderer.image { _ in
             webView.drawHierarchy(in: webView.bounds, afterScreenUpdates: false)
         }

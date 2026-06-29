@@ -66,6 +66,9 @@ final class StudioViewModel: ObservableObject {
     // Recap
     @Published var recap: StreamRecap?
 
+    // Live elapsed — ticks once per second while on air (parity with Android's LiveTimerBadge)
+    @Published var liveElapsedSeconds: Int = 0
+
     // Active sheet
     @Published var activeSheet: StudioSheet?
 
@@ -82,6 +85,7 @@ final class StudioViewModel: ObservableObject {
 
     private let api = CricRelayAPI.shared
     private var pollingTask: Task<Void, Never>?
+    private var liveTimerTask: Task<Void, Never>?
 
     init(matchSlug: String) {
         self.matchSlug = matchSlug
@@ -89,6 +93,7 @@ final class StudioViewModel: ObservableObject {
 
     deinit {
         pollingTask?.cancel()
+        liveTimerTask?.cancel()
     }
 
     // MARK: - Load
@@ -194,6 +199,32 @@ final class StudioViewModel: ObservableObject {
         pollingTask = nil
     }
 
+    // MARK: - Live timer
+
+    /// Tick the on-air elapsed time once per second while live (parity with Android's
+    /// startLiveTimer). Keeps counting while paused — the broadcast is still on air. Wall-clock
+    /// from `liveStartedAt` so it stays accurate across any tick that's throttled in the
+    /// background, and consistent with the recap duration.
+    private func startLiveTimer() {
+        liveTimerTask?.cancel()
+        liveElapsedSeconds = 0
+        liveTimerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                if let start = self.liveStartedAt {
+                    self.liveElapsedSeconds = max(0, Int(Date().timeIntervalSince(start)))
+                }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    private func stopLiveTimer() {
+        liveTimerTask?.cancel()
+        liveTimerTask = nil
+        liveElapsedSeconds = 0
+    }
+
     // MARK: - Go live flow
 
     /// Entry point from the shutter: if the destination isn't actually ready, send the operator to
@@ -268,6 +299,7 @@ final class StudioViewModel: ObservableObject {
         streaming = StreamCameraEngine.shared.isStreaming
         if streaming {
             liveStartedAt = Date()
+            startLiveTimer()
             try? await api.updateBroadcastStatus(
                 slug: matchSlug,
                 status: "streaming",
@@ -289,6 +321,7 @@ final class StudioViewModel: ObservableObject {
         await StreamCameraEngine.shared.stopStream()
         streaming = false
         paused = false
+        stopLiveTimer()
         try? await api.stopLive(platform: destination == "custom" ? nil : destination)
         try? await api.updateBroadcastStatus(slug: matchSlug, status: "idle")
         recap = StreamRecap(
@@ -344,6 +377,22 @@ final class StudioViewModel: ObservableObject {
         StreamCameraEngine.shared.setKeepScreenOnDuringStream(enabled: prefs.keepScreenOn)
         StreamCameraEngine.shared.setVideoStabilization(enabled: prefs.videoStabilization)
         _ = try? await api.saveOverlayPrefs(slug: matchSlug, prefs: prefs)
+    }
+
+    /// Flip video stabilisation from the on-screen quick toggle, then persist + apply via
+    /// saveOverlay (parity with Android's onToggleStabilization → updateOverlayPrefs).
+    func toggleStabilization() async {
+        var prefs = overlayPrefs
+        prefs.videoStabilization.toggle()
+        await saveOverlay(prefs)
+    }
+
+    /// Flip keep-screen-on from the on-screen quick toggle, then persist + apply via saveOverlay
+    /// (parity with Android's onToggleKeepScreenOn → updateOverlayPrefs).
+    func toggleKeepScreenOn() async {
+        var prefs = overlayPrefs
+        prefs.keepScreenOn.toggle()
+        await saveOverlay(prefs)
     }
 
     // MARK: - Scoring

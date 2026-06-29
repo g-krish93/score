@@ -171,6 +171,11 @@ struct StudioView: View {
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(badgeTint)
                         .tracking(1)
+                    if !viewModel.paused {
+                        Text(elapsedTimeText)
+                            .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(.white)
+                    }
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
@@ -186,6 +191,12 @@ struct StudioView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 56)
+    }
+
+    /// mm:ss elapsed broadcast time for the ON AIR badge (matches Android's "%02d:%02d").
+    private var elapsedTimeText: String {
+        let s = viewModel.liveElapsedSeconds
+        return String(format: "%02d:%02d", s / 60, s % 60)
     }
 
     // MARK: - Focus reticle
@@ -210,37 +221,64 @@ struct StudioView: View {
         }
     }
 
-    // MARK: - Focus lock pill
+    // MARK: - Quick toggles
 
-    private var focusLockPill: some View {
-        Button {
-            Task { await viewModel.toggleFocusLock() }
-        } label: {
+    private var quickToggleRow: some View {
+        HStack(spacing: 10) {
+            quickTogglePill(
+                label: viewModel.focusLocked ? "Locked" : "Focus",
+                systemImage: viewModel.focusLocked ? "lock.fill" : "lock.open",
+                active: viewModel.focusLocked
+            ) { Task { await viewModel.toggleFocusLock() } }
+
+            quickTogglePill(
+                label: "Stabilize",
+                systemImage: "gyroscope",
+                active: viewModel.overlayPrefs.videoStabilization
+            ) { Task { await viewModel.toggleStabilization() } }
+
+            quickTogglePill(
+                label: "Screen on",
+                systemImage: "sun.max.fill",
+                active: viewModel.overlayPrefs.keepScreenOn
+            ) { Task { await viewModel.toggleKeepScreenOn() } }
+        }
+    }
+
+    private func quickTogglePill(
+        label: String,
+        systemImage: String,
+        active: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: viewModel.focusLocked ? "lock.fill" : "lock.open")
+                Image(systemName: systemImage)
                     .font(.system(size: 14, weight: .semibold))
-                Text(viewModel.focusLocked ? "Pitch locked" : "Focus lock")
+                Text(label)
                     .font(.system(size: 13, weight: .semibold))
             }
-            .foregroundStyle(viewModel.focusLocked ? CricTheme.onPrimary : .white)
+            .foregroundStyle(active ? CricTheme.onPrimary : .white)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(
-                viewModel.focusLocked ? AnyShapeStyle(CricTheme.primary) : AnyShapeStyle(.ultraThinMaterial),
+                active ? AnyShapeStyle(CricTheme.primary) : AnyShapeStyle(.ultraThinMaterial),
                 in: Capsule()
             )
         }
         .buttonStyle(PressableScaleStyle())
-        .animation(CricMotion.enter(), value: viewModel.focusLocked)
+        .animation(CricMotion.enter(), value: active)
     }
 
     // MARK: - Bottom controls
 
     private var bottomControls: some View {
         VStack(spacing: 0) {
-            // Focus lock — frame + tap the pitch, then lock so a fielder crossing the frame
-            // can't pull focus or exposure off the strip.
-            focusLockPill
+            // Quick toggles — focus lock, stabilisation, keep-screen-on — surfaced on the camera
+            // screen (parity with Android's QuickToggles row) so each is one tap instead of being
+            // buried in the overlay sheet. Focus lock still frames + locks the pitch so a fielder
+            // crossing the frame can't pull focus or exposure off the strip.
+            quickToggleRow
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 12)
 
