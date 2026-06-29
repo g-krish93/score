@@ -22,9 +22,14 @@ from __future__ import annotations
 import re
 from typing import Any
 
-# Strips format/squad suffixes like "(Twenty20)", "(Midweek XI)", "(2nd XI)" from team names
+# Strips format/squad suffixes from team names.
+# Handles both parentheses form "(Twenty20)", "(Midweek XI)" and dash form "- Midweek XI", "- Twenty20".
 _TEAM_SUFFIX_RE = re.compile(
-    r"\s*\([^)]*(?:XI|T20|Twenty|Midweek|Sunday|Saturday|Wednesday|Thursday|Friday|Seconds|2nds?)\s*[^)]*\)\s*$",
+    r"\s*(?:"
+    r"\([^)]*(?:XI|T20|Twenty|Midweek|Sunday|Saturday|Wednesday|Thursday|Friday|Seconds?|2nds?|Ladies)[^)]*\)"
+    r"|"
+    r"-\s*(?:Twenty20?|T20|(?:Midweek|Sunday|Saturday|Wednesday|Thursday|Friday|Ladies|Seconds?|2nds?)(?:\s+XI)?|(?:[\w]+\s+)?XI)"
+    r")\s*$",
     re.I,
 )
 
@@ -187,9 +192,14 @@ def _infer_total_overs(snapshot: dict, innings: list) -> int:
         snapshot.get("innings_2_tab_team", ""),
         snapshot.get("fixture_title", ""),
         snapshot.get("fixture_competition", ""),
+        # Raw team names from innings or home/away (may still carry format suffix pre-clean)
+        (snapshot.get("innings_1") or {}).get("team", ""),
+        (snapshot.get("innings_2") or {}).get("team", ""),
+        snapshot.get("home_team_raw", ""),
+        snapshot.get("away_team_raw", ""),
     ]
     combined = " ".join(c for c in candidates if c).lower()
-    if "twenty20" in combined or " t20" in combined:
+    if "twenty20" in combined or " t20" in combined or combined.startswith("t20"):
         return 20
     # Fallback: if both innings completed at ≤ 20 complete overs → T20
     all_overs = []
@@ -239,7 +249,7 @@ def snapshot_to_overlay(
         return {
             "home_team": home,
             "away_team": away,
-            "total_overs": 0,
+            "total_overs": _infer_total_overs(snapshot, []),
             "batting_team": "",
             "match": match_meta,
             "innings": [],

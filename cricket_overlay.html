@@ -397,9 +397,14 @@
 // ══════════════════════════════════════════════════════════
 // CONFIG
 // ══════════════════════════════════════════════════════════
+// Derive API URL from path when served at /m/<slug>/stream (no template injection needed)
+const _pathMatch = window.location.pathname.match(/\/m\/([^/]+)\/stream/);
+const _pathApiUrl = _pathMatch ? '/m/' + _pathMatch[1] + '/overlay-data' : null;
+
 const CFG = {
   apiUrl:           window.API_URL
                   || new URLSearchParams(location.search).get('apiUrl')
+                  || _pathApiUrl
                   || '/score',
   pollMs:           15000,   // 15s — ResultsVault scraper runs every 20s, so ≤35s total lag
   wicketDurMs:      240000,

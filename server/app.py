@@ -2299,6 +2299,11 @@ def stream_overlay_default():
 
 @app.get("/m/<match_id>/stream")
 def stream_overlay_scoped(match_id):
+    # Serve the rich overlay HTML; it derives its /overlay-data URL from the path automatically.
+    overlay_path = Path(__file__).parent.parent / "cricket_overlay.html"
+    if overlay_path.exists():
+        return send_file(overlay_path, mimetype="text/html")
+    # Fallback to legacy template if rich overlay file not deployed
     embed = request.args.get("embed", "").strip().lower() in {"1", "true", "yes"}
     poll_ms = 1000 if embed else 2000
     return render_template(
