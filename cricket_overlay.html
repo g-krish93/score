@@ -738,21 +738,27 @@ let countdownInterval = null;
 function renderPreMatch(data) {
   const m = data.match || {};
   const startTime = getMatchStartTime(data);
+  const dateOnly = m.date ? (m.date.match(/\d{1,2}\s+\w+\s+\d{4}/) || [''])[0] : '';
 
-  // ── Left block: show start time instead of score ──
+  // ── Left block ──
   const scoreBlock = document.getElementById('score-block');
   scoreBlock.classList.add('prematch');
 
-  document.getElementById('team-code').textContent     = toCode(data.home_team || '');
-  // Show BST time large
-  const bstStr = startTime
-    ? startTime.toLocaleTimeString('en-GB', {timeZone:'Europe/London', hour:'2-digit', minute:'2-digit'})
-    : (m.date || '').slice(-5) || '—';
-  document.getElementById('score-runs').textContent    = bstStr;
-  document.getElementById('score-wkts').textContent    = 'BST';
-  document.getElementById('score-overs').textContent   = m.date ? m.date.slice(0, 11).trim() : '—';
+  document.getElementById('team-code').textContent = ''; // no batting team yet
 
-  // Countdown label — updates every 30s via the countdown interval
+  if (startTime) {
+    const bstStr = startTime.toLocaleTimeString('en-GB', {timeZone:'Europe/London', hour:'2-digit', minute:'2-digit'});
+    document.getElementById('score-runs').textContent = bstStr;
+    document.getElementById('score-wkts').textContent = 'BST';
+    document.getElementById('score-overs').textContent = dateOnly;
+  } else {
+    // No parseable time — show date or TBC, no BST label
+    document.getElementById('score-runs').textContent = dateOnly || 'TBC';
+    document.getElementById('score-wkts').textContent = '';
+    document.getElementById('score-overs').textContent = '';
+  }
+
+  // Countdown label — updates every 30s
   function updateCountdown() {
     document.getElementById('score-rate').textContent = countdownLabel(startTime);
   }
@@ -760,16 +766,19 @@ function renderPreMatch(data) {
   clearInterval(countdownInterval);
   if (startTime) countdownInterval = setInterval(updateCountdown, 30000);
 
+  // ── LIVE dot — hidden before match starts ──
+  document.getElementById('live-dot').style.display = 'none';
+
   // ── Centre: pre-match panel ──
-  document.getElementById('pm-comp').textContent   = m.competition || '—';
-  document.getElementById('pm-date').textContent   = m.date || '—';
+  document.getElementById('pm-comp').textContent = m.competition || '—';
+  document.getElementById('pm-date').textContent = m.date || '—';
 
   const home = data.home_team ? (data.home_team.replace(' CC','').trim()) : '—';
   const away = data.away_team ? (data.away_team.replace(' CC','').trim()) : '—';
   document.getElementById('pm-teams').innerHTML =
     `${home} <span id="pm-vs-sep" style="color:var(--dim);font-size:.6rem;margin:0 4px">vs</span> ${away}`;
 
-  document.getElementById('pm-toss').textContent   = m.toss || 'Toss not yet taken';
+  document.getElementById('pm-toss').textContent = m.toss || 'Toss not yet taken';
   document.getElementById('pm-format').textContent =
     data.total_overs ? data.total_overs + '-over match' : 'Limited overs';
 
@@ -795,6 +804,7 @@ function render(data) {
 
   // Match underway — clear pre-match state
   document.getElementById('score-block').classList.remove('prematch');
+  document.getElementById('live-dot').style.display = '';
   clearInterval(countdownInterval);
   // If prematch panel was showing, clear it
   const pmEl = document.getElementById('panel-prematch');
