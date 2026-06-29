@@ -114,7 +114,7 @@ The broadcast control screen — the operator's primary live interface.
 Owns all broadcast state and orchestrates the go-live flow:
 
 - *Destination management*: YouTube, Twitch (OAuth, gated on `PlatformStatus.ready/connected`), or Custom RTMP. Prefers a connected OAuth platform on load; falls back to Custom RTMP when `RtmpCredentialsStore` has saved credentials.
-- *Go-live flow*: `requestGoLive()` → `openPreflight()` → `confirmGoLive()` → 5-second countdown → `startStream()`. Sends camera preview warm-up at 1280×720×30fps before the stream starts.
+- *Go-live flow*: camera preview warms up at 1280×720×30fps on Studio load (`preparePreview` in view `.task`); then `requestGoLive()` → `openPreflight()` → `confirmGoLive()` → 5-second countdown → `startStream()`. Stream output: 1280×720, 2.5 Mbps, 30fps.
 - *Live elapsed timer*: wall-clock `Task` ticking once/second while on-air (consistent with recap duration; keeps counting while paused).
 - *Broadcast status sync*: on go-live, pause/resume, and stop, pushes the new state back to the server via `api.updateBroadcastStatus()` (bidirectional — not just read-only polling).
 - *Polling*: 5-second `matchDay` poll to sync broadcast status from the server.
