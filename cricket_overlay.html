@@ -423,6 +423,31 @@ const THEMES = { navy:'', green:'theme-green', gold:'theme-gold', red:'theme-red
 document.getElementById('overlay').className = THEMES[CFG.theme] || '';
 
 // ══════════════════════════════════════════════════════════
+// SCALE-TO-FIT  (broadcast overlay — design width 1280px)
+// ══════════════════════════════════════════════════════════
+const DESIGN_W = 1280;
+function applyOverlayScale() {
+  const el = document.getElementById('overlay');
+  if (!el) return;
+  const vw = window.innerWidth || document.documentElement.clientWidth || DESIGN_W;
+  if (vw <= 0 || vw >= DESIGN_W) {
+    // At or above design width — spans full width naturally, no scaling needed
+    el.style.transform = '';
+    el.style.width = '';
+    el.style.right = '0';
+  } else {
+    // Below design width — scale down proportionally so nothing is cropped
+    const s = vw / DESIGN_W;
+    el.style.width = DESIGN_W + 'px';
+    el.style.right = 'auto';
+    el.style.transformOrigin = 'bottom left';
+    el.style.transform = 'scale(' + s + ')';
+  }
+}
+applyOverlayScale();
+window.addEventListener('resize', applyOverlayScale);
+
+// ══════════════════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════════════════
 const S = {
