@@ -97,6 +97,7 @@ The broadcast control screen — the operator's primary live interface.
 **`StudioView.swift`**
 - `CameraPreviewView` (`UIViewRepresentable`): wraps `MTHKView` (HaishinKit), forwards single-finger taps for focus and two-finger pinch for zoom.
 - `StudioView`: full-screen SwiftUI broadcast UI:
+  - *Permission gate* — requests both camera and microphone on load; shows `permissionDeniedView` (with "Open Settings" deep-link) if camera access is denied.
   - *Top bar* — back button + ON AIR / PAUSED badge with mm:ss elapsed timer.
   - *Quick toggle row* — Focus Lock, Stabilize, Keep Screen On (one-tap; surfaced on the camera screen for parity with Android's QuickToggles row).
   - *Tool button row* — Destination, Overlay, Scoring, Menu (open modal sheets).
@@ -105,6 +106,7 @@ The broadcast control screen — the operator's primary live interface.
   - *Countdown overlay* — 5→1 countdown before stream starts.
   - *Recap banner* — post-stream summary (title, destination, duration, watch URL).
   - *Error banner* — dismissible stream error notification.
+  - *Status handler* — registers a `StreamCameraEngine.setStatusHandler` callback on load to receive "connected" / "error" events and update ViewModel state; cleared on disappear.
 - Five modal sheets: `DestinationSheet`, `OverlaySheet`, `ScoringSheet`, `PreflightSheet`, `StudioMenuSheet`.
 
 **`StudioViewModel.swift`** (`@MainActor ObservableObject`)
@@ -120,6 +122,7 @@ Owns all broadcast state and orchestrates the go-live flow:
 - *Quick toggles*: `toggleStabilization()` / `toggleKeepScreenOn()` mutate `OverlayLayoutPrefs` and persist via `saveOverlay()`.
 - *Recap*: on stop, builds a `StreamRecap` (title, destination label, duration, watch URL) and surfaces it as the recap banner.
 - *Custom RTMP persistence*: `RtmpCredentialsStore` (UserDefaults-backed, keyed by match slug) — parity with Android's `RtmpCredentialsStore`.
+- *Additional public methods*: `cancelCountdown()` aborts the 5-second countdown; `restartCameraPreview()` re-initialises the camera pipeline (error recovery path); `setScoringMode()` calls the API to change scoring mode for the match.
 
 **`RtmpCredentialsStore.swift`** — UserDefaults persistence for custom RTMP URL / stream key / watch URL, keyed by match slug.
 
