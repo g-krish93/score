@@ -397,8 +397,9 @@
 // ══════════════════════════════════════════════════════════
 // CONFIG
 // ══════════════════════════════════════════════════════════
-// Derive API URL from path when served at /m/<slug>/stream (no template injection needed)
-const _pathMatch = window.location.pathname.match(/\/m\/([^/]+)\/stream/);
+// Derive API URL from path when served at /m/<slug>/stream or legacy /stream
+const _pathMatch = window.location.pathname.match(/\/m\/([^/]+)\/stream/)
+                || (window.location.pathname === '/stream' ? ['', 'default'] : null);
 const _pathApiUrl = _pathMatch ? '/m/' + _pathMatch[1] + '/overlay-data' : null;
 
 const CFG = {

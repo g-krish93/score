@@ -2285,33 +2285,33 @@ def public_tournament(slug):
     )
 
 
-@app.get("/stream")
-def stream_overlay_default():
-    embed = request.args.get("embed", "").strip().lower() in {"1", "true", "yes"}
-    poll_ms = 1000 if embed else 2000
-    return render_template(
-        "overlay.html",
-        match_id=DEFAULT_MATCH_ID,
-        embed_mode=embed,
-        poll_interval_ms=poll_ms,
-    )
-
-
-@app.get("/m/<match_id>/stream")
-def stream_overlay_scoped(match_id):
-    # Serve the rich overlay HTML; it derives its /overlay-data URL from the path automatically.
+def _serve_rich_overlay(match_id: str):
+    """Serve cricket_overlay.html with cache-busting headers so WebViews always get fresh HTML."""
     overlay_path = Path(__file__).parent.parent / "cricket_overlay.html"
     if overlay_path.exists():
-        return send_file(overlay_path, mimetype="text/html")
+        resp = send_file(overlay_path, mimetype="text/html")
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        return resp
     # Fallback to legacy template if rich overlay file not deployed
     embed = request.args.get("embed", "").strip().lower() in {"1", "true", "yes"}
     poll_ms = 1000 if embed else 2000
     return render_template(
         "overlay.html",
-        match_id=sanitize_match_id(match_id),
+        match_id=match_id,
         embed_mode=embed,
         poll_interval_ms=poll_ms,
     )
+
+
+@app.get("/stream")
+def stream_overlay_default():
+    return _serve_rich_overlay(DEFAULT_MATCH_ID)
+
+
+@app.get("/m/<match_id>/stream")
+def stream_overlay_scoped(match_id):
+    return _serve_rich_overlay(sanitize_match_id(match_id))
 
 
 @app.get("/m/<match_id>/overlay-data")
