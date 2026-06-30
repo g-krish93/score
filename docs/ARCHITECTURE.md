@@ -1,6 +1,6 @@
 # CricRelay Architecture
 
-*Auto-maintained by Stop hook (`/.claude/hooks/update-architecture.sh`). Last updated: 2026-06-30 (HomeScreen StudioBackdrop + LiveNowCard; pcs-ble archival, CricHeroes provider, KMP shared module, Android nav + Studio detail).*
+*Auto-maintained by Stop hook (`/.claude/hooks/update-architecture.sh`). Last updated: 2026-06-30 (public live-score page + SSE; public club page; SEO infrastructure; password reset flow; iOS OTA install; viewer-stat columns; ui_theme; scoring dual-write flags; stream slot cap; Sponsor time bounds; cricheroes.in support).*
 
 ---
 
@@ -18,9 +18,9 @@ Central API and orchestration layer.
 
 | File | Responsibility |
 |---|---|
-| `app.py` | Flask app factory, routes, CORS |
+| `app.py` | Flask app factory, routes, CORS; security headers (`X-Content-Type-Options`, HSTS, etc.); SEO (canonical URL, `sitemap.xml`, `robots.txt`, `inject_seo_context`); public live-score page (`/live/<slug>`) + SSE endpoint (`/live/<slug>/events`, `PUBLIC_LIVE_SSE` flag); public club page (`/club/<slug>`); password reset flow (SMTP, `URLSafeTimedSerializer`); iOS OTA install manifest (`/download/cricrelay-stream-ota.plist`); scoring dual-write + shadow-compare feature flags (`SCORING_DUAL_WRITE`, `SCORING_SHADOW_COMPARE`); stream slot cap (`MAX_LIVE_STREAMS_PER_CLUB = 6`); PCS BLE retirement (`pcs_ble_retired_response()`, `purge_legacy_pcs_ble_relay_rows()`) |
 | `stream_api.py` | Bearer-token auth (`bearer_org_from_request`), stream session CRUD, go-live / stop-live, broadcast status, match-day status |
-| `models_cricrelay.py` | SQLAlchemy models: `Organization`, `ClubUser`, `RelayMatch`, `StreamSession`, `Sponsor`, `Tournament`, `Team`, `Player`, `Fixture`; `RELAY_PROVIDERS` dispatch table; URL canonicalization helpers |
+| `models_cricrelay.py` | SQLAlchemy models: `Organization` (+ `ui_theme` original/light/dark, branding fields), `ClubUser`, `RelayMatch`, `StreamSession` (+ `started_by_user_id`, `match_label`, `peak_viewers`, `viewer_sample_sum/count`, `final_score_json`, `vod_url`), `Sponsor` (+ `active_from`/`active_to` time bounds), `Tournament`, `Team`, `Player`, `Fixture`; `RELAY_PROVIDERS` dispatch table; URL canonicalization helpers; `resolve_provider_callable()` lazy-import; `provider_poll_interval_sec()` |
 | `play_cricket_scraper.py` | Scrapes Play Cricket scorecard HTML |
 | `play_cricket_mapper.py` | Maps scraped rows → overlay JSON schema |
 | `scoring_bridge.py` | Routes scoring events to overlay + cricrelay_core |
@@ -36,9 +36,15 @@ Central API and orchestration layer.
 
 **Data stores:** PostgreSQL (primary), SQLite (migration source via `migrate_sqlite_to_postgres.py`).
 
-**Auth:** Bearer org-token (`issue_stream_token(org)`, itsdangerous signed). `ClubUser` supports individual member logins (admin/member roles) belonging to an `Organization`. Multi-user per-club dashboard.
+**Auth:** Bearer org-token (`issue_stream_token(org)`, itsdangerous signed). `ClubUser` supports individual member logins (admin/member roles) belonging to an `Organization`. Multi-user per-club dashboard. Password reset via time-limited signed token (`URLSafeTimedSerializer`, SMTP delivery; env: `SMTP_HOST/PORT/USERNAME/PASSWORD`).
 
-**Relay sources:** `RelayMatch.relay_source` is `"scraper"` (Play Cricket), `"cricheroes"`, or `"pcs_ble"` (dormant). `RELAY_PROVIDERS` dict maps provider keys to their scrape/map/fixtures/poll-interval callables; `scraper_worker` dispatches via this table.
+**Relay sources:** `RelayMatch.relay_source` is `"scraper"` (Play Cricket), `"cricheroes"`, or `"pcs_ble"` (dormant). `RELAY_PROVIDERS` dict maps provider keys to their scrape/map/fixtures/poll-interval callables; `scraper_worker` dispatches via this table. CricHeroes URLs on both `cricheroes.com` and `cricheroes.in` are accepted (`CRICHEROES_HOSTS`).
+
+**Viewer stats:** `StreamSession` accumulates `peak_viewers`, `viewer_sample_sum`, `viewer_sample_count` (→ `avg_viewers` property) for each broadcast session, linked to the `ClubUser` who started it via `started_by_user_id`. `final_score_json` and `vod_url` are stored at session end.
+
+**Public-facing routes:** `/live/<slug>` — shareable no-login live-score page (polling or SSE when `PUBLIC_LIVE_SSE=1`). `/live/<slug>/events` — SSE push of score JSON (~1 s cadence; holds a gunicorn worker; keep `PUBLIC_LIVE_SSE` off until threaded workers or Redis pub/sub is in place). `/club/<slug>` — read-only org page for fans and sponsors.
+
+**Scoring migration flags:** `SCORING_DUAL_WRITE=1` shadow-writes each ball to `cricrelay_store` (Postgres event store) alongside the legacy engine. `SCORING_SHADOW_COMPARE=1` folds the event log through `cricrelay_core` on each `/score` read and logs divergences. Both failures are swallowed; the legacy engine stays authoritative until cut-over.
 
 **Native mode models:** `Tournament` → `Team`/`Player` → `Fixture` supports non-ECB club-owned competitions. A `Fixture.score_match_slug` links to a `RelayMatch` for live scoring.
 
@@ -320,7 +326,11 @@ Terraform-managed deployment targeting AWS (primary) with OCI migration in progr
 
 | Decision | Detail |
 |----------|--------|
-| **Freemium tiers** (June 2026) | AdMob on free tier; custom sponsor overlay slot as Pro upsell; website is the acquisition layer |
+| **Freemium tiers** (June 2026) | AdMob on free tier; custom sponsor overlay slot as Pro upsell; `Sponsor.active_from`/`active_to` bound sponsorships by date; website is the acquisition layer |
+| **Per-org UI theme** | `Organization.ui_theme` (original/light/dark) injected into every dashboard response via `inject_seo_context`; branding colours (`public_primary_color`, `public_accent_color`) drive the `/club/<slug>` public page |
+| **SSE live-score** | `PUBLIC_LIVE_SSE=1` enables push on `/live/<slug>/events`; off by default — each SSE connection holds a gunicorn worker for its 5-minute lifetime. Migrate to threaded workers or a Redis pub/sub pusher before enabling in production |
+| **Scoring dual-write / shadow** | `SCORING_DUAL_WRITE` + `SCORING_SHADOW_COMPARE` env flags wire the new `cricrelay_core`/`cricrelay_store` engine in shadow mode; legacy engine stays authoritative until explicit cut-over |
+| **iOS OTA install** | `/download/cricrelay-stream-ota.plist` serves an OTA manifest; `itms-services://` URL in Safari triggers install. Bundle ID via `STREAM_APP_IOS_BUNDLE_ID` env var |
 | **Focus-lock** | iOS locks focus **and** exposure (`AVCaptureDevice` `focusMode` + `exposureMode`). Android locks focus only — RootEncoder 2.4.8 has no AE-lock API |
 | **Broadcast resilience** | Android: RootEncoder `replaceView` offscreen-GL swap + PiP overlay keeps stream alive on locked screen. iOS: best-effort standby slate only (Apple does not allow over-app overlays) |
 | **Modular-monolith migration** | Strangler pattern toward a Match spine. `cricrelay_core` scoring engine is the first extracted module; 8 parallel tracks running |
