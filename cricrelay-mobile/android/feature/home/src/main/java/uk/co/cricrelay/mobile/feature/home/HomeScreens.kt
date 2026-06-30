@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
@@ -355,7 +354,7 @@ fun HomeScreen(
         ActionCard(
             title = "CricHeroes scorecard",
             description = "Best-effort auto-scrape from a CricHeroes live scorecard URL.",
-            icon = Link,
+            icon = Icons.Outlined.Link,
             tint = AppColors.AccentBlue,
             onClick = {
                 createSheet = false
