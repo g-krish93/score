@@ -26,7 +26,7 @@ class OverlayLayoutPrefsTest {
     @Test
     fun `board display scale tracks width and height sliders`() {
         val prefs = OverlayLayoutPrefs(
-            widthFraction = 0.46,
+            widthFraction = 0.5,
             heightFraction = 0.12,
         )
         assertEquals(0.5f, prefs.boardDisplayScaleX(), 0.001f)
