@@ -209,6 +209,7 @@ struct OverlayLayoutPrefs: Codable {
             fontScale: Float(fontScale),
             bgColor: bgColor,
             textColor: textColor,
+            opacity: Float(max(0.2, min(1.0, opacity))),
             watermarkEnabled: watermarkEnabled,
             watermarkText: watermarkText
         )

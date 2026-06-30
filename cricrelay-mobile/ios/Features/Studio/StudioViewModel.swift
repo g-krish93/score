@@ -21,7 +21,7 @@ final class StudioViewModel: ObservableObject {
     @Published var overlayEmbedUrl = ""
 
     // Destination selection (before go-live)
-    @Published var destination = "youtube" {  // "youtube", "twitch", "custom"
+    @Published var destination = "custom" {  // "youtube", "twitch", "custom"
         didSet { recomputeDestinationReady() }
     }
     @Published var customRtmpUrl = "" {
@@ -244,45 +244,56 @@ final class StudioViewModel: ObservableObject {
         recomputeDestinationReady()
         preflightCameraOk = StreamCameraEngine.shared.isPreviewReady
         preflightDestinationOk = destinationReady
-        preflightOverlayOk = !overlayEmbedUrl.isEmpty || !overlayPrefs.theme.isEmpty
+        preflightOverlayOk = match?.overlayEmbedUrl.isEmpty == false
         activeSheet = .preflight
     }
 
     func confirmGoLive() async {
         activeSheet = nil
+        for i in stride(from: 3, through: 1, by: -1) {
+            goLiveCountdown = i
+            try? await Task.sleep(nanoseconds: 800_000_000)
+        }
+        goLiveCountdown = nil
+        await goLive()
+    }
+
+    private func goLive() async {
+        statusMessage = "Connecting…"
         do {
-            let result: GoLiveResult
+            let matchOverlay = match?.overlayEmbedUrl ?? ""
             if destination == "custom" {
                 rtmpUrl = customRtmpUrl
                 streamKey = customStreamKey
                 watchUrl = customWatchUrl
-                overlayEmbedUrl = overlayPrefs.theme.isEmpty ? "" : ""
-                result = GoLiveResult(
+                overlayEmbedUrl = matchOverlay
+                let result = GoLiveResult(
                     rtmpUrl: customRtmpUrl,
                     streamKey: customStreamKey,
                     watchUrl: customWatchUrl,
-                    overlayEmbedUrl: ""
+                    overlayEmbedUrl: matchOverlay
                 )
+                await startStream(result: result)
             } else {
-                result = try await api.goLive(matchSlug: matchSlug, platform: destination)
+                let result = try await api.goLive(matchSlug: matchSlug, platform: destination)
                 rtmpUrl = result.rtmpUrl
                 streamKey = result.streamKey
                 watchUrl = result.watchUrl
-                overlayEmbedUrl = result.overlayEmbedUrl
+                let embedUrl = matchOverlay.isEmpty ? result.overlayEmbedUrl : matchOverlay
+                overlayEmbedUrl = embedUrl
+                let streamResult = GoLiveResult(
+                    rtmpUrl: result.rtmpUrl,
+                    streamKey: result.streamKey,
+                    watchUrl: result.watchUrl,
+                    overlayEmbedUrl: embedUrl
+                )
+                await startStream(result: streamResult)
             }
-            await startCountdown(result: result)
+            statusMessage = ""
         } catch {
+            statusMessage = ""
             self.error = error.localizedDescription
         }
-    }
-
-    private func startCountdown(result: GoLiveResult) async {
-        for i in stride(from: 5, through: 1, by: -1) {
-            goLiveCountdown = i
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-        }
-        goLiveCountdown = nil
-        await startStream(result: result)
     }
 
     private func startStream(result: GoLiveResult) async {
@@ -373,7 +384,9 @@ final class StudioViewModel: ObservableObject {
 
     func saveOverlay(_ prefs: OverlayLayoutPrefs) async {
         overlayPrefs = prefs
-        StreamCameraEngine.shared.updateOverlay(url: overlayEmbedUrl, layout: prefs.toEngineLayout())
+        let url = match?.overlayEmbedUrl ?? ""
+        let effectiveUrl = !url.isEmpty ? url : overlayEmbedUrl
+        StreamCameraEngine.shared.updateOverlay(url: effectiveUrl, layout: prefs.toEngineLayout())
         StreamCameraEngine.shared.setKeepScreenOnDuringStream(enabled: prefs.keepScreenOn)
         StreamCameraEngine.shared.setVideoStabilization(enabled: prefs.videoStabilization)
         _ = try? await api.saveOverlayPrefs(slug: matchSlug, prefs: prefs)
@@ -451,6 +464,13 @@ final class StudioViewModel: ObservableObject {
 
     func restartCameraPreview() async {
         await StreamCameraEngine.shared.preparePreview(width: 1280, height: 720, fps: 30)
+        previewReady = StreamCameraEngine.shared.isPreviewReady
+    }
+
+    /// Re-prepare the camera when the operator rotates the phone before Go Live.
+    func onOrientationChanged() async {
+        guard !streaming else { return }
+        await StreamCameraEngine.shared.updatePreviewForCurrentOrientation()
         previewReady = StreamCameraEngine.shared.isPreviewReady
     }
 }

@@ -18,12 +18,13 @@ final class StreamCameraEngine: NSObject {
         var fontScale: Float = 1.0
         var bgColor: String = ""
         var textColor: String = ""
+        var opacity: Float = 1.0
         var watermarkEnabled: Bool = true
         var watermarkText: String = "Visit cricrelay.co.uk"
     }
 
     private let mixer = MediaMixer()
-    private let connection = RTMPConnection()
+    private var connection = RTMPConnection()
     private var rtmpStream: RTMPStream?
     private weak var hkView: MTHKView?
     private var overlayCapture: OverlayWebViewCapture?
@@ -35,6 +36,7 @@ final class StreamCameraEngine: NSObject {
     private var overlayUrl = ""
     private var streamWidth = 1280
     private var streamHeight = 720
+    private var streamFps = 30
     private var streamBitrate = 2_500_000
     private var devicesAttached = false
     private var publishing = false
@@ -43,6 +45,9 @@ final class StreamCameraEngine: NSObject {
     private var keepScreenOnDuringStream = false
     private var videoStabilizationEnabled = true
     private var streamRotation = 0
+    /// True when the encoded frame is portrait (w < h) — mirrors Android's streamIsPortrait.
+    private var streamIsPortrait = false
+    private var preparedCaptureOrientation: AVCaptureVideoOrientation?
     private var statusHandler: ((String, String) -> Void)?
 
     // Background handling: iOS suspends camera capture in the background, so while live we keep the
@@ -51,6 +56,7 @@ final class StreamCameraEngine: NSObject {
     // the encoder under the audio background mode, the stream pauses and reconnects on foreground.
     private var backgroundTaskId = UIBackgroundTaskIdentifier.invalid
     private var standbyObject: ImageScreenObject?
+    private var pauseBlackObject: ImageScreenObject?
     private var lifecycleObserversRegistered = false
 
     var isViewAttached: Bool { hkView != nil }
@@ -70,6 +76,7 @@ final class StreamCameraEngine: NSObject {
 
     func setVideoStabilization(enabled: Bool) {
         videoStabilizationEnabled = enabled
+        Task { await applyVideoStabilizationSetting() }
     }
 
     func attachView(_ view: MTHKView) {
@@ -80,10 +87,7 @@ final class StreamCameraEngine: NSObject {
             overlayCapture = OverlayWebViewCapture(hostViewController: host)
         }
         Task {
-            let stream = await ensureStream()
-            await MainActor.run {
-                Task { await stream.addOutput(view) }
-            }
+            _ = await ensureStream()
             await preparePreview(width: streamWidth, height: streamHeight, fps: 30)
         }
     }
@@ -98,14 +102,20 @@ final class StreamCameraEngine: NSObject {
     func preparePreview(width: Int, height: Int, fps: Int, bitrate: Int? = nil, rotation: Int = 0) async {
         streamWidth = width
         streamHeight = height
+        streamFps = fps
         streamRotation = rotation
         if let bitrate { streamBitrate = bitrate }
         previewReady = false
         do {
             try await ensureDevices()
             let stream = await ensureStream()
+            let captureOrientation = await MainActor.run { currentCaptureOrientation() }
+            let encoded = encodedFrameSize(baseWidth: width, baseHeight: height, landscape: isLandscape(captureOrientation))
+            streamIsPortrait = encoded.height > encoded.width
+            preparedCaptureOrientation = captureOrientation
+            await mixer.setVideoOrientation(captureOrientation)
             var settings = VideoCodecSettings(
-                videoSize: .init(width: width, height: height),
+                videoSize: .init(width: encoded.width, height: encoded.height),
                 bitRate: streamBitrate,
                 maxKeyFrameIntervalDuration: 2
             )
@@ -131,11 +141,25 @@ final class StreamCameraEngine: NSObject {
                 startOverlayRefresh()
             }
             previewReady = true
-            emit("preview_ready", "\(width)x\(height)")
+            emit("preview_ready", "\(encoded.width)x\(encoded.height)")
         } catch {
             previewReady = false
             emit("error", error.localizedDescription)
         }
+    }
+
+    /// Re-prepare preview when the operator rotates the phone before Go Live (parity with Android's
+    /// OrientationEventListener → updatePreviewRotation).
+    func updatePreviewForCurrentOrientation(
+        width: Int = 1280,
+        height: Int = 720,
+        fps: Int = 30,
+        bitrate: Int? = nil
+    ) async {
+        guard !publishing else { return }
+        let captureOrientation = await MainActor.run { currentCaptureOrientation() }
+        if captureOrientation == preparedCaptureOrientation, previewReady { return }
+        await preparePreview(width: width, height: height, fps: fps, bitrate: bitrate ?? streamBitrate)
     }
 
     func resetPreviewForOrientation(width: Int, height: Int, fps: Int, bitrate: Int, rotation: Int = 0) async -> Bool {
@@ -189,9 +213,12 @@ final class StreamCameraEngine: NSObject {
     ) async {
         streamWidth = width
         streamHeight = height
+        streamFps = fps
         streamBitrate = bitrate
         overlayLayout = layout
-        self.overlayUrl = overlayUrl
+        if !overlayUrl.isEmpty {
+            self.overlayUrl = overlayUrl
+        }
 
         let endpoint = StreamCameraEngine.buildRtmpEndpoint(rtmpUrl: rtmpUrl, streamKey: streamKey)
         guard endpoint.hasPrefix("rtmp://") else {
@@ -205,10 +232,20 @@ final class StreamCameraEngine: NSObject {
 
         emit("preparing", endpoint)
         do {
+            // Re-sync encoder to how the phone is held right now — not how Studio was first opened
+            // (parity with Android startStreamOnMain rotation re-prepare before RTMP publish).
+            await syncEncoderForGoLive(width: width, height: height, fps: fps, bitrate: bitrate)
+
             try await ensureDevices()
+            await resetRtmpSession()
             let stream = await ensureStream()
+            let captureOrientation = await MainActor.run { currentCaptureOrientation() }
+            let encoded = encodedFrameSize(baseWidth: width, baseHeight: height, landscape: isLandscape(captureOrientation))
+            streamIsPortrait = encoded.height > encoded.width
+            preparedCaptureOrientation = captureOrientation
+            await mixer.setVideoOrientation(captureOrientation)
             var settings = VideoCodecSettings(
-                videoSize: .init(width: width, height: height),
+                videoSize: .init(width: encoded.width, height: encoded.height),
                 bitRate: bitrate,
                 maxKeyFrameIntervalDuration: 2
             )
@@ -216,19 +253,23 @@ final class StreamCameraEngine: NSObject {
             try await mixer.setFrameRate(Double(fps))
             await configureScreenSize()
 
-            if !overlayUrl.isEmpty {
+            if !self.overlayUrl.isEmpty {
                 overlayCapture?.setStyle(
                     fontScale: layout.fontScale,
                     bgColor: layout.bgColor,
                     textColor: layout.textColor
                 )
-                overlayCapture?.loadUrl(overlayUrl)
+                overlayCapture?.loadUrl(self.overlayUrl)
             }
             await ensureOverlayObject()
             await ensureWatermarkObject()
             startOverlayRefresh()
 
             let (base, name) = splitRtmp(endpoint)
+            guard !name.isEmpty else {
+                emit("error", "Invalid RTMP stream key")
+                return
+            }
             emit("connecting", endpoint)
             try await connection.connect(base)
             try await stream.publish(name)
@@ -248,12 +289,13 @@ final class StreamCameraEngine: NSObject {
         publishing = false
         streamPaused = false
         UIApplication.shared.isIdleTimerDisabled = false
+        await hidePauseBlackOverlay()
         await hideStandbySlate()
         endBackgroundTaskIfNeeded()
-        if let stream = rtmpStream {
-            try? await stream.close()
-        }
-        try? await connection.close()
+        await resetRtmpSession()
+        // Re-wire the preview surface to a fresh RTMP stream and restore the camera preview.
+        await ensureStream()
+        await preparePreview(width: streamWidth, height: streamHeight, fps: streamFps, bitrate: streamBitrate)
         // Back to preview: keep compositing the scoreboard overlay for the operator (parity with
         // Android, which restarts the preview overlay push once a broadcast ends).
         startPreviewOverlayIfNeeded()
@@ -263,6 +305,7 @@ final class StreamCameraEngine: NSObject {
         guard publishing, !streamPaused else { return }
         streamPaused = true
         stopOverlayRefresh()
+        await showPauseBlackOverlay()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         emit("paused", "")
     }
@@ -270,6 +313,7 @@ final class StreamCameraEngine: NSObject {
     func resumeStream() async {
         guard publishing, streamPaused else { return }
         streamPaused = false
+        await hidePauseBlackOverlay()
         configureAudioSession()
         startOverlayRefresh()
         emit("resumed", "")
@@ -417,7 +461,54 @@ final class StreamCameraEngine: NSObject {
         let stream = RTMPStream(connection: connection)
         rtmpStream = stream
         await mixer.addOutput(stream)
+        if let view = hkView {
+            await stream.addOutput(view)
+        }
         return stream
+    }
+
+    /// Tear down the RTMP session so the next Go Live starts from a clean connection + stream.
+    /// Reusing a closed RTMPStream/RTMPConnection can crash inside HaishinKit on publish.
+    private func resetRtmpSession() async {
+        if let stream = rtmpStream {
+            if let view = hkView {
+                await stream.removeOutput(view)
+            }
+            await mixer.removeOutput(stream)
+            try? await stream.close()
+            rtmpStream = nil
+        }
+        try? await connection.close()
+        connection = RTMPConnection()
+    }
+
+    /// Re-prepare preview when orientation drifted between Studio open and Go Live tap.
+    private func syncEncoderForGoLive(width: Int, height: Int, fps: Int, bitrate: Int) async {
+        let captureOrientation = await MainActor.run { currentCaptureOrientation() }
+        if captureOrientation != preparedCaptureOrientation || !previewReady {
+            await preparePreview(width: width, height: height, fps: fps, bitrate: bitrate)
+        }
+    }
+
+    private func encodedFrameSize(baseWidth: Int, baseHeight: Int, landscape: Bool) -> (width: Int, height: Int) {
+        if landscape {
+            return (baseWidth, baseHeight)
+        }
+        return (baseHeight, baseWidth)
+    }
+
+    private func isLandscape(_ orientation: AVCaptureVideoOrientation) -> Bool {
+        orientation == .landscapeLeft || orientation == .landscapeRight
+    }
+
+    @MainActor
+    private func currentCaptureOrientation() -> AVCaptureVideoOrientation {
+        switch currentInterfaceOrientation() {
+        case .landscapeLeft: return .landscapeLeft
+        case .landscapeRight: return .landscapeRight
+        case .portraitUpsideDown: return .portraitUpsideDown
+        default: return .portrait
+        }
     }
 
     private func ensureDevices() async throws {
@@ -427,7 +518,10 @@ final class StreamCameraEngine: NSObject {
                 try await mixer.attachAudio(audio)
             }
             if let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
-                try await mixer.attachVideo(camera, track: 0)
+                let stabilizationEnabled = videoStabilizationEnabled
+                try await mixer.attachVideo(camera, track: 0) { unit in
+                    unit.preferredVideoStabilizationMode = stabilizationEnabled ? .standard : .off
+                }
             }
             var vmSettings = await mixer.videoMixerSettings
             vmSettings.mode = .offscreen
@@ -444,9 +538,28 @@ final class StreamCameraEngine: NSObject {
         try? session.setActive(true)
     }
 
+    private func applyVideoStabilizationSetting() async {
+        guard devicesAttached else { return }
+        let enabled = videoStabilizationEnabled
+        do {
+            try await mixer.configuration(video: 0) { unit in
+                unit.preferredVideoStabilizationMode = enabled ? .standard : .off
+            }
+        } catch {
+            _ = await configureDevice { device in
+                if device.activeFormat.isVideoStabilizationModeSupported(.standard) {
+                    device.preferredVideoStabilizationMode = enabled ? .standard : .off
+                }
+                return true
+            }
+        }
+    }
+
     private func configureScreenSize() async {
+        let encodedW = encodedCanvasWidth()
+        let encodedH = encodedCanvasHeight()
         await Task { @ScreenActor in
-            await mixer.screen.size = CGSize(width: streamWidth, height: streamHeight)
+            await mixer.screen.size = CGSize(width: encodedW, height: encodedH)
             await mixer.screen.backgroundColor = UIColor.black.cgColor
         }.value
     }
@@ -522,7 +635,7 @@ final class StreamCameraEngine: NSObject {
     @ScreenActor
     private func applyOverlayLayout() {
         guard let obj = overlayObject else { return }
-        let streamH = CGFloat(streamHeight)
+        let streamH = CGFloat(encodedCanvasHeight())
         let streamW = CGFloat(encodedCanvasWidth())
         let overlayH = streamH * CGFloat(overlayLayout.heightFraction)
         let bottomFromAnchor = streamH * (1 - CGFloat(overlayLayout.anchorY)) - overlayH / 2
@@ -545,6 +658,18 @@ final class StreamCameraEngine: NSObject {
         format.scale = 1.0
         return UIGraphicsImageRenderer(size: size, format: format).image { _ in
             image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// Bake a uniform alpha into the overlay bitmap (parity with Android applyBitmapOpacity).
+    private func applyImageOpacity(_ image: UIImage, opacity: Float) -> UIImage {
+        let alpha = CGFloat(max(0.2, min(1.0, opacity)))
+        if alpha >= 0.999 { return image }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: image.size), blendMode: .normal, alpha: alpha)
         }
     }
 
@@ -581,7 +706,13 @@ final class StreamCameraEngine: NSObject {
         }
     }
 
-    private func encodedCanvasWidth() -> Int { streamWidth }
+    private func encodedCanvasWidth() -> Int {
+        streamIsPortrait ? streamHeight : streamWidth
+    }
+
+    private func encodedCanvasHeight() -> Int {
+        streamIsPortrait ? streamWidth : streamHeight
+    }
 
     private func syncOverlayCaptureWidth() {
         overlayCapture?.setCaptureWidth(encodedCanvasWidth())
@@ -591,10 +722,12 @@ final class StreamCameraEngine: NSObject {
         syncOverlayCaptureWidth()
         let canvasW = encodedCanvasWidth()
         let targetW = CGFloat(canvasW) * CGFloat(overlayLayout.widthFraction)
-        guard let image = overlayCapture?.capture(width: canvasW, height: 200),
-              let scaled = scaleOverlayImage(image, targetWidth: targetW).cgImage else { return }
+        guard let image = overlayCapture?.capture(width: canvasW, height: 200) else { return }
+        let scaled = scaleOverlayImage(image, targetWidth: targetW)
+        let withOpacity = applyImageOpacity(scaled, opacity: overlayLayout.opacity)
+        guard let cg = withOpacity.cgImage else { return }
         Task { @ScreenActor in
-            overlayObject?.cgImage = scaled
+            overlayObject?.cgImage = cg
             applyOverlayLayout()
         }
     }
@@ -697,6 +830,39 @@ final class StreamCameraEngine: NSObject {
         }.value
     }
 
+    /// Full-frame black cover while paused so viewers see black video (parity with Android BlackFilterRender).
+    private func showPauseBlackOverlay() async {
+        guard publishing, let cg = buildPauseBlackImage()?.cgImage else { return }
+        await Task { @ScreenActor in
+            if pauseBlackObject == nil {
+                let obj = ImageScreenObject()
+                obj.horizontalAlignment = .center
+                obj.verticalAlignment = .middle
+                pauseBlackObject = obj
+                try? await mixer.screen.addChild(obj)
+            }
+            pauseBlackObject?.cgImage = cg
+        }.value
+    }
+
+    private func hidePauseBlackOverlay() async {
+        await Task { @ScreenActor in
+            if let obj = pauseBlackObject {
+                try? await mixer.screen.removeChild(obj)
+                pauseBlackObject = nil
+            }
+        }.value
+    }
+
+    private func buildPauseBlackImage() -> UIImage? {
+        let size = CGSize(width: encodedCanvasWidth(), height: encodedCanvasHeight())
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            UIColor.black.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+
     private static func buildRtmpEndpoint(rtmpUrl: String, streamKey: String) -> String {
         var server = rtmpUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         while server.hasSuffix("/") { server.removeLast() }
@@ -709,7 +875,7 @@ final class StreamCameraEngine: NSObject {
 
     /// Full-frame Floodlight-branded standby card shown while the app is backgrounded.
     private func buildStandbyImage() -> UIImage? {
-        let size = CGSize(width: streamWidth, height: streamHeight)
+        let size = CGSize(width: encodedCanvasWidth(), height: encodedCanvasHeight())
         let ink = UIColor(red: 0x0A / 255, green: 0x0E / 255, blue: 0x15 / 255, alpha: 1)
         let gold = UIColor(red: 0xFF / 255, green: 0xC2 / 255, blue: 0x33 / 255, alpha: 1)
         let renderer = UIGraphicsImageRenderer(size: size)

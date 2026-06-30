@@ -49,6 +49,8 @@ struct StudioView: View {
 
     @StateObject private var viewModel: StudioViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var cameraPermissionGranted = false
     @State private var zoom: Float = 1.0
 
@@ -140,6 +142,19 @@ struct StudioView: View {
         .onDisappear {
             viewModel.stopPolling()
             StreamCameraEngine.shared.setStatusHandler(nil)
+            UIDevice.current.endGeneratingDeviceOrientationNotifications()
+        }
+        .onAppear {
+            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        }
+        .onChange(of: verticalSizeClass) { _, _ in
+            Task { await viewModel.onOrientationChanged() }
+        }
+        .onChange(of: horizontalSizeClass) { _, _ in
+            Task { await viewModel.onOrientationChanged() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            Task { await viewModel.onOrientationChanged() }
         }
     }
 
