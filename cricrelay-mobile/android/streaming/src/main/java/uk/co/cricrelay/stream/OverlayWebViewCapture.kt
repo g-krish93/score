@@ -63,11 +63,23 @@ class OverlayWebViewCapture(private val activity: Activity) {
         /** Fixed bitmap width — both the GL sprite and the Compose preview consume this. */
         const val CAPTURE_WIDTH_PX = 960
 
-        /** CSS viewport width; initial scale = CAPTURE_WIDTH_PX / CSS_VIEWPORT_WIDTH. */
-        private const val CSS_VIEWPORT_WIDTH = 480
+        /**
+         * CSS viewport width; initial scale = CAPTURE_WIDTH_PX / CSS_VIEWPORT_WIDTH.
+         *
+         * MUST equal the overlay's native design width (cricket_overlay.html lays out at
+         * 1280px and its own applyOverlayScale() is a no-op at >= 1280). Rendering at the
+         * design width means the captured strip is byte-for-byte what Chrome shows; the GL
+         * sprite then scales the bitmap by aspect ratio + width/height sliders. Using a
+         * narrower viewport (the old 480) crammed 1280px of content into 480px and clipped
+         * the team names — the exact bug this fixes.
+         */
+        private const val CSS_VIEWPORT_WIDTH = 1280
         private const val INITIAL_SCALE_PERCENT = CAPTURE_WIDTH_PX * 100 / CSS_VIEWPORT_WIDTH
 
-        private const val MIN_CAPTURE_HEIGHT_PX = 120
+        // The new overlay strip is a thin lower-third (~78 CSS px tall at 1280); keep the floor
+        // low so the measure loop's true height isn't clamped up into dead transparent space
+        // (which would float the strip away from the bottom edge once composited).
+        private const val MIN_CAPTURE_HEIGHT_PX = 40
         private const val MAX_CAPTURE_HEIGHT_PX = 640
         private const val MEASURE_INTERVAL_MS = 2000L
 
@@ -82,33 +94,40 @@ class OverlayWebViewCapture(private val activity: Activity) {
         runOnMain { webView?.evaluateJavascript(measureScript(), null) }
     }
 
-    /** Pin the scoreboard top-centered + apply user style prefs. Injected once per load. */
+    /**
+     * Pin the scoreboard top-anchored at its native design width + apply user style prefs.
+     * Injected once per load (and re-applied on style changes via the measure loop).
+     *
+     * Targets cricket_overlay.html's structure: #overlay is a bottom-anchored broadcast strip
+     * sized in rem off the root font-size, themed through CSS variables (--bg/--bg2/--text).
+     * We re-pin it to the TOP at full design width so the off-screen capture renders the entire
+     * strip with no scaling/cropping and measures its height from y=0.
+     */
     private fun buildInjectedCss(): String {
-        val scale = String.format(java.util.Locale.US, "%.3f", fontScale.coerceIn(0.6f, 2.0f))
+        val scale = fontScale.coerceIn(0.6f, 2.0f)
+        val rootPx = String.format(java.util.Locale.US, "%.2f", 16f * scale)
         val bg = bgColor.replace("'", "").replace("\"", "")
         val fg = textColor.replace("'", "").replace("\"", "")
         val css = StringBuilder()
         css.append("html,body{margin:0 !important;padding:0 !important;")
         css.append("background:transparent !important;overflow:hidden !important;}")
+        // Font-readability slider: the overlay sizes everything in rem off the root font-size,
+        // so scaling html font-size scales the whole scoreboard proportionally (board width/
+        // height sliders scale the composited sprite separately).
+        css.append("html{font-size:${rootPx}px !important;}")
+        // Re-pin the broadcast strip (normally bottom:0) to the top at native design width.
+        // transform-origin:top-left is defensive: the viewport is forced to 1280 so the page's
+        // applyOverlayScale() is a no-op, but if a scale ever did apply it would anchor at the
+        // top (matching this top-pin) rather than leaving a gap above the measured strip.
         css.append("#overlay{position:fixed !important;top:0 !important;bottom:auto !important;")
-        css.append("margin:0 !important;}")
-        css.append("body.relay-active #overlay{left:50% !important;right:auto !important;")
-        css.append("transform:translateX(-50%) !important;")
-        css.append("width:min(var(--widget-max-w,320px),96vw) !important;")
-        css.append("max-width:var(--widget-max-w,320px) !important;}")
-        css.append("body:not(.relay-active) #overlay{left:0 !important;right:0 !important;")
-        css.append("transform:none !important;width:auto !important;}")
-        css.append("#stale,#matchTag,#flash,#momentum,#pressureWrap{display:none !important;}")
-        css.append(":root{--overlay-scale:$scale !important;")
-        if (bg.isNotEmpty()) css.append("--overlay-box-color:$bg !important;")
-        css.append("}")
-        if (bg.isNotEmpty()) {
-            css.append("#overlay,#overlay .relay-widget,#overlay .score-strip,#overlay #content")
-            css.append("{background:$bg !important;background-image:none !important;}")
-            css.append("#overlay::before{background:$bg !important;background-image:none !important;}")
-        }
-        if (fg.isNotEmpty()) {
-            css.append("#overlay,#overlay *{color:$fg !important;}")
+        css.append("left:0 !important;right:0 !important;transform:none !important;")
+        css.append("width:auto !important;margin:0 !important;transform-origin:top left !important;}")
+        // Map the operator's box / text colour prefs onto the overlay's theme variables.
+        if (bg.isNotEmpty() || fg.isNotEmpty()) {
+            css.append(":root{")
+            if (bg.isNotEmpty()) css.append("--bg:$bg !important;--bg2:$bg !important;")
+            if (fg.isNotEmpty()) css.append("--text:$fg !important;")
+            css.append("}")
         }
         return css.toString()
     }
@@ -123,6 +142,12 @@ class OverlayWebViewCapture(private val activity: Activity) {
         return """
 (function(){
   try{
+    // Force the CSS viewport to the overlay's 1280px design width on every device so the
+    // strip lays out identically to Chrome (cricket_overlay.html ships width=device-width).
+    var vp=document.querySelector('meta[name=viewport]');
+    if(!vp){vp=document.createElement('meta');vp.setAttribute('name','viewport');
+      (document.head||document.documentElement).appendChild(vp);}
+    if(vp.getAttribute('content')!=='width=1280'){vp.setAttribute('content','width=1280');}
     var s=document.getElementById('cr-style');
     if(!s){s=document.createElement('style');s.id='cr-style';
       (document.head||document.documentElement).appendChild(s);}
@@ -156,6 +181,12 @@ class OverlayWebViewCapture(private val activity: Activity) {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.textZoom = 100
+                // Honour an explicit viewport width (we force width=1280 — the overlay's design
+                // width — in the injected JS) and zoom-to-fit it into the narrower capture view.
+                // This pins the page's CSS viewport to 1280 on every device/density so the strip
+                // renders exactly as Chrome shows it and the height→pixel math stays deterministic.
+                settings.useWideViewPort = true
+                settings.loadWithOverviewMode = true
                 setInitialScale(INITIAL_SCALE_PERCENT)
                 setBackgroundColor(Color.TRANSPARENT)
                 setLayerType(View.LAYER_TYPE_SOFTWARE, null)
