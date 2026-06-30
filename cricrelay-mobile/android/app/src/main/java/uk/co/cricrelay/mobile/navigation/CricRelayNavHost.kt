@@ -18,7 +18,6 @@ import uk.co.cricrelay.mobile.feature.auth.OnboardingScreen
 import uk.co.cricrelay.mobile.feature.auth.RegisterScreen
 import uk.co.cricrelay.mobile.feature.home.CreateStreamScreen
 import uk.co.cricrelay.mobile.feature.home.HomeScreen
-import uk.co.cricrelay.mobile.feature.pcsble.PcsBleScreen
 import uk.co.cricrelay.mobile.feature.scoring.ScoringScreen
 import uk.co.cricrelay.mobile.feature.studio.StudioScreen
 
@@ -100,7 +99,6 @@ fun CricRelayNavHost(
             HomeScreen(
                 onOpenStudio = { slug -> navController.navigate(StudioRoute(slug)) },
                 onCreateStream = { mode -> navController.navigate(CreateStreamRoute(mode)) },
-                onOpenPcsBle = { navController.navigate(PcsBleRoute) },
                 onLogout = {
                     navController.navigate(LoginRoute) {
                         popUpTo(HomeRoute) { inclusive = true }
@@ -149,9 +147,6 @@ fun CricRelayNavHost(
                 matchSlug = route.matchSlug,
                 onBack = { navController.popBackStack() },
             )
-        }
-        composable<PcsBleRoute> {
-            PcsBleScreen(onBack = { navController.popBackStack() })
         }
     }
 }

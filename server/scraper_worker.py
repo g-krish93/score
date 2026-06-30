@@ -20,7 +20,7 @@ import requests
 from flask import Blueprint, jsonify, request
 
 from .models_cricrelay import canonicalize_play_cricket_scrape_url
-from .play_cricket_scraper import scrape_match
+from .play_cricket_scraper import scrape_match as play_cricket_scrape_match
 
 relay_worker_bp = Blueprint("relay_worker", __name__, url_prefix="/relay-worker")
 
@@ -55,9 +55,15 @@ def get_cache_key(url: str) -> str:
 
 
 def get_live_snapshot(
-    url: str, min_interval_sec: int = 8, stale_after_sec: int = 45
+    url: str,
+    min_interval_sec: int = 8,
+    stale_after_sec: int = 45,
+    canonicalize_fn=None,
+    scrape_fn=None,
 ) -> dict:
-    url = canonicalize_play_cricket_scrape_url((url or "").strip())
+    canon = canonicalize_fn or canonicalize_play_cricket_scrape_url
+    scrape = scrape_fn or play_cricket_scrape_match
+    url = canon((url or "").strip())
     cache_key = get_cache_key(url)
     with cache_lock:
         row = live_cache.get(cache_key, {})
@@ -67,7 +73,7 @@ def get_live_snapshot(
 
     if should_refresh:
         try:
-            fresh = scrape_match(url)
+            fresh = scrape(url)
             with cache_lock:
                 prev = live_cache.get(cache_key, {})
                 previous_data = prev.get("data")
@@ -171,7 +177,7 @@ def scrape_one():
     if not url:
         return jsonify({"error": "Missing required query param: url"}), 400
     try:
-        return jsonify(scrape_match(url))
+        return jsonify(play_cricket_scrape_match(url))
     except Exception as exc:
         return jsonify({"error": str(exc)}), 502
 

@@ -147,15 +147,15 @@ def main():
     assert_ok(c.post("/relay/config", json={"relay_mode": "manual"}))
 
     cfg = c.post("/relay/config", json={"relay_mode": "pcs_ble"})
-    assert_ok(cfg)
-    pcs_headers = {}
-    global_tok = (os.getenv("RELAY_INGEST_TOKEN") or "").strip()
-    if global_tok:
-        pcs_headers["Authorization"] = f"Bearer {global_tok}"
-    else:
-        per_tok = (cfg.get_json() or {}).get("pcs_ingest_token") or ""
-        if per_tok:
-            pcs_headers["Authorization"] = f"Bearer {per_tok}"
+    if cfg.status_code != 410:
+        raise AssertionError(f"Expected 410 for retired pcs_ble relay_config, got {cfg.status_code}")
+
+    # PCS ingest remains for archived relay APKs — configure mode directly in state.
+    with app.app_context():
+        from server.app import apply_pcs_ble_to_score_match
+
+        apply_pcs_ble_to_score_match("default", "smoke-test-token", label="Smoke PCS")
+    pcs_headers = {"Authorization": "Bearer smoke-test-token"}
     pcs_events = {
         "events": [
             "BTNHome Side",

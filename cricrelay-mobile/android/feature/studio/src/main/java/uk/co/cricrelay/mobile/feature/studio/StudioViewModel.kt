@@ -576,7 +576,11 @@ class StudioViewModel @Inject constructor(
         val match = _uiState.value.match ?: return
         viewModelScope.launch {
             try {
-                val config = streamRepository.setScoring(match.slug, mode)
+                val (apiMode, provider) = when {
+                    mode.startsWith("auto:") -> "auto" to mode.substringAfter(":")
+                    else -> mode to null
+                }
+                val config = streamRepository.setScoring(match.slug, apiMode, provider)
                 _uiState.update { it.copy(scoring = config) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = e.message) }

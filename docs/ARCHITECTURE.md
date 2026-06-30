@@ -1,6 +1,6 @@
 # CricRelay Architecture
 
-*Auto-maintained by Stop hook (`/.claude/hooks/update-architecture.sh`). Last updated: 2026-06-30.*
+*Auto-maintained by Stop hook (`/.claude/hooks/update-architecture.sh`). Last updated: 2026-06-30 (pcs-ble archival, CricHeroes provider, KMP shared module, Android nav + Studio detail).*
 
 ---
 
@@ -19,22 +19,28 @@ Central API and orchestration layer.
 | File | Responsibility |
 |---|---|
 | `app.py` | Flask app factory, routes, CORS |
-| `stream_api.py` | Stream session CRUD, go-live / stop-live, broadcast status |
-| `models_cricrelay.py` | SQLAlchemy models: `ClubUser`, `StreamSession`, `Sponsor` |
+| `stream_api.py` | Bearer-token auth (`bearer_org_from_request`), stream session CRUD, go-live / stop-live, broadcast status, match-day status |
+| `models_cricrelay.py` | SQLAlchemy models: `Organization`, `ClubUser`, `RelayMatch`, `StreamSession`, `Sponsor`, `Tournament`, `Team`, `Player`, `Fixture`; `RELAY_PROVIDERS` dispatch table; URL canonicalization helpers |
 | `play_cricket_scraper.py` | Scrapes Play Cricket scorecard HTML |
 | `play_cricket_mapper.py` | Maps scraped rows → overlay JSON schema |
 | `scoring_bridge.py` | Routes scoring events to overlay + cricrelay_core |
 | `scoring_shadow.py` | Shadow-writes live score to a secondary store |
-| `relay_poller.py` | Polls BLE relay for PCS device score packets |
+| `relay_poller.py` | Polls BLE relay for PCS device score packets (dormant) |
 | `pcs_protocol.py` | Decodes PCS BLE binary scoring protocol |
 | `youtube_stream.py` | YouTube Data API v3 broadcast lifecycle |
 | `twitch_stream.py` | Twitch Helix stream key / status |
 | `rate_limit.py` | Per-IP rate limiting middleware |
-| `scraper_worker.py` | Background worker: polls Play Cricket on interval |
+| `scraper_worker.py` | Background worker: polls Play Cricket or CricHeroes on interval via `RELAY_PROVIDERS` dispatch |
+| `cricheroes_scraper.py` | CricHeroes live scorecard scrape (Playwright) |
+| `cricheroes_mapper.py` | Maps CricHeroes snapshot → overlay JSON schema |
 
 **Data stores:** PostgreSQL (primary), SQLite (migration source via `migrate_sqlite_to_postgres.py`).
 
-**Auth:** Token v2 (invite-code based club-user tokens). Multi-user per-club dashboard.
+**Auth:** Bearer org-token (`issue_stream_token(org)`, itsdangerous signed). `ClubUser` supports individual member logins (admin/member roles) belonging to an `Organization`. Multi-user per-club dashboard.
+
+**Relay sources:** `RelayMatch.relay_source` is `"scraper"` (Play Cricket), `"cricheroes"`, or `"pcs_ble"` (dormant). `RELAY_PROVIDERS` dict maps provider keys to their scrape/map/fixtures/poll-interval callables; `scraper_worker` dispatches via this table.
+
+**Native mode models:** `Tournament` → `Team`/`Player` → `Fixture` supports non-ECB club-owned competitions. A `Fixture.score_match_slug` links to a `RelayMatch` for live scoring.
 
 ---
 
@@ -85,11 +91,11 @@ Swift/SwiftUI native app. Feature modules under `Features/`:
 | Feature | Contents |
 |---|---|
 | `Auth/` | Login, token storage, club selection |
-| `Home/` | Match list, stream session selection |
-| `CreateStream/` | New match / stream session wizard |
+| `Home/` | Match list (stream tiles + GlanceRow stats), YouTube/Twitch OAuth cards, stream management (rename/delete), CricHeroes stream creation |
+| `CreateStream/` | New stream wizard — Play-Cricket fixture picker or CricHeroes URL entry |
 | `Studio/` | Camera preview, broadcast controls (detail below) |
 | `Scoring/` | In-app scoring entry UI |
-| `PcsBle/` | BLE scan + pair with PCS scoring device |
+| `PcsBle/` | *(removed)* — PCS BLE feature removed from main app; archived standalone relay apps remain in `archive/` |
 
 **Shared infrastructure:**
 - `Models.swift` — shared domain structs (StreamMatch, OverlayLayoutPrefs, ScoringConfig, GoLiveResult, StreamRecap, PlatformStatus, RtmpCredentials)
@@ -140,27 +146,67 @@ Owns all broadcast state and orchestrates the go-live flow:
 
 ### 6. Android App (`cricrelay-mobile/android/`)
 
-Kotlin multi-module Gradle project.
+Kotlin multi-module Gradle project (Hilt DI, Compose UI, KMP shared module).
 
 | Module | Role |
 |---|---|
-| `app/` | Application shell, navigation |
+| `app/` | Application shell; Compose `CricRelayNavHost` with type-safe serializable routes |
 | `core/` | Shared domain models, network, DI |
-| `feature/` | Feature modules (Studio, Home, Scoring, …) |
-| `streaming/` | RootEncoder-based RTMP streaming engine (camera, encoder, BLE overlay push) |
+| `feature/home` | `HomeScreen` + `CreateStreamScreen`; `HomeViewModel`; `CreateStreamViewModel`; stream management (rename/delete), GlanceRow stats, YouTube/Twitch OAuth cards, CricHeroes stream entry |
+| `feature/studio` | `StudioScreen`, `StudioViewModel`, modal sheets (detail below) |
+| `feature/scoring` | In-app scoring entry UI |
+| `streaming/` | `StreamController` — RootEncoder 2.4.8 RTMP engine; PiP overlay; offscreen-GL WebView swap; BLE overlay push |
+| `shared/` | Kotlin Multiplatform module (`CricRelayApiClient`, `StreamRepository`, `AuthRepository`, domain models) |
 
-Android Studio module is the equivalent of iOS's `StudioViewModel` + `StreamCameraEngine`; RootEncoder 2.4.8 handles encoding (note: no AE-lock API — iOS has full focus+exposure lock, Android has focus-only).
+**Navigation (`CricRelayNavHost.kt`):** Type-safe `@Serializable` route objects (Login, Register, Onboarding, Home, `CreateStreamRoute(mode)`, `StudioRoute(matchSlug)`, `ScoringRoute(matchSlug)`). Default slide-in/out with `AppMotion` timing; Studio entry uses zoom+fade ("step into the broadcast").
+
+**Studio module (`feature/studio`):**
+
+`StudioViewModel` owns broadcast state and orchestrates the full go-live flow:
+- *Camera gate*: `StudioCameraGate.Readiness` (match loaded + permissions + surface bound) guards `prepareCamera()` — no partial starts.
+- *Overlay preview*: `streamController.setPreviewOverlayListener` delivers JPEG frames; decoded to `ImageBitmap` for WYSIWYG in-view preview.
+- *PiP mode*: `streamController.pipMode` Flow collapses the UI to camera-only and closes sheets when entering PiP.
+- *Go-live flow*: `requestGoLive()` → preflight sheet → `confirmGoLive()` → 3-2-1 countdown → `goLive()`. OAuth platforms call `streamRepository.goLive(slug, platform)` to get RTMP creds from the server; custom RTMP uses `RtmpCredentialsStore` (SharedPrefs, keyed by slug).
+- *Broadcast sync*: `updateBroadcastStatus()` pushes streaming/paused/idle state back to server bidirectionally.
+- *Focus/zoom*: `tapToFocusAt()` + `lockFocus()`/`unlockFocus()` mirrored from `StreamController`; focus reticle dismissed after 1.5 s unless locked.
+- *Match-day polling*: 8-second coroutine loop via `streamRepository.getMatchDayStatus()`.
+- *Scoring mode*: `setScoringMode()` supports `"auto"`, `"manual"`, `"auto:cricheroes"` (provider prefix stripped before API call).
+- *Stream cache*: `StreamDao` provides instant local match data while remote fetch completes (12 s timeout fallback).
+
+**Studio sheets (`StudioSheets.kt`):**
+- `DestinationSheet` — YouTube / Twitch / Custom RTMP picker with animated custom-RTMP field expansion.
+- `OverlaySheet` — horizontal style carousel (6 named themes: Broadcast, Compact, AI Neural, Stadium, Neon, Minimal), sliders for width/height/font/opacity/position, stream watermark toggle.
+- `ScoringSheet` — Auto (Play-Cricket), Auto (CricHeroes), Manual; "Open scorer in browser" deep-link.
+- `PreflightSheet` — staggered animated checklist (camera ready, destination set, overlay URL present); gates Go Live button.
+- `StudioMenuSheet` — restart camera preview.
+
+Note: Android has focus-only lock (RootEncoder 2.4.8 has no AE-lock API); iOS locks both focus and exposure.
 
 ---
 
-### 7. BLE PCS Scoring Relay
+### 7. Shared KMP Module (`cricrelay-mobile/shared/`)
 
-Two relay implementations that receive ball-by-ball data from a PCS Digi-scorer hardware device over BLE and forward it to the server:
+Kotlin Multiplatform library consumed by both Android and (via Kotlin/JS or future native) iOS.
 
-- `pcs-ble-relay/` — Flutter/Dart cross-platform relay (scan, pair, decode, POST to server)
-- `pcs-ble-relay-android/` — Android-native BLE relay (lighter weight, no Flutter runtime)
+| Component | Responsibility |
+|---|---|
+| `CricRelayApiClient` | Ktor-backed HTTP client: login/register, listStreams, listFixtures, createPlayCricketStream, createCricHeroesStream, goLive/stopLive, updateBroadcastStatus, getScoring/setScoring, getOverlayPrefs/setOverlayPrefs, setRelayPause, youtube/twitch OAuth + status, deleteStream, renameStream, getAppBuilds |
+| `AuthRepository` | Wraps `SessionStore` + `CricRelayApiClient`; login/register/logout/onboarding state |
+| `StreamRepository` | Thin coroutine wrappers over `ApiClientProvider.get()` calls; used by Android ViewModels |
+| Domain models | `StreamMatch`, `OverlayLayoutPrefs`, `ScoringConfig`, `MatchDayStatus`, `PlatformStatus`, `GoLiveResult`, `FixturesResponse`, `FixtureItem`, `StreamRecap` |
 
-Protocol decoder lives in `server/pcs_protocol.py` (server-side) and `cricrelay_core/codec.py` (domain-level).
+`CricRelayApiClient` validates `isAllowedApiBaseUrl` (HTTPS or local), normalizes base URLs, and handles HTML-vs-JSON response disambiguation with typed `ApiException` messages.
+
+---
+
+### 8. BLE PCS Scoring Relay
+
+The PCS BLE feature has been removed from the main mobile app on both platforms. Only archived standalone relay apps remain:
+
+- `archive/pcs-ble-relay/` — archived Flutter/Dart PCS relay (unmaintained)
+- `archive/pcs-ble-relay-android/` — archived Android-native PCS relay APK (unmaintained)
+
+Protocol decoder lives in `server/pcs_protocol.py` (server-side) and `cricrelay_core/codec.py` (domain-level). Server ingest endpoint (`/relay/pcs-ingest`) is kept dormant.
 
 ---
 
@@ -170,22 +216,31 @@ Protocol decoder lives in `server/pcs_protocol.py` (server-side) and `cricrelay_
 PCS Device (BLE)
       │  BLE packets
       ▼
-pcs-ble-relay ──POST──► Flask server (/relay/score)
+pcs-ble-relay (archived) ──POST──► Flask server (/relay/pcs-ingest) [dormant]
                                │
-Play Cricket website           │  scoring_bridge
-      │  HTTP scrape           │  → cricrelay_core state machine
+Play Cricket website           │
+      │  HTTP scrape           │
       ▼                        │
-scraper_worker ─────────────── │
+scraper_worker ────────────────┤  RELAY_PROVIDERS dispatch
+                               │  (play_cricket | cricheroes)
+CricHeroes website             │
+      │  Playwright scrape     │
+      ▼                        │
+cricheroes_scraper ────────────┤
+                               │  scoring_bridge / mapper
+                               │  → cricrelay_core state machine
                                ▼
-                         Postgres (StreamSession, BallEvent)
+                         Postgres (StreamSession, BallEvent,
+                                   Tournament/Team/Player/Fixture)
                                │
                     ┌──────────┴──────────┐
                     │                     │
-               WebSocket / poll       /stream overlay
+               API poll               /stream overlay
+               (CricRelayApiClient)   (Flask → HTML/CSS)
                     │                     │
               Mobile app            Browser HTML/CSS
-              (status + scores)     (composited into video via
-                                     StreamCameraEngine WebView)
+              (KMP shared module)   (composited into video via
+                    │                StreamCameraEngine WebView)
                     │
              RTMP push (HaishinKit / RootEncoder)
                     │
@@ -200,10 +255,11 @@ scraper_worker ─────────────── │
 
 | Mode | Description |
 |---|---|
-| **ECB relay** | Stream + relay an official ECB match; Play Cricket scraper drives the overlay |
-| **Non-ECB native** | Club creates its own match; scoring entered via PCS device or in-app scoring UI |
+| **ECB relay** | Stream + relay an official ECB match; Play Cricket scraper (`relay_source="scraper"`) drives the overlay |
+| **CricHeroes relay** | Best-effort scrape from a CricHeroes live scorecard URL (`relay_source="cricheroes"`); same RTMP pipeline, different data source |
+| **Non-ECB native** | Club creates its own match via `Tournament`/`Fixture` models; scoring entered via in-app manual scorer |
 
-The `StudioViewModel` / `StudioView` support both modes via `ScoringConfig` — scoring mode is set per-match on the server and reflected in the Scoring sheet.
+Scoring mode is set per-match on the server (`RelayMatch.relay_source`) and can be switched live from the app's Scoring sheet (`ScoringSheet` on both iOS and Android). Supported modes: `"auto"` (Play Cricket), `"auto:cricheroes"` (CricHeroes), `"manual"`.
 
 ---
 
@@ -214,10 +270,11 @@ Three standalone apps complement the main mobile app:
 | App | Location | Tech | Purpose |
 |-----|----------|------|---------|
 | CricRelay Stream | `cricrelay-stream/` | Flutter | Lightweight RTMP streaming companion — used when the full KMP app is too heavy |
-| PCS BLE Relay (Android) | `pcs-ble-relay-android/` | Kotlin Android | Standalone APK: scan PCS device over BLE, POST score packets to server. No Flutter runtime dependency |
-| PCS BLE Relay (library) | `pcs-ble-relay/` | Dart/Flutter | BLE relay as a reusable library for embedding in Flutter hosts |
+| PCS BLE Relay (Android) | `archive/pcs-ble-relay-android/` | Kotlin Android | **Archived** — unmaintained; server `/relay/pcs-ingest` dormant |
+| PCS BLE Relay (Flutter) | `archive/pcs-ble-relay/` | Dart/Flutter | **Archived** — unmaintained |
+| CricHeroes scraper | `server/cricheroes_scraper.py` | Python/Playwright | Live scorecard scrape — now a first-class relay source (`relay_source="cricheroes"`) |
 
-Prebuilt APKs (`cricrelay-stream.apk`, `pcs-relay.apk`) are committed to `static/` and served directly from the Flask app for club download.
+Prebuilt APKs (`cricrelay-stream.apk`) are committed to `static/` and served directly from the Flask app for club download.
 
 ---
 
@@ -248,7 +305,7 @@ Terraform-managed deployment targeting AWS (primary) with OCI migration in progr
 |----------|---------|--------------|
 | `build-cricrelay-mobile.yml` | Push/PR | Android Kotlin: lint, unit tests, APK + AAB |
 | `build-cricrelay-stream-apk.yml` | Push/PR | Flutter stream app APK |
-| `build-pcs-relay-apk.yml` | Push/PR | Android PCS relay APK |
+| `build-pcs-relay-apk.yml` | *(removed)* | PCS relay APK workflow archived |
 | `validate-cricrelay-mobile.yml` | PR gate | Mobile pre-merge checks |
 | `validate-cricrelay-stream.yml` | PR gate | Flutter pre-merge checks |
 | `deploy.yml` | Workflow dispatch | Flask → EC2, health check |
@@ -268,7 +325,11 @@ Terraform-managed deployment targeting AWS (primary) with OCI migration in progr
 | **Broadcast resilience** | Android: RootEncoder `replaceView` offscreen-GL swap + PiP overlay keeps stream alive on locked screen. iOS: best-effort standby slate only (Apple does not allow over-app overlays) |
 | **Modular-monolith migration** | Strangler pattern toward a Match spine. `cricrelay_core` scoring engine is the first extracted module; 8 parallel tracks running |
 | **Gradle module path** | `:feature:x` not `:android:feature:x` — the `android/` directory is **not** part of the Gradle path |
-| **Token auth v2** | Invite-code based club-user tokens. Multi-user per-club dashboard with `ClubUser` / `StreamSession` / `Sponsor` ORM models |
+| **Token auth v2** | Bearer org-token (itsdangerous, `issue_stream_token(org)`). `ClubUser` supports multi-member logins per club (admin/member roles). `Organization` is the unit of auth for the mobile API |
+| **CricHeroes as relay source** | CricHeroes is now a first-class relay provider alongside Play Cricket — same `RELAY_PROVIDERS` dispatch table, same overlay pipeline, selectable live from the Scoring sheet |
+| **PCS BLE archived** | `feature/pcs-ble` removed from both iOS and Android main apps. Protocol decoder + server ingest endpoint kept dormant for possible future reactivation |
+| **Android type-safe nav** | Compose Navigation with `@Serializable` route objects; Studio entry uses zoom+fade instead of slide to signal mode shift |
+| **Stream management** | Streams can be renamed and deleted from the Home screen (long-press tile → management sheet) on both platforms; `CricRelayApiClient` exposes `renameStream` / `deleteStream` |
 
 ---
 
@@ -278,8 +339,11 @@ Terraform-managed deployment targeting AWS (primary) with OCI migration in progr
 |---|---|---|
 | HaishinKit | iOS `StreamCameraEngine` | RTMP encode + push, MTHKView preview |
 | RootEncoder 2.4.8 | Android `streaming/` | RTMP encode + push |
+| Ktor | KMP `shared/` `CricRelayApiClient` | HTTP client (Android + future multiplatform) |
 | YouTube Data API v3 | Server `youtube_stream.py` | Broadcast CRUD, stream key |
 | Twitch Helix API | Server `twitch_stream.py` | Stream key + channel status |
 | Play Cricket | Server `play_cricket_scraper.py` | Live scorecard HTML |
+| CricHeroes | Server `cricheroes_scraper.py` | Live scorecard scrape (Playwright) |
 | SQLAlchemy + Postgres | Server, `cricrelay_store` | Persistence |
 | AVFoundation | iOS `StreamCameraEngine` | Camera capture, focus/AE lock, stabilisation |
+| Hilt | Android `app/`, feature modules | Dependency injection |

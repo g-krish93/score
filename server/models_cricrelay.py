@@ -1,3 +1,4 @@
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -129,6 +130,63 @@ def build_match_details_url(base_url: str, match_id: str) -> str:
     return f"{b}/match_details?id={mid}"
 
 
+def _cricheroes_match_id_from_url(url: str) -> str:
+    """Extract numeric match id from CricHeroes scorecard URLs."""
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    path = (parsed.path or "").lower()
+    m = re.search(r"/(?:scorecard|individual)/(\d+)\b", path)
+    if m:
+        return m.group(1)
+    m = re.search(r"/scorecard/(\d+)/", path)
+    if m:
+        return m.group(1)
+    return ""
+
+
+def canonicalize_cricheroes_scrape_url(url: str) -> str:
+    """Normalize CricHeroes URLs to a canonical scorecard scrape target."""
+    raw = (url or "").strip()
+    if not raw or "cricheroes" not in raw.lower():
+        return raw
+    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+    if not parsed.netloc:
+        return raw
+    mid = _cricheroes_match_id_from_url(raw)
+    if not mid:
+        return raw
+    scheme = parsed.scheme or "https"
+    netloc = parsed.netloc.lower()
+    if not netloc.endswith("cricheroes.in"):
+        return raw
+    path = (parsed.path or "").lower()
+    if "/individual/" in path and "/live" in path:
+        return f"{scheme}://{netloc}/scorecard/{mid}/live"
+    if "/scorecard/" in path:
+        return urlunparse((scheme, parsed.netloc, f"/scorecard/{mid}/live", "", "", ""))
+    return f"{scheme}://{netloc}/scorecard/{mid}/live"
+
+
+def normalize_cricheroes_team_root(raw: str) -> str:
+    """Turn user input into ``https://cricheroes.in/team/<id>/<slug>``."""
+    s = (raw or "").strip().strip("<>")
+    if not s:
+        return ""
+    if "://" in s or "cricheroes.in" in s.lower():
+        to_parse = s if "://" in s else f"https://{s}"
+        parsed = urlparse(to_parse)
+        if "cricheroes.in" not in (parsed.netloc or "").lower():
+            return ""
+        return f"https://{parsed.netloc}{parsed.path.rstrip('/')}"
+    m = re.fullmatch(r"(\d+)(?:/([a-zA-Z0-9-]+))?", s.split("/")[0])
+    if m:
+        slug = m.group(2) or "team"
+        return f"https://cricheroes.in/team/{m.group(1)}/{slug}"
+    return ""
+
+
 def build_play_cricket_scrape_url(base_url: str, match_id: str) -> str:
     """Build the scrape URL for a fixture (live scores on ``/website/results/<id>``)."""
     b = (base_url or "").strip().rstrip("/")
@@ -234,7 +292,7 @@ class RelayMatch(db.Model):
     score_match_slug = db.Column(db.String(120), unique=True, nullable=False, index=True)
     label = db.Column(db.String(120), nullable=True)
     paused = db.Column(db.Boolean, nullable=False, default=False)
-    # scraper = Play-Cricket HTML poll; pcs_ble = Android PCS relay (R&D)
+    # scraper = Play-Cricket HTML poll; cricheroes = CricHeroes scrape; pcs_ble = dormant BLE ingest
     relay_source = db.Column(db.String(24), nullable=False, default="scraper")
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -382,3 +440,52 @@ class Fixture(db.Model):
             "score_match_slug": self.score_match_slug,
             "status": self.status,
         }
+
+
+RELAY_PROVIDERS = {
+    "play_cricket": {
+        "scrape_fn": "server.play_cricket_scraper.scrape_match",
+        "mapper_fn": "server.play_cricket_mapper.snapshot_to_overlay",
+        "fixtures_fn": "server.play_cricket_scraper.scrape_fixtures",
+        "canonicalize_fn": "server.models_cricrelay.canonicalize_play_cricket_scrape_url",
+        "poll_interval_sec_env": "RELAY_POLL_INTERVAL_SEC",
+        "poll_interval_default": 10,
+        "relay_source": "scraper",
+    },
+    "cricheroes": {
+        "scrape_fn": "server.cricheroes_scraper.scrape_match",
+        "mapper_fn": "server.cricheroes_mapper.snapshot_to_overlay",
+        "fixtures_fn": None,
+        "canonicalize_fn": "server.models_cricrelay.canonicalize_cricheroes_scrape_url",
+        "poll_interval_sec_env": "CRICHEROES_POLL_INTERVAL_SEC",
+        "poll_interval_default": 25,
+        "relay_source": "cricheroes",
+    },
+}
+
+
+def relay_source_to_provider(relay_source: str) -> str | None:
+    src = (relay_source or "scraper").strip().lower()
+    if src == "pcs_ble":
+        return None
+    if src == "cricheroes":
+        return "cricheroes"
+    return "play_cricket"
+
+
+def resolve_provider_callable(dotted: str):
+    """Lazy-import a callable from a dotted path string."""
+    module_path, _, attr = dotted.rpartition(".")
+    import importlib
+    mod = importlib.import_module(module_path)
+    return getattr(mod, attr)
+
+
+def provider_poll_interval_sec(provider: str) -> int:
+    cfg = RELAY_PROVIDERS.get(provider) or RELAY_PROVIDERS["play_cricket"]
+    env_name = cfg["poll_interval_sec_env"]
+    default = int(cfg["poll_interval_default"])
+    try:
+        return max(5, int(os.getenv(env_name, str(default))))
+    except (TypeError, ValueError):
+        return default

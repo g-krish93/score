@@ -45,9 +45,10 @@ final class CricRelayAPI {
         return try JSONDecoder().decode(FixturesResponse.self, from: data)
     }
 
-    func createStream(type: String, matchId: String? = nil, label: String) async throws -> StreamMatch {
+    func createStream(type: String, matchId: String? = nil, matchUrl: String? = nil, label: String) async throws -> StreamMatch {
         var body: [String: Any] = ["type": type, "label": label]
         if let matchId { body["play_cricket_match_id"] = matchId }
+        if let matchUrl { body["match_url"] = matchUrl }
         let json = try await postJson("/api/streams", body: body)
         guard let streamJson = json["stream"] as? [String: Any] else { throw URLError(.badServerResponse) }
         let data = try JSONSerialization.data(withJSONObject: streamJson)
@@ -79,8 +80,10 @@ final class CricRelayAPI {
         return try JSONDecoder().decode(ScoringConfig.self, from: data)
     }
 
-    func setScoringMode(slug: String, mode: String) async throws -> ScoringConfig {
-        let json = try await postJson("/api/match/\(slug)/scoring", body: ["mode": mode])
+    func setScoringMode(slug: String, mode: String, provider: String? = nil) async throws -> ScoringConfig {
+        var body: [String: Any] = ["mode": mode]
+        if let provider { body["provider"] = provider }
+        let json = try await postJson("/api/match/\(slug)/scoring", body: body)
         let data = try JSONSerialization.data(withJSONObject: json)
         return try JSONDecoder().decode(ScoringConfig.self, from: data)
     }

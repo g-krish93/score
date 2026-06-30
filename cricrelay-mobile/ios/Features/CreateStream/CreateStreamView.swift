@@ -1,19 +1,21 @@
 import SwiftUI
 
 struct CreateStreamView: View {
-    let mode: String  // "play_cricket" or "pcs_ble"
+    let mode: String  // "play_cricket" or "cricheroes"
     @ObservedObject var viewModel: HomeViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedFixtureId: String?
     @State private var label = ""
+    @State private var cricheroesUrl = ""
     @State private var error: String?
     @State private var busy = false
 
     private var isPlayCricket: Bool { mode == "play_cricket" }
 
     private var canCreate: Bool {
-        isPlayCricket ? selectedFixtureId != nil : !label.trimmingCharacters(in: .whitespaces).isEmpty
+        if isPlayCricket { return selectedFixtureId != nil }
+        return !cricheroesUrl.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     var body: some View {
@@ -24,7 +26,7 @@ struct CreateStreamView: View {
                         if isPlayCricket {
                             playCricketContent
                         } else {
-                            pcsBleContent
+                            cricheroesContent
                         }
 
                         if let error {
@@ -49,7 +51,7 @@ struct CreateStreamView: View {
                     .padding(24)
                 }
             }
-            .navigationTitle(isPlayCricket ? "Play-Cricket stream" : "PCS BLE stream")
+            .navigationTitle(isPlayCricket ? "Play-Cricket stream" : "CricHeroes stream")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -60,8 +62,6 @@ struct CreateStreamView: View {
         }
         .preferredColorScheme(.dark)
     }
-
-    // MARK: - Play-Cricket content
 
     private var playCricketContent: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -132,27 +132,28 @@ struct CreateStreamView: View {
         }
     }
 
-    // MARK: - PCS BLE content
-
-    private var pcsBleContent: some View {
+    private var cricheroesContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Stream label")
+            Text("CricHeroes scorecard URL")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(CricTheme.textDim)
                 .textCase(.uppercase)
                 .tracking(0.8)
 
-            TextField("e.g. Saturday XI vs Visitors", text: $label)
+            TextField("https://cricheroes.in/scorecard/…/live", text: $cricheroesUrl)
+                .modifier(StudioFieldStyle())
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+
+            TextField("Stream label (optional)", text: $label)
                 .modifier(StudioFieldStyle())
 
-            Text("A BLE relay stream links directly to your PCS hardware scoreboard via Bluetooth.")
+            Text("R&D / best-effort — CricHeroes may block automated scraping.")
                 .font(.footnote)
                 .foregroundStyle(CricTheme.textDim)
                 .padding(.top, 4)
         }
     }
-
-    // MARK: - Create action
 
     private func create() async {
         error = nil
@@ -163,7 +164,10 @@ struct CreateStreamView: View {
                 let fixtureTitle = viewModel.fixtures.first { $0.matchId == fixtureId }?.title ?? fixtureId
                 _ = try await viewModel.createPlayCricketStream(matchId: fixtureId, label: fixtureTitle)
             } else {
-                _ = try await viewModel.createPcsBleStream(label: label)
+                _ = try await viewModel.createCricHeroesStream(
+                    matchUrl: cricheroesUrl.trimmingCharacters(in: .whitespaces),
+                    label: label.isEmpty ? "CricHeroes stream" : label
+                )
             }
             dismiss()
         } catch {

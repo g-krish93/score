@@ -1,7 +1,4 @@
-"""
-Transform a Play Cricket scraper snapshot into the overlay-ready JSON schema
-consumed by cricket_overlay.html.
-"""
+"""Transform a CricHeroes scraper snapshot into overlay-ready JSON."""
 from __future__ import annotations
 
 from typing import Any

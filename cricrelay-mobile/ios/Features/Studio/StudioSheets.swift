@@ -295,8 +295,8 @@ struct ScoringSheet: View {
 
     private let modes: [(id: String, icon: String, title: String, subtitle: String)] = [
         ("auto",   "bolt.fill",               "Auto (Play-Cricket)", "Follows your club scorer in real time"),
+        ("auto_ch","link",                    "Auto (CricHeroes)",   "Best-effort scrape from CricHeroes"),
         ("manual", "pencil.and.list.clipboard", "Manual scorer",      "Open the web scorer interface"),
-        ("ble",    "wave.3.right",              "PCS BLE (R&D)",      "Bluetooth relay from PCS hardware"),
     ]
 
     var body: some View {
@@ -307,7 +307,13 @@ struct ScoringSheet: View {
                         ForEach(modes, id: \.id) { mode in
                             let active = viewModel.scoringConfig?.mode == mode.id
                             Button {
-                                Task { await viewModel.setScoringMode(mode.id) }
+                                Task {
+                                    if mode.id == "auto_ch" {
+                                        await viewModel.setScoringMode("auto", provider: "cricheroes")
+                                    } else {
+                                        await viewModel.setScoringMode(mode.id)
+                                    }
+                                }
                                 dismiss()
                             } label: {
                                 HStack(spacing: 14) {

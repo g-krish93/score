@@ -80,7 +80,6 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         NSCameraUsageDescription: "CricRelay needs the camera to broadcast live cricket with a scoreboard overlay."
         NSMicrophoneUsageDescription: "CricRelay needs the microphone to include live commentary audio in the stream."
-        NSBluetoothAlwaysUsageDescription: "CricRelay BLE relay receives scores from PCS hardware scoreboards via Bluetooth."
         UIBackgroundModes:
           - audio
 

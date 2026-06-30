@@ -17,8 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Bluetooth
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
@@ -106,7 +106,6 @@ import uk.co.cricrelay.shared.model.StreamMatch
 fun HomeScreen(
     onOpenStudio: (String) -> Unit,
     onCreateStream: (String) -> Unit,
-    onOpenPcsBle: () -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
@@ -155,13 +154,6 @@ fun HomeScreen(
                             Icons.Outlined.Refresh,
                             contentDescription = "Refresh",
                             tint = AppColors.OnBackground,
-                        )
-                    }
-                    PressableIconButton(onClick = onOpenPcsBle) {
-                        Icon(
-                            Icons.Outlined.Bluetooth,
-                            contentDescription = "PCS BLE",
-                            tint = AppColors.Accent,
                         )
                     }
                     Box {
@@ -248,7 +240,7 @@ fun HomeScreen(
                                     Text("No streams yet", style = AppTypography.titleMedium)
                                     Spacer(Modifier.height(AppSpacing.sm))
                                     Text(
-                                        "Create a stream linked to a Play-Cricket fixture or PCS BLE scoring.",
+                                        "Create a stream linked to a Play-Cricket fixture or CricHeroes scorecard.",
                                         style = AppTypography.bodyMedium,
                                     )
                                     Spacer(Modifier.height(AppSpacing.md))
@@ -361,13 +353,13 @@ fun HomeScreen(
         )
         Spacer(Modifier.height(AppSpacing.sm))
         ActionCard(
-            title = "PCS BLE relay",
-            description = "Scores arrive over Bluetooth from the PCS scoring app.",
-            icon = Icons.Outlined.Bluetooth,
+            title = "CricHeroes scorecard",
+            description = "Best-effort auto-scrape from a CricHeroes live scorecard URL.",
+            icon = Link,
             tint = AppColors.AccentBlue,
             onClick = {
                 createSheet = false
-                onCreateStream("pcs_ble")
+                onCreateStream("cricheroes")
             },
             modifier = Modifier.padding(horizontal = AppSpacing.lg),
         )
@@ -538,7 +530,10 @@ fun CreateStreamScreen(
                 .statusBarsPadding(),
         ) {
             ScreenTopBar(
-                title = if (mode == "pcs_ble") "New PCS BLE stream" else "New Play-Cricket stream",
+                title = when (mode) {
+                    "cricheroes" -> "New CricHeroes stream"
+                    else -> "New Play-Cricket stream"
+                },
                 onBack = onBack,
             )
             Column(
@@ -553,7 +548,7 @@ fun CreateStreamScreen(
                     onValueChange = viewModel::onLabelChange,
                     label = "Stream label",
                 )
-                if (mode != "pcs_ble") {
+                if (mode == "play_cricket") {
                     Spacer(Modifier.height(AppSpacing.md))
                     SectionLabel("Choose a fixture")
                     state.fixtures.forEach { fixture ->
@@ -575,6 +570,18 @@ fun CreateStreamScreen(
                             modifier = Modifier.padding(vertical = AppSpacing.sm),
                         )
                     }
+                } else if (mode == "cricheroes") {
+                    Spacer(Modifier.height(AppSpacing.md))
+                    StudioTextField(
+                        value = state.cricheroesUrl,
+                        onValueChange = viewModel::onCricheroesUrlChange,
+                        label = "CricHeroes scorecard URL",
+                    )
+                    Text(
+                        "R&D / best-effort — paste a live scorecard link from cricheroes.in",
+                        style = AppTypography.bodySmall,
+                        modifier = Modifier.padding(top = AppSpacing.sm),
+                    )
                 }
                 state.error?.let {
                     Spacer(Modifier.height(AppSpacing.md))
@@ -587,10 +594,9 @@ fun CreateStreamScreen(
                     text = "Create stream",
                     loading = state.loading,
                     onClick = {
-                        if (mode == "pcs_ble") {
-                            viewModel.createPcsBle(onCreated)
-                        } else {
-                            viewModel.createPlayCricket(onCreated)
+                        when (mode) {
+                            "cricheroes" -> viewModel.createCricHeroes(onCreated)
+                            else -> viewModel.createPlayCricket(onCreated)
                         }
                     },
                 )

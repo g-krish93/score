@@ -148,7 +148,7 @@ spec; add contract tests. Keep `/api/*` until clients migrate.
 ## Task E — Mobile consolidation (#8)  ·  GATED on on-device parity
 
 **Goal:** make `cricrelay-mobile` (KMP) the single mobile app; retire `cricrelay-stream`
-(Flutter) and `pcs-ble-relay(-android)`.
+(Flutter) and archived `pcs-ble-relay(-android)`.
 **Gate (needs a real iOS device):** (1) `ios-parity-tightening` merged; (2) on-device
 camera+overlay RTMP, in-app BLE relay, go-live preflight, manual scoring verified; (3)
 IPA/OTA distribution confirmed for the KMP build; (4) one full prod stream on KMP iOS.

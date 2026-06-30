@@ -22,7 +22,7 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
   FixturesResponse? _fixtures;
   final _labelCtrl = TextEditingController();
   final _matchIdCtrl = TextEditingController();
-  final _bleLabelCtrl = TextEditingController();
+  final _chUrlCtrl = TextEditingController();
   final _pcBaseUrlCtrl = TextEditingController();
   bool _showAdvancedCreate = false;
 
@@ -36,7 +36,7 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
   void dispose() {
     _labelCtrl.dispose();
     _matchIdCtrl.dispose();
-    _bleLabelCtrl.dispose();
+    _chUrlCtrl.dispose();
     _pcBaseUrlCtrl.dispose();
     super.dispose();
   }
@@ -99,15 +99,18 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
     }
   }
 
-  Future<void> _createBle() async {
-    final label = _bleLabelCtrl.text.trim();
-    if (label.isEmpty) {
-      setState(() => _error = 'Enter a stream label');
+  Future<void> _createCricHeroes() async {
+    final url = _chUrlCtrl.text.trim();
+    if (url.isEmpty) {
+      setState(() => _error = 'Paste a CricHeroes scorecard URL');
       return;
     }
     setState(() => _loading = true);
     try {
-      final m = await widget.api.createPcsBleStream(label: label);
+      final m = await widget.api.createCricHeroesStreamWithOptions(
+        matchUrl: url,
+        label: _labelCtrl.text.trim(),
+      );
       await _createAndOpen(m);
     } catch (e) {
       if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
@@ -132,7 +135,7 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
                   ),
                   segments: const [
                     ButtonSegment(value: 0, label: Text('Play-Cricket'), icon: Icon(Icons.sports_cricket)),
-                    ButtonSegment(value: 1, label: Text('PCS BLE'), icon: Icon(Icons.bluetooth)),
+                    ButtonSegment(value: 1, label: Text('CricHeroes'), icon: Icon(Icons.link)),
                   ],
                   selected: {_tab},
                   onSelectionChanged: (s) => setState(() => _tab = s.first),
@@ -226,22 +229,31 @@ class _CreateStreamScreenState extends State<CreateStreamScreen> {
                       ),
                 ] else ...[
                   const CrInfoBanner(
-                    title: 'PCS Bluetooth scoring',
-                    body: 'Experimental BLE scoring. Choose BLE mode while live on the broadcast screen.',
-                    icon: Icons.bluetooth,
+                    title: 'CricHeroes scorecard',
+                    body: 'R&D / best-effort — paste a live scorecard URL from cricheroes.in.',
+                    icon: Icons.link,
                   ),
                   const SizedBox(height: AppSpacing.md),
                   TextField(
-                    controller: _bleLabelCtrl,
+                    controller: _chUrlCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Stream title',
+                      labelText: 'CricHeroes scorecard URL',
+                      hintText: 'https://cricheroes.in/scorecard/…/live',
+                    ),
+                    keyboardType: TextInputType.url,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  TextField(
+                    controller: _labelCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Stream title (optional)',
                       hintText: '1st XI vs Rivals',
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
                   FilledButton(
-                    onPressed: _loading ? null : _createBle,
-                    child: const Text('Create BLE stream'),
+                    onPressed: _loading ? null : _createCricHeroes,
+                    child: const Text('Create CricHeroes stream'),
                   ),
                 ],
               ],

@@ -17,3 +17,10 @@ runuser -u "$OWNER" -- git -C "$APP" fetch --depth=1 origin main
 runuser -u "$OWNER" -- git -C "$APP" reset --hard FETCH_HEAD
 
 echo "=== synced to $(runuser -u "$OWNER" -- git -C "$APP" rev-parse --short HEAD) ==="
+
+# Playwright browser binaries (after git pull; pip install runs in deploy.yml / cricket.service restart path).
+if [[ -f "$APP/deploy/playwright-install.sh" ]]; then
+  sudo APP="$APP" bash "$APP/deploy/playwright-install.sh" || {
+    echo "WARN: Playwright install failed — CricHeroes scrape will not work until fixed" >&2
+  }
+fi

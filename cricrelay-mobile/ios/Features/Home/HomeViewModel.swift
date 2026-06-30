@@ -70,8 +70,8 @@ final class HomeViewModel: ObservableObject {
         return stream
     }
 
-    func createPcsBleStream(label: String) async throws -> StreamMatch {
-        let stream = try await api.createStream(type: "pcs_ble", label: label)
+    func createCricHeroesStream(matchUrl: String, label: String) async throws -> StreamMatch {
+        let stream = try await api.createStream(type: "cricheroes", matchUrl: matchUrl, label: label)
         streams.insert(stream, at: 0)
         slotsUsed = streams.count
         return stream

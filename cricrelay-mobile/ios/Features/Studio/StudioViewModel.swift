@@ -397,8 +397,8 @@ final class StudioViewModel: ObservableObject {
 
     // MARK: - Scoring
 
-    func setScoringMode(_ mode: String) async {
-        scoringConfig = try? await api.setScoringMode(slug: matchSlug, mode: mode)
+    func setScoringMode(_ mode: String, provider: String? = nil) async {
+        scoringConfig = try? await api.setScoringMode(slug: matchSlug, mode: mode, provider: provider)
     }
 
     // MARK: - Zoom

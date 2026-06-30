@@ -80,7 +80,6 @@ dependencies {
     implementation(project(":feature:home"))
     implementation(project(":feature:studio"))
     implementation(project(":feature:scoring"))
-    implementation(project(":feature:pcs-ble"))
     implementation(project(":streaming"))
 
     implementation(platform(libs.compose.bom))

@@ -75,8 +75,8 @@ class StreamRepository(
     suspend fun createPlayCricketStream(matchId: String, label: String): StreamMatch =
         apiClientProvider.get().createPlayCricketStream(matchId = matchId, label = label)
 
-    suspend fun createPcsBleStream(label: String): StreamMatch =
-        apiClientProvider.get().createPcsBleStream(label)
+    suspend fun createCricHeroesStream(matchUrl: String, label: String): StreamMatch =
+        apiClientProvider.get().createCricHeroesStream(matchUrl = matchUrl, label = label)
 
     suspend fun deleteStream(matchSlug: String) = apiClientProvider.get().deleteStream(matchSlug)
 
@@ -86,8 +86,8 @@ class StreamRepository(
     suspend fun getScoring(matchSlug: String): ScoringConfig =
         apiClientProvider.get().getScoring(matchSlug)
 
-    suspend fun setScoring(matchSlug: String, mode: String): ScoringConfig =
-        apiClientProvider.get().setScoring(matchSlug, mode)
+    suspend fun setScoring(matchSlug: String, mode: String, provider: String? = null): ScoringConfig =
+        apiClientProvider.get().setScoring(matchSlug, mode, provider)
 
     suspend fun getMatchDayStatus(matchSlug: String): MatchDayStatus =
         apiClientProvider.get().getMatchDayStatus(matchSlug)

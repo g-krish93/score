@@ -41,6 +41,7 @@ data class CreateStreamUiState(
     val activeMatchIds: Set<String> = emptySet(),
     val selectedMatchId: String = "",
     val label: String = "",
+    val cricheroesUrl: String = "",
     val error: String? = null,
 )
 
@@ -195,6 +196,7 @@ class CreateStreamViewModel @Inject constructor(
 
     fun onLabelChange(value: String) = _uiState.update { it.copy(label = value) }
     fun onMatchSelected(matchId: String) = _uiState.update { it.copy(selectedMatchId = matchId) }
+    fun onCricheroesUrlChange(value: String) = _uiState.update { it.copy(cricheroesUrl = value) }
 
     fun createPlayCricket(onCreated: (StreamMatch) -> Unit) {
         val state = _uiState.value
@@ -213,13 +215,18 @@ class CreateStreamViewModel @Inject constructor(
         }
     }
 
-    fun createPcsBle(onCreated: (StreamMatch) -> Unit) {
+    fun createCricHeroes(onCreated: (StreamMatch) -> Unit) {
         val state = _uiState.value
+        if (state.cricheroesUrl.isBlank()) {
+            _uiState.update { it.copy(error = "Paste a CricHeroes scorecard URL") }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(loading = true, error = null) }
             try {
-                val match = streamRepository.createPcsBleStream(
-                    label = state.label.ifBlank { "PCS BLE stream" },
+                val match = streamRepository.createCricHeroesStream(
+                    matchUrl = state.cricheroesUrl.trim(),
+                    label = state.label.ifBlank { "CricHeroes stream" },
                 )
                 onCreated(match)
             } catch (e: Exception) {

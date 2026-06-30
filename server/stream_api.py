@@ -137,7 +137,7 @@ def _load_match_state(slug: str) -> dict[str, Any]:
 
 
 def _relay_mode_to_app_mode(relay_mode: str) -> str:
-    mode_map = {"play_cricket": "auto", "manual": "manual", "pcs_ble": "ble"}
+    mode_map = {"play_cricket": "auto", "cricheroes": "auto", "manual": "manual", "pcs_ble": "ble"}
     return mode_map.get((relay_mode or "manual").strip().lower(), "manual")
 
 
@@ -174,11 +174,11 @@ def scoring_status_for_slug(slug: str) -> dict[str, Any]:
     scoring_active = False
     if relay_mode == "manual":
         scoring_active = manual_ts is not None and now - manual_ts <= timedelta(minutes=2)
-    elif relay_mode in {"play_cricket", "pcs_ble"}:
+    elif relay_mode in {"play_cricket", "cricheroes", "pcs_ble"}:
         scoring_active = relay_ts is not None and now - relay_ts <= timedelta(minutes=8)
 
     scoring_stale = False
-    if relay_mode == "play_cricket":
+    if relay_mode in {"play_cricket", "cricheroes"}:
         if relay_ts is None:
             scoring_stale = True
         else:
@@ -252,6 +252,7 @@ def stream_dict_for_relay_match(org: Organization, m: RelayMatch) -> dict[str, A
         "play_cricket_match_id": m.play_cricket_match_id,
         "relay_source": getattr(m, "relay_source", None) or "scraper",
         "paused": bool(m.paused),
+        "relay_paused": bool(m.paused),
         "overlay_embed_url": overlay,
         "is_live": _match_scoring_recently_active(slug),
         **scoring,

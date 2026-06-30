@@ -74,8 +74,14 @@ jobs:
             if [ -f "$REQ_STAMP" ] && [ "$(cat "$REQ_STAMP")" = "$REQ_HASH" ]; then
               echo "requirements.txt unchanged — skipping pip install"
             else
+            else
               sudo pip3 install --no-cache-dir --ignore-installed -r requirements.txt
               echo "$REQ_HASH" | sudo tee "$REQ_STAMP" > /dev/null
+              if [[ -f deploy/playwright-install.sh ]]; then
+                sudo APP=/app bash deploy/playwright-install.sh || {
+                  echo "WARN: Playwright install failed" >&2
+                }
+              fi
             fi
             if [ -f deploy/persist-auth-env.sh ]; then
               sudo bash deploy/persist-auth-env.sh

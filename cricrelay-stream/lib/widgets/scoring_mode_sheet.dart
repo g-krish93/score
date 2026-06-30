@@ -51,6 +51,7 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
   bool _busy = false;
   String? _error;
   bool _scorerActive = false;
+  bool _showAutoProviders = false;
   Timer? _statusPoll;
 
   @override
@@ -75,13 +76,13 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
     } catch (_) {}
   }
 
-  Future<void> _pick(String mode) async {
+  Future<void> _pick(String mode, {String? provider}) async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final next = await widget.api.setScoring(widget.matchSlug, mode);
+      final next = await widget.api.setScoring(widget.matchSlug, mode, provider: provider);
       widget.onUpdated(next);
       if (!mounted) return;
       setState(() => _cfg = next);
@@ -147,11 +148,28 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
             ],
             _ModeTile(
               title: 'Auto',
-              subtitle: 'Play-Cricket scraper (hands-off)',
+              subtitle: 'Play-Cricket or CricHeroes scraper',
               selected: _cfg.mode == 'auto',
               busy: _busy,
-              onTap: () => _pick('auto'),
+              onTap: () => setState(() => _showAutoProviders = !_showAutoProviders),
             ),
+            if (_showAutoProviders || _cfg.mode == 'auto') ...[
+              const SizedBox(height: 4),
+              _ModeTile(
+                title: 'Play-Cricket',
+                subtitle: 'Club Play-Cricket scorer (hands-off)',
+                selected: _cfg.mode == 'auto',
+                busy: _busy,
+                onTap: () => _pick('auto', provider: 'play_cricket'),
+              ),
+              _ModeTile(
+                title: 'CricHeroes',
+                subtitle: 'Best-effort CricHeroes scorecard scrape',
+                selected: false,
+                busy: _busy,
+                onTap: () => _pick('auto', provider: 'cricheroes'),
+              ),
+            ],
             _ModeTile(
               title: 'Manual',
               subtitle: 'Teammate scores over-by-over in a browser',
@@ -167,54 +185,6 @@ class _ScoringModeBodyState extends State<_ScoringModeBody> {
                 onCopy: _copyManualLink,
                 onShare: _shareManualLink,
                 onOpenHere: _openScorerOnThisPhone,
-              ),
-            ],
-            _ModeTile(
-              title: 'BLE (R&D)',
-              subtitle: 'PCS Bluetooth relay from another phone',
-              selected: _cfg.mode == 'ble',
-              busy: _busy,
-              onTap: () => _pick('ble'),
-            ),
-            if (_cfg.mode == 'ble') ...[
-              const SizedBox(height: 8),
-              Text(
-                'Install PCS Relay APK, paste ingest URL + token in Settings, '
-                'advertise as scoreboard near the iPad.',
-                style: appTextTheme.bodySmall,
-              ),
-              const SizedBox(height: 8),
-              SelectableText(
-                'Ingest: ${_cfg.pcsIngestUrl}\nToken: ${_cfg.pcsIngestToken}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontFamily: 'monospace',
-                  color: AppColors.onBackgroundMuted,
-                ),
-              ),
-              Row(
-                children: [
-                  TextButton(
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: _cfg.pcsIngestUrl));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Ingest URL copied')),
-                      );
-                    },
-                    child: const Text('Copy URL'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Clipboard.setData(
-                        ClipboardData(text: 'Bearer ${_cfg.pcsIngestToken}'),
-                      );
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Bearer token copied')),
-                      );
-                    },
-                    child: const Text('Copy token'),
-                  ),
-                ],
               ),
             ],
           ],

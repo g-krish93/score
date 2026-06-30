@@ -278,11 +278,18 @@ class CricRelayApi {
     return match;
   }
 
-  Future<StreamMatch> createPcsBleStream({required String label}) async {
+  Future<StreamMatch> createCricHeroesStreamWithOptions({
+    required String matchUrl,
+    String label = '',
+  }) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/streams'),
       headers: _headers,
-      body: jsonEncode({'type': 'pcs_ble', 'label': label}),
+      body: jsonEncode({
+        'type': 'cricheroes',
+        'match_url': matchUrl,
+        'label': label,
+      }),
     );
     final body = _parseJsonResponse(res, fallback: 'Could not create stream');
     if (res.statusCode != 200) {
@@ -319,12 +326,15 @@ class CricRelayApi {
     return body;
   }
 
-  Future<ScoringConfig> setScoring(String matchSlug, String mode) async {
+  Future<ScoringConfig> setScoring(String matchSlug, String mode, {String? provider}) async {
     try {
       final res = await http.post(
         _matchApiUri(matchSlug, 'scoring'),
         headers: _headers,
-        body: jsonEncode({'mode': mode}),
+        body: jsonEncode({
+          'mode': mode,
+          if (provider != null && provider.isNotEmpty) 'provider': provider,
+        }),
       );
       final body = _parseJsonResponse(res, fallback: 'Failed to set scoring mode');
       if (res.statusCode != 200) {

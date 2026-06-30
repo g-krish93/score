@@ -8,12 +8,11 @@ struct HomeView: View {
     @State private var renameLabel = ""
     @State private var showRenameAlert = false
     @State private var showDeleteConfirm = false
-    @State private var showPcsBle = false
     @State private var showCreateMode: CreateMode?
 
     enum CreateMode: Identifiable {
-        case playCricket, pcsBle
-        var id: String { self == .playCricket ? "pc" : "ble" }
+        case playCricket, cricheroes
+        var id: String { self == .playCricket ? "pc" : "ch" }
     }
 
     private var greeting: String {
@@ -59,14 +58,6 @@ struct HomeView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showPcsBle = true
-                    } label: {
-                        Image(systemName: "wave.3.right")
-                            .foregroundStyle(CricTheme.textMuted)
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button(role: .destructive) { session.logout() } label: {
                             Label("Sign out", systemImage: "arrow.right.square")
@@ -79,10 +70,9 @@ struct HomeView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .sheet(isPresented: $showPcsBle) { PcsBleView() }
         .sheet(item: $showCreateMode) { mode in
             CreateStreamView(
-                mode: mode == .playCricket ? "play_cricket" : "pcs_ble",
+                mode: mode == .playCricket ? "play_cricket" : "cricheroes",
                 viewModel: viewModel
             )
         }
@@ -231,8 +221,8 @@ struct HomeView: View {
                     } label: {
                         Label("Play-Cricket fixture", systemImage: "sportscourt")
                     }
-                    Button { showCreateMode = .pcsBle } label: {
-                        Label("PCS BLE relay", systemImage: "wave.3.right")
+                    Button { showCreateMode = .cricheroes } label: {
+                        Label("CricHeroes scorecard", systemImage: "link")
                     }
                 } label: {
                     Label("Add", systemImage: "plus.circle.fill")

@@ -72,6 +72,7 @@ from .stream_api import (
     relay_match_for_org,
     relay_matches_for_org,
     stream_api_auth_required,
+    stream_dict_for_relay_match,
 )
 from . import twitch_stream as tw
 from . import youtube_stream as yt
@@ -161,6 +162,15 @@ def inject_seo_context():
 
 DEFAULT_MATCH_ID = "default"
 MAX_LIVE_STREAMS_PER_CLUB = 6
+
+PCS_BLE_RETIRED_MSG = (
+    "PCS BLE relay was removed from CricRelay. Use Play-Cricket or CricHeroes auto-scoring, "
+    "or manual scoring."
+)
+
+
+def pcs_ble_retired_response():
+    return jsonify({"error": PCS_BLE_RETIRED_MSG, "code": "pcs_ble_retired"}), 410
 state_lock = threading.Lock()
 last_action = None
 action_history = []
@@ -384,6 +394,29 @@ def migrate_relay_match_columns():
         altered = True
     if altered:
         db.session.commit()
+
+
+def purge_legacy_pcs_ble_relay_rows() -> int:
+    """Remove retired PCS BLE RelayMatch rows and their on-disk state files."""
+    rows = RelayMatch.query.filter_by(relay_source="pcs_ble").all()
+    if not rows:
+        return 0
+    removed = 0
+    for row in rows:
+        slug = (row.score_match_slug or "").strip()
+        db.session.delete(row)
+        removed += 1
+        if slug:
+            path = state_path_for(slug)
+            if path.is_file():
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+    db.session.commit()
+    if removed:
+        print(f"[startup] purged {removed} legacy PCS BLE relay row(s)", flush=True)
+    return removed
 
 
 def migrate_relay_source_column():
@@ -716,11 +749,19 @@ def _update_broadcast_status_in_state(slug: str, status: str, platform: str | No
         save_state()
 
 
-def apply_relay_to_score_match(match_slug: str, full_url: str):
-    url = canonicalize_play_cricket_scrape_url((full_url or "").strip())
+def apply_relay_to_score_match(match_slug: str, full_url: str, provider: str = "play_cricket"):
+    from .models_cricrelay import RELAY_PROVIDERS, resolve_provider_callable
+
+    prov = (provider or "play_cricket").strip().lower()
+    if prov not in RELAY_PROVIDERS:
+        prov = "play_cricket"
+    cfg = RELAY_PROVIDERS[prov]
+    canonicalize = resolve_provider_callable(cfg["canonicalize_fn"])
+    url = canonicalize((full_url or "").strip())
     with match_context(match_slug):
         merge_missing_state_keys(state)
-        state["relay_mode"] = "play_cricket"
+        state["relay_mode"] = prov
+        state["relay_provider"] = prov
         state["relay_play_cricket_url"] = url
         state["relay_wrapper"] = None
         state["relay_last_error"] = None
@@ -1495,33 +1536,16 @@ def _dashboard_fixture_data(org):
         "0", "false", "no", "off",
     }
     base = _public_base_url()
-    apk_path = _pcs_relay_apk_path()
     relay_rows = []
     for m in matches:
         slug = m.score_match_slug
-        ingest_url = f"{base}/relay/pcs-ingest?match={slug}" if base else f"/relay/pcs-ingest?match={slug}"
-        pcs_token = ""
-        pcs_live = {}
         overlay_url = f"{base}/m/{slug}/stream" if base else f"/m/{slug}/stream"
-        with match_context(slug):
-            merge_missing_state_keys(state)
-            pcs_token = (state.get("pcs_ingest_token") or "").strip()
-            if (getattr(m, "relay_source", None) or "scraper") == "pcs_ble":
-                pcs_live = pcs_live_summary(
-                    state.get("pcs_ble_state"),
-                    state.get("relay_wrapper"),
-                )
-                pcs_live["last_ok_at"] = state.get("relay_last_ok_at")
-                pcs_live["relay_mode"] = state.get("relay_mode")
         embed_url = f"{overlay_url}?embed=1" if "?" not in overlay_url else f"{overlay_url}&embed=1"
         relay_rows.append(
             {
                 "match": m,
                 "overlay_prefs": read_relay_overlay_prefs(slug),
                 "relay_source": (getattr(m, "relay_source", None) or "scraper"),
-                "pcs_ingest_url": ingest_url,
-                "pcs_ingest_token": pcs_token,
-                "pcs_live": pcs_live,
                 "overlay_url": overlay_url,
                 "overlay_embed_url": embed_url,
             }
@@ -1539,8 +1563,6 @@ def _dashboard_fixture_data(org):
         "stream_slots_used": len(matches),
         "stream_slots_total": MAX_LIVE_STREAMS_PER_CLUB,
         "public_base_url": base,
-        "pcs_apk_available": apk_path.is_file(),
-        "pcs_apk_download_url": url_for("download_pcs_relay_apk"),
         "stream_apk_available": _stream_apk_path().is_file(),
         "stream_apk_download_url": url_for("download_stream_apk"),
         "stream_ipa_available": _stream_ipa_path().is_file(),
@@ -1660,15 +1682,9 @@ def download_stream_ios_ota_manifest():
 
 @app.get("/download/pcs-relay.apk")
 def download_pcs_relay_apk():
-    path = _pcs_relay_apk_path()
-    if not path.is_file():
-        flash(
-            "PCS relay APK is not on the server yet. Build the app and copy pcs-relay.apk to static/ "
-            "(see static/pcs-relay/README.md), or set PCS_RELAY_APK_PATH.",
-            "error",
-        )
-        return redirect(url_for("dashboard"))
-    return _apk_download_response(path, "cricrelay-pcs-relay.apk")
+    """Dormant PCS BLE APK route — retained for backward compatibility only."""
+    flash("PCS BLE relay is no longer distributed. Use Play-Cricket or CricHeroes auto-scoring.", "error")
+    return redirect(url_for("dashboard"))
 
 
 def _stream_slot_error(org: Organization) -> str | None:
@@ -1773,15 +1789,74 @@ def _create_pcs_ble_stream_org(org: Organization, label: str) -> tuple[RelayMatc
     return row, None
 
 
+def _create_cricheroes_stream_org(
+    org: Organization,
+    match_url: str,
+    label: str = "",
+) -> tuple[RelayMatch | None, str | None]:
+    slot_err = _stream_slot_error(org)
+    if slot_err:
+        return None, slot_err
+    from .models_cricrelay import canonicalize_cricheroes_scrape_url
+
+    full_url = canonicalize_cricheroes_scrape_url((match_url or "").strip())
+    if not full_url or "cricheroes" not in full_url.lower():
+        return None, (
+            "Paste a CricHeroes scorecard URL "
+            "(e.g. https://cricheroes.in/scorecard/<match-id>/.../live)."
+        )
+    mid_match = re.search(r"/scorecard/(\d+)", full_url)
+    mid = mid_match.group(1) if mid_match else f"ch-{secrets.token_hex(4)}"
+    existing = RelayMatch.query.filter_by(
+        organization_id=org.id, play_cricket_match_id=mid, relay_source="cricheroes"
+    ).first()
+    if existing:
+        return None, "This CricHeroes match is already linked for your club."
+    base_slug = sanitize_match_id(f"{org.slug}-ch-{mid}")
+    score_slug = base_slug
+    for _ in range(16):
+        taken = RelayMatch.query.filter_by(score_match_slug=score_slug).first()
+        if not taken:
+            break
+        score_slug = sanitize_match_id(f"{org.slug}-ch-{mid}-{secrets.token_hex(3)}")
+    stream_label = (label or "").strip()[:120]
+    row = RelayMatch(
+        organization_id=org.id,
+        play_cricket_match_id=mid,
+        full_scrape_url=full_url,
+        score_match_slug=score_slug,
+        label=(stream_label or None),
+        paused=False,
+        relay_source="cricheroes",
+    )
+    db.session.add(row)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return None, "Could not create that stream (duplicate or conflict)."
+    apply_relay_to_score_match(score_slug, full_url, provider="cricheroes")
+    return row, None
+
+
 @app.post("/dashboard/matches")
 @login_required
 def dashboard_add_match():
     org = _org_from_session()
     relay_source = (request.form.get("relay_source") or "scraper").strip().lower()
-    if relay_source not in {"scraper", "pcs_ble"}:
+    if relay_source not in {"scraper", "cricheroes"}:
         relay_source = "scraper"
-    if relay_source == "pcs_ble":
-        return dashboard_add_pcs_ble_match(org)
+    if relay_source == "cricheroes":
+        row, err = _create_cricheroes_stream_org(
+            org,
+            request.form.get("cricheroes_url") or "",
+            request.form.get("stream_label") or "",
+        )
+        if err:
+            flash(err, "error")
+            return redirect(url_for("dashboard"))
+        flash("CricHeroes stream ready (R&D) — copy your overlay URL into Prism or OBS.", "success")
+        return redirect(url_for("dashboard"))
     row, err = _create_play_cricket_stream_org(
         org,
         request.form.get("play_cricket_match_id") or "",
@@ -1792,18 +1867,6 @@ def dashboard_add_match():
         flash(err, "error")
         return redirect(url_for("dashboard"))
     flash("Stream ready — copy your overlay URL into Prism or OBS.", "success")
-    return redirect(url_for("dashboard"))
-
-
-def dashboard_add_pcs_ble_match(org: Organization):
-    row, err = _create_pcs_ble_stream_org(org, request.form.get("stream_label") or "")
-    if err:
-        flash(err, "error")
-        return redirect(url_for("dashboard"))
-    flash(
-        "PCS BLE stream ready (R&D) — install the relay APK, paste ingest URL + token, then copy the overlay URL.",
-        "success",
-    )
     return redirect(url_for("dashboard"))
 
 
@@ -1850,8 +1913,8 @@ def dashboard_relay_toggle_pause():
     src = (getattr(row, "relay_source", None) or "scraper")
     if row.paused:
         flash("Stream paused — automatic scoring updates are off.", "success")
-    elif src == "pcs_ble":
-        flash("Stream live — waiting for PCS BLE relay app.", "success")
+    elif src == "cricheroes":
+        flash("Stream live — CricHeroes sync is on (when enabled on server).", "success")
     else:
         flash("Stream live — Play-Cricket sync is on.", "success")
     return redirect(url_for("dashboard"))
@@ -2318,9 +2381,11 @@ def stream_overlay_scoped(match_id):
 def relay_overlay_data(match_id):
     """
     Serve the overlay-ready JSON schema consumed by cricket_overlay.html.
-    Transforms the Play Cricket scraper snapshot (or PCS BLE snapshot) into
+    Transforms scraper snapshots (Play-Cricket, CricHeroes) or PCS BLE into
     the innings[]/striker/current_bowler schema the rich overlay expects.
     """
+    from .models_cricrelay import RELAY_PROVIDERS, resolve_provider_callable
+
     slug = sanitize_match_id(match_id)
     data = _live_snapshot(slug)
     mode = (data.get("relay_mode") or "manual").strip().lower()
@@ -2329,7 +2394,10 @@ def relay_overlay_data(match_id):
     stale = bool(bundle.get("stale", True))
     last_ok = bundle.get("last_ok_at")
 
-    if snapshot and mode in {"play_cricket", "pcs_ble"}:
+    if snapshot and mode in RELAY_PROVIDERS:
+        mapper = resolve_provider_callable(RELAY_PROVIDERS[mode]["mapper_fn"])
+        payload = mapper(snapshot, stale=stale, last_ok_at=last_ok)
+    elif snapshot and mode == "pcs_ble":
         from .play_cricket_mapper import snapshot_to_overlay
         payload = snapshot_to_overlay(snapshot, stale=stale, last_ok_at=last_ok)
     else:
@@ -2419,32 +2487,41 @@ def _pcs_ingest_authorized(match_slug: str) -> bool:
 def relay_config():
     data = request.get_json(silent=True) or {}
     mode = str(data.get("relay_mode", "manual")).strip().lower()
-    if mode not in {"manual", "play_cricket", "pcs_ble"}:
-        return jsonify({"error": "relay_mode must be manual, play_cricket, or pcs_ble"}), 400
+    if mode == "pcs_ble":
+        return pcs_ble_retired_response()
+    if mode not in {"manual", "play_cricket", "cricheroes"}:
+        return jsonify({"error": "relay_mode must be manual, play_cricket, or cricheroes"}), 400
     url = str(data.get("relay_play_cricket_url", "")).strip()
     if mode == "play_cricket":
         if not url:
             return jsonify({"error": "relay_play_cricket_url required when relay_mode is play_cricket"}), 400
         if "play-cricket.com" not in url.lower():
             return jsonify({"error": "URL must be a play-cricket.com page"}), 400
+    if mode == "cricheroes":
+        if not url:
+            return jsonify({"error": "relay_play_cricket_url required when relay_mode is cricheroes (CricHeroes scorecard URL)"}), 400
+        if "cricheroes" not in url.lower():
+            return jsonify({"error": "URL must be a cricheroes.in scorecard page"}), 400
     with match_context():
         state["relay_mode"] = mode
-        state["relay_play_cricket_url"] = url if mode == "play_cricket" else ""
+        state["relay_provider"] = mode if mode in {"play_cricket", "cricheroes"} else state.get("relay_provider")
+        state["relay_play_cricket_url"] = url if mode in {"play_cricket", "cricheroes"} else ""
         if mode == "manual":
             state["relay_wrapper"] = None
             state["relay_last_error"] = None
-        if mode == "pcs_ble" and not (state.get("pcs_ingest_token") or "").strip():
-            state["pcs_ingest_token"] = secrets.token_urlsafe(24)
         save_state()
         return jsonify(with_calculated_values(state))
 
 
 def apply_relay_ingest_payload(match_id: str, payload: dict) -> tuple[dict, int]:
     """Apply JSON ingest for a match slug. Used by ``/relay/ingest`` and the in-app relay worker."""
+    from .models_cricrelay import RELAY_PROVIDERS
+
     mid = sanitize_match_id(match_id)
     with match_context(mid):
-        if (state.get("relay_mode") or "manual") != "play_cricket":
-            return ({"error": "relay_mode is not play_cricket for this match"}, 400)
+        mode = (state.get("relay_mode") or "manual").strip().lower()
+        if mode not in RELAY_PROVIDERS:
+            return ({"error": f"relay_mode is not a scraper provider for this match ({mode})"}, 400)
         if isinstance(payload.get("snapshot"), dict):
             wrapper = payload
         elif (
@@ -3561,7 +3638,13 @@ def api_create_stream(org: Organization):
     data = request.get_json(silent=True) or {}
     kind = str(data.get("type") or "play_cricket").strip().lower()
     if kind in {"pcs_ble", "ble"}:
-        row, err = _create_pcs_ble_stream_org(org, str(data.get("label") or ""))
+        return pcs_ble_retired_response()
+    if kind in {"cricheroes", "cric_heroes"}:
+        row, err = _create_cricheroes_stream_org(
+            org,
+            str(data.get("match_url") or data.get("cricheroes_url") or ""),
+            str(data.get("label") or ""),
+        )
     else:
         row, err = _create_play_cricket_stream_org(
             org,
@@ -3571,15 +3654,7 @@ def api_create_stream(org: Organization):
         )
     if err:
         return jsonify({"error": err}), 400
-    slug = row.score_match_slug
-    base = _public_base_url().rstrip("/")
-    stream = {
-        "slug": slug,
-        "label": row.label or row.play_cricket_match_id,
-        "play_cricket_match_id": row.play_cricket_match_id,
-        "relay_source": getattr(row, "relay_source", None) or "scraper",
-        "overlay_embed_url": f"{base}/m/{slug}/stream?embed=1" if base else f"/m/{slug}/stream?embed=1",
-    }
+    stream = stream_dict_for_relay_match(org, row)
     return jsonify({"ok": True, "stream": stream})
 
 
@@ -3624,7 +3699,7 @@ def api_get_scoring(org: Organization, match_slug: str):
         merge_missing_state_keys(state)
         relay_mode = (state.get("relay_mode") or "manual").strip().lower()
         pcs_token = (state.get("pcs_ingest_token") or "").strip()
-    mode_map = {"play_cricket": "auto", "manual": "manual", "pcs_ble": "ble"}
+    mode_map = {"play_cricket": "auto", "cricheroes": "auto", "manual": "manual", "pcs_ble": "ble"}
     app_mode = mode_map.get(relay_mode, "manual")
     base = _public_base_url().rstrip("/")
     pcs_ingest_url = f"{base}/relay/pcs-ingest?match={slug}" if base else f"/relay/pcs-ingest?match={slug}"
@@ -3705,11 +3780,16 @@ def api_set_scoring(org: Organization, match_slug: str):
             return jsonify({"error": "unknown stream"}), 404
         data = request.get_json(silent=True) or {}
         mode = str(data.get("mode") or "").strip().lower()
-        if mode not in {"auto", "manual", "ble"}:
-            return jsonify({"error": "mode must be auto, manual, or ble"}), 400
+        if mode == "ble":
+            return pcs_ble_retired_response()
+        if mode not in {"auto", "manual"}:
+            return jsonify({"error": "mode must be auto or manual"}), 400
+        provider = str(data.get("provider") or "play_cricket").strip().lower()
+        if provider not in {"play_cricket", "cricheroes"}:
+            provider = "play_cricket"
         if mode == "auto":
-            apply_relay_to_score_match(slug, row.full_scrape_url)
-            row.relay_source = "scraper"
+            apply_relay_to_score_match(slug, row.full_scrape_url, provider=provider)
+            row.relay_source = "cricheroes" if provider == "cricheroes" else "scraper"
         elif mode == "manual":
             with match_context(slug):
                 merge_missing_state_keys(state)
@@ -3718,12 +3798,6 @@ def api_set_scoring(org: Organization, match_slug: str):
                 state["relay_last_error"] = None
                 save_state()
             row.relay_source = "scraper"
-        else:
-            with match_context(slug):
-                merge_missing_state_keys(state)
-                token = (state.get("pcs_ingest_token") or "").strip() or secrets.token_urlsafe(24)
-            apply_pcs_ble_to_score_match(slug, token, row.label or "")
-            row.relay_source = "pcs_ble"
         db.session.commit()
         return api_get_scoring(org, slug)
     except Exception as exc:
@@ -4070,10 +4144,6 @@ def api_stream_setup():
 
 from .relay_poller import start_relay_poller
 
-register_relay_worker(app, apply_relay_ingest_payload)
-start_relay_poller(app, apply_relay_ingest_payload, get_live_snapshot)
-
-
 with app.app_context():
     db.create_all()
     migrate_relay_match_columns()
@@ -4083,6 +4153,11 @@ with app.app_context():
     migrate_twitch_columns()
     migrate_play_cricket_base_url_nullable()
     migrate_consent_given_at_column()
+    purge_legacy_pcs_ble_relay_rows()
+
+register_relay_worker(app, apply_relay_ingest_payload)
+start_relay_poller(app, apply_relay_ingest_payload, get_live_snapshot)
+
 
 with state_lock:
     try:

@@ -404,14 +404,23 @@ fun ScoringSheet(
     ) {
         listOf(
             Triple("auto", "Auto (Play-Cricket)", "Follows the club's Play-Cricket scorer"),
+            Triple("auto_ch", "Auto (CricHeroes)", "Best-effort scrape from CricHeroes scorecard"),
             Triple("manual", "Manual scorer", "Score from the web scorer yourself"),
-            Triple("ble", "PCS BLE (R&D)", "Scores relayed over Bluetooth from PCS"),
         ).forEach { (mode, label, description) ->
             SelectableOptionCard(
                 title = label,
                 description = description,
-                selected = current.equals(mode, ignoreCase = true),
-                onClick = { onSelectMode(mode) },
+                selected = when (mode) {
+                    "auto" -> current.equals("auto", ignoreCase = true)
+                    "auto_ch" -> false
+                    else -> current.equals(mode, ignoreCase = true)
+                },
+                onClick = {
+                    when (mode) {
+                        "auto_ch" -> onSelectMode("auto:cricheroes")
+                        else -> onSelectMode(mode)
+                    }
+                },
             )
         }
     }

@@ -34,15 +34,15 @@ Bump `versionCode` / `versionName` in `android/app/build.gradle.kts` when shippi
 
 ## Features
 
-- Login, onboarding, stream list, create Play-Cricket / PCS BLE streams
+- Login, onboarding, stream list, create Play-Cricket / CricHeroes streams
 - Broadcast studio with native RTMP + scoreboard overlay (Android)
-- PCS BLE relay mode (in-app, replaces separate `pcs-relay.apk`)
+- CricHeroes auto-scrape stream (R&D / best-effort)
 - Offline stream list cache (Room)
 
 ## Legacy apps
 
-The Flutter apps under `cricrelay-stream/` and `pcs-ble-relay-android/` are **deprecated** — see [docs/MIGRATION.md](docs/MIGRATION.md).
+The Flutter apps under `cricrelay-stream/` and archived `archive/pcs-ble-relay*` are **deprecated** — see [docs/MIGRATION.md](docs/MIGRATION.md).
 
 ## Backend
 
-No Flask API changes required. Same endpoints as the Flutter app.
+Supports Play-Cricket and CricHeroes auto-scrape via `/api/streams` (`type: cricheroes`). PCS BLE ingest remains dormant on the server.

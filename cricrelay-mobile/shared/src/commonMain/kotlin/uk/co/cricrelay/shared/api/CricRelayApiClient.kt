@@ -205,11 +205,12 @@ class CricRelayApiClient(
         return StreamMatch.fromJson(stream, baseUrl)
     }
 
-    suspend fun createPcsBleStream(label: String): StreamMatch {
+    suspend fun createCricHeroesStream(matchUrl: String, label: String): StreamMatch {
         val response = httpClient.post("$baseUrl/api/streams") {
             authHeaders().forEach { (k, v) -> header(k, v) }
             setBody(buildJsonObject {
-                put("type", "pcs_ble")
+                put("type", "cricheroes")
+                put("match_url", matchUrl)
                 put("label", label)
             })
         }
@@ -229,11 +230,14 @@ class CricRelayApiClient(
         return ScoringConfig.fromJson(body, baseUrl)
     }
 
-    suspend fun setScoring(matchSlug: String, mode: String): ScoringConfig {
+    suspend fun setScoring(matchSlug: String, mode: String, provider: String? = null): ScoringConfig {
         return try {
             val response = httpClient.post(matchUri(matchSlug, "scoring")) {
                 authHeaders().forEach { (k, v) -> header(k, v) }
-                setBody(buildJsonObject { put("mode", mode) })
+                setBody(buildJsonObject {
+                    put("mode", mode)
+                    if (!provider.isNullOrBlank()) put("provider", provider)
+                })
             }
             val body = parseJsonObject(response)
             requireSuccess(response, body, "Failed to set scoring mode")

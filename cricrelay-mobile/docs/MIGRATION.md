@@ -5,8 +5,8 @@
 | App | Status |
 |-----|--------|
 | `cricrelay-stream/` (Flutter) | Deprecated — use `cricrelay-mobile/` |
-| `pcs-ble-relay-android/` | Deprecated — PCS BLE is in-app mode |
-| `pcs-ble-relay/` (Flutter) | Deprecated |
+| `archive/pcs-ble-relay-android/` | Archived — PCS BLE removed from main apps (see `ARCHIVED.md`) |
+| `archive/pcs-ble-relay/` (Flutter) | Archived |
 
 ## Cutover checklist
 
