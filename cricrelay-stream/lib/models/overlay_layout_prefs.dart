@@ -10,6 +10,9 @@ class OverlayLayoutPrefs {
     this.anchorY = 0.85,
     this.bottomMargin = 8,
     this.horizontalInset = 8,
+    this.fontScale = 1.0,
+    this.bgColor = '',
+    this.textColor = '',
     this.keepScreenOn = false,
     this.videoStabilization = true,
   });
@@ -40,6 +43,12 @@ class OverlayLayoutPrefs {
   final double anchorY;
   final double bottomMargin;
   final double horizontalInset;
+  /// Root font-size multiplier for the scoreboard strip (0.6–2.0).
+  final double fontScale;
+  /// Custom box colour (CSS value); empty = theme default.
+  final String bgColor;
+  /// Custom text colour (CSS value); empty = theme default.
+  final String textColor;
   /// If false, phone may sleep; Android capture service keeps CPU awake.
   final bool keepScreenOn;
   /// Electronic image stabilization (EIS) when supported on device.
@@ -55,6 +64,9 @@ class OverlayLayoutPrefs {
     double? anchorY,
     double? bottomMargin,
     double? horizontalInset,
+    double? fontScale,
+    String? bgColor,
+    String? textColor,
     bool? keepScreenOn,
     bool? videoStabilization,
   }) {
@@ -68,6 +80,9 @@ class OverlayLayoutPrefs {
       anchorY: anchorY ?? this.anchorY,
       bottomMargin: bottomMargin ?? this.bottomMargin,
       horizontalInset: horizontalInset ?? this.horizontalInset,
+      fontScale: fontScale ?? this.fontScale,
+      bgColor: bgColor ?? this.bgColor,
+      textColor: textColor ?? this.textColor,
       keepScreenOn: keepScreenOn ?? this.keepScreenOn,
       videoStabilization: videoStabilization ?? this.videoStabilization,
     );
@@ -84,6 +99,10 @@ class OverlayLayoutPrefs {
       anchorY: (double.tryParse('${j['anchor_y']}') ?? 0.85).clamp(0.05, 0.95),
       bottomMargin: (double.tryParse('${j['bottom_margin']}') ?? 8).clamp(0, 48),
       horizontalInset: (double.tryParse('${j['horizontal_inset']}') ?? 8).clamp(0, 80),
+      fontScale: (double.tryParse('${j['overlay_font_scale'] ?? j['font_scale']}') ?? 1.0)
+          .clamp(0.6, 2.0),
+      bgColor: (j['overlay_bg_color'] ?? j['bg_color'] ?? '').toString(),
+      textColor: (j['overlay_text_color'] ?? j['text_color'] ?? '').toString(),
       keepScreenOn: j['keep_screen_on'] == true,
       videoStabilization: j['video_stabilization'] != false,
     );
@@ -93,6 +112,9 @@ class OverlayLayoutPrefs {
         'overlay_size': size,
         'theme': theme,
         'overlay_density': density,
+        'overlay_font_scale': fontScale,
+        'overlay_bg_color': bgColor,
+        'overlay_text_color': textColor,
       };
 
   /// Bottom-anchored scoreboard strip rect (cricket-style along lower edge).
@@ -136,6 +158,9 @@ class OverlayLayoutPrefs {
         'anchor_y': anchorY,
         'bottom_margin': bottomMargin,
         'horizontal_inset': horizontalInset,
+        'overlay_font_scale': fontScale,
+        'overlay_bg_color': bgColor,
+        'overlay_text_color': textColor,
         'keep_screen_on': keepScreenOn,
         'video_stabilization': videoStabilization,
       };

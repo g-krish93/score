@@ -602,6 +602,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
       overlayAnchorY: _overlayPrefs.anchorY,
       overlayBottomMargin: _overlayPrefs.bottomMargin,
       overlayHorizontalInset: _overlayPrefs.horizontalInset,
+      overlayFontScale: _overlayPrefs.fontScale,
+      overlayBgColor: _overlayPrefs.bgColor,
+      overlayTextColor: _overlayPrefs.textColor,
     );
   }
 
@@ -1034,6 +1037,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> with WidgetsBindingOb
       overlayAnchorY: _overlayPrefs.anchorY,
       overlayBottomMargin: _overlayPrefs.bottomMargin,
       overlayHorizontalInset: _overlayPrefs.horizontalInset,
+      overlayFontScale: _overlayPrefs.fontScale,
+      overlayBgColor: _overlayPrefs.bgColor,
+      overlayTextColor: _overlayPrefs.textColor,
       width: _encoderWidth,
       height: _encoderHeight,
       bitrateBps: _nativeProfile.bitrateBps,

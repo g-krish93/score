@@ -39,6 +39,9 @@ object StreamCameraEngine : ConnectChecker {
         val anchorY: Float = 0.85f,
         val bottomMarginFraction: Float = 0.02f,
         val horizontalInsetFraction: Float = 0.02f,
+        val fontScale: Float = 1.0f,
+        val bgColor: String = "",
+        val textColor: String = "",
     )
 
     private const val MAX_WIDTH = 1280
@@ -372,6 +375,7 @@ object StreamCameraEngine : ConnectChecker {
                 overlayUrl = url
             }
             overlayLayout = layout
+            ensureOverlayCapture()?.setStyle(layout.fontScale, layout.bgColor, layout.textColor)
             if (overlayUrl.isNotEmpty() && camera?.isStreaming == true) {
                 ensureOverlayCapture()?.loadUrl(overlayUrl)
                 applyOverlaySprite()
@@ -704,6 +708,11 @@ object StreamCameraEngine : ConnectChecker {
         mainHandler.postDelayed({
             try {
                 if (overlayUrl.isNotEmpty()) {
+                    ensureOverlayCapture()?.setStyle(
+                        overlayLayout.fontScale,
+                        overlayLayout.bgColor,
+                        overlayLayout.textColor,
+                    )
                     ensureOverlayCapture()?.loadUrl(overlayUrl)
                 }
                 ensureOverlayFilter()

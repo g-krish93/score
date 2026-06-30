@@ -138,6 +138,9 @@ class RtmpPlatform {
     double overlayAnchorY = 0.85,
     double overlayBottomMargin = 8,
     double overlayHorizontalInset = 8,
+    double overlayFontScale = 1.0,
+    String overlayBgColor = '',
+    String overlayTextColor = '',
   }) async {
     await _ch.invokeMethod('updateOverlay', {
       'overlayUrl': overlayUrl,
@@ -147,6 +150,9 @@ class RtmpPlatform {
       'overlayAnchorY': overlayAnchorY,
       'overlayBottomMargin': overlayBottomMargin,
       'overlayHorizontalInset': overlayHorizontalInset,
+      'overlayFontScale': overlayFontScale,
+      'overlayBgColor': overlayBgColor,
+      'overlayTextColor': overlayTextColor,
     });
   }
 
@@ -172,6 +178,9 @@ class RtmpPlatform {
     double overlayAnchorY = 0.85,
     double overlayBottomMargin = 8,
     double overlayHorizontalInset = 8,
+    double overlayFontScale = 1.0,
+    String overlayBgColor = '',
+    String overlayTextColor = '',
     int width = 1280,
     int height = 720,
     int bitrateBps = 2500000,
@@ -188,6 +197,9 @@ class RtmpPlatform {
         'overlayAnchorY': overlayAnchorY,
         'overlayBottomMargin': overlayBottomMargin,
         'overlayHorizontalInset': overlayHorizontalInset,
+        'overlayFontScale': overlayFontScale,
+        'overlayBgColor': overlayBgColor,
+        'overlayTextColor': overlayTextColor,
         'width': width,
         'height': height,
         'bitrateBps': bitrateBps,

@@ -15,6 +15,9 @@ final class StreamCameraEngine: NSObject {
         var anchorY: Float = 0.85
         var bottomMarginFraction: Float = 0.02
         var horizontalInsetFraction: Float = 0.0
+        var fontScale: Float = 1.0
+        var bgColor: String = ""
+        var textColor: String = ""
         var watermarkEnabled: Bool = true
         var watermarkText: String = "Visit cricrelay.co.uk"
     }
@@ -111,6 +114,11 @@ final class StreamCameraEngine: NSObject {
             await configureScreenSize()
             syncOverlayCaptureWidth()
             if !overlayUrl.isEmpty {
+                overlayCapture?.setStyle(
+                    fontScale: overlayLayout.fontScale,
+                    bgColor: overlayLayout.bgColor,
+                    textColor: overlayLayout.textColor
+                )
                 overlayCapture?.loadUrl(overlayUrl)
             }
             await ensureWatermarkObject()
@@ -143,7 +151,18 @@ final class StreamCameraEngine: NSObject {
         // moment the operator tweaks overlay settings.
         if !url.isEmpty {
             overlayUrl = url
+            overlayCapture?.setStyle(
+                fontScale: layout.fontScale,
+                bgColor: layout.bgColor,
+                textColor: layout.textColor
+            )
             overlayCapture?.loadUrl(url)
+        } else {
+            overlayCapture?.setStyle(
+                fontScale: layout.fontScale,
+                bgColor: layout.bgColor,
+                textColor: layout.textColor
+            )
         }
         overlayLayout = layout
         syncOverlayCaptureWidth()
@@ -198,6 +217,11 @@ final class StreamCameraEngine: NSObject {
             await configureScreenSize()
 
             if !overlayUrl.isEmpty {
+                overlayCapture?.setStyle(
+                    fontScale: layout.fontScale,
+                    bgColor: layout.bgColor,
+                    textColor: layout.textColor
+                )
                 overlayCapture?.loadUrl(overlayUrl)
             }
             await ensureOverlayObject()

@@ -143,6 +143,9 @@ class BroadcastController extends ChangeNotifier {
       overlayAnchorY: overlayPrefs.anchorY,
       overlayBottomMargin: overlayPrefs.bottomMargin,
       overlayHorizontalInset: overlayPrefs.horizontalInset,
+      overlayFontScale: overlayPrefs.fontScale,
+      overlayBgColor: overlayPrefs.bgColor,
+      overlayTextColor: overlayPrefs.textColor,
     );
   }
 

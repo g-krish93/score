@@ -206,6 +206,9 @@ struct OverlayLayoutPrefs: Codable {
             anchorY: Float(anchorY),
             bottomMarginFraction: Float(bottomMargin / 400),
             horizontalInsetFraction: Float(horizontalInset / 400),
+            fontScale: Float(fontScale),
+            bgColor: bgColor,
+            textColor: textColor,
             watermarkEnabled: watermarkEnabled,
             watermarkText: watermarkText
         )

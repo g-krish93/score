@@ -15,6 +15,9 @@ final class StreamCameraEngine: NSObject {
         var anchorY: Float = 0.85
         var bottomMarginFraction: Float = 0.02
         var horizontalInsetFraction: Float = 0.02
+        var fontScale: Float = 1.0
+        var bgColor: String = ""
+        var textColor: String = ""
     }
 
     private let mixer = MediaMixer()
@@ -116,6 +119,11 @@ final class StreamCameraEngine: NSObject {
     func updateOverlay(url: String, layout: OverlayLayout) {
         overlayUrl = url
         overlayLayout = layout
+        overlayCapture?.setStyle(
+            fontScale: layout.fontScale,
+            bgColor: layout.bgColor,
+            textColor: layout.textColor
+        )
         overlayCapture?.loadUrl(url)
         Task { await ensureOverlayObject() }
     }
@@ -160,6 +168,11 @@ final class StreamCameraEngine: NSObject {
             await configureScreenSize()
 
             if !overlayUrl.isEmpty {
+                overlayCapture?.setStyle(
+                    fontScale: layout.fontScale,
+                    bgColor: layout.bgColor,
+                    textColor: layout.textColor
+                )
                 overlayCapture?.loadUrl(overlayUrl)
             }
             await ensureOverlayObject()

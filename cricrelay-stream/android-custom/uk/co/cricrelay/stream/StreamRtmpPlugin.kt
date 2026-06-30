@@ -135,6 +135,9 @@ class StreamRtmpPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activit
             bottomMarginFraction = ((call.argument<Double>("overlayBottomMargin") ?: 8.0).toFloat() / 720f)
                 .coerceIn(0f, 0.15f),
             horizontalInsetFraction = (call.argument<Double>("overlayHorizontalInset") ?: 8.0).toFloat() / 400f,
+            fontScale = (call.argument<Double>("overlayFontScale") ?: 1.0).toFloat(),
+            bgColor = call.argument<String>("overlayBgColor") ?: "",
+            textColor = call.argument<String>("overlayTextColor") ?: "",
         )
     }
 

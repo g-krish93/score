@@ -38,6 +38,10 @@ class OverlayLayoutStore {
         anchorY: local.anchorY,
         bottomMargin: local.bottomMargin,
         horizontalInset: local.horizontalInset,
+        fontScale: (double.tryParse('${remote['overlay_font_scale']}') ?? local.fontScale)
+            .clamp(0.6, 2.0),
+        bgColor: (remote['overlay_bg_color'] ?? local.bgColor).toString(),
+        textColor: (remote['overlay_text_color'] ?? local.textColor).toString(),
         keepScreenOn: local.keepScreenOn,
         videoStabilization: local.videoStabilization,
       );
@@ -64,6 +68,9 @@ class OverlayLayoutStore {
       anchorY: p.anchorY,
       bottomMargin: p.bottomMargin,
       horizontalInset: p.horizontalInset,
+      fontScale: (double.tryParse('${remote['overlay_font_scale']}') ?? p.fontScale).clamp(0.6, 2.0),
+      bgColor: (remote['overlay_bg_color'] ?? p.bgColor).toString(),
+      textColor: (remote['overlay_text_color'] ?? p.textColor).toString(),
       keepScreenOn: p.keepScreenOn,
       videoStabilization: p.videoStabilization,
     );

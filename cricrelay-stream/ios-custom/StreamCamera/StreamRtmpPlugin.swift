@@ -192,13 +192,19 @@ public final class StreamRtmpPlugin: NSObject, FlutterPlugin, FlutterStreamHandl
         let anchorY = Float(args?["overlayAnchorY"] as? Double ?? 0.85)
         let bottom = Float(args?["overlayBottomMargin"] as? Double ?? 8.0) / 400
         let inset = Float(args?["overlayHorizontalInset"] as? Double ?? 8.0) / 400
+        let fontScale = Float(args?["overlayFontScale"] as? Double ?? 1.0)
+        let bgColor = args?["overlayBgColor"] as? String ?? ""
+        let textColor = args?["overlayTextColor"] as? String ?? ""
         return StreamCameraEngine.OverlayLayout(
             heightFraction: height,
             widthFraction: width,
             anchorX: anchorX,
             anchorY: anchorY,
             bottomMarginFraction: bottom,
-            horizontalInsetFraction: inset
+            horizontalInsetFraction: inset,
+            fontScale: fontScale,
+            bgColor: bgColor,
+            textColor: textColor
         )
     }
 }
