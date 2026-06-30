@@ -1,6 +1,6 @@
 # CricRelay Architecture
 
-*Auto-maintained by Stop hook (`/.claude/hooks/update-architecture.sh`). Last updated: 2026-06-30 (pcs-ble archival, CricHeroes provider, KMP shared module, Android nav + Studio detail).*
+*Auto-maintained by Stop hook (`/.claude/hooks/update-architecture.sh`). Last updated: 2026-06-30 (HomeScreen StudioBackdrop + LiveNowCard; pcs-ble archival, CricHeroes provider, KMP shared module, Android nav + Studio detail).*
 
 ---
 
@@ -152,7 +152,7 @@ Kotlin multi-module Gradle project (Hilt DI, Compose UI, KMP shared module).
 |---|---|
 | `app/` | Application shell; Compose `CricRelayNavHost` with type-safe serializable routes |
 | `core/` | Shared domain models, network, DI |
-| `feature/home` | `HomeScreen` + `CreateStreamScreen`; `HomeViewModel`; `CreateStreamViewModel`; stream management (rename/delete), GlanceRow stats, YouTube/Twitch OAuth cards, CricHeroes stream entry |
+| `feature/home` | `HomeScreen` + `CreateStreamScreen`; `HomeViewModel`; `CreateStreamViewModel`; stream management (rename/delete), GlanceRow stats, YouTube/Twitch OAuth cards, CricHeroes stream entry; `StudioBackdrop` with `BackdropMood.OnAir`/`Idle` context-aware theming; `StudioHero` banner; `LiveNowCard` (promotes the active stream above the list when live) |
 | `feature/studio` | `StudioScreen`, `StudioViewModel`, modal sheets (detail below) |
 | `feature/scoring` | In-app scoring entry UI |
 | `streaming/` | `StreamController` — RootEncoder 2.4.8 RTMP engine; PiP overlay; offscreen-GL WebView swap; BLE overlay push |
