@@ -1,6 +1,6 @@
 # CricRelay Architecture
 
-*Auto-maintained by Stop hook (`/.claude/hooks/update-architecture.sh`). Last updated: 2026-06-30 (public live-score page + SSE; public club page; SEO infrastructure; password reset flow; iOS OTA install; viewer-stat columns; ui_theme; scoring dual-write flags; stream slot cap; Sponsor time bounds; cricheroes.in support).*
+*Auto-maintained by Stop hook (`/.claude/hooks/update-architecture.sh`). Last updated: 2026-06-30 (public live-score page + SSE; public club page; SEO infrastructure; password reset flow; iOS OTA install; viewer-stat columns; ui_theme; scoring dual-write flags; stream slot cap; Sponsor time bounds; cricheroes.in support; fixture Weekly-tab priority; normalize_cricheroes_team_root; relay_source_to_provider).*
 
 ---
 
@@ -18,9 +18,9 @@ Central API and orchestration layer.
 
 | File | Responsibility |
 |---|---|
-| `app.py` | Flask app factory, routes, CORS; security headers (`X-Content-Type-Options`, HSTS, etc.); SEO (canonical URL, `sitemap.xml`, `robots.txt`, `inject_seo_context`); public live-score page (`/live/<slug>`) + SSE endpoint (`/live/<slug>/events`, `PUBLIC_LIVE_SSE` flag); public club page (`/club/<slug>`); password reset flow (SMTP, `URLSafeTimedSerializer`); iOS OTA install manifest (`/download/cricrelay-stream-ota.plist`); scoring dual-write + shadow-compare feature flags (`SCORING_DUAL_WRITE`, `SCORING_SHADOW_COMPARE`); stream slot cap (`MAX_LIVE_STREAMS_PER_CLUB = 6`); PCS BLE retirement (`pcs_ble_retired_response()`, `purge_legacy_pcs_ble_relay_rows()`) |
+| `app.py` | Flask app factory, routes, CORS; security headers (`X-Content-Type-Options`, HSTS, etc.); SEO (canonical URL, `sitemap.xml`, `robots.txt`, `inject_seo_context`); public live-score page (`/live/<slug>`) + SSE endpoint (`/live/<slug>/events`, `PUBLIC_LIVE_SSE` flag); public club page (`/club/<slug>`); password reset flow (SMTP, `URLSafeTimedSerializer`); iOS OTA install manifest (`/download/cricrelay-stream-ota.plist`); scoring dual-write + shadow-compare feature flags (`SCORING_DUAL_WRITE`, `SCORING_SHADOW_COMPARE`); stream slot cap (`MAX_LIVE_STREAMS_PER_CLUB = 6`); PCS BLE retirement (`pcs_ble_retired_response()`, `purge_legacy_pcs_ble_relay_rows()`); fixture discovery (`_fixture_candidate_urls()` — probes `/Matches?tab=Weekly` first, then `/Matches`, then `/website/results`) |
 | `stream_api.py` | Bearer-token auth (`bearer_org_from_request`), stream session CRUD, go-live / stop-live, broadcast status, match-day status |
-| `models_cricrelay.py` | SQLAlchemy models: `Organization` (+ `ui_theme` original/light/dark, branding fields), `ClubUser`, `RelayMatch`, `StreamSession` (+ `started_by_user_id`, `match_label`, `peak_viewers`, `viewer_sample_sum/count`, `final_score_json`, `vod_url`), `Sponsor` (+ `active_from`/`active_to` time bounds), `Tournament`, `Team`, `Player`, `Fixture`; `RELAY_PROVIDERS` dispatch table; URL canonicalization helpers; `resolve_provider_callable()` lazy-import; `provider_poll_interval_sec()` |
+| `models_cricrelay.py` | SQLAlchemy models: `Organization` (+ `ui_theme` original/light/dark, branding fields), `ClubUser`, `RelayMatch`, `StreamSession` (+ `started_by_user_id`, `match_label`, `peak_viewers`, `viewer_sample_sum/count`, `final_score_json`, `vod_url`), `Sponsor` (+ `active_from`/`active_to` time bounds), `Tournament`, `Team`, `Player`, `Fixture`; `RELAY_PROVIDERS` dispatch table; URL canonicalization helpers (`canonicalize_play_cricket_scrape_url`, `canonicalize_cricheroes_scrape_url`, `normalize_cricheroes_team_root`); `relay_source_to_provider()` (maps `relay_source` string → provider key); `resolve_provider_callable()` lazy-import; `provider_poll_interval_sec()` |
 | `play_cricket_scraper.py` | Scrapes Play Cricket scorecard HTML |
 | `play_cricket_mapper.py` | Maps scraped rows → overlay JSON schema |
 | `scoring_bridge.py` | Routes scoring events to overlay + cricrelay_core |
