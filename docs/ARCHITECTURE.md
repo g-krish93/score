@@ -1,6 +1,6 @@
 # CricRelay Architecture
 
-*Auto-maintained by Stop hook (`/.claude/hooks/update-architecture.sh`). Last updated: 2026-06-29.*
+*Auto-maintained by Stop hook (`/.claude/hooks/update-architecture.sh`). Last updated: 2026-06-30.*
 
 ---
 
@@ -64,9 +64,16 @@ Adapters implementing `cricrelay_core.ports` against Postgres. Decouples the dom
 
 Browser-rendered HTML/CSS/JS scoreboard burned into the stream via the camera engine's WebView compositor.
 
-- Served by Flask at `/stream` (rich overlay endpoint).
-- Receives score JSON via polling or WebSocket push.
+- Served by Flask at `/stream` and `/m/<slug>/stream` (rich overlay endpoint).
+- **Design canvas:** 1280px reference layout (`DESIGN_W`); scales down when encode width is narrower (portrait 720p, low-tier 640p). Chrome at `/stream` is the visual reference at full 1280p.
+- **Streamer phone:** Capture width tracks the **encoded RTMP frame** (not screen size). Orientation and encoder tier adjust automatically; strip stays bottom-anchored edge-to-edge on the video.
+- **Viewer phone:** Overlay is burned into the video — Twitch/YouTube scale the whole frame. No per-viewer overlay layout; use 720p+ stream for readable text on phones.
+- Receives score JSON via polling (`/score` or `/m/<slug>/overlay-data`).
 - Team names are dash-formatted; T20 format is inferred pre-match.
+- **Mobile capture/compositing (must match Chrome):**
+  - Android `OverlayWebViewCapture`: rasterizes at **encoded canvas width** (dynamic, max 1280); injects viewport + top-pinned `#overlay` CSS; GL sprite composites at 100% width at default prefs.
+  - iOS `OverlayWebViewCapture`: same dynamic capture width + measure loop; `StreamCameraEngine` left-aligns and scales to `encodedCanvasWidth × widthFraction`.
+  - Studio preview (`BroadcastCameraUi`) uses the same width fraction and horizontal inset as the burned-in GL overlay (WYSIWYG).
 - The `cricket_overlay.html` / `overlay_lovable_export.html` files are standalone variants for development.
 
 ---

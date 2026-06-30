@@ -141,11 +141,11 @@ struct OverlayLayoutPrefs: Codable {
 
     init() {
         heightFraction = 0.16
-        widthFraction = 0.92
+        widthFraction = 1.0
         anchorX = 0.5
         anchorY = 0.85
         bottomMargin = 8.0
-        horizontalInset = 8.0
+        horizontalInset = 0.0
         theme = "classic"
         fontScale = 1.0
         bgColor = ""

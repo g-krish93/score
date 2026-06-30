@@ -30,9 +30,9 @@ object DeviceCapabilities {
     }
 
     fun maxOverlayCaptureWidth(t: Tier): Int = when (t) {
-        Tier.LOW -> 480
-        Tier.MID -> 640
-        Tier.HIGH -> 960
+        Tier.LOW -> 640
+        Tier.MID -> 1280
+        Tier.HIGH -> 1280
     }
 
     fun suggestedQualityId(t: Tier): String = when (t) {

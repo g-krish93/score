@@ -135,19 +135,26 @@ fun BroadcastCameraUi(
         if (!state.streaming) {
             state.overlayPreview?.let { board ->
                 val boardAlpha = state.overlayPrefs.opacity.toFloat().coerceIn(0.2f, 1f)
-                val boardSlotModifier = if (landscape) {
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(start = 96.dp, end = 110.dp, bottom = 14.dp + positionLift)
-                        .fillMaxWidth(OverlayLayoutPrefs.REF_WIDTH_FRACTION.toFloat())
-                } else {
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 272.dp + positionLift)
-                        .fillMaxWidth(OverlayLayoutPrefs.REF_WIDTH_FRACTION.toFloat())
-                }
-                // Bitmap is a fixed-width viewport with the widget already centered by the
-                // injected page CSS — position is deterministic from the very first frame.
+                val widthFrac = state.overlayPrefs.clampedWidthFraction().toFloat()
+                val boardSlotModifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(
+                        start = with(density) {
+                            (state.overlayPrefs.horizontalInset.toFloat() / 400f * previewWidth)
+                                .toInt().toDp()
+                        },
+                        end = with(density) {
+                            (state.overlayPrefs.horizontalInset.toFloat() / 400f * previewWidth)
+                                .toInt().toDp()
+                        },
+                        bottom = if (landscape) {
+                            14.dp + positionLift
+                        } else {
+                            272.dp + positionLift
+                        },
+                    )
+                    .fillMaxWidth(widthFrac)
+                // Bitmap matches stream canvas width (1280px); preview uses same width/inset as GL.
                 Box(
                     modifier = boardSlotModifier,
                     contentAlignment = Alignment.BottomCenter,

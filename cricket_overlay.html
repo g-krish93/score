@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=1280">
 <title>BMACC Cricket Overlay</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -424,7 +424,8 @@ const THEMES = { navy:'', green:'theme-green', gold:'theme-gold', red:'theme-red
 document.getElementById('overlay').className = THEMES[CFG.theme] || '';
 
 // ══════════════════════════════════════════════════════════
-// SCALE-TO-FIT  (broadcast overlay — design width 1280px)
+// SCALE-TO-FIT  (broadcast overlay — design width 1280px; scales down on phones that
+// encode below 1280p or in portrait so text stays proportional to the stream frame)
 // ══════════════════════════════════════════════════════════
 const DESIGN_W = 1280;
 function applyOverlayScale() {

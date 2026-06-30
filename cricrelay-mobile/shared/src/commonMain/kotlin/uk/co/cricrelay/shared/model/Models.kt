@@ -221,11 +221,11 @@ data class OverlayLayoutPrefs(
     // Scoreboard is a thin horizontal strip; height is a constant, font size is the
     // configurable readability lever instead of board height.
     @SerialName("overlay_height_fraction") val heightFraction: Double = 0.16,
-    @SerialName("overlay_width_fraction") val widthFraction: Double = 0.92,
+    @SerialName("overlay_width_fraction") val widthFraction: Double = 1.0,
     @SerialName("overlay_anchor_x") val anchorX: Double = 0.5,
     @SerialName("overlay_anchor_y") val anchorY: Double = 0.85,
     @SerialName("overlay_bottom_margin") val bottomMargin: Double = 8.0,
-    @SerialName("overlay_horizontal_inset") val horizontalInset: Double = 8.0,
+    @SerialName("overlay_horizontal_inset") val horizontalInset: Double = 0.0,
     @SerialName("theme") val theme: String = "classic",
     // Configurable scoreboard appearance (Board Edit sheet).
     @SerialName("overlay_font_scale") val fontScale: Double = 1.0,
@@ -255,7 +255,7 @@ data class OverlayLayoutPrefs(
         fontScale.toFloat().coerceIn(FONT_MIN.toFloat(), FONT_MAX.toFloat())
 
     companion object {
-        const val REF_WIDTH_FRACTION = 0.92
+        const val REF_WIDTH_FRACTION = 1.0
         const val REF_HEIGHT_FRACTION = 0.16
         const val WIDTH_MIN = 0.25
         const val WIDTH_MAX = 0.98
@@ -277,11 +277,11 @@ data class OverlayLayoutPrefs(
 
         fun fromJson(json: JsonObject): OverlayLayoutPrefs = OverlayLayoutPrefs(
             heightFraction = json.string("overlay_height_fraction")?.toDoubleOrNull() ?: 0.16,
-            widthFraction = json.string("overlay_width_fraction")?.toDoubleOrNull() ?: 0.92,
+            widthFraction = json.string("overlay_width_fraction")?.toDoubleOrNull() ?: 1.0,
             anchorX = json.string("overlay_anchor_x")?.toDoubleOrNull() ?: 0.5,
             anchorY = json.string("overlay_anchor_y")?.toDoubleOrNull() ?: 0.85,
             bottomMargin = json.string("overlay_bottom_margin")?.toDoubleOrNull() ?: 8.0,
-            horizontalInset = json.string("overlay_horizontal_inset")?.toDoubleOrNull() ?: 8.0,
+            horizontalInset = json.string("overlay_horizontal_inset")?.toDoubleOrNull() ?: 0.0,
             theme = sanitizeTheme(json.string("theme") ?: json.string("overlay_theme")),
             fontScale = json.string("overlay_font_scale")?.toDoubleOrNull() ?: 1.0,
             bgColor = json.string("overlay_bg_color") ?: "",

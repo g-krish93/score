@@ -63,18 +63,18 @@ class OverlaySpriteLayoutTest {
 
     @Test
     fun `fitScale keeps native size when it fits`() {
-        // 960x340 bitmap on a 1280x720 canvas => base 75% x 47.2%, default multipliers.
-        val s = OverlaySpriteLayout.fitScale(75f, 47.2f, 1f, 1f)
-        assertTrue(kotlin.math.abs(s.x - 75f) < 0.01f)
+        // 1280x340 bitmap on a 1280x720 canvas => base 100% x 47.2%, default multipliers.
+        val s = OverlaySpriteLayout.fitScale(100f, 47.2f, 1f, 1f, maxPercent = 100f)
+        assertTrue(kotlin.math.abs(s.x - 100f) < 0.01f)
         assertTrue(kotlin.math.abs(s.y - 47.2f) < 0.01f)
     }
 
     @Test
     fun `fitScale shrinks both axes proportionally on overflow`() {
-        // 960px-wide bitmap on a 720px-wide portrait canvas => base x = 133%.
-        val s = OverlaySpriteLayout.fitScale(133.3f, 26.5f, 1f, 1f)
+        // 1280px-wide bitmap on a 720px-wide portrait canvas => base x = 177.8%.
+        val s = OverlaySpriteLayout.fitScale(177.8f, 26.5f, 1f, 1f)
         assertTrue("x must be clamped, was ${s.x}", s.x <= 96f)
-        val aspectBefore = 26.5f / 133.3f
+        val aspectBefore = 26.5f / 177.8f
         val aspectAfter = s.y / s.x
         assertTrue(
             "aspect ratio must be preserved ($aspectBefore vs $aspectAfter)",

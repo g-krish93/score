@@ -35,11 +35,11 @@ object StreamCameraEngine : ConnectChecker {
 
     data class OverlayLayout(
         val heightFraction: Float = 0.16f,
-        val widthFraction: Float = 0.92f,
+        val widthFraction: Float = 1.0f,
         val anchorX: Float = 0.5f,
         val anchorY: Float = 0.85f,
         val bottomMarginFraction: Float = 0.02f,
-        val horizontalInsetFraction: Float = 0.02f,
+        val horizontalInsetFraction: Float = 0f,
         val fontScale: Float = 1.0f,
         val bgColor: String = "",
         val textColor: String = "",
@@ -51,7 +51,7 @@ object StreamCameraEngine : ConnectChecker {
     private const val MAX_WIDTH = 1280
     // Reference prefs (the defaults in OverlayLayoutPrefs). When the user sliders sit at
     // these values the overlay bitmap renders at its NATIVE aspect ratio — wMul/hMul == 1.
-    private const val REF_OVERLAY_WIDTH_FRACTION = 0.92f
+    private const val REF_OVERLAY_WIDTH_FRACTION = 1.0f
     private const val REF_OVERLAY_HEIGHT_FRACTION = 0.16f
     private const val MAX_HEIGHT = 720
     private const val DEFAULT_BITRATE = 2500000
@@ -590,12 +590,27 @@ object StreamCameraEngine : ConnectChecker {
         mainHandler.postDelayed(runnable, 80)
     }
 
+    private fun encodedCanvasWidth(): Int =
+        if (streamIsPortrait) streamHeight else streamWidth
+
+    private fun encodedCanvasHeight(): Int =
+        if (streamIsPortrait) streamWidth else streamHeight
+
+    /** Raster width = encoded frame width (capped by device tier) so overlay fills every stream size. */
+    private fun syncOverlayCaptureWidth() {
+        val ctx = appContext ?: activity?.applicationContext ?: return
+        val tierMax = DeviceCapabilities.maxOverlayCaptureWidth(DeviceCapabilities.tier(ctx))
+        val w = encodedCanvasWidth().coerceIn(320, tierMax.coerceAtMost(MAX_WIDTH))
+        ensureOverlayCapture()?.setCaptureWidth(w)
+    }
+
     fun updateOverlay(url: String, layout: OverlayLayout) {
         runOnMain {
             if (url.isNotEmpty()) {
                 overlayUrl = url
             }
             overlayLayout = layout
+            syncOverlayCaptureWidth()
             ensureWatermarkFilter()
             if (overlayUrl.isEmpty()) return@runOnMain
             ensureOverlayCapture()?.apply {
@@ -837,6 +852,7 @@ object StreamCameraEngine : ConnectChecker {
                     "rot=$streamRotation portrait=$streamIsPortrait encodedFrame=${effW}x${effH}",
             )
             if (ready) {
+                syncOverlayCaptureWidth()
                 ensureWatermarkFilter()
             }
             ready
@@ -1057,6 +1073,7 @@ object StreamCameraEngine : ConnectChecker {
     /** Overlay URL may be set before the GL view attaches an Activity — restart capture then. */
     private fun resumeOverlayPreviewIfNeeded() {
         if (overlayUrl.isEmpty() || activity == null) return
+        syncOverlayCaptureWidth()
         ensureOverlayCapture()?.apply {
             setStyle(overlayLayout.fontScale, overlayLayout.bgColor, overlayLayout.textColor)
             loadUrl(overlayUrl)
@@ -1236,8 +1253,8 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     private fun applyWatermarkSprite(filter: ImageObjectFilterRender) {
-        val canvasW = if (streamIsPortrait) streamHeight else streamWidth
-        val canvasH = if (streamIsPortrait) streamWidth else streamHeight
+        val canvasW = encodedCanvasWidth()
+        val canvasH = encodedCanvasHeight()
         filter.setDefaultScale(canvasW, canvasH)
         val sprite = WatermarkSpriteLayout.compute(
             WatermarkSpriteLayout.Params(
@@ -1292,13 +1309,13 @@ object StreamCameraEngine : ConnectChecker {
 
     private fun applyOverlaySprite() {
         val filter = imageFilter ?: return
-        val canvasW = if (streamIsPortrait) streamHeight else streamWidth
-        val canvasH = if (streamIsPortrait) streamWidth else streamHeight
+        val canvasW = encodedCanvasWidth()
+        val canvasH = encodedCanvasHeight()
         filter.setDefaultScale(canvasW, canvasH)
         val base = filter.getScale()
         val wMul = overlayLayout.widthFraction.coerceIn(0.25f, 0.98f) / REF_OVERLAY_WIDTH_FRACTION
         val hMul = overlayLayout.heightFraction.coerceIn(0.10f, 0.28f) / REF_OVERLAY_HEIGHT_FRACTION
-        val fitted = OverlaySpriteLayout.fitScale(base.x, base.y, wMul, hMul)
+        val fitted = OverlaySpriteLayout.fitScale(base.x, base.y, wMul, hMul, maxPercent = 100f)
         filter.setScale(fitted.x, fitted.y)
         val scale = filter.getScale()
         val pos = OverlaySpriteLayout.computePosition(
@@ -1432,6 +1449,7 @@ object StreamCameraEngine : ConnectChecker {
             return
         }
         if (overlayCaptureInFlight) return
+        syncOverlayCaptureWidth()
         val capture = overlayCapture ?: return
         overlayCaptureInFlight = true
         capture.captureAsync { captured ->

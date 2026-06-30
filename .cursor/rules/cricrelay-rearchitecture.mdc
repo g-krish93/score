@@ -16,6 +16,7 @@ hardening, API contract, mobile consolidation, realtime-at-scale).
 - **Default-OFF flags** for anything touching a live path (see `SCORING_DUAL_WRITE`,
   `SCORING_SHADOW_COMPARE`, `PUBLIC_LIVE_SSE` in `server/app.py`).
 - **Test every change.** Tests run standalone (`python -m <module>`) or via pytest.
+- **Update `docs/ARCHITECTURE.md`** when overlay capture, compositing, or `/stream` HTML changes.
 - **Feature branch + PR.** Pushing to `main` auto-deploys to prod
   (`.github/workflows/deploy.yml`). Only docs-only commits may go to `main`, and they must
   include `[skip deploy]` in the message.

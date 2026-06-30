@@ -9,12 +9,12 @@ final class StreamCameraEngine: NSObject {
     static let shared = StreamCameraEngine()
 
     struct OverlayLayout {
-        var heightFraction: Float = 0.22
-        var widthFraction: Float = 0.88
+        var heightFraction: Float = 0.16
+        var widthFraction: Float = 1.0
         var anchorX: Float = 0.5
         var anchorY: Float = 0.85
         var bottomMarginFraction: Float = 0.02
-        var horizontalInsetFraction: Float = 0.02
+        var horizontalInsetFraction: Float = 0.0
         var watermarkEnabled: Bool = true
         var watermarkText: String = "Visit cricrelay.co.uk"
     }
@@ -109,6 +109,7 @@ final class StreamCameraEngine: NSObject {
             try await stream.setVideoSettings(settings)
             try await mixer.setFrameRate(Double(fps))
             await configureScreenSize()
+            syncOverlayCaptureWidth()
             if !overlayUrl.isEmpty {
                 overlayCapture?.loadUrl(overlayUrl)
             }
@@ -145,6 +146,7 @@ final class StreamCameraEngine: NSObject {
             overlayCapture?.loadUrl(url)
         }
         overlayLayout = layout
+        syncOverlayCaptureWidth()
         Task {
             await ensureOverlayObject()
             await ensureWatermarkObject()
@@ -429,7 +431,7 @@ final class StreamCameraEngine: NSObject {
         await Task { @ScreenActor in
             if overlayObject == nil {
                 let obj = ImageScreenObject()
-                obj.horizontalAlignment = .center
+                obj.horizontalAlignment = .left
                 obj.verticalAlignment = .bottom
                 overlayObject = obj
                 try? await mixer.screen.addChild(obj)
@@ -497,15 +499,28 @@ final class StreamCameraEngine: NSObject {
     private func applyOverlayLayout() {
         guard let obj = overlayObject else { return }
         let streamH = CGFloat(streamHeight)
+        let streamW = CGFloat(encodedCanvasWidth())
         let overlayH = streamH * CGFloat(overlayLayout.heightFraction)
         let bottomFromAnchor = streamH * (1 - CGFloat(overlayLayout.anchorY)) - overlayH / 2
-        obj.layoutMargin = UIEdgeInsets(top: 0, left: 0, bottom: max(0, bottomFromAnchor), right: 0)
-        if overlayLayout.anchorX < 0.45 {
-            obj.horizontalAlignment = .left
-        } else if overlayLayout.anchorX > 0.55 {
-            obj.horizontalAlignment = .right
-        } else {
-            obj.horizontalAlignment = .center
+        let insetX = streamW * CGFloat(overlayLayout.horizontalInsetFraction)
+        obj.layoutMargin = UIEdgeInsets(
+            top: 0,
+            left: insetX,
+            bottom: max(0, bottomFromAnchor),
+            right: insetX
+        )
+        obj.horizontalAlignment = .left
+    }
+
+    /// Scale captured strip to the operator's width slider (fraction of stream canvas).
+    private func scaleOverlayImage(_ image: UIImage, targetWidth: CGFloat) -> UIImage {
+        guard image.size.width > 0, targetWidth > 0 else { return image }
+        let aspect = image.size.height / image.size.width
+        let size = CGSize(width: targetWidth, height: targetWidth * aspect)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
         }
     }
 
@@ -542,14 +557,20 @@ final class StreamCameraEngine: NSObject {
         }
     }
 
+    private func encodedCanvasWidth() -> Int { streamWidth }
+
+    private func syncOverlayCaptureWidth() {
+        overlayCapture?.setCaptureWidth(encodedCanvasWidth())
+    }
+
     private func refreshOverlayFrame() {
-        let wFrac = overlayLayout.widthFraction
-        let w = Int(Float(streamWidth) * wFrac)
-        let h = Int(Float(streamHeight) * overlayLayout.heightFraction)
-        guard let image = overlayCapture?.capture(width: max(w, 320), height: max(h, 64)),
-              let cg = image.cgImage else { return }
+        syncOverlayCaptureWidth()
+        let canvasW = encodedCanvasWidth()
+        let targetW = CGFloat(canvasW) * CGFloat(overlayLayout.widthFraction)
+        guard let image = overlayCapture?.capture(width: canvasW, height: 200),
+              let scaled = scaleOverlayImage(image, targetWidth: targetW).cgImage else { return }
         Task { @ScreenActor in
-            overlayObject?.cgImage = cg
+            overlayObject?.cgImage = scaled
             applyOverlayLayout()
         }
     }

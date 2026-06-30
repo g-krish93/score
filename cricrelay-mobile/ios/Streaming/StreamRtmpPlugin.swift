@@ -97,7 +97,7 @@ public final class StreamRtmpPlugin: NSObject, FlutterPlugin, FlutterStreamHandl
                 "tier": "high",
                 "lowRam": false,
                 "overlayRefreshMs": 500,
-                "maxOverlayCaptureWidth": 960,
+                "maxOverlayCaptureWidth": 1280,
                 "suggestedQuality": "high",
                 "defaultEis": true,
                 "powerSave": ProcessInfo.processInfo.isLowPowerModeEnabled,
@@ -186,12 +186,12 @@ public final class StreamRtmpPlugin: NSObject, FlutterPlugin, FlutterStreamHandl
     }
 
     private func overlayLayout(from args: [String: Any]?) -> StreamCameraEngine.OverlayLayout {
-        let height = Float(args?["overlayHeightFraction"] as? Double ?? 0.22)
-        let width = Float(args?["overlayWidthFraction"] as? Double ?? 0.88)
+        let height = Float(args?["overlayHeightFraction"] as? Double ?? 0.16)
+        let width = Float(args?["overlayWidthFraction"] as? Double ?? 1.0)
         let anchorX = Float(args?["overlayAnchorX"] as? Double ?? 0.5)
         let anchorY = Float(args?["overlayAnchorY"] as? Double ?? 0.85)
         let bottom = Float(args?["overlayBottomMargin"] as? Double ?? 8.0) / 400
-        let inset = Float(args?["overlayHorizontalInset"] as? Double ?? 8.0) / 400
+        let inset = Float(args?["overlayHorizontalInset"] as? Double ?? 0.0) / 400
         return StreamCameraEngine.OverlayLayout(
             heightFraction: height,
             widthFraction: width,

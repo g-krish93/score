@@ -59,22 +59,18 @@ class OverlayWebViewCapture(private val activity: Activity) {
     @Volatile private var bgColor: String = ""
     @Volatile private var textColor: String = ""
 
-    companion object {
-        /** Fixed bitmap width — both the GL sprite and the Compose preview consume this. */
-        const val CAPTURE_WIDTH_PX = 960
+    /** Physical bitmap width — tracks the encoded RTMP frame width (varies by phone tier / orientation). */
+    @Volatile private var captureWidthPx = DESIGN_WIDTH_PX
 
-        /**
-         * CSS viewport width; initial scale = CAPTURE_WIDTH_PX / CSS_VIEWPORT_WIDTH.
-         *
-         * MUST equal the overlay's native design width (cricket_overlay.html lays out at
-         * 1280px and its own applyOverlayScale() is a no-op at >= 1280). Rendering at the
-         * design width means the captured strip is byte-for-byte what Chrome shows; the GL
-         * sprite then scales the bitmap by aspect ratio + width/height sliders. Using a
-         * narrower viewport (the old 480) crammed 1280px of content into 480px and clipped
-         * the team names — the exact bug this fixes.
-         */
-        private const val CSS_VIEWPORT_WIDTH = 1280
-        private const val INITIAL_SCALE_PERCENT = CAPTURE_WIDTH_PX * 100 / CSS_VIEWPORT_WIDTH
+    companion object {
+        /** Reference layout width in cricket_overlay.html (DESIGN_W). Capture width scales down from this. */
+        const val DESIGN_WIDTH_PX = 1280
+
+        /** @deprecated Use [DESIGN_WIDTH_PX] or instance capture width. Kept for preview callers. */
+        @Deprecated("Use DESIGN_WIDTH_PX; capture width is dynamic per stream resolution")
+        const val CAPTURE_WIDTH_PX = DESIGN_WIDTH_PX
+
+        private const val MIN_CAPTURE_WIDTH_PX = 320
 
         // The new overlay strip is a thin lower-third (~78 CSS px tall at 1280); keep the floor
         // low so the measure loop's true height isn't clamped up into dead transparent space
@@ -86,6 +82,37 @@ class OverlayWebViewCapture(private val activity: Activity) {
         /** CSS padding below the widget so drop shadows are not clipped. */
         private const val BOTTOM_PAD_CSS = 10
     }
+
+    /** Current raster width in physical pixels (matches encoded stream canvas width). */
+    fun captureWidth(): Int = captureWidthPx
+
+    /**
+     * Match overlay capture to the encoded video frame width so the strip is edge-to-edge on
+     * every phone (720p portrait, 640p low-tier, 1280p landscape, etc.).
+     */
+    fun setCaptureWidth(px: Int) {
+        val w = px.coerceIn(MIN_CAPTURE_WIDTH_PX, DESIGN_WIDTH_PX)
+        if (w == captureWidthPx) return
+        captureWidthPx = w
+        runOnMain {
+            val scalePercent = w * 100 / DESIGN_WIDTH_PX
+            webView?.setInitialScale(scalePercent)
+            webView?.let { view ->
+                if (attached) {
+                    val lp = view.layoutParams
+                    if (lp != null) {
+                        lp.width = w
+                        view.layoutParams = lp
+                    }
+                }
+            }
+            captureHeightPx = 0
+            webView?.evaluateJavascript(measureScript(), null)
+            CricrelayLog.d("overlay capture width -> ${w}px (scale ${scalePercent}%)")
+        }
+    }
+
+    private fun initialScalePercent(): Int = captureWidthPx * 100 / DESIGN_WIDTH_PX
 
     fun setStyle(fontScale: Float, bgColor: String, textColor: String) {
         this.fontScale = fontScale.coerceIn(0.6f, 2.0f)
@@ -187,7 +214,7 @@ class OverlayWebViewCapture(private val activity: Activity) {
                 // renders exactly as Chrome shows it and the height→pixel math stays deterministic.
                 settings.useWideViewPort = true
                 settings.loadWithOverviewMode = true
-                setInitialScale(INITIAL_SCALE_PERCENT)
+                setInitialScale(initialScalePercent())
                 setBackgroundColor(Color.TRANSPARENT)
                 setLayerType(View.LAYER_TYPE_SOFTWARE, null)
                 webViewClient = object : WebViewClient() {
@@ -235,14 +262,14 @@ class OverlayWebViewCapture(private val activity: Activity) {
             }
             val cssHeight = obj.optInt("h", 0)
             if (cssHeight <= 0) return@evaluateJavascript
-            val physHeight = (cssHeight * CAPTURE_WIDTH_PX / CSS_VIEWPORT_WIDTH)
+            val physHeight = (cssHeight * captureWidthPx / DESIGN_WIDTH_PX)
                 .coerceIn(MIN_CAPTURE_HEIGHT_PX, MAX_CAPTURE_HEIGHT_PX)
             val previous = captureHeightPx
             if (previous == 0 || kotlin.math.abs(physHeight - previous) > 8) {
                 captureHeightPx = physHeight
                 CricrelayLog.d(
                     "overlay measure: capture height $previous -> $physHeight " +
-                        "(css=$cssHeight viewport=${CAPTURE_WIDTH_PX}x$physHeight)",
+                        "(css=$cssHeight viewport=${captureWidthPx}x$physHeight)",
                 )
             }
         }
@@ -256,7 +283,7 @@ class OverlayWebViewCapture(private val activity: Activity) {
             if (token != null) {
                 try {
                     val lp = WindowManager.LayoutParams(
-                        CAPTURE_WIDTH_PX,
+                        captureWidthPx,
                         MAX_CAPTURE_HEIGHT_PX,
                         WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
                         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -280,7 +307,7 @@ class OverlayWebViewCapture(private val activity: Activity) {
             try {
                 val root = activity.findViewById<ViewGroup>(android.R.id.content) ?: return@runOnMain
                 detachFromParent(view)
-                val lp = FrameLayout.LayoutParams(CAPTURE_WIDTH_PX, MAX_CAPTURE_HEIGHT_PX).apply {
+                val lp = FrameLayout.LayoutParams(captureWidthPx, MAX_CAPTURE_HEIGHT_PX).apply {
                     leftMargin = -20000
                     topMargin = -20000
                 }
@@ -331,14 +358,15 @@ class OverlayWebViewCapture(private val activity: Activity) {
             captureInFlight = true
             val startedAt = SystemClock.elapsedRealtime()
             try {
-                if (view.measuredWidth != CAPTURE_WIDTH_PX || view.measuredHeight != height) {
+                val w = captureWidthPx
+                if (view.measuredWidth != w || view.measuredHeight != height) {
                     view.measure(
-                        View.MeasureSpec.makeMeasureSpec(CAPTURE_WIDTH_PX, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
                         View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY),
                     )
                 }
-                view.layout(0, 0, CAPTURE_WIDTH_PX, height)
-                val bitmap = Bitmap.createBitmap(CAPTURE_WIDTH_PX, height, Bitmap.Config.ARGB_8888)
+                view.layout(0, 0, w, height)
+                val bitmap = Bitmap.createBitmap(w, height, Bitmap.Config.ARGB_8888)
                 view.draw(Canvas(bitmap))
                 val elapsed = SystemClock.elapsedRealtime() - startedAt
                 CricrelayLog.d(

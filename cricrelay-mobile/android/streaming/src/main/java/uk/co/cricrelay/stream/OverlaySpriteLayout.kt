@@ -22,7 +22,7 @@ object OverlaySpriteLayout {
     /**
      * Scale the sprite from its native (base) size by the user width/height multipliers,
      * shrinking BOTH axes proportionally if the result would overflow the frame — this
-     * preserves the bitmap aspect ratio (e.g. a 960px-wide capture on a 720px-wide
+     * preserves the bitmap aspect ratio (e.g. a 1280px-wide capture on a 720px-wide
      * portrait canvas must not be squashed horizontally only).
      */
     fun fitScale(
