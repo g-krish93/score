@@ -105,7 +105,7 @@ final class StreamCameraEngine: NSObject {
         micMuted = muted
         if streamPaused { return }
         if muted {
-            await mixer.detachAudio()
+            try? await mixer.attachAudio(nil)
         } else if let audio = AVCaptureDevice.default(for: .audio) {
             try? await mixer.attachAudio(audio)
         }

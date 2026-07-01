@@ -239,7 +239,7 @@ struct RemoteControlView: View {
             }
             Slider(value: value, in: range)
                 .tint(CricTheme.primary)
-                .onChange(of: value.wrappedValue) { _, _ in scheduleSponsorSend() }
+                .onChange(of: value.wrappedValue) { _ in scheduleSponsorSend() }
         }
     }
 
