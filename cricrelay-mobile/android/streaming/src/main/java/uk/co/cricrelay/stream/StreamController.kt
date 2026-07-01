@@ -119,6 +119,11 @@ class StreamController @Inject constructor() {
         StreamCameraEngine.setDeviceOrientation(surfaceRotationDegrees)
     }
 
+    /** Drop the sensor override so orientation follows the (possibly locked) display again. */
+    fun clearDeviceOrientation() {
+        StreamCameraEngine.clearDeviceOrientation()
+    }
+
     fun setPreviewOverlayListener(listener: ((ByteArray, Int, Int) -> Unit)?) {
         StreamCameraEngine.setPreviewOverlayListener(listener)
     }

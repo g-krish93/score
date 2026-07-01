@@ -562,8 +562,32 @@ final class StreamCameraEngine: NSObject {
         orientation == .landscapeLeft || orientation == .landscapeRight
     }
 
+    /// When false (studio orientation lock active) the capture follows the locked interface
+    /// orientation instead of the physical sensor — otherwise a locked-landscape UI would fight
+    /// a portrait-held phone. Parity with Android's Auto-mode-only sensor gating.
+    private var followDeviceOrientation = true
+
+    func setFollowDeviceOrientation(_ follow: Bool) {
+        followDeviceOrientation = follow
+    }
+
     @MainActor
     private func currentCaptureOrientation() -> AVCaptureVideoOrientation {
+        // Physical device orientation first (parity with Android's OrientationEventListener):
+        // orientationDidChangeNotification fires before the interface finishes rotating, so
+        // reading the interface here returns the OLD orientation and the re-prepare dedupes
+        // itself away — the "studio opened portrait stays portrait" bug. The landscape cases
+        // are crossed on purpose: UIDeviceOrientation is defined from the device's viewpoint,
+        // AVCaptureVideoOrientation from the video's.
+        if followDeviceOrientation {
+            switch UIDevice.current.orientation {
+            case .landscapeLeft: return .landscapeRight
+            case .landscapeRight: return .landscapeLeft
+            case .portraitUpsideDown: return .portraitUpsideDown
+            case .portrait: return .portrait
+            default: break // .faceUp / .faceDown / .unknown — fall back to the interface
+            }
+        }
         switch currentInterfaceOrientation() {
         case .landscapeLeft: return .landscapeLeft
         case .landscapeRight: return .landscapeRight

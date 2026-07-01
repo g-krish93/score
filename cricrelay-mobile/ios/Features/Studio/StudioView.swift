@@ -170,6 +170,8 @@ struct StudioView: View {
             viewModel.stopRemoteCommandPolling()
             StreamCameraEngine.shared.setStatusHandler(nil)
             UIDevice.current.endGeneratingDeviceOrientationNotifications()
+            // Release the studio's orientation lock so the rest of the app rotates normally.
+            Task { await viewModel.resetOrientationLock() }
         }
         .onAppear {
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
@@ -228,11 +230,36 @@ struct StudioView: View {
 
             Spacer()
 
-            // Placeholder for symmetry
-            Color.clear.frame(width: 36, height: 36)
+            // Orientation lock cycle (Auto → Landscape → Portrait) in the top bar so it never
+            // competes with the Go Live controls for space (parity with Android). Hidden while
+            // live — the RTMP orientation is fixed once streaming starts.
+            if viewModel.streaming {
+                // Placeholder for symmetry
+                Color.clear.frame(width: 36, height: 36)
+            } else {
+                Button {
+                    Task { await viewModel.toggleOrientation() }
+                } label: {
+                    Image(systemName: viewModel.orientationMode == .auto ? "rotate.right" : "lock.rotation")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(viewModel.orientationMode == .auto ? Color.white : CricTheme.primary)
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .buttonStyle(PressableScaleStyle())
+                .accessibilityLabel(orientationAccessibilityLabel)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 56)
+    }
+
+    private var orientationAccessibilityLabel: String {
+        switch viewModel.orientationMode {
+        case .auto: return "Switch orientation"
+        case .landscape: return "Landscape — tap for portrait"
+        case .portrait: return "Portrait — tap for landscape"
+        }
     }
 
     /// mm:ss elapsed broadcast time for the ON AIR badge (matches Android's "%02d:%02d").

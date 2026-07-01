@@ -49,6 +49,13 @@ enum class ArrangeTarget { Board, Sponsor }
 /** Steps of the first-run guided precheck shown before the first Go Live. */
 enum class PrecheckStep { Camera, Arrange, Ready }
 
+/**
+ * Studio orientation control. Auto follows the physical sensor (system auto-rotate willing);
+ * the lock modes force the activity orientation so an operator with the system rotation lock
+ * on can still get a landscape studio + landscape stream.
+ */
+enum class OrientationMode { Auto, Landscape, Portrait }
+
 // Vertical drag maps to the board's bottom margin (px, /720 in the engine). Allow lifting the
 // board up to ~55% of the frame so the operator can place a lower-third or a mid-frame board.
 private const val BOARD_DRAG_MARGIN_SPAN = 400.0
@@ -98,6 +105,7 @@ data class StudioUiState(
     // First-run guided precheck (Camera → Arrange → Ready), gating the first Go Live.
     val precheckActive: Boolean = false,
     val precheckStep: PrecheckStep = PrecheckStep.Camera,
+    val orientationMode: OrientationMode = OrientationMode.Auto,
 ) {
     val destinationLabel: String
         get() = when (destination) {
@@ -348,7 +356,34 @@ class StudioViewModel @Inject constructor(
 
     /** Live device rotation from the orientation sensor (Surface.ROTATION_* in degrees). */
     fun onDeviceOrientationChanged(surfaceRotationDegrees: Int) {
+        // Only feed the sensor in Auto — under a lock the activity orientation is the truth,
+        // otherwise the stream would follow the phone while the UI stays locked.
+        if (_uiState.value.orientationMode != OrientationMode.Auto) return
         streamController.setDeviceOrientation(surfaceRotationDegrees)
+    }
+
+    /**
+     * Flip the studio between portrait and landscape: one tap goes to the opposite of what's
+     * on screen now, the next tap comes back. (A three-state Auto/lock cycle proved invisible
+     * in the field — operators couldn't tell which mode they were in.) Physical auto-rotate
+     * still works until the first tap. Locked out while live (RTMP is fixed).
+     */
+    fun toggleOrientation(currentlyLandscape: Boolean) {
+        if (_uiState.value.streaming) return
+        val next = if (currentlyLandscape) OrientationMode.Portrait else OrientationMode.Landscape
+        // Clear the sensor override so the engine re-derives rotation from the
+        // (about to be locked) display instead of how the phone happens to be held.
+        streamController.clearDeviceOrientation()
+        _uiState.update {
+            it.copy(
+                orientationMode = next,
+                statusMessage = if (next == OrientationMode.Landscape) {
+                    "Landscape — tap again for portrait"
+                } else {
+                    "Portrait — tap again for landscape"
+                },
+            )
+        }
     }
 
     fun onPreviewSurfaceBound() {

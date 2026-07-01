@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import CoreGraphics
+import UIKit
 
 /// What the Arrange-mode drag gesture moves (pinch always scales the board).
 enum ArrangeTarget {
@@ -15,6 +16,15 @@ enum PrecheckStep {
     case ready
 }
 
+/// Studio orientation control (parity with Android's OrientationMode). Auto follows the physical
+/// sensor; the lock modes force the interface orientation so an operator with the system rotation
+/// lock on can still get a landscape studio + landscape stream.
+enum OrientationMode {
+    case auto
+    case landscape
+    case portrait
+}
+
 @MainActor
 final class StudioViewModel: ObservableObject {
     // Match data
@@ -26,6 +36,7 @@ final class StudioViewModel: ObservableObject {
     @Published var previewReady = false
     @Published var streaming = false
     @Published var paused = false
+    @Published var orientationMode: OrientationMode = .auto
 
     // RTMP credentials (from go-live response)
     @Published var rtmpUrl = ""
@@ -707,6 +718,48 @@ final class StudioViewModel: ObservableObject {
         guard !streaming else { return }
         await StreamCameraEngine.shared.updatePreviewForCurrentOrientation()
         previewReady = StreamCameraEngine.shared.isPreviewReady
+    }
+
+    // MARK: - Orientation lock
+
+    /// Flip the studio between portrait and landscape: one tap goes to the opposite of what's
+    /// on screen now, the next tap comes back (parity with Android's toggleOrientation — a
+    /// three-state Auto/lock cycle proved invisible in the field). Physical auto-rotate still
+    /// works until the first tap. No-op while live (RTMP is fixed).
+    func toggleOrientation() async {
+        guard !streaming else { return }
+        let currentlyLandscape = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.interfaceOrientation.isLandscape ?? false
+        orientationMode = currentlyLandscape ? .portrait : .landscape
+        statusMessage = currentlyLandscape
+            ? "Portrait — tap again for landscape"
+            : "Landscape — tap again for portrait"
+        await applyOrientationMode()
+    }
+
+    /// Restore the app-default orientations when leaving the studio.
+    func resetOrientationLock() async {
+        orientationMode = .auto
+        await applyOrientationMode()
+    }
+
+    private func applyOrientationMode() async {
+        let mask: UIInterfaceOrientationMask
+        switch orientationMode {
+        case .auto: mask = AppDelegate.defaultOrientations
+        case .landscape: mask = .landscape
+        case .portrait: mask = .portrait
+        }
+        AppDelegate.orientationLock = mask
+        StreamCameraEngine.shared.setFollowDeviceOrientation(orientationMode == .auto)
+        if let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first {
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
+            scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        }
+        await onOrientationChanged()
     }
 }
 

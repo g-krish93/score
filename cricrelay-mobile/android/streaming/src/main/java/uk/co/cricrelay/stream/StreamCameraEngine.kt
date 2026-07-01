@@ -564,6 +564,23 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
+    /**
+     * Drop the sensor override so [currentSurfaceRotation] falls back to the display rotation.
+     * Used when the studio locks the activity orientation: the locked display is then the truth,
+     * and the next surfaceChanged re-prepares against it.
+     */
+    fun clearDeviceOrientation() {
+        runOnMain {
+            sensorSurfaceRotation = -1
+            if (camera?.isStreaming == true) return@runOnMain
+            val act = activity ?: return@runOnMain
+            val enc = encoderRotationForSurface(displayRotationDegrees(act))
+            if (enc != streamRotation || !encoderPrepared || camera?.isOnPreview != true) {
+                updatePreviewRotation(enc)
+            }
+        }
+    }
+
     fun isFocusLocked(): Boolean = focusLocked
 
     fun unlockFocus(): Boolean {
@@ -673,7 +690,15 @@ object StreamCameraEngine : ConnectChecker {
                     return@runOnMain
                 }
                 if (prepareInFlight || camera?.isStreaming == true) return@runOnMain
-                if (encoderPrepared && camera?.isOnPreview == true) return@runOnMain
+                // Don't short-circuit when the device orientation changed since the last
+                // prepare — a configChanges rotation resizes the surface in place, and
+                // this callback is the only signal. preparePreviewOnMain handles the
+                // stop-and-reprepare when the rotation differs.
+                if (encoderPrepared && camera?.isOnPreview == true &&
+                    preparedVideoRotation == encoderRotationForSurface(currentSurfaceRotation())
+                ) {
+                    return@runOnMain
+                }
                 val ok = preparePreviewOnMain()
                 if (!ok) {
                     CricrelayLog.w("onPreviewSurfaceReady: preparePreviewOnMain not ready, will retry on next surface event")
@@ -897,13 +922,21 @@ object StreamCameraEngine : ConnectChecker {
             return false
         }
 
+        // Every (re)prepare must encode the orientation the phone is held in NOW.
+        // Without this, the surfaceChanged path after a configChanges rotation
+        // prepares with the rotation captured when the studio was first opened.
+        if (activity != null) applyActivityRotation()
+
         if (encoderPrepared && !cam.isOnPreview) {
-            return try {
-                cam.startPreview()
-                cam.isOnPreview
-            } catch (_: Exception) {
-                false
+            if (preparedVideoRotation == streamRotation) {
+                return try {
+                    cam.startPreview()
+                    cam.isOnPreview
+                } catch (_: Exception) {
+                    false
+                }
             }
+            encoderPrepared = false
         }
 
         prepareInFlight = true

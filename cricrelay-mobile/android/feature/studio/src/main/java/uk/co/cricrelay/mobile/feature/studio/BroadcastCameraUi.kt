@@ -49,6 +49,9 @@ import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Scoreboard
+import androidx.compose.material.icons.outlined.ScreenLockLandscape
+import androidx.compose.material.icons.outlined.ScreenLockPortrait
+import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.outlined.Whatshot
 import androidx.compose.material3.Icon
@@ -105,6 +108,7 @@ fun BroadcastCameraUi(
     onToggleKeepScreenOn: () -> Unit,
     onToggleFocusLock: () -> Unit,
     onToggleMicMuted: () -> Unit,
+    onToggleOrientation: () -> Unit,
     onLowerQuality: () -> Unit,
     onPreviewTap: (Float, Float, Int, Int) -> Unit,
     onPinchZoom: (Float) -> Unit,
@@ -171,6 +175,7 @@ fun BroadcastCameraUi(
                     onToggleKeepScreenOn = onToggleKeepScreenOn,
                     onToggleFocusLock = onToggleFocusLock,
                     onToggleMicMuted = onToggleMicMuted,
+                    onToggleOrientation = onToggleOrientation,
                     onLowerQuality = onLowerQuality,
                 )
             } else {
@@ -188,6 +193,7 @@ fun BroadcastCameraUi(
                     onToggleKeepScreenOn = onToggleKeepScreenOn,
                     onToggleFocusLock = onToggleFocusLock,
                     onToggleMicMuted = onToggleMicMuted,
+                    onToggleOrientation = onToggleOrientation,
                     onLowerQuality = onLowerQuality,
                 )
             }
@@ -310,31 +316,38 @@ private fun QuickToggles(
             onClick = onToggleFocusLock,
         )
     }
+    // Hidden while live — stabilization can't change mid-stream, and in the landscape rail
+    // the pill + caption were tall enough to push the Go Live/stop shutter off-screen.
+    // The caption is also dropped in the vertical rail for the same reason.
     val stabilize: @Composable () -> Unit = {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CameraQuickToggle(
-                label = "Stabilize",
-                active = state.overlayPrefs.videoStabilization,
-                icon = Icons.Outlined.Vibration,
-                onClick = onToggleStabilization,
-                modifier = Modifier.semantics {
-                    contentDescription = buildString {
-                        append("Stabilize, ")
-                        append(if (state.overlayPrefs.videoStabilization) "on" else "off")
-                        append(". ")
-                        append(STABILIZATION_FOV_CAPTION)
-                    }
-                },
-            )
-            Text(
-                text = STABILIZATION_FOV_CAPTION,
-                style = AppTypography.bodySmall,
-                color = AppColors.OnBackgroundDim,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .padding(top = 4.dp)
-                    .widthIn(max = if (vertical) 96.dp else 120.dp),
-            )
+        if (!state.streaming) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CameraQuickToggle(
+                    label = "Stabilize",
+                    active = state.overlayPrefs.videoStabilization,
+                    icon = Icons.Outlined.Vibration,
+                    onClick = onToggleStabilization,
+                    modifier = Modifier.semantics {
+                        contentDescription = buildString {
+                            append("Stabilize, ")
+                            append(if (state.overlayPrefs.videoStabilization) "on" else "off")
+                            append(". ")
+                            append(STABILIZATION_FOV_CAPTION)
+                        }
+                    },
+                )
+                if (!vertical) {
+                    Text(
+                        text = STABILIZATION_FOV_CAPTION,
+                        style = AppTypography.bodySmall,
+                        color = AppColors.OnBackgroundDim,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .widthIn(max = 120.dp),
+                    )
+                }
+            }
         }
     }
     val screenOn: @Composable () -> Unit = {
@@ -407,6 +420,7 @@ private fun StudioTopBar(
     onDestination: () -> Unit,
     onMenu: () -> Unit,
     onShare: (() -> Unit)?,
+    onToggleOrientation: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -417,6 +431,31 @@ private fun StudioTopBar(
     ) {
         CameraCircleButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Color.White)
+        }
+        // Orientation lock cycle (Auto → Landscape → Portrait). Lives in the top bar so it
+        // never competes with the Go Live rail for vertical space in landscape. Hidden while
+        // live — the RTMP orientation is fixed once streaming starts.
+        if (!state.streaming) {
+            Spacer(Modifier.width(8.dp))
+            CameraCircleButton(onClick = onToggleOrientation) {
+                Icon(
+                    imageVector = when (state.orientationMode) {
+                        OrientationMode.Auto -> Icons.Outlined.ScreenRotation
+                        OrientationMode.Landscape -> Icons.Outlined.ScreenLockLandscape
+                        OrientationMode.Portrait -> Icons.Outlined.ScreenLockPortrait
+                    },
+                    contentDescription = when (state.orientationMode) {
+                        OrientationMode.Auto -> "Switch orientation"
+                        OrientationMode.Landscape -> "Landscape — tap for portrait"
+                        OrientationMode.Portrait -> "Portrait — tap for landscape"
+                    },
+                    tint = if (state.orientationMode != OrientationMode.Auto) {
+                        AppColors.Accent
+                    } else {
+                        Color.White
+                    },
+                )
+            }
         }
         Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
             AnimatedContent(
@@ -593,6 +632,7 @@ private fun PortraitControls(
     onToggleKeepScreenOn: () -> Unit,
     onToggleFocusLock: () -> Unit,
     onToggleMicMuted: () -> Unit,
+    onToggleOrientation: () -> Unit,
     onLowerQuality: () -> Unit,
 ) {
     Column(
@@ -600,7 +640,7 @@ private fun PortraitControls(
             .fillMaxSize()
             .statusBarsPadding(),
     ) {
-        StudioTopBar(state, onBack, onDestination, onMenu, onShare)
+        StudioTopBar(state, onBack, onDestination, onMenu, onShare, onToggleOrientation)
 
         Spacer(Modifier.weight(1f))
 
@@ -662,6 +702,7 @@ private fun LandscapeControls(
     onToggleKeepScreenOn: () -> Unit,
     onToggleFocusLock: () -> Unit,
     onToggleMicMuted: () -> Unit,
+    onToggleOrientation: () -> Unit,
     onLowerQuality: () -> Unit,
 ) {
     Box(
@@ -676,6 +717,7 @@ private fun LandscapeControls(
             onDestination = onDestination,
             onMenu = onMenu,
             onShare = onShare,
+            onToggleOrientation = onToggleOrientation,
             modifier = Modifier.align(Alignment.TopCenter),
         )
 

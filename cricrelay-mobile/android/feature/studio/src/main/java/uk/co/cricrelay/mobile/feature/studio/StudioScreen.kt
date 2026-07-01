@@ -131,6 +131,26 @@ fun StudioScreen(
         onDispose { viewModel.onStudioHidden() }
     }
 
+    // Explicit orientation control (PRISM-style): a lock forces the activity orientation
+    // even when the system auto-rotate toggle is off. Restored on leaving the studio.
+    val activity = context as? android.app.Activity
+    LaunchedEffect(state.orientationMode) {
+        activity?.requestedOrientation = when (state.orientationMode) {
+            OrientationMode.Auto ->
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            OrientationMode.Landscape ->
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            OrientationMode.Portrait ->
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+    }
+    DisposableEffect(activity) {
+        onDispose {
+            activity?.requestedOrientation =
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -195,6 +215,12 @@ fun StudioScreen(
                     },
                     onToggleFocusLock = viewModel::onToggleFocusLock,
                     onToggleMicMuted = viewModel::onToggleMicMuted,
+                    onToggleOrientation = {
+                        viewModel.toggleOrientation(
+                            currentlyLandscape = configuration.orientation ==
+                                android.content.res.Configuration.ORIENTATION_LANDSCAPE,
+                        )
+                    },
                     onLowerQuality = viewModel::onLowerQuality,
                     onShare = state.watchUrl.takeIf { it.isNotBlank() }?.let { url ->
                         {
