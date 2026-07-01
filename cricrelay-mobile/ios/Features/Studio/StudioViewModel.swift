@@ -176,10 +176,10 @@ final class StudioViewModel: ObservableObject {
     /// before going live (parity with Android's syncOverlay / startPreviewOverlayPush).
     private func syncOverlay() {
         guard let url = match?.overlayEmbedUrl, !url.isEmpty else { return }
-        let logoUrl = overlayPrefs.resolvedSponsorLogoUrl(from: sponsors)
+        let logoUrls = overlayPrefs.resolveSponsorLogoUrls(from: sponsors)
         StreamCameraEngine.shared.updateOverlay(
             url: url,
-            layout: overlayPrefs.toEngineLayout(sponsorLogoUrl: logoUrl)
+            layout: overlayPrefs.toEngineLayout(sponsorLogoUrls: logoUrls)
         )
     }
 
@@ -332,7 +332,7 @@ final class StudioViewModel: ObservableObject {
             bitrate: 2_500_000,
             fps: 30,
             layout: overlayPrefs.toEngineLayout(
-                sponsorLogoUrl: overlayPrefs.resolvedSponsorLogoUrl(from: sponsors)
+                sponsorLogoUrls: overlayPrefs.resolveSponsorLogoUrls(from: sponsors)
             )
         )
         streaming = StreamCameraEngine.shared.isStreaming
@@ -431,10 +431,10 @@ final class StudioViewModel: ObservableObject {
     private func applyOverlayPreview(_ prefs: OverlayLayoutPrefs) {
         let url = match?.overlayEmbedUrl ?? ""
         let effectiveUrl = !url.isEmpty ? url : overlayEmbedUrl
-        let logoUrl = prefs.resolvedSponsorLogoUrl(from: sponsors)
+        let logoUrls = prefs.resolveSponsorLogoUrls(from: sponsors)
         StreamCameraEngine.shared.updateOverlay(
             url: effectiveUrl,
-            layout: prefs.toEngineLayout(sponsorLogoUrl: logoUrl)
+            layout: prefs.toEngineLayout(sponsorLogoUrls: logoUrls)
         )
     }
 

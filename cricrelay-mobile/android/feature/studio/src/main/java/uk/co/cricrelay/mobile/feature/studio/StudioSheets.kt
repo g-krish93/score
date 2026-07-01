@@ -14,6 +14,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -65,6 +67,7 @@ import uk.co.cricrelay.mobile.ui.StudioTextField
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.shared.model.Sponsor
 import uk.co.cricrelay.shared.model.SponsorDisplayMode
+import uk.co.cricrelay.shared.model.SponsorLayoutMode
 
 @Composable
 fun DestinationSheet(
@@ -201,6 +204,7 @@ private val boardThemes = listOf(
     BoardTheme("Teal", "#0B3D3A", "#7CF6D6", Color(0xFF0B3D3A)),
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun OverlaySheet(
     prefs: OverlayLayoutPrefs,
@@ -220,7 +224,15 @@ fun OverlaySheet(
     var watermarkEnabled by remember { mutableStateOf(prefs.watermarkEnabled) }
     var watermarkText by remember { mutableStateOf(prefs.watermarkText) }
     var sponsorEnabled by remember { mutableStateOf(prefs.sponsorEnabled) }
-    var activeSponsorId by remember { mutableStateOf(prefs.activeSponsorId) }
+    var activeSponsorIds by remember {
+        mutableStateOf(
+            prefs.activeSponsorIds.ifEmpty {
+                prefs.activeSponsorId?.let { listOf(it) } ?: emptyList()
+            },
+        )
+    }
+    var sponsorLayoutMode by remember { mutableStateOf(prefs.sponsorLayoutMode) }
+    var sponsorCarouselIntervalSec by remember { mutableStateOf(prefs.sponsorCarouselIntervalSec.toFloat()) }
     var sponsorDisplayMode by remember { mutableStateOf(prefs.sponsorDisplayMode) }
     var sponsorPositionX by remember { mutableStateOf(prefs.sponsorPositionX.toFloat()) }
     var sponsorPositionY by remember { mutableStateOf(prefs.sponsorPositionY.toFloat()) }
@@ -241,7 +253,10 @@ fun OverlaySheet(
         watermarkEnabled = watermarkEnabled,
         watermarkText = watermarkText.trim().ifBlank { OverlayLayoutPrefs.WATERMARK_DEFAULT_TEXT },
         sponsorEnabled = sponsorEnabled,
-        activeSponsorId = activeSponsorId?.takeIf { sponsorEnabled },
+        activeSponsorIds = if (sponsorEnabled) activeSponsorIds.take(6) else emptyList(),
+        activeSponsorId = activeSponsorIds.firstOrNull(),
+        sponsorLayoutMode = sponsorLayoutMode,
+        sponsorCarouselIntervalSec = sponsorCarouselIntervalSec.toDouble(),
         sponsorDisplayMode = sponsorDisplayMode,
         sponsorPositionX = sponsorPositionX.toDouble(),
         sponsorPositionY = sponsorPositionY.toDouble(),
@@ -260,7 +275,9 @@ fun OverlaySheet(
         watermarkEnabled,
         watermarkText,
         sponsorEnabled,
-        activeSponsorId,
+        activeSponsorIds,
+        sponsorLayoutMode,
+        sponsorCarouselIntervalSec,
         sponsorDisplayMode,
         sponsorPositionX,
         sponsorPositionY,
@@ -274,8 +291,233 @@ fun OverlaySheet(
 
     SheetHeader(
         title = "Board Edit",
-        subtitle = "Choose a style for the live scoreboard overlay. Applies immediately.",
+        subtitle = "Scoreboard style, sponsor logos, and watermark. Changes preview live — tap Save board when done.",
     )
+
+    val activeSponsors = sponsors.filter { it.isActive }
+    Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Sponsor logo", style = AppTypography.titleSmall)
+                Text(
+                    "Club sponsor on the broadcast — fixed or scrolling",
+                    style = AppTypography.bodySmall,
+                )
+            }
+            Switch(
+                checked = sponsorEnabled,
+                onCheckedChange = { sponsorEnabled = it },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = AppColors.OnPrimary,
+                    checkedTrackColor = AppColors.Primary,
+                    uncheckedThumbColor = AppColors.OnBackgroundDim,
+                    uncheckedTrackColor = AppColors.SurfaceElevated,
+                ),
+            )
+        }
+        when {
+            activeSponsors.isEmpty() -> {
+                Spacer(Modifier.height(AppSpacing.sm))
+                Text(
+                    "No sponsors yet — upload logos on the web dashboard under Sponsor logos, then return here.",
+                    style = AppTypography.bodySmall,
+                    color = AppColors.OnBackgroundDim,
+                )
+            }
+            !sponsorEnabled -> {
+                Spacer(Modifier.height(AppSpacing.sm))
+                Text(
+                    "${activeSponsors.size} sponsor(s) available — turn on to pick one for this stream",
+                    style = AppTypography.bodySmall,
+                    color = AppColors.Accent,
+                )
+            }
+        }
+        if (sponsorEnabled && activeSponsors.isNotEmpty()) {
+            Spacer(Modifier.height(AppSpacing.sm))
+            Text("How to show", style = AppTypography.bodySmall)
+            Spacer(Modifier.height(AppSpacing.xs))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+            ) {
+                listOf(
+                    SponsorLayoutMode.SINGLE to "One logo",
+                    SponsorLayoutMode.MULTI to "All at once",
+                    SponsorLayoutMode.CAROUSEL to "Carousel",
+                ).forEach { (id, label) ->
+                    val selected = sponsorLayoutMode == id
+                    Text(
+                        label,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                            .background(
+                                if (selected) AppColors.Primary.copy(alpha = 0.25f)
+                                else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                            )
+                            .border(
+                                width = if (selected) 1.5.dp else 1.dp,
+                                color = if (selected) AppColors.Primary else AppColors.Border,
+                                shape = RoundedCornerShape(AppSpacing.radiusSm),
+                            )
+                            .clickable {
+                                sponsorLayoutMode = id
+                                if (!SponsorLayoutMode.allowsMultiSelect(id) && activeSponsorIds.size > 1) {
+                                    activeSponsorIds = activeSponsorIds.take(1)
+                                }
+                            }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        style = AppTypography.bodySmall,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                    )
+                }
+            }
+            Spacer(Modifier.height(AppSpacing.sm))
+            Text(
+                when (sponsorLayoutMode) {
+                    SponsorLayoutMode.MULTI -> "Select sponsors to show together (up to 6)"
+                    SponsorLayoutMode.CAROUSEL -> "Select sponsors to rotate through"
+                    else -> "Select sponsor for this match"
+                },
+                style = AppTypography.bodySmall,
+            )
+            Spacer(Modifier.height(AppSpacing.xs))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+            ) {
+                activeSponsors.forEach { sponsor ->
+                    val multiPick = SponsorLayoutMode.allowsMultiSelect(sponsorLayoutMode)
+                    val selected = if (multiPick) {
+                        sponsor.id in activeSponsorIds
+                    } else {
+                        sponsor.id in activeSponsorIds ||
+                            (activeSponsorIds.isEmpty() && sponsor.id == activeSponsors.firstOrNull()?.id)
+                    }
+                    Text(
+                        sponsor.name,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                            .background(
+                                if (selected) AppColors.Accent.copy(alpha = 0.2f)
+                                else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                            )
+                            .border(
+                                width = if (selected) 1.5.dp else 1.dp,
+                                color = if (selected) AppColors.Accent else AppColors.Border,
+                                shape = RoundedCornerShape(AppSpacing.radiusSm),
+                            )
+                            .clickable {
+                                if (multiPick) {
+                                    activeSponsorIds = if (sponsor.id in activeSponsorIds) {
+                                        activeSponsorIds.filter { it != sponsor.id }
+                                    } else {
+                                        (activeSponsorIds + sponsor.id).take(6)
+                                    }
+                                } else {
+                                    activeSponsorIds = listOf(sponsor.id)
+                                }
+                            }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        style = AppTypography.bodySmall,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                    )
+                }
+            }
+            if (sponsorLayoutMode == SponsorLayoutMode.CAROUSEL) {
+                Spacer(Modifier.height(AppSpacing.sm))
+                LabeledSlider(
+                    label = "Carousel interval",
+                    valueText = "${sponsorCarouselIntervalSec.toInt()}s",
+                    value = sponsorCarouselIntervalSec,
+                    onValueChange = { sponsorCarouselIntervalSec = it },
+                    valueRange = 2f..30f,
+                )
+            }
+            Spacer(Modifier.height(AppSpacing.sm))
+            Text("Sponsor display", style = AppTypography.titleSmall)
+            Spacer(Modifier.height(AppSpacing.xs))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+            ) {
+                listOf(
+                    SponsorDisplayMode.STATIC to "Fixed",
+                    SponsorDisplayMode.SCROLL_TOP to "Scroll top",
+                    SponsorDisplayMode.SCROLL_ABOVE_BOARD to "Above board",
+                    SponsorDisplayMode.SCROLL_BELOW_BOARD to "Below board",
+                    SponsorDisplayMode.SCROLL_BOTTOM to "Scroll bottom",
+                ).forEach { (id, label) ->
+                    val selected = sponsorDisplayMode == id
+                    Text(
+                        label,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                            .background(
+                                if (selected) AppColors.Accent.copy(alpha = 0.2f)
+                                else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                            )
+                            .border(
+                                width = if (selected) 1.5.dp else 1.dp,
+                                color = if (selected) AppColors.Accent else AppColors.Border,
+                                shape = RoundedCornerShape(AppSpacing.radiusSm),
+                            )
+                            .clickable { sponsorDisplayMode = id }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        style = AppTypography.bodySmall,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                    )
+                }
+            }
+            Spacer(Modifier.height(AppSpacing.sm))
+            LabeledSlider(
+                label = "Logo size",
+                valueText = "${(sponsorSizeScale * 100).toInt()}%",
+                value = sponsorSizeScale,
+                onValueChange = { sponsorSizeScale = it },
+                valueRange = 0.3f..3f,
+            )
+            LabeledSlider(
+                label = "Logo opacity",
+                valueText = "${(sponsorOpacity * 100).toInt()}%",
+                value = sponsorOpacity,
+                onValueChange = { sponsorOpacity = it },
+                valueRange = 0.2f..1f,
+            )
+            if (!sponsorScrollMode) {
+                LabeledSlider(
+                    label = "Horizontal position",
+                    valueText = "${(sponsorPositionX * 100).toInt()}%",
+                    value = sponsorPositionX,
+                    onValueChange = { sponsorPositionX = it },
+                    valueRange = 0f..1f,
+                )
+                LabeledSlider(
+                    label = "Vertical position",
+                    valueText = "${(sponsorPositionY * 100).toInt()}%",
+                    value = sponsorPositionY,
+                    onValueChange = { sponsorPositionY = it },
+                    valueRange = 0f..1f,
+                )
+            } else {
+                LabeledSlider(
+                    label = "Scroll speed",
+                    valueText = String.format("%.1f×", sponsorScrollSpeed),
+                    value = sponsorScrollSpeed,
+                    onValueChange = { sponsorScrollSpeed = it },
+                    valueRange = 0.3f..3f,
+                )
+            }
+        }
+    }
+
+    Spacer(Modifier.height(AppSpacing.md))
 
     Text(
         "Overlay style",
@@ -414,146 +656,6 @@ fun OverlaySheet(
                 onValueChange = { watermarkText = it },
                 label = "Watermark text",
             )
-        }
-    }
-
-    Spacer(Modifier.height(AppSpacing.md))
-    Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Sponsor logo", style = AppTypography.titleSmall)
-                Text(
-                    "On-stream sponsor graphics — fixed or scrolling",
-                    style = AppTypography.bodySmall,
-                )
-            }
-            Switch(
-                checked = sponsorEnabled,
-                onCheckedChange = { sponsorEnabled = it },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = AppColors.OnPrimary,
-                    checkedTrackColor = AppColors.Primary,
-                    uncheckedThumbColor = AppColors.OnBackgroundDim,
-                    uncheckedTrackColor = AppColors.SurfaceElevated,
-                ),
-            )
-        }
-        if (sponsorEnabled && sponsors.any { it.isActive }) {
-            Spacer(Modifier.height(AppSpacing.sm))
-            Text(
-                "Select sponsor for this match",
-                style = AppTypography.bodySmall,
-            )
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
-            ) {
-                items(sponsors.filter { it.isActive }) { sponsor ->
-                    val selected = activeSponsorId == sponsor.id ||
-                        (activeSponsorId.isNullOrBlank() && sponsor.id == sponsors.firstOrNull { it.isActive }?.id)
-                    Text(
-                        sponsor.name,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(AppSpacing.radiusSm))
-                            .background(
-                                if (selected) AppColors.Accent.copy(alpha = 0.2f)
-                                else AppColors.SurfaceElevated.copy(alpha = 0.7f),
-                            )
-                            .border(
-                                width = if (selected) 1.5.dp else 1.dp,
-                                color = if (selected) AppColors.Accent else AppColors.Border,
-                                shape = RoundedCornerShape(AppSpacing.radiusSm),
-                            )
-                            .clickable { activeSponsorId = sponsor.id }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        style = AppTypography.bodySmall,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                    )
-                }
-            }
-        } else if (sponsorEnabled && sponsors.none { it.isActive }) {
-            Spacer(Modifier.height(AppSpacing.sm))
-            Text(
-                "No sponsors yet — upload logos in the web dashboard under Sponsor logos.",
-                style = AppTypography.bodySmall,
-                color = AppColors.Warning,
-            )
-        }
-        if (sponsorEnabled) {
-            Spacer(Modifier.height(AppSpacing.md))
-            Text("Sponsor display", style = AppTypography.titleSmall)
-            Spacer(Modifier.height(AppSpacing.sm))
-            val modes = listOf(
-                SponsorDisplayMode.STATIC to "Fixed",
-                SponsorDisplayMode.SCROLL_TOP to "Scroll top",
-                SponsorDisplayMode.SCROLL_ABOVE_BOARD to "Above board",
-                SponsorDisplayMode.SCROLL_BELOW_BOARD to "Below board",
-                SponsorDisplayMode.SCROLL_BOTTOM to "Scroll bottom",
-            )
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                items(modes) { (id, label) ->
-                    val selected = sponsorDisplayMode == id
-                    Text(
-                        label,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(AppSpacing.radiusSm))
-                            .background(
-                                if (selected) AppColors.Primary.copy(alpha = 0.25f)
-                                else AppColors.SurfaceElevated.copy(alpha = 0.7f),
-                            )
-                            .border(
-                                width = if (selected) 1.5.dp else 1.dp,
-                                color = if (selected) AppColors.Primary else AppColors.Border,
-                                shape = RoundedCornerShape(AppSpacing.radiusSm),
-                            )
-                            .clickable { sponsorDisplayMode = id }
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        style = AppTypography.bodySmall,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                    )
-                }
-            }
-            Spacer(Modifier.height(AppSpacing.sm))
-            LabeledSlider(
-                label = "Logo size",
-                valueText = "${(sponsorSizeScale * 100).toInt()}%",
-                value = sponsorSizeScale,
-                onValueChange = { sponsorSizeScale = it },
-                valueRange = 0.3f..3f,
-            )
-            LabeledSlider(
-                label = "Logo opacity",
-                valueText = "${(sponsorOpacity * 100).toInt()}%",
-                value = sponsorOpacity,
-                onValueChange = { sponsorOpacity = it },
-                valueRange = 0.2f..1f,
-            )
-            if (!sponsorScrollMode) {
-                LabeledSlider(
-                    label = "Horizontal position",
-                    valueText = "${(sponsorPositionX * 100).toInt()}%",
-                    value = sponsorPositionX,
-                    onValueChange = { sponsorPositionX = it },
-                    valueRange = 0f..1f,
-                )
-                LabeledSlider(
-                    label = "Vertical position",
-                    valueText = "${(sponsorPositionY * 100).toInt()}%",
-                    value = sponsorPositionY,
-                    onValueChange = { sponsorPositionY = it },
-                    valueRange = 0f..1f,
-                )
-            } else {
-                LabeledSlider(
-                    label = "Scroll speed",
-                    valueText = String.format("%.1f×", sponsorScrollSpeed),
-                    value = sponsorScrollSpeed,
-                    onValueChange = { sponsorScrollSpeed = it },
-                    valueRange = 0.3f..3f,
-                )
-            }
         }
     }
 

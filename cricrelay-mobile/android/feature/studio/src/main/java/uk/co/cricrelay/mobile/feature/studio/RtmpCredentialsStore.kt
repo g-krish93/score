@@ -50,8 +50,9 @@ fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.bottomMarginPx(frameHeightPx
 }
 
 fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.toEngineLayout(
-    sponsorLogoUrl: String = "",
+    sponsorLogoUrls: List<String> = emptyList(),
 ): uk.co.cricrelay.stream.StreamCameraEngine.OverlayLayout {
+    val urls = sponsorLogoUrls.filter { it.isNotBlank() }
     return uk.co.cricrelay.stream.StreamCameraEngine.OverlayLayout(
         heightFraction = heightFraction.toFloat(),
         widthFraction = widthFraction.toFloat(),
@@ -66,7 +67,10 @@ fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.toEngineLayout(
         watermarkEnabled = watermarkEnabled,
         watermarkText = watermarkText,
         sponsorEnabled = sponsorEnabled,
-        sponsorLogoUrl = sponsorLogoUrl,
+        sponsorLogoUrl = urls.firstOrNull().orEmpty(),
+        sponsorLogoUrls = urls,
+        sponsorLayoutMode = uk.co.cricrelay.shared.model.SponsorLayoutMode.sanitize(sponsorLayoutMode),
+        sponsorCarouselIntervalSec = sponsorCarouselIntervalSec.toFloat().coerceIn(2f, 30f),
         sponsorDisplayMode = uk.co.cricrelay.shared.model.SponsorDisplayMode.sanitize(sponsorDisplayMode),
         sponsorPositionX = sponsorPositionX.toFloat().coerceIn(0f, 1f),
         sponsorPositionY = sponsorPositionY.toFloat().coerceIn(0f, 1f),

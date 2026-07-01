@@ -130,23 +130,61 @@ struct RemoteControlView: View {
             if sponsorPrefs.sponsorEnabled {
                 let active = sponsors.filter(\.isActive)
                 if !active.isEmpty {
-                    Text("Select sponsor")
+                    Text("How to show")
+                        .font(.caption)
+                        .foregroundStyle(CricTheme.textDim)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(SponsorLayoutMode.modes, id: \.id) { mode in
+                                Button {
+                                    sponsorPrefs.sponsorLayoutMode = mode.id
+                                    if !SponsorLayoutMode.allowsMultiSelect(mode.id), sponsorPrefs.activeSponsorIds.count > 1 {
+                                        sponsorPrefs.activeSponsorIds = Array(sponsorPrefs.activeSponsorIds.prefix(1))
+                                        sponsorPrefs.activeSponsorId = sponsorPrefs.activeSponsorIds.first
+                                    }
+                                    scheduleSponsorSend()
+                                } label: {
+                                    Text(mode.label)
+                                        .font(.caption.weight(sponsorPrefs.sponsorLayoutMode == mode.id ? .bold : .regular))
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            sponsorPrefs.sponsorLayoutMode == mode.id ? CricTheme.primary.opacity(0.35) : CricTheme.surface,
+                                            in: Capsule()
+                                        )
+                                }
+                            }
+                        }
+                    }
+                    Text(SponsorLayoutMode.allowsMultiSelect(sponsorPrefs.sponsorLayoutMode) ? "Select sponsors" : "Select sponsor")
                         .font(.caption)
                         .foregroundStyle(CricTheme.textDim)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(active) { sponsor in
                                 Button {
-                                    sponsorPrefs.activeSponsorId = sponsor.id
+                                    if SponsorLayoutMode.allowsMultiSelect(sponsorPrefs.sponsorLayoutMode) {
+                                        if sponsorPrefs.activeSponsorIds.contains(sponsor.id) {
+                                            sponsorPrefs.activeSponsorIds.removeAll { $0 == sponsor.id }
+                                        } else if sponsorPrefs.activeSponsorIds.count < 6 {
+                                            sponsorPrefs.activeSponsorIds.append(sponsor.id)
+                                        }
+                                        sponsorPrefs.activeSponsorId = sponsorPrefs.activeSponsorIds.first
+                                    } else {
+                                        sponsorPrefs.activeSponsorIds = [sponsor.id]
+                                        sponsorPrefs.activeSponsorId = sponsor.id
+                                    }
                                     scheduleSponsorSend()
                                 } label: {
+                                    let selected = sponsorPrefs.activeSponsorIds.contains(sponsor.id) ||
+                                        (sponsorPrefs.activeSponsorIds.isEmpty && sponsorPrefs.activeSponsorId == sponsor.id)
                                     Text(sponsor.name)
-                                        .font(.caption.weight(sponsorPrefs.activeSponsorId == sponsor.id ? .bold : .regular))
-                                        .foregroundStyle(sponsorPrefs.activeSponsorId == sponsor.id ? CricTheme.onPrimary : .white)
+                                        .font(.caption.weight(selected ? .bold : .regular))
+                                        .foregroundStyle(selected ? CricTheme.onPrimary : .white)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 8)
                                         .background(
-                                            sponsorPrefs.activeSponsorId == sponsor.id ? CricTheme.primary : CricTheme.surface,
+                                            selected ? CricTheme.primary : CricTheme.surface,
                                             in: Capsule()
                                         )
                                 }
@@ -209,6 +247,14 @@ struct RemoteControlView: View {
                         value: $sponsorPrefs.sponsorPositionY,
                         range: 0...1,
                         format: { "\(Int($0 * 100))%" }
+                    )
+                }
+                if sponsorPrefs.sponsorLayoutMode == SponsorLayoutMode.carousel {
+                    remoteSlider(
+                        label: "Carousel interval",
+                        value: $sponsorPrefs.sponsorCarouselIntervalSec,
+                        range: 2...30,
+                        format: { "\(Int($0))s" }
                     )
                 }
             }

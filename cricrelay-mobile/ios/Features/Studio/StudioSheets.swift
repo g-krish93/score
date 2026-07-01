@@ -167,8 +167,10 @@ struct OverlaySheet: View {
             savedOnDismiss = false
             draft = viewModel.overlayPrefs
             Task { await viewModel.loadSponsors() }
-            if draft.activeSponsorId == nil, let first = viewModel.sponsors.first(where: { $0.isActive }) {
+            if draft.activeSponsorIds.isEmpty, draft.activeSponsorId == nil,
+               let first = viewModel.sponsors.first(where: { $0.isActive }) {
                 draft.activeSponsorId = first.id
+                draft.activeSponsorIds = [first.id]
             }
         }
         .onDisappear {
@@ -194,6 +196,9 @@ struct OverlaySheet: View {
             String(draft.watermarkEnabled),
             draft.watermarkText,
             String(draft.sponsorEnabled),
+            draft.activeSponsorIds.joined(separator: ","),
+            draft.sponsorLayoutMode,
+            String(draft.sponsorCarouselIntervalSec),
             draft.activeSponsorId ?? "",
             draft.sponsorDisplayMode,
             String(draft.sponsorPositionX),
@@ -312,9 +317,17 @@ struct OverlaySheet: View {
                     .font(.caption)
                     .foregroundStyle(CricTheme.textDim)
                 if draft.sponsorEnabled && !sponsors.filter(\.isActive).isEmpty {
-                    Text("Select sponsor for this match")
+                    Text("How to show")
                         .font(.caption)
                         .foregroundStyle(CricTheme.textDim)
+                    sponsorLayoutPicker
+                    Text(
+                        SponsorLayoutMode.allowsMultiSelect(draft.sponsorLayoutMode)
+                            ? "Select sponsors (up to 6)"
+                            : "Select sponsor for this match"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(CricTheme.textDim)
                     sponsorPicker
                     sponsorDisplayControls
                 } else if draft.sponsorEnabled && sponsors.filter(\.isActive).isEmpty {
@@ -324,6 +337,32 @@ struct OverlaySheet: View {
                 }
             }
             .cricEnterAnimation(value: draft.sponsorEnabled, duration: CricMotion.sheetEnterDuration)
+        }
+    }
+
+    private var sponsorLayoutPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(SponsorLayoutMode.modes, id: \.id) { mode in
+                    Button {
+                        draft.sponsorLayoutMode = mode.id
+                        if !SponsorLayoutMode.allowsMultiSelect(mode.id), draft.activeSponsorIds.count > 1 {
+                            draft.activeSponsorIds = Array(draft.activeSponsorIds.prefix(1))
+                            draft.activeSponsorId = draft.activeSponsorIds.first
+                        }
+                    } label: {
+                        Text(mode.label)
+                            .font(.caption.weight(draft.sponsorLayoutMode == mode.id ? .bold : .regular))
+                            .foregroundStyle(draft.sponsorLayoutMode == mode.id ? CricTheme.onPrimary : .white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(
+                                draft.sponsorLayoutMode == mode.id ? CricTheme.primary : CricTheme.surface,
+                                in: Capsule()
+                            )
+                    }
+                }
+            }
         }
     }
 
@@ -382,6 +421,14 @@ struct OverlaySheet: View {
                     format: { "\(Int($0 * 100))%" }
                 )
             }
+            if draft.sponsorLayoutMode == SponsorLayoutMode.carousel {
+                sliderRow(
+                    label: "Carousel interval",
+                    value: $draft.sponsorCarouselIntervalSec,
+                    range: 2...30,
+                    format: { "\(Int($0))s" }
+                )
+            }
         }
         .padding(.top, 4)
     }
@@ -393,15 +440,27 @@ struct OverlaySheet: View {
             HStack(spacing: 8) {
                 ForEach(sponsors.filter(\.isActive)) { sponsor in
                     Button {
-                        draft.activeSponsorId = sponsor.id
+                        if SponsorLayoutMode.allowsMultiSelect(draft.sponsorLayoutMode) {
+                            if draft.activeSponsorIds.contains(sponsor.id) {
+                                draft.activeSponsorIds.removeAll { $0 == sponsor.id }
+                            } else if draft.activeSponsorIds.count < 6 {
+                                draft.activeSponsorIds.append(sponsor.id)
+                            }
+                            draft.activeSponsorId = draft.activeSponsorIds.first
+                        } else {
+                            draft.activeSponsorIds = [sponsor.id]
+                            draft.activeSponsorId = sponsor.id
+                        }
                     } label: {
+                        let selected = draft.activeSponsorIds.contains(sponsor.id) ||
+                            (draft.activeSponsorIds.isEmpty && draft.activeSponsorId == sponsor.id)
                         Text(sponsor.name)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(draft.activeSponsorId == sponsor.id ? CricTheme.onPrimary : .white)
+                            .font(.caption.weight(selected ? .semibold : .regular))
+                            .foregroundStyle(selected ? CricTheme.onPrimary : .white)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .background(
-                                draft.activeSponsorId == sponsor.id ? CricTheme.primary : CricTheme.surface,
+                                selected ? CricTheme.primary : CricTheme.surface,
                                 in: Capsule()
                             )
                     }

@@ -192,7 +192,9 @@ def test_sponsor_crud_and_overlay_prefs(client):
     assert relay.status_code == 200
     sponsor = relay.get_json().get("sponsor")
     assert sponsor is not None
+    assert sponsor["layout_mode"] == "single"
     assert sponsor["display_mode"] == "scroll_above_board"
+    assert len(sponsor.get("logos") or []) == 1
     assert sponsor["size_scale"] == 1.5
     assert sponsor["scroll_speed"] == 2.0
 

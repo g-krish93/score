@@ -195,6 +195,9 @@ struct OverlayLayoutPrefs: Codable {
     var watermarkText: String
     var sponsorEnabled: Bool
     var activeSponsorId: String?
+    var activeSponsorIds: [String]
+    var sponsorLayoutMode: String
+    var sponsorCarouselIntervalSec: Double
     var sponsorDisplayMode: String
     var sponsorPositionX: Double
     var sponsorPositionY: Double
@@ -222,6 +225,9 @@ struct OverlayLayoutPrefs: Codable {
         watermarkText = OverlayLayoutPrefs.watermarkDefaultText
         sponsorEnabled = false
         activeSponsorId = nil
+        activeSponsorIds = []
+        sponsorLayoutMode = SponsorLayoutMode.single
+        sponsorCarouselIntervalSec = 6.0
         sponsorDisplayMode = SponsorDisplayMode.staticMode
         sponsorPositionX = 0.92
         sponsorPositionY = 0.88
@@ -248,6 +254,9 @@ struct OverlayLayoutPrefs: Codable {
         case watermarkText = "watermark_text"
         case sponsorEnabled = "sponsor_enabled"
         case activeSponsorId = "active_sponsor_id"
+        case activeSponsorIds = "active_sponsor_ids"
+        case sponsorLayoutMode = "sponsor_layout_mode"
+        case sponsorCarouselIntervalSec = "sponsor_carousel_interval_sec"
         case sponsorDisplayMode = "sponsor_display_mode"
         case sponsorPositionX = "sponsor_position_x"
         case sponsorPositionY = "sponsor_position_y"
@@ -279,6 +288,13 @@ struct OverlayLayoutPrefs: Codable {
         watermarkText = wm.isEmpty ? OverlayLayoutPrefs.watermarkDefaultText : wm
         sponsorEnabled = try c.decodeIfPresent(Bool.self, forKey: .sponsorEnabled) ?? sponsorEnabled
         activeSponsorId = try c.decodeIfPresent(String.self, forKey: .activeSponsorId)
+        activeSponsorIds = try c.decodeIfPresent([String].self, forKey: .activeSponsorIds)
+            ?? activeSponsorId.map { [$0] } ?? []
+        sponsorLayoutMode = SponsorLayoutMode.sanitize(
+            try c.decodeIfPresent(String.self, forKey: .sponsorLayoutMode)
+        )
+        sponsorCarouselIntervalSec = try c.decodeIfPresent(Double.self, forKey: .sponsorCarouselIntervalSec)
+            ?? sponsorCarouselIntervalSec
         sponsorDisplayMode = SponsorDisplayMode.sanitize(
             try c.decodeIfPresent(String.self, forKey: .sponsorDisplayMode)
         )
@@ -289,21 +305,34 @@ struct OverlayLayoutPrefs: Codable {
         sponsorScrollSpeed = try c.decodeIfPresent(Double.self, forKey: .sponsorScrollSpeed) ?? sponsorScrollSpeed
     }
 
-    func resolvedSponsorLogoUrl(from sponsors: [Sponsor]) -> String {
-        guard sponsorEnabled else { return "" }
-        if let id = activeSponsorId,
-           let logo = sponsors.first(where: { $0.id == id })?.logoUrl,
-           !logo.isEmpty {
-            return logo
-        }
-        if let logo = sponsors.first(where: { $0.isActive })?.logoUrl, !logo.isEmpty {
-            return logo
-        }
-        return ""
+    func effectiveSponsorIds() -> [String] {
+        if !activeSponsorIds.isEmpty { return activeSponsorIds }
+        if let id = activeSponsorId, !id.isEmpty { return [id] }
+        return []
     }
 
-    func toEngineLayout(sponsorLogoUrl: String = "") -> StreamCameraEngine.OverlayLayout {
-        StreamCameraEngine.OverlayLayout(
+    func resolveSponsorLogoUrls(from sponsors: [Sponsor]) -> [String] {
+        guard sponsorEnabled else { return [] }
+        let fromIds = effectiveSponsorIds().compactMap { id in
+            sponsors.first(where: { $0.id == id })?.logoUrl?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty }
+        if !fromIds.isEmpty { return Array(fromIds.prefix(6)) }
+        if SponsorLayoutMode.sanitize(sponsorLayoutMode) == SponsorLayoutMode.single {
+            if let logo = sponsors.first(where: { $0.isActive })?.logoUrl, !logo.isEmpty {
+                return [logo]
+            }
+            return []
+        }
+        return sponsors.filter(\.isActive).compactMap(\.logoUrl).filter { !$0.isEmpty }.prefix(6).map { $0 }
+    }
+
+    func resolvedSponsorLogoUrl(from sponsors: [Sponsor]) -> String {
+        resolveSponsorLogoUrls(from: sponsors).first ?? ""
+    }
+
+    func toEngineLayout(sponsorLogoUrls: [String] = []) -> StreamCameraEngine.OverlayLayout {
+        let urls = sponsorLogoUrls.filter { !$0.isEmpty }
+        return StreamCameraEngine.OverlayLayout(
             heightFraction: Float(heightFraction),
             widthFraction: Float(widthFraction),
             anchorX: Float(anchorX),
@@ -317,7 +346,10 @@ struct OverlayLayoutPrefs: Codable {
             watermarkEnabled: watermarkEnabled,
             watermarkText: watermarkText,
             sponsorEnabled: sponsorEnabled,
-            sponsorLogoUrl: sponsorLogoUrl,
+            sponsorLogoUrl: urls.first ?? "",
+            sponsorLogoUrls: urls,
+            sponsorLayoutMode: sponsorLayoutMode,
+            sponsorCarouselIntervalSec: Float(max(2, min(30, sponsorCarouselIntervalSec))),
             sponsorDisplayMode: sponsorDisplayMode,
             sponsorPositionX: Float(max(0, min(1, sponsorPositionX))),
             sponsorPositionY: Float(max(0, min(1, sponsorPositionY))),
@@ -334,6 +366,16 @@ struct OverlayLayoutPrefs: Codable {
             merged.activeSponsorId = v.isEmpty ? nil : v
         } else if patch["active_sponsor_id"] is NSNull {
             merged.activeSponsorId = nil
+        }
+        if let arr = patch["active_sponsor_ids"] as? [String] {
+            merged.activeSponsorIds = arr.filter { !$0.isEmpty }.prefix(6).map { $0 }
+            merged.activeSponsorId = merged.activeSponsorIds.first
+        }
+        if let v = patch["sponsor_layout_mode"] as? String {
+            merged.sponsorLayoutMode = SponsorLayoutMode.sanitize(v)
+        }
+        if let v = patch["sponsor_carousel_interval_sec"] as? Double {
+            merged.sponsorCarouselIntervalSec = max(2, min(30, v))
         }
         if let v = patch["sponsor_display_mode"] as? String {
             merged.sponsorDisplayMode = SponsorDisplayMode.sanitize(v)
@@ -365,6 +407,8 @@ struct OverlayLayoutPrefs: Codable {
     func sponsorPatchDictionary() -> [String: Any] {
         var out: [String: Any] = [
             "sponsor_enabled": sponsorEnabled,
+            "sponsor_layout_mode": sponsorLayoutMode,
+            "sponsor_carousel_interval_sec": sponsorCarouselIntervalSec,
             "sponsor_display_mode": sponsorDisplayMode,
             "sponsor_position_x": sponsorPositionX,
             "sponsor_position_y": sponsorPositionY,
@@ -372,8 +416,35 @@ struct OverlayLayoutPrefs: Codable {
             "sponsor_opacity": sponsorOpacity,
             "sponsor_scroll_speed": sponsorScrollSpeed,
         ]
-        if let id = activeSponsorId { out["active_sponsor_id"] = id }
+        if !activeSponsorIds.isEmpty {
+            out["active_sponsor_ids"] = activeSponsorIds
+            if let id = activeSponsorIds.first { out["active_sponsor_id"] = id }
+        } else if let id = activeSponsorId {
+            out["active_sponsor_id"] = id
+        }
         return out
+    }
+}
+
+enum SponsorLayoutMode {
+    static let single = "single"
+    static let multi = "multi"
+    static let carousel = "carousel"
+
+    static let modes: [(id: String, label: String)] = [
+        (single, "One logo"),
+        (multi, "All at once"),
+        (carousel, "Carousel"),
+    ]
+
+    static func sanitize(_ raw: String?) -> String {
+        let m = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? single
+        return modes.contains(where: { $0.id == m }) ? m : single
+    }
+
+    static func allowsMultiSelect(_ mode: String) -> Bool {
+        let m = sanitize(mode)
+        return m == multi || m == carousel
     }
 }
 

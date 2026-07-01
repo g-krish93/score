@@ -23,6 +23,9 @@ final class StreamCameraEngine: NSObject {
         var watermarkText: String = "Visit cricrelay.co.uk"
         var sponsorEnabled: Bool = false
         var sponsorLogoUrl: String = ""
+        var sponsorLogoUrls: [String] = []
+        var sponsorLayoutMode: String = "single"
+        var sponsorCarouselIntervalSec: Float = 6
         var sponsorDisplayMode: String = "static"
         var sponsorPositionX: Float = 0.92
         var sponsorPositionY: Float = 0.88
@@ -41,10 +44,13 @@ final class StreamCameraEngine: NSObject {
     private var lastThermalState: ProcessInfo.ThermalState = .nominal
     private var overlayObject: ImageScreenObject?
     private var watermarkObject: ImageScreenObject?
-    private var sponsorObject: ImageScreenObject?
-    private var appliedSponsorLogoUrl: String?
+    private var sponsorObjects: [String: ImageScreenObject] = [:]
+    private var appliedSponsorUrls: Set<String> = []
     private var sponsorScrollTimer: Timer?
     private var sponsorScrollOffset: CGFloat = 0
+    private var sponsorCarouselTimer: Timer?
+    private var carouselUrls: [String] = []
+    private var carouselIndex = 0
     private var appliedWatermarkText: String?
     private var overlayLayout = OverlayLayout()
     private var overlayUrl = ""
@@ -640,26 +646,96 @@ final class StreamCameraEngine: NSObject {
         }.value
     }
 
-    /// Adds (or refreshes) the sponsor logo on the encoded frame.
+    private func effectiveSponsorUrls() -> [String] {
+        let urls = overlayLayout.sponsorLogoUrls.filter { !$0.isEmpty }
+        if !urls.isEmpty { return Array(urls.prefix(6)) }
+        return overlayLayout.sponsorLogoUrl.isEmpty ? [] : [overlayLayout.sponsorLogoUrl]
+    }
+
+    private func visibleSponsorUrls() -> [String] {
+        let all = effectiveSponsorUrls()
+        switch overlayLayout.sponsorLayoutMode {
+        case "carousel": return all.isEmpty ? [] : [all[carouselIndex % all.count]]
+        default: return all
+        }
+    }
+
+    /// Adds (or refreshes) sponsor logo(s) on the encoded frame.
     private func ensureSponsorObject() async {
-        let enabled = overlayLayout.sponsorEnabled
-        let url = overlayLayout.sponsorLogoUrl
-        if !enabled || url.isEmpty {
+        let urls = effectiveSponsorUrls()
+        if !overlayLayout.sponsorEnabled || urls.isEmpty {
+            stopSponsorCarousel()
             stopSponsorScroll()
-            await Task { @ScreenActor in
-                if let obj = sponsorObject {
-                    try? await mixer.screen.removeChild(obj)
-                    sponsorObject = nil
-                    appliedSponsorLogoUrl = nil
-                }
-            }.value
+            await clearSponsorObjects()
             return
         }
-        if appliedSponsorLogoUrl == url, sponsorObject != nil {
-            await layoutSponsorObject()
-            startSponsorScrollIfNeeded()
-            return
+        switch overlayLayout.sponsorLayoutMode {
+        case "multi":
+            stopSponsorCarousel()
+            await ensureMultiSponsorObjects(urls: urls)
+        case "carousel":
+            carouselUrls = urls
+            carouselIndex = 0
+            await ensureCarouselSponsorObject(urls: urls)
+        default:
+            stopSponsorCarousel()
+            await ensureSingleSponsorObject(url: urls[0])
         }
+        startSponsorScrollIfNeeded()
+    }
+
+    private func ensureSingleSponsorObject(url: String) async {
+        await syncSponsorObjectKeys(want: Set([url]))
+        await loadSponsorObject(url: url, index: 0, total: 1)
+    }
+
+    private func ensureMultiSponsorObjects(urls: [String]) async {
+        await syncSponsorObjectKeys(want: Set(urls))
+        for (index, url) in urls.enumerated() {
+            await loadSponsorObject(url: url, index: index, total: urls.count)
+        }
+    }
+
+    private func ensureCarouselSponsorObject(urls: [String]) async {
+        guard !urls.isEmpty else { return }
+        await ensureSingleSponsorObject(url: urls[0])
+        stopSponsorCarousel()
+        guard urls.count > 1 else { return }
+        let interval = TimeInterval(max(2, min(30, overlayLayout.sponsorCarouselIntervalSec)))
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.sponsorCarouselTimer?.invalidate()
+            self.sponsorCarouselTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                guard self.overlayLayout.sponsorLayoutMode == "carousel", self.carouselUrls.count > 1 else { return }
+                self.carouselIndex = (self.carouselIndex + 1) % self.carouselUrls.count
+                let url = self.carouselUrls[self.carouselIndex]
+                Task { await self.ensureSingleSponsorObject(url: url) }
+            }
+        }
+    }
+
+    private func stopSponsorCarousel() {
+        DispatchQueue.main.async { [weak self] in
+            self?.sponsorCarouselTimer?.invalidate()
+            self?.sponsorCarouselTimer = nil
+        }
+        carouselUrls = []
+        carouselIndex = 0
+    }
+
+    @ScreenActor
+    private func syncSponsorObjectKeys(want: Set<String>) async {
+        let remove = sponsorObjects.keys.filter { !want.contains($0) }
+        for key in remove {
+            if let obj = sponsorObjects.removeValue(forKey: key) {
+                try? await mixer.screen.removeChild(obj)
+            }
+        }
+        appliedSponsorUrls = want
+    }
+
+    private func loadSponsorObject(url: String, index: Int, total: Int) async {
         guard let remoteURL = URL(string: url) else { return }
         let data: Data
         do {
@@ -671,16 +747,24 @@ final class StreamCameraEngine: NSObject {
         let image = applyImageOpacity(rawImage, opacity: overlayLayout.sponsorOpacity)
         guard let cg = image.cgImage else { return }
         await Task { @ScreenActor in
-            if sponsorObject == nil {
-                let obj = ImageScreenObject()
-                sponsorObject = obj
-                try? await mixer.screen.addChild(obj)
+            if sponsorObjects[url] == nil {
+                let o = ImageScreenObject()
+                sponsorObjects[url] = o
+                try? await mixer.screen.addChild(o)
             }
-            sponsorObject?.cgImage = cg
-            appliedSponsorLogoUrl = url
-            await layoutSponsorObject()
-            startSponsorScrollIfNeeded()
+            guard let obj = sponsorObjects[url] else { return }
+            obj.cgImage = cg
+            layoutSponsorObject(obj, index: index, total: total)
         }.value
+    }
+
+    @ScreenActor
+    private func clearSponsorObjects() async {
+        for obj in sponsorObjects.values {
+            try? await mixer.screen.removeChild(obj)
+        }
+        sponsorObjects.removeAll()
+        appliedSponsorUrls.removeAll()
     }
 
     private func isSponsorScrollMode() -> Bool {
@@ -705,17 +789,28 @@ final class StreamCameraEngine: NSObject {
                 self.sponsorScrollOffset -= speed * 4
                 let w = CGFloat(self.encodedCanvasWidth())
                 if self.sponsorScrollOffset < -w { self.sponsorScrollOffset = w }
-                Task { await self.layoutSponsorObject() }
+                Task { await self.layoutAllSponsorObjects() }
             }
         }
     }
 
     @ScreenActor
-    private func layoutSponsorObject() async {
-        guard let obj = sponsorObject, let cg = obj.cgImage else { return }
+    private func layoutAllSponsorObjects() async {
+        let urls = visibleSponsorUrls()
+        for (index, url) in urls.enumerated() {
+            if let obj = sponsorObjects[url] {
+                layoutSponsorObject(obj, index: index, total: urls.count)
+            }
+        }
+    }
+
+    @ScreenActor
+    private func layoutSponsorObject(_ obj: ImageScreenObject, index: Int, total: Int) {
+        guard let cg = obj.cgImage else { return }
         let canvasW = CGFloat(encodedCanvasWidth())
         let canvasH = CGFloat(encodedCanvasHeight())
-        let scale = CGFloat(max(0.3, min(3, overlayLayout.sponsorSizeScale)))
+        let sizeMul: CGFloat = total <= 1 ? 1 : total == 2 ? 0.85 : 0.7
+        let scale = CGFloat(max(0.3, min(3, overlayLayout.sponsorSizeScale))) * sizeMul
         let aspect = CGFloat(cg.height) / max(CGFloat(cg.width), 1)
         let imgW = canvasW * 0.18 * scale
         let imgH = imgW * aspect
@@ -723,11 +818,14 @@ final class StreamCameraEngine: NSObject {
             obj.horizontalAlignment = .left
             obj.verticalAlignment = .top
             let y = sponsorScrollY(canvasH: canvasH, imgH: imgH)
-            obj.layoutMargin = UIEdgeInsets(top: y, left: sponsorScrollOffset, bottom: 0, right: 0)
+            let gap = imgW + 8
+            obj.layoutMargin = UIEdgeInsets(top: y, left: sponsorScrollOffset + CGFloat(index) * gap, bottom: 0, right: 0)
         } else {
             obj.horizontalAlignment = .left
             obj.verticalAlignment = .top
-            let cx = CGFloat(max(0, min(1, overlayLayout.sponsorPositionX))) * canvasW
+            let cx = total <= 1
+                ? CGFloat(max(0, min(1, overlayLayout.sponsorPositionX))) * canvasW
+                : ((CGFloat(index) + 0.5) / CGFloat(total)) * canvasW
             let cy = CGFloat(max(0, min(1, overlayLayout.sponsorPositionY))) * canvasH
             obj.layoutMargin = UIEdgeInsets(
                 top: max(0, cy - imgH / 2),

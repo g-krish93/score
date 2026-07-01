@@ -185,7 +185,8 @@ class StreamController @Inject constructor() {
 
     fun isMicMuted(): Boolean = StreamCameraEngine.isMicMuted()
 
-    fun setSponsorLayer(enabled: Boolean, logoUrl: String) = StreamCameraEngine.setSponsorLayer(enabled, logoUrl)
+    fun setSponsorLayer(enabled: Boolean, logoUrls: List<String>) =
+        StreamCameraEngine.setSponsorLayer(enabled, logoUrls)
 
     fun setKeepScreenOnDuringStream(enabled: Boolean) = StreamCameraEngine.setKeepScreenOnDuringStream(enabled)
 

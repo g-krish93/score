@@ -2,6 +2,7 @@ package uk.co.cricrelay.shared.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -297,6 +298,23 @@ object SponsorDisplayMode {
     fun isScroll(mode: String): Boolean = mode.startsWith("scroll")
 }
 
+/** How many sponsor logos to show: one pick, all at once, or rotating carousel. */
+object SponsorLayoutMode {
+    const val SINGLE = "single"
+    const val MULTI = "multi"
+    const val CAROUSEL = "carousel"
+
+    val ALL = setOf(SINGLE, MULTI, CAROUSEL)
+
+    fun sanitize(raw: String?): String {
+        val m = raw?.trim()?.lowercase().orEmpty()
+        return if (m in ALL) m else SINGLE
+    }
+
+    fun allowsMultiSelect(mode: String): Boolean =
+        sanitize(mode) == MULTI || sanitize(mode) == CAROUSEL
+}
+
 @Serializable
 data class OverlayLayoutPrefs(
     // Scoreboard is a thin horizontal strip; height is a constant, font size is the
@@ -320,6 +338,10 @@ data class OverlayLayoutPrefs(
     @SerialName("watermark_text") val watermarkText: String = WATERMARK_DEFAULT_TEXT,
     @SerialName("sponsor_enabled") val sponsorEnabled: Boolean = false,
     @SerialName("active_sponsor_id") val activeSponsorId: String? = null,
+    @SerialName("active_sponsor_ids") val activeSponsorIds: List<String> = emptyList(),
+    /** single | multi | carousel */
+    @SerialName("sponsor_layout_mode") val sponsorLayoutMode: String = SponsorLayoutMode.SINGLE,
+    @SerialName("sponsor_carousel_interval_sec") val sponsorCarouselIntervalSec: Double = 6.0,
     /** static | scroll_top | scroll_bottom | scroll_above_board | scroll_below_board */
     @SerialName("sponsor_display_mode") val sponsorDisplayMode: String = SponsorDisplayMode.STATIC,
     @SerialName("sponsor_position_x") val sponsorPositionX: Double = 0.92,
@@ -384,6 +406,11 @@ data class OverlayLayoutPrefs(
                 ?: WATERMARK_DEFAULT_TEXT,
             sponsorEnabled = json.bool("sponsor_enabled") == true,
             activeSponsorId = json.string("active_sponsor_id")?.takeIf { it.isNotBlank() },
+            activeSponsorIds = json.stringList("active_sponsor_ids").ifEmpty {
+                json.string("active_sponsor_id")?.takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
+            },
+            sponsorLayoutMode = SponsorLayoutMode.sanitize(json.string("sponsor_layout_mode")),
+            sponsorCarouselIntervalSec = json.double("sponsor_carousel_interval_sec")?.coerceIn(2.0, 30.0) ?: 6.0,
             sponsorDisplayMode = SponsorDisplayMode.sanitize(json.string("sponsor_display_mode")),
             sponsorPositionX = json.double("sponsor_position_x")?.coerceIn(0.0, 1.0) ?: 0.92,
             sponsorPositionY = json.double("sponsor_position_y")?.coerceIn(0.0, 1.0) ?: 0.88,
@@ -410,7 +437,14 @@ data class OverlayLayoutPrefs(
         put("watermark_enabled", watermarkEnabled)
         put("watermark_text", watermarkText)
         put("sponsor_enabled", sponsorEnabled)
-        activeSponsorId?.let { put("active_sponsor_id", it) }
+        if (activeSponsorIds.isNotEmpty()) {
+            put("active_sponsor_ids", JsonArray(activeSponsorIds.map { JsonPrimitive(it) }))
+            activeSponsorIds.firstOrNull()?.let { put("active_sponsor_id", it) }
+        } else {
+            activeSponsorId?.let { put("active_sponsor_id", it) }
+        }
+        put("sponsor_layout_mode", sponsorLayoutMode)
+        put("sponsor_carousel_interval_sec", sponsorCarouselIntervalSec)
         put("sponsor_display_mode", sponsorDisplayMode)
         put("sponsor_position_x", sponsorPositionX)
         put("sponsor_position_y", sponsorPositionY)
@@ -432,7 +466,14 @@ data class OverlayLayoutPrefs(
 
     fun sponsorPatchJson(): JsonObject = buildJsonObject {
         put("sponsor_enabled", sponsorEnabled)
-        activeSponsorId?.let { put("active_sponsor_id", it) }
+        if (activeSponsorIds.isNotEmpty()) {
+            put("active_sponsor_ids", JsonArray(activeSponsorIds.map { JsonPrimitive(it) }))
+            activeSponsorIds.firstOrNull()?.let { put("active_sponsor_id", it) }
+        } else {
+            activeSponsorId?.let { put("active_sponsor_id", it) }
+        }
+        put("sponsor_layout_mode", sponsorLayoutMode)
+        put("sponsor_carousel_interval_sec", sponsorCarouselIntervalSec)
         put("sponsor_display_mode", sponsorDisplayMode)
         put("sponsor_position_x", sponsorPositionX)
         put("sponsor_position_y", sponsorPositionY)
@@ -440,11 +481,35 @@ data class OverlayLayoutPrefs(
         put("sponsor_opacity", sponsorOpacity)
         put("sponsor_scroll_speed", sponsorScrollSpeed)
     }
+
+    fun effectiveSponsorIds(): List<String> = when {
+        activeSponsorIds.isNotEmpty() -> activeSponsorIds
+        !activeSponsorId.isNullOrBlank() -> listOf(activeSponsorId!!)
+        else -> emptyList()
+    }
+
+    fun resolveSponsorLogoUrls(sponsors: List<Sponsor>): List<String> {
+        if (!sponsorEnabled) return emptyList()
+        val fromIds = effectiveSponsorIds().mapNotNull { id ->
+            sponsors.find { it.id == id }?.logoUrl?.takeIf { it.isNotBlank() }
+        }
+        if (fromIds.isNotEmpty()) return fromIds.take(6)
+        return when (SponsorLayoutMode.sanitize(sponsorLayoutMode)) {
+            SponsorLayoutMode.SINGLE ->
+                sponsors.firstOrNull { it.isActive }?.logoUrl?.takeIf { it.isNotBlank() }?.let { listOf(it) }
+                    ?: emptyList()
+            else ->
+                sponsors.filter { it.isActive }.mapNotNull { it.logoUrl?.takeIf { u -> u.isNotBlank() } }.take(6)
+        }
+    }
 }
 
 private val SPONSOR_PATCH_KEYS = setOf(
     "sponsor_enabled",
     "active_sponsor_id",
+    "active_sponsor_ids",
+    "sponsor_layout_mode",
+    "sponsor_carousel_interval_sec",
     "sponsor_display_mode",
     "sponsor_position_x",
     "sponsor_position_y",
@@ -452,6 +517,9 @@ private val SPONSOR_PATCH_KEYS = setOf(
     "sponsor_opacity",
     "sponsor_scroll_speed",
 )
+
+private fun JsonObject.stringList(key: String): List<String> =
+    array(key).mapNotNull { el -> (el as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } }
 
 internal fun JsonObject.string(key: String): String? =
     (this[key] as? JsonPrimitive)?.contentOrNull

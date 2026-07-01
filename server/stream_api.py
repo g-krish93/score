@@ -115,6 +115,9 @@ REMOTE_CONTROL_COMMANDS = {
 REMOTE_SPONSOR_OVERLAY_KEYS = {
     "sponsor_enabled",
     "active_sponsor_id",
+    "active_sponsor_ids",
+    "sponsor_layout_mode",
+    "sponsor_carousel_interval_sec",
     "sponsor_display_mode",
     "sponsor_position_x",
     "sponsor_position_y",

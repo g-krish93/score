@@ -310,27 +310,14 @@ class StudioViewModel @Inject constructor(
         }
     }
 
-    private fun resolveSponsorLogoUrl(prefs: OverlayLayoutPrefs, sponsors: List<Sponsor>): String {
-        if (!prefs.sponsorEnabled) return ""
-        val activeId = prefs.activeSponsorId
-        val sponsor = when {
-            !activeId.isNullOrBlank() -> sponsors.find { it.id == activeId }
-            else -> sponsors.firstOrNull { it.isActive }
-        }
-        return sponsor?.logoUrl.orEmpty()
-    }
-
     private fun syncSponsorLayer(prefs: OverlayLayoutPrefs, sponsors: List<Sponsor> = _uiState.value.sponsors) {
         val match = _uiState.value.match ?: return
+        val logoUrls = prefs.resolveSponsorLogoUrls(sponsors)
         if (match.overlayEmbedUrl.isBlank()) {
-            streamController.setSponsorLayer(
-                prefs.sponsorEnabled,
-                resolveSponsorLogoUrl(prefs, sponsors),
-            )
+            streamController.setSponsorLayer(prefs.sponsorEnabled, logoUrls)
             return
         }
-        val logoUrl = resolveSponsorLogoUrl(prefs, sponsors)
-        streamController.updateOverlay(match.overlayEmbedUrl, prefs.toEngineLayout(logoUrl))
+        streamController.updateOverlay(match.overlayEmbedUrl, prefs.toEngineLayout(logoUrls))
     }
 
     private fun resetCameraGate() {
@@ -382,8 +369,8 @@ class StudioViewModel @Inject constructor(
 
     private fun syncOverlay(match: StreamMatch, prefs: OverlayLayoutPrefs) {
         if (match.overlayEmbedUrl.isBlank()) return
-        val logoUrl = resolveSponsorLogoUrl(prefs, _uiState.value.sponsors)
-        streamController.updateOverlay(match.overlayEmbedUrl, prefs.toEngineLayout(logoUrl))
+        val logoUrls = prefs.resolveSponsorLogoUrls(_uiState.value.sponsors)
+        streamController.updateOverlay(match.overlayEmbedUrl, prefs.toEngineLayout(logoUrls))
     }
 
     /** Push overlay/sponsor prefs to the camera preview without persisting to the server. */
@@ -584,8 +571,8 @@ class StudioViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(busy = true, error = null, statusMessage = "Connecting…") }
             try {
-                val logoUrl = resolveSponsorLogoUrl(state.overlayPrefs, state.sponsors)
-                val layout = state.overlayPrefs.toEngineLayout(logoUrl)
+                val logoUrls = state.overlayPrefs.resolveSponsorLogoUrls(state.sponsors)
+                val layout = state.overlayPrefs.toEngineLayout(logoUrls)
                 val watchUrl: String
                 when (state.destination) {
                     StreamDestination.Custom -> {

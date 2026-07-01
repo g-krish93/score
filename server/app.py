@@ -305,6 +305,9 @@ def blank_state():
         "pcs_ble_state": None,
         "sponsor_enabled": False,
         "active_sponsor_id": None,
+        "active_sponsor_ids": [],
+        "sponsor_layout_mode": "single",
+        "sponsor_carousel_interval_sec": 6.0,
         "sponsor_display_mode": "static",
         "sponsor_position_x": 0.92,
         "sponsor_position_y": 0.88,
@@ -2548,19 +2551,35 @@ def relay_overlay_data(match_id):
         }
 
     sponsor_enabled = bool(data.get("sponsor_enabled", False))
-    active_sponsor_id = data.get("active_sponsor_id")
+    sponsor_ids = _resolved_active_sponsor_ids(data)
     sponsor_payload = None
-    if sponsor_enabled and active_sponsor_id:
+    if sponsor_enabled and sponsor_ids:
         now = datetime.now(timezone.utc)
-        s = Sponsor.query.filter_by(id=active_sponsor_id, is_active=True).first()
-        if s and (s.active_from is None or s.active_from <= now) and (
-            s.active_to is None or s.active_to >= now
-        ):
+        logos = []
+        for sid in sponsor_ids[:6]:
+            s = Sponsor.query.filter_by(id=sid, is_active=True).first()
+            if s and (s.active_from is None or s.active_from <= now) and (
+                s.active_to is None or s.active_to >= now
+            ):
+                logos.append(
+                    {
+                        "logo_url": s.logo_url,
+                        "link_url": s.link_url,
+                        "name": s.name,
+                    }
+                )
+        if logos:
+            layout_mode = _sanitize_sponsor_layout_mode(data.get("sponsor_layout_mode"))
+            display_mode = _sanitize_sponsor_display_mode(data.get("sponsor_display_mode"))
+            first = logos[0]
             sponsor_payload = {
-                "logo_url": s.logo_url,
-                "link_url": s.link_url,
-                "name": s.name,
-                "display_mode": _sanitize_sponsor_display_mode(data.get("sponsor_display_mode")),
+                "layout_mode": layout_mode,
+                "logos": logos,
+                "carousel_interval_sec": float(data.get("sponsor_carousel_interval_sec") or 6.0),
+                "logo_url": first.get("logo_url"),
+                "link_url": first.get("link_url"),
+                "name": first.get("name"),
+                "display_mode": display_mode,
                 "position_x": float(data.get("sponsor_position_x") or 0.92),
                 "position_y": float(data.get("sponsor_position_y") or 0.88),
                 "size_scale": float(data.get("sponsor_size_scale") or 1.0),
@@ -3882,6 +3901,24 @@ def _sanitize_sponsor_display_mode(raw) -> str:
     return m if m in modes else "static"
 
 
+def _sanitize_sponsor_layout_mode(raw) -> str:
+    modes = {"single", "multi", "carousel"}
+    m = str(raw or "single").strip().lower()
+    return m if m in modes else "single"
+
+
+def _resolved_active_sponsor_ids(data: dict) -> list[str]:
+    ids = data.get("active_sponsor_ids")
+    if isinstance(ids, list):
+        out = [str(x).strip() for x in ids if str(x).strip()]
+        if out:
+            return out[:6]
+    single = data.get("active_sponsor_id")
+    if single:
+        return [str(single).strip()]
+    return []
+
+
 OVERLAY_LAYOUT_STATE_KEYS = (
     "overlay_height_fraction",
     "overlay_width_fraction",
@@ -3899,6 +3936,9 @@ OVERLAY_LAYOUT_STATE_KEYS = (
     "watermark_text",
     "sponsor_enabled",
     "active_sponsor_id",
+    "active_sponsor_ids",
+    "sponsor_layout_mode",
+    "sponsor_carousel_interval_sec",
     "sponsor_display_mode",
     "sponsor_position_x",
     "sponsor_position_y",
@@ -3915,6 +3955,11 @@ def _overlay_layout_from_state() -> dict:
     for key in OVERLAY_LAYOUT_STATE_KEYS:
         out[key] = state.get(key, defaults.get(key))
     out["sponsor_display_mode"] = _sanitize_sponsor_display_mode(out.get("sponsor_display_mode"))
+    out["sponsor_layout_mode"] = _sanitize_sponsor_layout_mode(out.get("sponsor_layout_mode"))
+    out["sponsor_carousel_interval_sec"] = max(2.0, min(30.0, float(out.get("sponsor_carousel_interval_sec") or 6.0)))
+    ids = out.get("active_sponsor_ids")
+    if not isinstance(ids, list):
+        out["active_sponsor_ids"] = _resolved_active_sponsor_ids(out)
     out["sponsor_position_x"] = max(0.0, min(1.0, float(out.get("sponsor_position_x") or 0.92)))
     out["sponsor_position_y"] = max(0.0, min(1.0, float(out.get("sponsor_position_y") or 0.88)))
     out["sponsor_size_scale"] = max(0.3, min(3.0, float(out.get("sponsor_size_scale") or 1.0)))
@@ -3947,6 +3992,16 @@ def _apply_overlay_layout_to_state(data: dict) -> None:
             state[key] = bool(val)
         elif key == "active_sponsor_id":
             state[key] = str(val).strip() if val else None
+        elif key == "active_sponsor_ids":
+            if isinstance(val, list):
+                state[key] = [str(x).strip() for x in val if str(x).strip()][:6]
+        elif key == "sponsor_layout_mode":
+            state[key] = _sanitize_sponsor_layout_mode(val)
+        elif key == "sponsor_carousel_interval_sec":
+            try:
+                state[key] = max(2.0, min(30.0, float(val)))
+            except (TypeError, ValueError):
+                pass
         elif key in {
             "sponsor_position_x",
             "sponsor_position_y",
@@ -4124,6 +4179,16 @@ def _remote_sponsor_overlay_patch(raw: dict) -> dict:
         elif key == "active_sponsor_id":
             sid = str(val or "").strip()
             out[key] = sid if sid else None
+        elif key == "active_sponsor_ids":
+            if isinstance(val, list):
+                out[key] = [str(x).strip() for x in val if str(x).strip()][:6]
+        elif key == "sponsor_layout_mode":
+            out[key] = _sanitize_sponsor_layout_mode(val)
+        elif key == "sponsor_carousel_interval_sec":
+            try:
+                out[key] = max(2.0, min(30.0, float(val)))
+            except (TypeError, ValueError):
+                pass
         elif key == "sponsor_display_mode":
             out[key] = _sanitize_sponsor_display_mode(val)
         elif key in {

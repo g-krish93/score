@@ -304,7 +304,11 @@ private fun ToolButtons(
         }
     }
     val style: @Composable () -> Unit = {
-        CameraToolButton(label = "Style", active = false, onClick = onOverlay) {
+        CameraToolButton(
+            label = "Board",
+            active = state.overlayPrefs.sponsorEnabled,
+            onClick = onOverlay,
+        ) {
             Icon(Icons.Outlined.Layers, contentDescription = null, tint = Color.White)
         }
     }

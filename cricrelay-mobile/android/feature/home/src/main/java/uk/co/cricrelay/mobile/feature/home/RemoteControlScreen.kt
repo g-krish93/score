@@ -60,6 +60,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import uk.co.cricrelay.mobile.ui.LabeledSlider
 import uk.co.cricrelay.shared.model.SponsorDisplayMode
+import uk.co.cricrelay.shared.model.SponsorLayoutMode
 import uk.co.cricrelay.mobile.ui.AppSpacing
 import uk.co.cricrelay.mobile.ui.AppTypography
 import uk.co.cricrelay.mobile.ui.CameraCircleButton
@@ -240,11 +241,52 @@ private fun RemoteSponsorSection(
         )
     }
     if (prefs.sponsorEnabled && activeSponsors.isNotEmpty()) {
-        Text("Select sponsor", style = AppTypography.bodySmall, color = AppColors.OnBackgroundMuted)
+        Text("How to show", style = AppTypography.bodySmall, color = AppColors.OnBackgroundMuted)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+            items(
+                listOf(
+                    SponsorLayoutMode.SINGLE to "One logo",
+                    SponsorLayoutMode.MULTI to "All at once",
+                    SponsorLayoutMode.CAROUSEL to "Carousel",
+                ),
+            ) { (id, label) ->
+                val selected = prefs.sponsorLayoutMode == id
+                Text(
+                    label,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                        .clickable {
+                            onPrefsChange {
+                                var next = it.copy(sponsorLayoutMode = id)
+                                if (!SponsorLayoutMode.allowsMultiSelect(id) && next.activeSponsorIds.size > 1) {
+                                    next = next.copy(
+                                        activeSponsorIds = next.activeSponsorIds.take(1),
+                                        activeSponsorId = next.activeSponsorIds.firstOrNull(),
+                                    )
+                                }
+                                next
+                            }
+                        }
+                        .background(
+                            if (selected) AppColors.Primary.copy(alpha = 0.25f)
+                            else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                        )
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    style = AppTypography.bodySmall,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                )
+            }
+        }
+        Text("Select sponsor(s)", style = AppTypography.bodySmall, color = AppColors.OnBackgroundMuted)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             items(activeSponsors) { sponsor ->
-                val selected = prefs.activeSponsorId == sponsor.id ||
-                    (prefs.activeSponsorId.isNullOrBlank() && sponsor.id == activeSponsors.firstOrNull()?.id)
+                val multiPick = SponsorLayoutMode.allowsMultiSelect(prefs.sponsorLayoutMode)
+                val selected = if (multiPick) {
+                    sponsor.id in prefs.activeSponsorIds
+                } else {
+                    sponsor.id in prefs.activeSponsorIds ||
+                        (prefs.activeSponsorIds.isEmpty() && sponsor.id == activeSponsors.firstOrNull()?.id)
+                }
                 Text(
                     sponsor.name,
                     modifier = Modifier
@@ -258,12 +300,40 @@ private fun RemoteSponsorSection(
                             color = if (selected) AppColors.Primary else AppColors.Border,
                             shape = RoundedCornerShape(AppSpacing.radiusSm),
                         )
-                        .clickable { onPrefsChange { it.copy(activeSponsorId = sponsor.id) } }
+                        .clickable {
+                            onPrefsChange { prefsIn ->
+                                if (multiPick) {
+                                    val ids = if (sponsor.id in prefsIn.activeSponsorIds) {
+                                        prefsIn.activeSponsorIds.filter { it != sponsor.id }
+                                    } else {
+                                        (prefsIn.activeSponsorIds + sponsor.id).take(6)
+                                    }
+                                    prefsIn.copy(
+                                        activeSponsorIds = ids,
+                                        activeSponsorId = ids.firstOrNull(),
+                                    )
+                                } else {
+                                    prefsIn.copy(
+                                        activeSponsorIds = listOf(sponsor.id),
+                                        activeSponsorId = sponsor.id,
+                                    )
+                                }
+                            }
+                        }
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     style = AppTypography.bodySmall,
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                 )
             }
+        }
+        if (prefs.sponsorLayoutMode == SponsorLayoutMode.CAROUSEL) {
+            LabeledSlider(
+                label = "Carousel interval",
+                valueText = "${prefs.sponsorCarouselIntervalSec.toInt()}s",
+                value = prefs.sponsorCarouselIntervalSec.toFloat(),
+                onValueChange = { v -> onPrefsChange { it.copy(sponsorCarouselIntervalSec = v.toDouble()) } },
+                valueRange = 2f..30f,
+            )
         }
     }
     if (prefs.sponsorEnabled) {
