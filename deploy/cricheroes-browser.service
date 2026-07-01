@@ -1,0 +1,27 @@
+[Unit]
+Description=CricHeroes persistent browser (Xvfb + Chrome CDP spike)
+Documentation=file:/app/docs/CRICHEROES_BROWSER_SPIKE.md
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/app
+Environment=HOME=/home/ec2-user
+# CDP (9222) and VNC (5900) are localhost-only inside cricheroes_browser_session.py.
+# Never bind 0.0.0.0 — SSH tunnel only for human VNC access.
+ExecStartPre=/bin/bash /app/deploy/cricheroes-browser-preflight.sh
+ExecStart=/usr/bin/python3 /app/scripts/cricheroes_browser_session.py
+Restart=always
+RestartSec=10
+# Kill entire cgroup on OOM so orphaned Xvfb/Chrome cannot keep CDP port 9222.
+OOMPolicy=kill
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=120
+# ASSUMPTION: user_data_dir on disk (~ec2-user/cricheroes-browser-profile) survives
+# restarts so cf_clearance cookies persist. Verify with test_cricheroes_browser_session.py
+# --restart-after-min. Wiping that directory or ephemeral disk requires re-solving.
+
+[Install]
+WantedBy=multi-user.target
