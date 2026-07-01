@@ -41,7 +41,7 @@ object StreamCameraEngine : ConnectChecker {
         val widthFraction: Float = 1.0f,
         val anchorX: Float = 0.5f,
         val anchorY: Float = 0.85f,
-        val bottomMarginFraction: Float = 0.02f,
+        val bottomMarginFraction: Float = 0f,
         val horizontalInsetFraction: Float = 0f,
         val fontScale: Float = 1.0f,
         val bgColor: String = "",
@@ -60,6 +60,7 @@ object StreamCameraEngine : ConnectChecker {
         val sponsorSizeScale: Float = 1f,
         val sponsorOpacity: Float = 1f,
         val sponsorScrollSpeed: Float = 1f,
+        val sponsorScrollDirection: String = "rtl",
         val theme: String = "barlow",
     )
 
@@ -89,6 +90,11 @@ object StreamCameraEngine : ConnectChecker {
     private val sponsorFetchInFlight = mutableSetOf<String>()
     private var sponsorScrollRunnable: Runnable? = null
     private var sponsorScrollOffsetPct: Float = 100f
+    // Direction the marquee timer is currently running, so repeated starts stay idempotent.
+    private var sponsorScrollActiveDir: String? = null
+    // The board sprite's actual on-screen band (%), updated each time the board is placed.
+    private var boardTopPct: Float = 84f
+    private var boardBottomPct: Float = 100f
     private var carouselRunnable: Runnable? = null
     private var carouselUrls: List<String> = emptyList()
     private var carouselIndex = 0
@@ -1153,30 +1159,75 @@ object StreamCameraEngine : ConnectChecker {
     private fun isSponsorScrollMode(): Boolean =
         overlayLayout.sponsorDisplayMode.startsWith("scroll")
 
+    // Direction strings arrive already sanitized from OverlayLayoutPrefs (feature/studio maps them
+    // via SponsorScrollDirection); this module has no dependency on :shared, so compare locally.
+    private fun scrollDirection(): String = overlayLayout.sponsorScrollDirection.trim().lowercase()
+
+    private fun scrollAxisHorizontal(): Boolean =
+        scrollDirection().let { it == SCROLL_DIR_LTR || it == SCROLL_DIR_RTL }
+
+    /** Re-apply every visible sponsor sprite at the current [sponsorScrollOffsetPct]. */
+    private fun refreshSponsorScrollFrame() {
+        val urls = visibleSponsorUrls()
+        urls.forEachIndexed { index, url ->
+            sponsorSlots[url]?.let { slot ->
+                applySponsorSprite(slot.filter, slot, index, urls.size)
+            }
+        }
+    }
+
     private fun startSponsorScroll() {
+        if (!overlayLayout.sponsorEnabled || !isSponsorScrollMode()) {
+            stopSponsorScroll()
+            return
+        }
+        val dir = scrollDirection()
+        // "fixed" = a scroll-band strip pinned in place (no travel): render once, no timer.
+        if (dir == SCROLL_DIR_FIXED) {
+            stopSponsorScroll()
+            sponsorScrollActiveDir = dir
+            sponsorScrollOffsetPct = 0f
+            refreshSponsorScrollFrame()
+            return
+        }
+        // Idempotent: studio init calls updateOverlay/syncSponsorLayer several times as prefs and
+        // logos load. If the marquee is already running this direction, keep the current offset so
+        // the logo doesn't jump back to the entry edge (the "cutting at the first few seconds" bug).
+        if (sponsorScrollRunnable != null && sponsorScrollActiveDir == dir) return
         stopSponsorScroll()
-        if (!overlayLayout.sponsorEnabled || !isSponsorScrollMode()) return
+        sponsorScrollActiveDir = dir
+        sponsorScrollOffsetPct = 0f
         val runnable = object : Runnable {
             override fun run() {
+                // A monotonic distance accumulator in RootEncoder's 0–100% canvas space. Direction
+                // (which edge it enters from) is applied per-sprite in applySponsorSprite via a
+                // modulo marquee, so the strip slides fully edge-to-edge and tiles seamlessly.
+                // Percent-based => same visual pace on every resolution (720p/1080p).
                 val speed = overlayLayout.sponsorScrollSpeed.coerceIn(0.3f, 3f)
-                sponsorScrollOffsetPct -= speed * 0.45f
-                if (sponsorScrollOffsetPct < -120f) sponsorScrollOffsetPct = 110f
-                val urls = visibleSponsorUrls()
-                urls.forEachIndexed { index, url ->
-                    sponsorSlots[url]?.let { slot ->
-                        applySponsorSprite(slot.filter, slot, index, urls.size)
-                    }
-                }
-                mainHandler.postDelayed(this, 33L)
+                sponsorScrollOffsetPct += speed * SPONSOR_SCROLL_STEP_PCT
+                if (sponsorScrollOffsetPct > SPONSOR_SCROLL_WRAP_PCT) sponsorScrollOffsetPct = 0f
+                refreshSponsorScrollFrame()
+                mainHandler.postDelayed(this, SPONSOR_SCROLL_FRAME_MS)
             }
         }
         sponsorScrollRunnable = runnable
         mainHandler.post(runnable)
     }
 
+    /**
+     * Marquee position (%) for sprite [index] of [total] along a [period]-wide loop. Evenly
+     * spaces the sprites around the loop so N logos form one continuous, seamless stream.
+     */
+    private fun marqueePhase(period: Float, index: Int, total: Int): Float {
+        val spacing = period / total.coerceAtLeast(1)
+        val raw = (sponsorScrollOffsetPct + index * spacing) % period
+        return if (raw < 0f) raw + period else raw
+    }
+
     private fun stopSponsorScroll() {
         sponsorScrollRunnable?.let { mainHandler.removeCallbacks(it) }
         sponsorScrollRunnable = null
+        sponsorScrollActiveDir = null
     }
 
     private fun stopCarousel() {
@@ -1368,6 +1419,21 @@ object StreamCameraEngine : ConnectChecker {
 
     private const val WATERMARK_TEXT_SIZE = 34f
     private const val WATERMARK_BMP_HEIGHT = 80
+    // Sponsor scroll direction tokens (mirror uk.co.cricrelay.shared.model.SponsorScrollDirection;
+    // duplicated here because :streaming does not depend on :shared).
+    // ltr/ttb travel forward; rtl/btt travel back (the implicit "else"); fixed = pinned.
+    private const val SCROLL_DIR_LTR = "ltr"
+    private const val SCROLL_DIR_RTL = "rtl"
+    private const val SCROLL_DIR_TTB = "ttb"
+    private const val SCROLL_DIR_FIXED = "fixed"
+
+    // Sponsor scroll animation, in RootEncoder's 0–100% canvas space (resolution-independent).
+    private const val SPONSOR_SCROLL_STEP_PCT = 0.45f
+    private const val SPONSOR_SCROLL_FRAME_MS = 33L
+    private const val SPONSOR_SCROLL_GAP_PCT = 8f
+    // Reset the accumulator on a multiple of common periods to avoid float drift over long streams.
+    private const val SPONSOR_SCROLL_WRAP_PCT = 100_000f
+
     private const val WATERMARK_HEIGHT_PCT = 5.5f
     // The preview renders AspectRatioMode.Fill (aspect-fill), so the frame edges are cropped
     // off-screen — portrait crops the sides, landscape crops top/bottom. These keep the
@@ -1465,14 +1531,51 @@ object StreamCameraEngine : ConnectChecker {
         filter.setPosition(sprite.positionX, sprite.positionY)
     }
 
-    private fun fetchSponsorBitmap(url: String): Bitmap? = try {
+    /**
+     * Load a sponsor logo, resilient to network/DNS blips at a ground: return the on-disk cached
+     * copy immediately when present (and refresh it in the background), otherwise download once and
+     * persist it. Once a logo has loaded on any prior session it keeps showing even fully offline.
+     */
+    private fun fetchSponsorBitmap(url: String): Bitmap? {
+        val cacheFile = sponsorCacheFile(url)
+        if (cacheFile != null && cacheFile.exists() && cacheFile.length() > 0L) {
+            val cached = runCatching { BitmapFactory.decodeFile(cacheFile.absolutePath) }.getOrNull()
+            if (cached != null) {
+                // Refresh the cache for next time without blocking the current broadcast.
+                sponsorFetchExecutor.execute {
+                    downloadSponsorBytes(url)?.let { bytes ->
+                        runCatching { cacheFile.writeBytes(bytes) }
+                    }
+                }
+                return cached
+            }
+        }
+        val bytes = downloadSponsorBytes(url) ?: return null
+        val bmp = runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull()
+            ?: return null
+        if (cacheFile != null) runCatching { cacheFile.writeBytes(bytes) }
+        return bmp
+    }
+
+    private fun downloadSponsorBytes(url: String): ByteArray? = try {
         val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
         conn.connectTimeout = 5000
         conn.readTimeout = 5000
-        conn.inputStream.use { BitmapFactory.decodeStream(it) }
+        conn.inputStream.use { it.readBytes() }
     } catch (e: Exception) {
         CricrelayLog.w("Sponsor logo fetch failed: ${e.message}")
         null
+    }
+
+    /** Stable per-URL cache file under the app cache dir; null if no context yet. */
+    private fun sponsorCacheFile(url: String): java.io.File? {
+        val ctx = appContext ?: return null
+        return try {
+            val dir = java.io.File(ctx.cacheDir, "sponsor_logos").apply { mkdirs() }
+            java.io.File(dir, "logo_" + Integer.toHexString(url.hashCode()) + ".img")
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun ensureSponsorFilter() {
@@ -1598,12 +1701,14 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     private fun sponsorScrollYPercent(spriteScaleY: Float): Float {
-        val boardTop = overlayLayout.anchorY * 100f - overlayLayout.heightFraction * 100f
         return when (overlayLayout.sponsorDisplayMode) {
             "scroll_top" -> 4f
             "scroll_bottom" -> 96f - spriteScaleY
-            "scroll_above_board" -> (boardTop - spriteScaleY - 2f).coerceAtLeast(2f)
-            "scroll_below_board" -> (overlayLayout.anchorY * 100f + 2f).coerceAtMost(98f - spriteScaleY)
+            // Sit just above the board's real top edge.
+            "scroll_above_board" -> (boardTopPct - spriteScaleY - 2f).coerceAtLeast(2f)
+            // Just below the board's real bottom; if the board is flush to the frame bottom there is
+            // no room, so tuck it into the board's lower band instead of pushing it off-screen.
+            "scroll_below_board" -> (boardBottomPct + 2f).coerceAtMost(100f - spriteScaleY)
             else -> overlayLayout.sponsorPositionY * 100f
         }
     }
@@ -1631,10 +1736,32 @@ object StreamCameraEngine : ConnectChecker {
         )
         filter.setScale(sprite.scaleX, sprite.scaleY)
         if (isSponsorScrollMode()) {
-            val y = sponsorScrollYPercent(sprite.scaleY)
-            val gap = sprite.scaleX + 2f
-            val x = sponsorScrollOffsetPct + index * gap - sprite.scaleX
-            filter.setPosition(x, y)
+            val dir = scrollDirection()
+            if (scrollAxisHorizontal()) {
+                // Horizontal ticker: X marquees edge-to-edge, Y band comes from the display mode.
+                val period = 100f + sprite.scaleX + SPONSOR_SCROLL_GAP_PCT
+                val phase = marqueePhase(period, index, total)
+                // rtl: enter from right (x=100) → exit left; ltr: enter from left → exit right.
+                val x = if (dir == SCROLL_DIR_LTR) {
+                    -sprite.scaleX - SPONSOR_SCROLL_GAP_PCT + phase
+                } else {
+                    100f - phase
+                }
+                filter.setPosition(x, sponsorScrollYPercent(sprite.scaleY))
+            } else {
+                // Vertical crawl: Y marquees over the full frame, X comes from the drag position.
+                val period = 100f + sprite.scaleY + SPONSOR_SCROLL_GAP_PCT
+                val phase = marqueePhase(period, index, total)
+                // ttb: enter from top → exit bottom; btt: enter from bottom (y=100) → exit top.
+                val y = if (dir == SCROLL_DIR_TTB) {
+                    -sprite.scaleY - SPONSOR_SCROLL_GAP_PCT + phase
+                } else {
+                    100f - phase
+                }
+                val x = (overlayLayout.sponsorPositionX.coerceIn(0f, 1f) * 100f - sprite.scaleX / 2f)
+                    .coerceIn(0f, 100f - sprite.scaleX)
+                filter.setPosition(x, y)
+            }
         } else {
             val cx = if (total <= 1) {
                 overlayLayout.sponsorPositionX.coerceIn(0f, 1f) * 100f
@@ -1703,9 +1830,11 @@ object StreamCameraEngine : ConnectChecker {
         val canvasH = encodedCanvasHeight()
         filter.setDefaultScale(canvasW, canvasH)
         val base = filter.getScale()
-        val wMul = overlayLayout.widthFraction.coerceIn(0.25f, 0.98f) / REF_OVERLAY_WIDTH_FRACTION
-        val hMul = overlayLayout.heightFraction.coerceIn(0.10f, 0.28f) / REF_OVERLAY_HEIGHT_FRACTION
-        val fitted = OverlaySpriteLayout.fitScale(base.x, base.y, wMul, hMul, maxPercent = 100f)
+        // Uniform, aspect-locked board scale: a single multiplier drives both axes so the fixed-
+        // aspect strip never distorts (matches the Arrange pinch gesture). heightFraction is kept
+        // in sync with widthFraction by OverlayLayoutPrefs.withBoardScale, so width is authoritative.
+        val boardScale = overlayLayout.widthFraction.coerceIn(0.25f, 0.98f) / REF_OVERLAY_WIDTH_FRACTION
+        val fitted = OverlaySpriteLayout.fitScale(base.x, base.y, boardScale, boardScale, maxPercent = 100f)
         filter.setScale(fitted.x, fitted.y)
         val scale = filter.getScale()
         val pos = OverlaySpriteLayout.computePosition(
@@ -1719,6 +1848,10 @@ object StreamCameraEngine : ConnectChecker {
             ),
         )
         filter.setPosition(pos.x, pos.y)
+        // Remember the board's actual on-screen band so the sponsor's above/below-board modes track
+        // the real (flush-bottom, pinch-scaled) board instead of a stale anchorY estimate.
+        boardTopPct = pos.y
+        boardBottomPct = (pos.y + scale.y).coerceAtMost(100f)
     }
 
     private fun startOverlayRefresh() {

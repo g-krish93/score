@@ -13,7 +13,7 @@ final class StreamCameraEngine: NSObject {
         var widthFraction: Float = 1.0
         var anchorX: Float = 0.5
         var anchorY: Float = 0.85
-        var bottomMarginFraction: Float = 0.02
+        var bottomMarginFraction: Float = 0.0
         var horizontalInsetFraction: Float = 0.0
         var fontScale: Float = 1.0
         var bgColor: String = ""
@@ -32,6 +32,7 @@ final class StreamCameraEngine: NSObject {
         var sponsorSizeScale: Float = 1.0
         var sponsorOpacity: Float = 1.0
         var sponsorScrollSpeed: Float = 1.0
+        var sponsorScrollDirection: String = "rtl"
         var theme: String = "barlow"
     }
 
@@ -49,6 +50,9 @@ final class StreamCameraEngine: NSObject {
     private var appliedSponsorUrls: Set<String> = []
     private var sponsorScrollTimer: Timer?
     private var sponsorScrollOffset: CGFloat = 0
+    // Direction the marquee timer is currently running, so repeated starts stay idempotent
+    // (studio init calls updateOverlay several times; restarting would jump the logo to the edge).
+    private var sponsorScrollActiveDir: String?
     private var sponsorCarouselTimer: Timer?
     private var carouselUrls: [String] = []
     private var carouselIndex = 0
@@ -746,13 +750,35 @@ final class StreamCameraEngine: NSObject {
         appliedSponsorUrls = want
     }
 
+    /// Per-URL cache file under the app caches dir, so a sponsor logo survives a network/DNS blip
+    /// at a ground once it has loaded on any prior session.
+    private func sponsorCacheFile(for url: String) -> URL? {
+        guard let dir = try? FileManager.default.url(
+            for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+        ).appendingPathComponent("sponsor_logos", isDirectory: true) else { return nil }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("logo_\(UInt(bitPattern: url.hashValue)).img")
+    }
+
     private func loadSponsorObject(url: String, index: Int, total: Int) async {
         guard let remoteURL = URL(string: url) else { return }
-        let data: Data
-        do {
-            (data, _) = try await URLSession.shared.data(from: remoteURL)
-        } catch {
-            return
+        let cacheFile = sponsorCacheFile(for: url)
+        var data: Data
+        if let cacheFile, let cached = try? Data(contentsOf: cacheFile), !cached.isEmpty {
+            // Cache hit: use it immediately, refresh in the background for next time.
+            data = cached
+            Task.detached {
+                if let fresh = try? await URLSession.shared.data(from: remoteURL).0 {
+                    try? fresh.write(to: cacheFile)
+                }
+            }
+        } else {
+            do {
+                (data, _) = try await URLSession.shared.data(from: remoteURL)
+            } catch {
+                return
+            }
+            if let cacheFile { try? data.write(to: cacheFile) }
         }
         guard let rawImage = UIImage(data: data) else { return }
         let image = applyImageOpacity(rawImage, opacity: overlayLayout.sponsorOpacity)
@@ -786,23 +812,61 @@ final class StreamCameraEngine: NSObject {
         DispatchQueue.main.async { [weak self] in
             self?.sponsorScrollTimer?.invalidate()
             self?.sponsorScrollTimer = nil
+            self?.sponsorScrollActiveDir = nil
         }
     }
+
+    /// Per-frame travel as a fraction of the canvas dimension, so scroll pace is the same on
+    /// every resolution (720p/1080p). ~0.45%/frame matches the Android animator.
+    private static let sponsorScrollStepFraction: CGFloat = 0.0045
+
+    private static let sponsorScrollGap: CGFloat = 40  // px gap between tiled logos
 
     private func startSponsorScrollIfNeeded() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            guard self.overlayLayout.sponsorEnabled, self.isSponsorScrollMode() else {
+                self.sponsorScrollTimer?.invalidate()
+                self.sponsorScrollTimer = nil
+                self.sponsorScrollActiveDir = nil
+                return
+            }
+            let dir = SponsorScrollDirection.sanitize(self.overlayLayout.sponsorScrollDirection)
+            // "fixed" = a scroll-band strip pinned in place (no travel): render once, no timer.
+            if dir == SponsorScrollDirection.fixed {
+                self.sponsorScrollTimer?.invalidate()
+                self.sponsorScrollTimer = nil
+                self.sponsorScrollActiveDir = dir
+                self.sponsorScrollOffset = 0
+                Task { await self.layoutAllSponsorObjects() }
+                return
+            }
+            // Idempotent: if the marquee is already running this direction, keep the current offset
+            // so the logo doesn't jump back to the entry edge on repeated init calls.
+            if self.sponsorScrollTimer != nil, self.sponsorScrollActiveDir == dir { return }
             self.sponsorScrollTimer?.invalidate()
-            guard self.overlayLayout.sponsorEnabled, self.isSponsorScrollMode() else { return }
+            self.sponsorScrollActiveDir = dir
+            let horizontal = SponsorScrollDirection.isHorizontal(dir)
+            // Monotonic accumulator in px; direction/edge is applied per-sprite in layoutSponsorObject
+            // via a modulo marquee, so the strip slides fully edge-to-edge and tiles seamlessly.
+            self.sponsorScrollOffset = 0
             self.sponsorScrollTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
                 guard let self else { return }
                 let speed = CGFloat(max(0.3, min(3, self.overlayLayout.sponsorScrollSpeed)))
-                self.sponsorScrollOffset -= speed * 4
-                let w = CGFloat(self.encodedCanvasWidth())
-                if self.sponsorScrollOffset < -w { self.sponsorScrollOffset = w }
+                let ext = CGFloat(horizontal ? self.encodedCanvasWidth() : self.encodedCanvasHeight())
+                self.sponsorScrollOffset += ext * Self.sponsorScrollStepFraction * speed
+                if self.sponsorScrollOffset > 1_000_000 { self.sponsorScrollOffset = 0 }
                 Task { await self.layoutAllSponsorObjects() }
             }
         }
+    }
+
+    /// Marquee position (px) for sprite `index` of `total` along a `period`-wide loop.
+    private func marqueePhase(period: CGFloat, index: Int, total: Int) -> CGFloat {
+        guard period > 0 else { return 0 }
+        let spacing = period / CGFloat(max(1, total))
+        let raw = (sponsorScrollOffset + CGFloat(index) * spacing).truncatingRemainder(dividingBy: period)
+        return raw < 0 ? raw + period : raw
     }
 
     @ScreenActor
@@ -828,9 +892,26 @@ final class StreamCameraEngine: NSObject {
         if isSponsorScrollMode() {
             obj.horizontalAlignment = .left
             obj.verticalAlignment = .top
-            let y = sponsorScrollY(canvasH: canvasH, imgH: imgH)
-            let gap = imgW + 8
-            obj.layoutMargin = UIEdgeInsets(top: y, left: sponsorScrollOffset + CGFloat(index) * gap, bottom: 0, right: 0)
+            let dir = SponsorScrollDirection.sanitize(overlayLayout.sponsorScrollDirection)
+            let gap = Self.sponsorScrollGap
+            if SponsorScrollDirection.isVertical(dir) {
+                // Vertical crawl: Y marquees edge-to-edge, X comes from the drag position.
+                let period = canvasH + imgH + gap
+                let phase = marqueePhase(period: period, index: index, total: total)
+                // ttb: enter from top → exit bottom; btt: enter from bottom → exit top.
+                let y = dir == SponsorScrollDirection.ttb ? (-imgH - gap + phase) : (canvasH - phase)
+                let x = max(0, min(canvasW - imgW,
+                    CGFloat(max(0, min(1, overlayLayout.sponsorPositionX))) * canvasW - imgW / 2))
+                obj.layoutMargin = UIEdgeInsets(top: y, left: x, bottom: 0, right: 0)
+            } else {
+                // Horizontal ticker: X marquees edge-to-edge, Y band from display mode.
+                let period = canvasW + imgW + gap
+                let phase = marqueePhase(period: period, index: index, total: total)
+                // rtl: enter from right → exit left; ltr: enter from left → exit right.
+                let x = dir == SponsorScrollDirection.ltr ? (-imgW - gap + phase) : (canvasW - phase)
+                let y = sponsorScrollY(canvasH: canvasH, imgH: imgH)
+                obj.layoutMargin = UIEdgeInsets(top: y, left: x, bottom: 0, right: 0)
+            }
         } else {
             obj.horizontalAlignment = .left
             obj.verticalAlignment = .top
@@ -892,16 +973,18 @@ final class StreamCameraEngine: NSObject {
         guard let obj = overlayObject else { return }
         let streamH = CGFloat(encodedCanvasHeight())
         let streamW = CGFloat(encodedCanvasWidth())
-        let overlayH = streamH * CGFloat(overlayLayout.heightFraction)
-        let bottomFromAnchor = streamH * (1 - CGFloat(overlayLayout.anchorY)) - overlayH / 2
+        // Lift straight off the bottom edge by bottomMarginFraction (0 = flush), matching the
+        // Android GL sprite math. The old anchorY-derived formula left a ~7% gap below the board.
+        let bottomPx = streamH * CGFloat(max(0, min(0.6, overlayLayout.bottomMarginFraction)))
         let insetX = streamW * CGFloat(overlayLayout.horizontalInsetFraction)
         obj.layoutMargin = UIEdgeInsets(
             top: 0,
             left: insetX,
-            bottom: max(0, bottomFromAnchor),
+            bottom: bottomPx,
             right: insetX
         )
         obj.horizontalAlignment = .left
+        obj.verticalAlignment = .bottom
     }
 
     /// Scale captured strip to the operator's width slider (fraction of stream canvas).

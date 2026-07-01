@@ -190,7 +190,7 @@ public final class StreamRtmpPlugin: NSObject, FlutterPlugin, FlutterStreamHandl
         let width = Float(args?["overlayWidthFraction"] as? Double ?? 1.0)
         let anchorX = Float(args?["overlayAnchorX"] as? Double ?? 0.5)
         let anchorY = Float(args?["overlayAnchorY"] as? Double ?? 0.85)
-        let bottom = Float(args?["overlayBottomMargin"] as? Double ?? 8.0) / 400
+        let bottom = Float(args?["overlayBottomMargin"] as? Double ?? 0.0) / 400
         let inset = Float(args?["overlayHorizontalInset"] as? Double ?? 0.0) / 400
         let fontScale = Float(args?["overlayFontScale"] as? Double ?? 1.0)
         let bgColor = args?["overlayBgColor"] as? String ?? ""

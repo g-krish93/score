@@ -298,6 +298,29 @@ object SponsorDisplayMode {
     fun isScroll(mode: String): Boolean = mode.startsWith("scroll")
 }
 
+/**
+ * Direction the sponsor strip travels when [SponsorDisplayMode.isScroll]. `fixed` pins the
+ * strip at its dragged position (no motion). Horizontal (`ltr`/`rtl`) and vertical
+ * (`ttb`/`btt`) are driven natively on the GL layer (see StreamCameraEngine scroll animator).
+ */
+object SponsorScrollDirection {
+    const val LTR = "ltr"
+    const val RTL = "rtl"
+    const val TTB = "ttb"
+    const val BTT = "btt"
+    const val FIXED = "fixed"
+
+    val ALL = setOf(LTR, RTL, TTB, BTT, FIXED)
+
+    fun sanitize(raw: String?): String {
+        val d = raw?.trim()?.lowercase().orEmpty()
+        return if (d in ALL) d else RTL
+    }
+
+    fun isHorizontal(dir: String): Boolean = sanitize(dir).let { it == LTR || it == RTL }
+    fun isVertical(dir: String): Boolean = sanitize(dir).let { it == TTB || it == BTT }
+}
+
 /** How many sponsor logos to show: one pick, all at once, or rotating carousel. */
 object SponsorLayoutMode {
     const val SINGLE = "single"
@@ -323,7 +346,8 @@ data class OverlayLayoutPrefs(
     @SerialName("overlay_width_fraction") val widthFraction: Double = 1.0,
     @SerialName("overlay_anchor_x") val anchorX: Double = 0.5,
     @SerialName("overlay_anchor_y") val anchorY: Double = 0.85,
-    @SerialName("overlay_bottom_margin") val bottomMargin: Double = 8.0,
+    // 0 = board sits flush to the frame's bottom edge (operator can lift it by dragging in Arrange).
+    @SerialName("overlay_bottom_margin") val bottomMargin: Double = 0.0,
     @SerialName("overlay_horizontal_inset") val horizontalInset: Double = 0.0,
     @SerialName("theme") val theme: String = "barlow",
     // Configurable scoreboard appearance (Board Edit sheet).
@@ -349,6 +373,8 @@ data class OverlayLayoutPrefs(
     @SerialName("sponsor_size_scale") val sponsorSizeScale: Double = 1.0,
     @SerialName("sponsor_opacity") val sponsorOpacity: Double = 1.0,
     @SerialName("sponsor_scroll_speed") val sponsorScrollSpeed: Double = 1.0,
+    /** ltr | rtl | ttb | btt | fixed — travel direction for scroll display modes. */
+    @SerialName("sponsor_scroll_direction") val sponsorScrollDirection: String = SponsorScrollDirection.RTL,
 ) {
     /** Reference board size used when tuning default typography. */
     fun clampedWidthFraction(): Double = widthFraction.coerceIn(WIDTH_MIN, WIDTH_MAX)
@@ -366,6 +392,31 @@ data class OverlayLayoutPrefs(
     fun effectiveFontScale(): Float =
         fontScale.toFloat().coerceIn(FONT_MIN.toFloat(), FONT_MAX.toFloat())
 
+    /**
+     * Uniform board size multiplier (1.0 ≈ default full-width lower-third). The board is a
+     * fixed-aspect rasterized strip, so a single scale drives both dimensions and internal
+     * proportions never distort — this is what the Arrange pinch gesture manipulates.
+     */
+    fun boardScale(): Double =
+        (clampedWidthFraction() / REF_WIDTH_FRACTION).coerceIn(BOARD_SCALE_MIN, BOARD_SCALE_MAX)
+
+    /** Return a copy scaled uniformly to [scale]; width and height move together (aspect-locked). */
+    fun withBoardScale(scale: Double): OverlayLayoutPrefs {
+        val s = scale.coerceIn(BOARD_SCALE_MIN, BOARD_SCALE_MAX)
+        return copy(
+            widthFraction = (REF_WIDTH_FRACTION * s).coerceIn(WIDTH_MIN, WIDTH_MAX),
+            heightFraction = (REF_HEIGHT_FRACTION * s).coerceIn(HEIGHT_MIN, HEIGHT_MAX),
+        )
+    }
+
+    /** Return a copy re-anchored to a normalized preview point (centre of the board). */
+    fun withAnchor(x: Double, y: Double): OverlayLayoutPrefs = copy(
+        anchorX = x.coerceIn(0.0, 1.0),
+        anchorY = y.coerceIn(ANCHOR_Y_MIN, ANCHOR_Y_MAX),
+        // Dragging takes over vertical placement; the flush bottom margin no longer applies.
+        bottomMargin = 0.0,
+    )
+
     companion object {
         const val REF_WIDTH_FRACTION = 1.0
         const val REF_HEIGHT_FRACTION = 0.16
@@ -375,6 +426,12 @@ data class OverlayLayoutPrefs(
         const val HEIGHT_MAX = 0.28
         const val FONT_MIN = 0.6
         const val FONT_MAX = 2.0
+        // Uniform pinch-scale bounds. Max 1.0 = full-width; the strip can shrink to ~40%.
+        const val BOARD_SCALE_MIN = 0.4
+        const val BOARD_SCALE_MAX = 1.0
+        // How far up the frame the board can be dragged (anchorY = fraction of frame height).
+        const val ANCHOR_Y_MIN = 0.30
+        const val ANCHOR_Y_MAX = 0.97
         const val WATERMARK_DEFAULT_TEXT = "Visit cricrelay.co.uk"
 
         private val validThemes = setOf("barlow")
@@ -390,7 +447,7 @@ data class OverlayLayoutPrefs(
             widthFraction = json.string("overlay_width_fraction")?.toDoubleOrNull() ?: 1.0,
             anchorX = json.string("overlay_anchor_x")?.toDoubleOrNull() ?: 0.5,
             anchorY = json.string("overlay_anchor_y")?.toDoubleOrNull() ?: 0.85,
-            bottomMargin = json.string("overlay_bottom_margin")?.toDoubleOrNull() ?: 8.0,
+            bottomMargin = json.string("overlay_bottom_margin")?.toDoubleOrNull() ?: 0.0,
             horizontalInset = json.string("overlay_horizontal_inset")?.toDoubleOrNull() ?: 0.0,
             theme = sanitizeTheme(json.string("theme") ?: json.string("overlay_theme")),
             fontScale = json.string("overlay_font_scale")?.toDoubleOrNull() ?: 1.0,
@@ -415,6 +472,7 @@ data class OverlayLayoutPrefs(
             sponsorSizeScale = json.double("sponsor_size_scale")?.coerceIn(0.3, 3.0) ?: 1.0,
             sponsorOpacity = json.double("sponsor_opacity")?.coerceIn(0.2, 1.0) ?: 1.0,
             sponsorScrollSpeed = json.double("sponsor_scroll_speed")?.coerceIn(0.3, 3.0) ?: 1.0,
+            sponsorScrollDirection = SponsorScrollDirection.sanitize(json.string("sponsor_scroll_direction")),
         )
     }
 
@@ -449,6 +507,7 @@ data class OverlayLayoutPrefs(
         put("sponsor_size_scale", sponsorSizeScale)
         put("sponsor_opacity", sponsorOpacity)
         put("sponsor_scroll_speed", sponsorScrollSpeed)
+        put("sponsor_scroll_direction", sponsorScrollDirection)
     }
 
     /** Merge sponsor-only fields from a remote companion patch onto existing prefs. */
@@ -478,6 +537,7 @@ data class OverlayLayoutPrefs(
         put("sponsor_size_scale", sponsorSizeScale)
         put("sponsor_opacity", sponsorOpacity)
         put("sponsor_scroll_speed", sponsorScrollSpeed)
+        put("sponsor_scroll_direction", sponsorScrollDirection)
     }
 
     fun effectiveSponsorIds(): List<String> = when {
@@ -514,6 +574,7 @@ private val SPONSOR_PATCH_KEYS = setOf(
     "sponsor_size_scale",
     "sponsor_opacity",
     "sponsor_scroll_speed",
+    "sponsor_scroll_direction",
 )
 
 private fun JsonObject.stringList(key: String): List<String> =

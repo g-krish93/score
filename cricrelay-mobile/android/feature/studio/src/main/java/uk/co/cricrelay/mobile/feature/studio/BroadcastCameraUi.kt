@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -64,7 +65,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -80,7 +84,11 @@ import uk.co.cricrelay.mobile.ui.CameraShutterButton
 import uk.co.cricrelay.mobile.ui.CameraToolButton
 import uk.co.cricrelay.mobile.ui.DestinationChip
 import uk.co.cricrelay.mobile.ui.ErrorBanner
+import uk.co.cricrelay.mobile.ui.AppTypography
 import uk.co.cricrelay.mobile.ui.LiveTimerBadge
+
+private const val STABILIZATION_FOV_CAPTION =
+    "Strong stabilization slightly narrows the camera's field of view."
 
 @Composable
 fun BroadcastCameraUi(
@@ -303,12 +311,31 @@ private fun QuickToggles(
         )
     }
     val stabilize: @Composable () -> Unit = {
-        CameraQuickToggle(
-            label = "Stabilize",
-            active = state.overlayPrefs.videoStabilization,
-            icon = Icons.Outlined.Vibration,
-            onClick = onToggleStabilization,
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CameraQuickToggle(
+                label = "Stabilize",
+                active = state.overlayPrefs.videoStabilization,
+                icon = Icons.Outlined.Vibration,
+                onClick = onToggleStabilization,
+                modifier = Modifier.semantics {
+                    contentDescription = buildString {
+                        append("Stabilize, ")
+                        append(if (state.overlayPrefs.videoStabilization) "on" else "off")
+                        append(". ")
+                        append(STABILIZATION_FOV_CAPTION)
+                    }
+                },
+            )
+            Text(
+                text = STABILIZATION_FOV_CAPTION,
+                style = AppTypography.bodySmall,
+                color = AppColors.OnBackgroundDim,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .widthIn(max = if (vertical) 96.dp else 120.dp),
+            )
+        }
     }
     val screenOn: @Composable () -> Unit = {
         CameraQuickToggle(
@@ -338,7 +365,7 @@ private fun QuickToggles(
         Row(
             modifier = modifier,
             horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
         ) {
             focusLock(); stabilize(); screenOn(); micMute()
         }

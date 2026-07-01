@@ -42,6 +42,33 @@ class OverlaySpriteLayoutTest {
     }
 
     @Test
+    fun `zero bottom margin puts the strip flush to the frame bottom`() {
+        // Part 1 fix: with the transparent band trimmed and bottomMargin 0, the sprite's bottom
+        // edge (posY + scaleY) must equal 100 — the frame bottom — so the board hugs it.
+        val scaleY = 20f
+        val pos = OverlaySpriteLayout.computePosition(
+            OverlaySpriteLayout.Params(scaleX = 88f, scaleY = scaleY, bottomMarginFraction = 0f),
+        )
+        assertTrue("bottom edge should be flush, posY=${pos.y}", pos.y + scaleY in 99.9f..100.1f)
+    }
+
+    @Test
+    fun `uniform board scale preserves aspect at any multiplier`() {
+        // Part 2: pinch feeds one multiplier to both axes; aspect ratio must be invariant.
+        val baseX = 100f
+        val baseY = 12f
+        val baseAspect = baseY / baseX
+        for (mul in listOf(0.4f, 0.6f, 0.8f, 1.0f)) {
+            val s = OverlaySpriteLayout.fitScale(baseX, baseY, mul, mul, maxPercent = 100f)
+            val aspect = s.y / s.x
+            assertTrue(
+                "aspect must hold at mul=$mul ($baseAspect vs $aspect)",
+                kotlin.math.abs(baseAspect - aspect) < 0.01f,
+            )
+        }
+    }
+
+    @Test
     fun `computePosition stays within sprite percent bounds`() {
         val pos = OverlaySpriteLayout.computePosition(
             OverlaySpriteLayout.Params(scaleX = 40f, scaleY = 18f),

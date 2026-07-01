@@ -2,6 +2,19 @@ import Foundation
 import Combine
 import CoreGraphics
 
+/// What the Arrange-mode drag gesture moves (pinch always scales the board).
+enum ArrangeTarget {
+    case board
+    case sponsor
+}
+
+/// Steps of the first-run guided precheck shown before the first Go Live.
+enum PrecheckStep {
+    case camera
+    case arrange
+    case ready
+}
+
 @MainActor
 final class StudioViewModel: ObservableObject {
     // Match data
@@ -51,6 +64,16 @@ final class StudioViewModel: ObservableObject {
 
     // Overlay
     @Published var overlayPrefs = OverlayLayoutPrefs()
+
+    // Pre-live "Arrange" mode: direct pinch/drag of the board + sponsor over the live preview.
+    @Published var arrangeMode = false
+    @Published var arrangeTarget: ArrangeTarget = .board
+    private var arrangeDraft: OverlayLayoutPrefs?
+
+    // First-run guided precheck (Camera → Arrange → Ready), gating the first Go Live.
+    @Published var precheckActive = false
+    @Published var precheckStep: PrecheckStep = .camera
+    private static let precheckDoneKey = "cricrelay.studio.precheck_done"
 
     // Scoring
     @Published var scoringConfig: ScoringConfig?
@@ -145,6 +168,9 @@ final class StudioViewModel: ObservableObject {
             startPolling()
             startRemoteCommandPolling()
             sponsors = (try? await api.listSponsors()) ?? []
+
+            // Guided first-run precheck (Camera → Arrange → Ready) — never mid-broadcast.
+            if !streaming { startPrecheckIfNeeded() }
         } catch {
             self.error = error.localizedDescription
         }
@@ -258,6 +284,8 @@ final class StudioViewModel: ObservableObject {
     /// would fail. Otherwise go straight to the preflight check.
     func requestGoLive() {
         guard StreamCameraEngine.shared.isPreviewReady else { return }
+        // First session: finish the guided precheck before going live.
+        if precheckActive { return }
         recomputeDestinationReady()
         if !streaming && !destinationReady {
             activeSheet = .destination
@@ -442,6 +470,91 @@ final class StudioViewModel: ObservableObject {
         sponsors = (try? await api.listSponsors()) ?? []
     }
 
+    // MARK: - Arrange mode
+    // Direct manipulation of the board + sponsor on the live composited preview. Gestures push
+    // to the engine via previewOverlay (no network); commit persists once, on "Done".
+
+    func enterArrangeMode() {
+        arrangeDraft = overlayPrefs
+        arrangeMode = true
+        activeSheet = nil
+    }
+
+    func cancelArrangeMode() {
+        revertOverlayPreview()
+        arrangeMode = false
+        arrangeDraft = nil
+    }
+
+    func commitArrangeMode() {
+        let draft = arrangeDraft
+        arrangeMode = false
+        arrangeDraft = nil
+        if let draft {
+            Task { await saveOverlay(draft) }
+        }
+        // Completing Arrange advances the first-run precheck to its final step.
+        if precheckActive, precheckStep == .arrange {
+            precheckStep = .ready
+        }
+    }
+
+    private func mutateArrangeDraft(_ block: (OverlayLayoutPrefs) -> OverlayLayoutPrefs) {
+        let current = arrangeDraft ?? overlayPrefs
+        let next = block(current)
+        arrangeDraft = next
+        previewOverlay(next)
+    }
+
+    /// Pinch: `zoom` is the incremental scale ratio (~1.0) from the gesture.
+    func pinchBoard(_ zoom: Double) {
+        guard zoom > 0 else { return }
+        mutateArrangeDraft { $0.withBoardScale($0.boardScale() * zoom) }
+    }
+
+    /// Drag the active target by a fraction of the preview (dy<0 = up). Board vertical drag maps
+    /// to bottomMargin (px, /720 in the engine) — parity with Android's dragArrange.
+    func dragArrange(dxFraction: Double, dyFraction: Double) {
+        mutateArrangeDraft { p in
+            var next = p
+            switch arrangeTarget {
+            case .board:
+                next.anchorX = min(1.0, max(0.0, p.anchorX + dxFraction))
+                next.bottomMargin = min(400.0, max(0.0, p.bottomMargin - dyFraction * 400.0))
+            case .sponsor:
+                next.sponsorPositionX = min(1.0, max(0.0, p.sponsorPositionX + dxFraction))
+                next.sponsorPositionY = min(1.0, max(0.0, p.sponsorPositionY + dyFraction))
+            }
+            return next
+        }
+    }
+
+    // MARK: - First-run precheck
+
+    /// Show the guided precheck the first time the studio opens (before any Go Live).
+    func startPrecheckIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: Self.precheckDoneKey) else { return }
+        precheckActive = true
+        precheckStep = previewReady ? .arrange : .camera
+    }
+
+    /// Camera step auto-completes once the preview is live.
+    func advancePrecheckIfCameraReady() {
+        if precheckActive, precheckStep == .camera, previewReady {
+            precheckStep = .arrange
+        }
+    }
+
+    func precheckStartArrange() {
+        precheckStep = .arrange
+        enterArrangeMode()
+    }
+
+    func finishPrecheck() {
+        precheckActive = false
+        UserDefaults.standard.set(true, forKey: Self.precheckDoneKey)
+    }
+
     /// Flip video stabilisation from the on-screen quick toggle, then persist + apply via
     /// saveOverlay (parity with Android's onToggleStabilization → updateOverlayPrefs).
     func toggleStabilization() async {
@@ -586,6 +699,7 @@ final class StudioViewModel: ObservableObject {
     func restartCameraPreview() async {
         await StreamCameraEngine.shared.preparePreview(width: 1280, height: 720, fps: 30)
         previewReady = StreamCameraEngine.shared.isPreviewReady
+        advancePrecheckIfCameraReady()
     }
 
     /// Re-prepare the camera when the operator rotates the phone before Go Live.

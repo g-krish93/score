@@ -137,6 +137,7 @@ struct OverlaySheet: View {
             StudioBackdrop {
                 ScrollView {
                     VStack(spacing: 20) {
+                        arrangeOnScreenButton
                         boardColorSelector
                         Divider().overlay(Color.white.opacity(0.1))
                         overlaySliders
@@ -181,6 +182,29 @@ struct OverlaySheet: View {
         .task(id: overlayPreviewToken) {
             try? await Task.sleep(for: .milliseconds(80))
             viewModel.previewOverlay(draft)
+        }
+    }
+
+    /// Direct-manipulation entry point: closes the sheet and enters Arrange mode over the live
+    /// preview (pinch to resize the board, drag to place board + sponsor).
+    private var arrangeOnScreenButton: some View {
+        Button {
+            savedOnDismiss = true // keep the current preview; Arrange manages its own draft
+            dismiss()
+            viewModel.enterArrangeMode()
+        } label: {
+            HStack {
+                Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+                Text("Arrange on screen")
+                    .fontWeight(.semibold)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(CricTheme.textMuted)
+            }
+            .foregroundStyle(CricTheme.accent)
+            .padding(14)
+            .background(Color.white.opacity(0.06))
+            .cornerRadius(10)
         }
     }
 
@@ -397,6 +421,26 @@ struct OverlaySheet: View {
                 format: { "\(Int($0 * 100))%" }
             )
             if SponsorDisplayMode.isScroll(draft.sponsorDisplayMode) {
+                sheetSectionLabel("Scroll direction")
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(SponsorScrollDirection.directions, id: \.id) { dir in
+                            Button {
+                                draft.sponsorScrollDirection = dir.id
+                            } label: {
+                                Text(dir.label)
+                                    .font(.caption.weight(draft.sponsorScrollDirection == dir.id ? .bold : .regular))
+                                    .foregroundStyle(draft.sponsorScrollDirection == dir.id ? CricTheme.onPrimary : .white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        draft.sponsorScrollDirection == dir.id ? CricTheme.primary : CricTheme.surface,
+                                        in: Capsule()
+                                    )
+                            }
+                        }
+                    }
+                }
                 sliderRow(
                     label: "Scroll speed",
                     value: $draft.sponsorScrollSpeed,

@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BMACC vs East Grinstead CC — Match Simulation</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0f1e; color: #e2e8f0; min-height: 100vh; padding: 0 0 3rem; }
+
+  /* ── HEADER ── */
+  .match-header { background: linear-gradient(135deg, #0d1b2a 0%, #112240 100%); border-bottom: 2px solid #1e4a7a; padding: 1.5rem 2rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+  .match-title  { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; letter-spacing: 0.04em; }
+  .match-sub    { font-size: 0.75rem; color: #64748b; margin-top: 3px; letter-spacing: 0.06em; }
+  .live-badge   { display: flex; align-items: center; gap: 6px; background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); border-radius: 6px; padding: 4px 12px; }
+  .live-dot     { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; animation: blink 1.4s ease-in-out infinite; }
+  .live-txt     { font-size: 0.65rem; font-weight: 700; color: #22c55e; letter-spacing: 0.14em; }
+
+  /* ── TABS ── */
+  .tabs-bar  { display: flex; gap: 0; background: #060d1a; border-bottom: 1px solid #1a3a5c; overflow-x: auto; padding: 0 1.5rem; }
+  .tab-btn   { padding: 12px 22px; font-size: 0.8rem; font-weight: 600; color: #475569; border: none; background: transparent; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; transition: all 0.15s; letter-spacing: 0.04em; }
+  .tab-btn:hover  { color: #94a3b8; background: rgba(255,255,255,0.03); }
+  .tab-btn.active { color: #4ade80; border-bottom-color: #4ade80; }
+  .tab-btn.inn2   { color: #fb923c; }
+  .tab-btn.inn2.active { color: #fb923c; border-bottom-color: #fb923c; }
+
+  /* ── CONTENT ── */
+  .content { max-width: 900px; margin: 0 auto; padding: 1.5rem 1.5rem; }
+
+  /* ── ALERT BANNER ── */
+  .alert-banner { border-radius: 8px; padding: 10px 16px; margin-bottom: 1.25rem; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .alert-ok   { background: rgba(74,222,128,0.08);  border: 1px solid rgba(74,222,128,0.25);  color: #4ade80; }
+  .alert-warn { background: rgba(251,146,60,0.10);  border: 1px solid rgba(251,146,60,0.30);  color: #fb923c; }
+  .alert-crit { background: rgba(239,68,68,0.12);   border: 1px solid rgba(239,68,68,0.35);   color: #f87171; animation: crit-flash 1.4s ease-in-out infinite; }
+  .alert-info { background: rgba(147,197,253,0.08); border: 1px solid rgba(147,197,253,0.2);  color: #93c5fd; }
+
+  /* ── METRICS ROW ── */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-bottom: 1.25rem; }
+  .metric  { background: #0d1b2a; border: 1px solid #1a3a5c; border-radius: 8px; padding: 12px 14px; }
+  .metric-val { font-size: 1.6rem; font-weight: 800; color: #f1f5f9; letter-spacing: -0.5px; line-height: 1; }
+  .metric-val.green { color: #4ade80; }
+  .metric-val.orange{ color: #fb923c; }
+  .metric-val.red   { color: #f87171; }
+  .metric-lbl { font-size: 0.65rem; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.1em; }
+  .metric-sub { font-size: 0.7rem; color: #475569; margin-top: 2px; }
+
+  /* ── NOTE ── */
+  .snap-note { background: #0d1b2a; border-left: 3px solid #1e4a7a; border-radius: 0 6px 6px 0; padding: 10px 14px; font-size: 0.8rem; color: #94a3b8; margin-bottom: 1.25rem; line-height: 1.6; }
+
+  /* ── SECTION HEAD ── */
+  .sec-head { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #475569; margin: 1.5rem 0 8px; padding-bottom: 6px; border-bottom: 1px solid #1a3a5c; }
+
+  /* ── TABLES ── */
+  .tbl { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  .tbl th { text-align: left; font-size: 0.62rem; font-weight: 700; color: #475569; padding: 6px 10px; text-transform: uppercase; letter-spacing: 0.08em; background: #060d1a; }
+  .tbl th.r { text-align: right; }
+  .tbl td { padding: 8px 10px; border-bottom: 1px solid #0f1f30; color: #cbd5e1; vertical-align: middle; }
+  .tbl td.r { text-align: right; font-variant-numeric: tabular-nums; }
+  .tbl td.dim { color: #475569; font-size: 0.75rem; }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl tr.batting td { color: #93c5fd; }
+  .tbl tr.bowling-current td { color: #fca5a5; }
+  .tbl tr.extras td { color: #64748b; font-size: 0.75rem; background: #060d1a; }
+  .badge { display: inline-block; font-size: 0.62rem; padding: 2px 7px; border-radius: 3px; font-weight: 700; }
+  .badge-bat  { background: rgba(147,197,253,0.12); color: #93c5fd; }
+  .badge-out  { background: rgba(100,116,139,0.12); color: #64748b; }
+  .badge-w    { color: #4ade80; font-weight: 700; }
+
+  /* ── FOW ── */
+  .fow-wrap { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .fow-item { background: #0d1b2a; border: 1px solid #1a3a5c; border-radius: 4px; padding: 4px 10px; font-size: 0.75rem; color: #94a3b8; }
+  .fow-item strong { color: #f87171; margin-right: 4px; }
+
+  /* ── OVERLAY PREVIEW ── */
+  .overlay-prev { background: #060d1a; border-radius: 8px; border-top: 2px solid #1e4a7a; overflow: hidden; margin-top: 0.5rem; }
+  .overlay-label { font-size: 0.6rem; color: #334155; text-transform: uppercase; letter-spacing: 0.1em; padding: 5px 14px 0; }
+  .overlay-bar { display: flex; align-items: center; gap: 0; min-height: 58px; }
+  .ov-score-blk { background: #030810; padding: 0 16px; display: flex; align-items: center; gap: 10px; border-right: 1px solid #1a3a5c; min-width: 190px; height: 58px; }
+  .ov-code  { font-size: 0.6rem; font-weight: 800; color: #4ade80; letter-spacing: 0.14em; text-transform: uppercase; }
+  .ov-runs  { font-size: 1.7rem; font-weight: 900; color: #f1f5f9; letter-spacing: -1px; line-height: 1; }
+  .ov-wkts  { font-size: 1.1rem; font-weight: 700; color: #93c5fd; line-height: 1; }
+  .ov-meta  { display: flex; flex-direction: column; gap: 1px; }
+  .ov-overs { font-size: 0.65rem; color: #64748b; font-weight: 600; }
+  .ov-crr   { font-size: 0.58rem; color: #334155; }
+  .ov-panels { flex: 1; display: flex; align-items: center; gap: 14px; padding: 0 16px; flex-wrap: wrap; }
+  .ov-sep   { width: 1px; height: 28px; background: #1a3a5c; flex-shrink: 0; }
+  .ov-bat-blk { display: flex; flex-direction: column; gap: 3px; }
+  .ov-batter  { font-size: 0.78rem; color: #e2e8f0; }
+  .ov-batter span { color: #4ade80; font-weight: 700; margin-left: 4px; }
+  .ov-batter em   { color: #64748b; font-size: 0.68rem; font-style: normal; }
+  .ov-bowler  { font-size: 0.75rem; color: #f87171; }
+  .ov-right { background: #030810; padding: 0 12px; height: 58px; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 3px; border-left: 1px solid #1a3a5c; min-width: 90px; }
+  .ov-vs    { font-size: 0.6rem; font-weight: 700; color: #64748b; letter-spacing: 0.06em; text-align: right; line-height: 1.5; }
+  .ov-inn   { font-size: 0.55rem; color: #334155; letter-spacing: 0.06em; }
+  .ov-pill  { font-size: 0.65rem; padding: 3px 9px; border-radius: 4px; font-weight: 700; flex-shrink: 0; }
+  .pill-ok   { background: rgba(74,222,128,0.12);  color: #4ade80;  border: 1px solid rgba(74,222,128,0.25); }
+  .pill-warn { background: rgba(251,146,60,0.12);  color: #fb923c;  border: 1px solid rgba(251,146,60,0.3); }
+  .pill-crit { background: rgba(239,68,68,0.14);   color: #f87171;  border: 1px solid rgba(239,68,68,0.35); }
+  .pill-info { background: rgba(147,197,253,0.10); color: #93c5fd;  border: 1px solid rgba(147,197,253,0.2); }
+
+  .target-bar { background: rgba(251,146,60,0.08); border-bottom: 1px solid rgba(251,146,60,0.2); padding: 4px 14px; font-size: 0.65rem; color: #fb923c; display: flex; gap: 12px; }
+  .target-bar span { color: #e2e8f0; font-weight: 600; }
+
+  @keyframes blink      { 0%,100%{opacity:1} 50%{opacity:.3} }
+  @keyframes crit-flash { 0%,100%{opacity:1} 50%{opacity:.6} }
+</style>
+</head>
+<body>
+
+<div class="match-header">
+  <div>
+    <div class="match-title">Brighton Malayalee Association CC vs East Grinstead CC</div>
+    <div class="match-sub">Sussex Cricket League · Division 8 Central · 40-over match · 27 June 2026</div>
+  </div>
+  <div class="live-badge">
+    <div class="live-dot"></div>
+    <span class="live-txt">LIVE</span>
+  </div>
+</div>
+
+<div class="tabs-bar" id="tabs"></div>
+<div class="content" id="content"></div>
+
+<script>
+const MATCH = { home:'BMACC', away:'EGCC', totalOvers:40 };
+
+const SNAPS = [
+  {
+    id:'ov1', label:'Over 1', inn:1,
+    runs:8, wkts:0, overs:'1.0',
+    extras:{total:1,b:0,lb:1,nb:0,w:0},
+    striker:    {name:'A Clement',r:6, b:7},
+    nonStriker: {name:'I Ramu',   r:1, b:6},
+    bowler:     {name:'A Whyman', o:'1.0',w:0,r:8,econ:8.0},
+    batters:[
+      {name:'A Clement',     r:6, balls:7, fours:1,sixes:0, dis:'',status:'bat'},
+      {name:'I Ramu',        r:1, balls:6, fours:0,sixes:0, dis:'',status:'bat'},
+      {name:'A P R',         r:0, balls:0, fours:0,sixes:0, dis:'',status:'yet'},
+      {name:'B Ramamoorthy', r:0, balls:0, fours:0,sixes:0, dis:'',status:'yet'},
+      {name:'B Joseph',      r:0, balls:0, fours:0,sixes:0, dis:'',status:'yet'},
+      {name:'S Lakkakula',   r:0, balls:0, fours:0,sixes:0, dis:'',status:'yet'},
+      {name:'S Nair',        r:0, balls:0, fours:0,sixes:0, dis:'',status:'yet'},
+      {name:'A Padmakumar',  r:0, balls:0, fours:0,sixes:0, dis:'',status:'yet'},
+      {name:'S Sulfiker',    r:0, balls:0, fours:0,sixes:0, dis:'',status:'yet'},
+      {name:'R Thoppil',     r:0, balls:0, fours:0,sixes:0, dis:'',status:'yet'},
+      {name:'G Annamalal',   r:0, balls:0, fours:0,sixes:0, dis:'',status:'yet'},
+    ],
+    bowlers:[
+      {name:'A Whyman',o:'1.0',m:0,r:8, w:0,wd:0,nb:0,econ:8.0},
+    ],
+    fow:[],
+    note:'Early doors — clean start, openers yet to settle. No wickets fallen. Overlay shows basic score + batters only.',
+  },
+  {
+    id:'ov10', label:'Over 10', inn:1,
+    runs:62, wkts:1, overs:'10.0',
+    extras:{total:5,b:2,lb:1,nb:0,w:2},
+    striker:    {name:'I Ramu',  r:33,b:38},
+    nonStriker: {name:'A P R',  r:8, b:14},
+    bowler:     {name:'L Hunt', o:'2.0',w:0,r:12,econ:6.0},
+    batters:[
+      {name:'A Clement',     r:38,balls:42,fours:7,sixes:1,dis:'c A Thilo b A Whyman',status:'out'},
+      {name:'I Ramu',        r:33,balls:38,fours:5,sixes:0,dis:'',status:'bat'},
+      {name:'A P R',         r:8, balls:14,fours:1,sixes:0,dis:'',status:'bat'},
+      {name:'B Ramamoorthy', r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'B Joseph',      r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'S Lakkakula',   r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'S Nair',        r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'A Padmakumar',  r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'S Sulfiker',    r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'R Thoppil',     r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'G Annamalal',   r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+    ],
+    bowlers:[
+      {name:'A Whyman',o:'5.0',m:0,r:32,w:1,wd:3,nb:0,econ:6.4},
+      {name:'D Clarke',o:'3.0',m:0,r:18,w:0,wd:1,nb:0,econ:6.0},
+      {name:'L Hunt',  o:'2.0',m:0,r:12,w:0,wd:0,nb:0,econ:6.0},
+    ],
+    fow:[{w:1,score:54,batter:'A Clement'}],
+    note:'Clement fell at 54 — caught off Whyman. Ramu and A P R rebuilding. CRR 6.2 is healthy for this stage. Extras milestone fires at over 10.',
+  },
+  {
+    id:'ov20', label:'Over 20', inn:1,
+    runs:118, wkts:3, overs:'20.0',
+    extras:{total:9,b:3,lb:2,nb:1,w:3},
+    striker:    {name:'B Ramamoorthy',r:22,b:19},
+    nonStriker: {name:'B Joseph',     r:4, b:8},
+    bowler:     {name:'O Dawson',     o:'3.0',w:1,r:18,econ:6.0},
+    batters:[
+      {name:'A Clement',     r:38,balls:42,fours:7,sixes:1,dis:'c A Thilo b A Whyman', status:'out'},
+      {name:'I Ramu',        r:55,balls:68,fours:8,sixes:1,dis:'b L Hunt',             status:'out'},
+      {name:'A P R',         r:14,balls:22,fours:2,sixes:0,dis:'c D Clarke b O Dawson',status:'out'},
+      {name:'B Ramamoorthy', r:22,balls:19,fours:3,sixes:1,dis:'',status:'bat'},
+      {name:'B Joseph',      r:4, balls:8, fours:0,sixes:0,dis:'',status:'bat'},
+      {name:'S Lakkakula',   r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'S Nair',        r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'A Padmakumar',  r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'S Sulfiker',    r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'R Thoppil',     r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'G Annamalal',   r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+    ],
+    bowlers:[
+      {name:'A Whyman',o:'8.0',m:1,r:44,w:1,wd:4,nb:0,econ:5.5},
+      {name:'D Clarke',o:'5.0',m:0,r:32,w:0,wd:2,nb:1,econ:6.4},
+      {name:'L Hunt',  o:'4.0',m:1,r:22,w:1,wd:0,nb:0,econ:5.5},
+      {name:'O Dawson',o:'3.0',m:0,r:18,w:1,wd:0,nb:0,econ:6.0},
+    ],
+    fow:[
+      {w:1,score:54, batter:'A Clement'},
+      {w:2,score:98, batter:'I Ramu'},
+      {w:3,score:109,batter:'A P R'},
+    ],
+    note:'Halfway — solid 118/3. Ramu reached 55 before being bowled by Hunt. Three solid partnerships built. Ramamoorthy attacking. Target around 200+ possible.',
+  },
+  {
+    id:'ov35', label:'Over 35', inn:2,
+    runs:148, wkts:5, overs:'35.0',
+    target:183,
+    extras:{total:10,b:3,lb:2,nb:1,w:4},
+    striker:    {name:'T Smith', r:52,b:61},
+    nonStriker: {name:'J Patel', r:18,b:24},
+    bowler:     {name:'I Ramu',  o:'9.0',w:2,r:44,econ:4.9},
+    batters:[
+      {name:'M Jones',  r:34,balls:40,fours:4,sixes:0,dis:'c I Ramu b S Lakkakula',  status:'out'},
+      {name:'A Thilo',  r:28,balls:35,fours:3,sixes:0,dis:'b B Ramamoorthy',         status:'out'},
+      {name:'D Clarke', r:14,balls:18,fours:2,sixes:0,dis:'lbw b I Ramu',            status:'out'},
+      {name:'T Smith',  r:52,balls:61,fours:6,sixes:1,dis:'',status:'bat'},
+      {name:'L Hunt',   r:8, balls:12,fours:1,sixes:0,dis:'run out (A Clement)',      status:'out'},
+      {name:'J Patel',  r:18,balls:24,fours:2,sixes:0,dis:'',status:'bat'},
+      {name:'O Dawson', r:2, balls:4, fours:0,sixes:0,dis:'st S Nair b I Ramu',      status:'out'},
+      {name:'A Whyman', r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'C Fox',    r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+      {name:'R Brown',  r:0, balls:0, fours:0,sixes:0,dis:'',status:'yet'},
+    ],
+    bowlers:[
+      {name:'I Ramu',        o:'9.0',m:1,r:44,w:2,wd:1,nb:0,econ:4.9},
+      {name:'B Ramamoorthy', o:'8.0',m:0,r:48,w:1,wd:2,nb:0,econ:6.0},
+      {name:'S Lakkakula',   o:'7.0',m:0,r:34,w:1,wd:1,nb:1,econ:4.9},
+      {name:'A Clement',     o:'5.0',m:0,r:28,w:0,wd:0,nb:0,econ:5.6},
+      {name:'A P R',         o:'6.0',m:1,r:26,w:1,wd:0,nb:0,econ:4.3},
+    ],
+    fow:[
+      {w:1,score:42, batter:'M Jones'},
+      {w:2,score:72, batter:'A Thilo'},
+      {w:3,score:96, batter:'D Clarke'},
+      {w:4,score:118,batter:'L Hunt'},
+      {w:5,score:138,batter:'O Dawson'},
+    ],
+    note:'Tense finish — East Grinstead need 35 from 30 balls, 5 wickets down. RRR 7.0 vs CRR 4.2. Smart engine triggers CRITICAL mode. Chase panel dominates the overlay.',
+  },
+];
+
+function crr(runs, overs) {
+  const [o,b=0] = String(overs).split('.').map(Number);
+  const t = o + b/6;
+  return t > 0 ? (runs/t).toFixed(1) : '0.0';
+}
+function rrr(needed, balls) {
+  return balls > 0 ? ((needed/balls)*6).toFixed(1) : 'n/a';
+}
+function toCode(full) {
+  return full.trim().split(/\s+/).map(w=>w[0]).join('').toUpperCase();
+}
+
+function render(snap) {
+  const isSecond = snap.inn === 2;
+  const target   = snap.target || null;
+  const needed   = target ? target - snap.runs : null;
+  const oInt     = parseInt(snap.overs);
+  const ballsDone= oInt*6 + parseInt((snap.overs.split('.')[1]||0));
+  const ballsLeft= target ? MATCH.totalOvers*6 - ballsDone : null;
+  const crrVal   = crr(snap.runs, snap.overs);
+  const rrrVal   = (needed && ballsLeft) ? rrr(needed, ballsLeft) : null;
+  let urgency    = 'ok';
+  if (rrrVal) {
+    const rr = parseFloat(rrrVal), cr = parseFloat(crrVal);
+    if (rr > cr + 2) urgency = 'crit';
+    else if (rr > cr + 0.5) urgency = 'warn';
+  }
+
+  let h = '';
+
+  // Chase banner
+  if (isSecond && target) {
+    const cls = urgency === 'crit' ? 'alert-crit' : urgency === 'warn' ? 'alert-warn' : 'alert-ok';
+    const icon = urgency === 'crit' ? '⚡' : urgency === 'warn' ? '⚠' : '✓';
+    h += `<div class="alert-banner ${cls}">${icon} &nbsp; 2nd innings chase — Target <strong>${target}</strong> &nbsp;·&nbsp; Need <strong>${needed}</strong> from <strong>${ballsLeft}</strong> balls &nbsp;·&nbsp; RRR <strong>${rrrVal}</strong> &nbsp;·&nbsp; CRR ${crrVal}</div>`;
+  }
+
+  // Metrics
+  h += `<div class="metrics">
+    <div class="metric">
+      <div class="metric-val">${snap.runs}/${snap.wkts}</div>
+      <div class="metric-lbl">${isSecond ? '2nd innings' : '1st innings'}</div>
+      <div class="metric-sub">${snap.overs} overs</div>
+    </div>
+    <div class="metric">
+      <div class="metric-val">${crrVal}</div>
+      <div class="metric-lbl">CRR</div>
+    </div>`;
+  if (isSecond && rrrVal) {
+    h += `<div class="metric">
+      <div class="metric-val ${urgency==='crit'?'red':urgency==='warn'?'orange':'green'}">${rrrVal}</div>
+      <div class="metric-lbl">RRR</div>
+    </div>
+    <div class="metric">
+      <div class="metric-val ${urgency==='crit'?'red':urgency==='warn'?'orange':'green'}">${needed}</div>
+      <div class="metric-lbl">Runs needed</div>
+    </div>
+    <div class="metric">
+      <div class="metric-val">${ballsLeft}</div>
+      <div class="metric-lbl">Balls left</div>
+    </div>`;
+  } else {
+    h += `<div class="metric">
+      <div class="metric-val">${10-snap.wkts}</div>
+      <div class="metric-lbl">Wkts in hand</div>
+    </div>
+    <div class="metric">
+      <div class="metric-val">${40-oInt}</div>
+      <div class="metric-lbl">Overs left</div>
+    </div>`;
+  }
+  h += `</div>`;
+
+  // Note
+  h += `<div class="snap-note">${snap.note}</div>`;
+
+  // Batting table
+  h += `<div class="sec-head">Batting — ${isSecond ? 'East Grinstead CC' : 'Brighton Malayalee Association CC'}</div>
+  <table class="tbl">
+    <thead><tr>
+      <th>Batter</th><th>Dismissal</th>
+      <th class="r">R</th><th class="r">B</th><th class="r">4s</th><th class="r">6s</th><th class="r">SR</th>
+    </tr></thead><tbody>`;
+
+  snap.batters.forEach(b => {
+    const sr   = b.balls > 0 ? ((b.r/b.balls)*100).toFixed(0) : '—';
+    const cls  = b.status === 'bat' ? 'batting' : '';
+    const disBadge = b.status === 'bat'
+      ? `<span class="badge badge-bat">batting</span>`
+      : b.status === 'out'
+        ? `<span class="dim">${b.dis}</span>`
+        : `<span style="color:#334155">—</span>`;
+    h += `<tr class="${cls}">
+      <td>${b.name}</td>
+      <td>${disBadge}</td>
+      <td class="r">${b.status!=='yet' ? b.r : '—'}</td>
+      <td class="r">${b.balls>0 ? b.balls : '—'}</td>
+      <td class="r">${b.balls>0 ? b.fours : '—'}</td>
+      <td class="r">${b.balls>0 ? b.sixes : '—'}</td>
+      <td class="r">${b.status!=='yet'&&b.balls>0 ? sr : '—'}</td>
+    </tr>`;
+  });
+
+  const e = snap.extras;
+  h += `<tr class="extras"><td colspan="2">Extras</td>
+    <td class="r">${e.total}</td>
+    <td colspan="3" class="dim">b${e.b} lb${e.lb} nb${e.nb} w${e.w}</td>
+    <td></td></tr></tbody></table>`;
+
+  // FOW
+  if (snap.fow.length) {
+    h += `<div class="sec-head">Fall of wickets</div><div class="fow-wrap">`;
+    snap.fow.forEach(f => {
+      h += `<div class="fow-item"><strong>${f.w}-${f.score}</strong> ${f.batter}</div>`;
+    });
+    h += `</div>`;
+  }
+
+  // Bowling table
+  h += `<div class="sec-head">Bowling</div>
+  <table class="tbl">
+    <thead><tr>
+      <th>Bowler</th><th class="r">O</th><th class="r">M</th><th class="r">R</th>
+      <th class="r">W</th><th class="r">Wd</th><th class="r">NB</th><th class="r">Econ</th>
+    </tr></thead><tbody>`;
+
+  snap.bowlers.forEach(b => {
+    const cur = b.name === snap.bowler.name;
+    h += `<tr class="${cur?'bowling-current':''}">
+      <td>${cur?'&#9889; ':''}${b.name}</td>
+      <td class="r">${b.o}</td><td class="r">${b.m}</td><td class="r">${b.r}</td>
+      <td class="r ${b.w>0?'badge-w':''}">${b.w}</td>
+      <td class="r">${b.wd}</td><td class="r">${b.nb}</td>
+      <td class="r">${b.econ.toFixed(1)}</td>
+    </tr>`;
+  });
+  h += `</tbody></table>`;
+
+  // Overlay preview
+  const pillCls  = urgency==='crit'?'pill-crit':urgency==='warn'?'pill-warn':'pill-ok';
+  const pillTxt  = isSecond && rrrVal
+    ? (urgency==='crit' ? `⚡ ${needed} from ${ballsLeft} balls` : `RRR ${rrrVal}`)
+    : `CRR ${crrVal}`;
+
+  h += `<div class="sec-head">What the stream overlay shows at this moment</div>
+  <div class="overlay-prev">
+    ${isSecond && target ? `<div class="target-bar">Target <span>${target}</span> &nbsp;·&nbsp; ${needed} needed &nbsp;·&nbsp; ${ballsLeft} balls left</div>` : ''}
+    <div class="overlay-label">bottom bar overlay</div>
+    <div class="overlay-bar">
+      <div class="ov-score-blk">
+        <div class="ov-code">${isSecond ? toCode('East Grinstead CC') : MATCH.home}</div>
+        <div style="display:flex;align-items:flex-end;gap:2px;">
+          <span class="ov-runs">${snap.runs}</span>
+          <span class="ov-wkts">/${snap.wkts}</span>
+        </div>
+        <div class="ov-meta">
+          <div class="ov-overs">${snap.overs} ov</div>
+          <div class="ov-crr">CRR ${crrVal}</div>
+        </div>
+      </div>
+      <div class="ov-panels">
+        <div class="ov-bat-blk">
+          <div class="ov-batter">&#9733; ${snap.striker.name} <span>${snap.striker.r}</span><em>(${snap.striker.b})</em></div>
+          <div class="ov-batter" style="opacity:0.7">${snap.nonStriker.name} <span style="color:#64748b">${snap.nonStriker.r}</span><em>(${snap.nonStriker.b})</em></div>
+        </div>
+        <div class="ov-sep"></div>
+        <div class="ov-bowler">&#9889; ${snap.bowler.name} &nbsp; ${snap.bowler.w}-${snap.bowler.r} (${snap.bowler.o})</div>
+        <div class="ov-sep"></div>
+        <div class="ov-pill ${pillCls}">${pillTxt}</div>
+      </div>
+      <div class="ov-right">
+        <div style="display:flex;align-items:center;gap:4px;">
+          <div class="live-dot" style="width:5px;height:5px;border-radius:50%;background:#22c55e;animation:blink 1.4s infinite"></div>
+          <span style="font-size:0.55rem;font-weight:700;color:#22c55e;letter-spacing:.12em">LIVE</span>
+        </div>
+        <div class="ov-vs">${MATCH.home}<br>vs ${MATCH.away}</div>
+        <div class="ov-inn">${isSecond?'2nd Inn':'1st Inn'}</div>
+      </div>
+    </div>
+  </div>`;
+
+  return h;
+}
+
+function init() {
+  const tabs = document.getElementById('tabs');
+  const content = document.getElementById('content');
+
+  SNAPS.forEach((snap, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (snap.inn===2?' inn2':'') + (i===0?' active':'');
+    btn.textContent = snap.label + (snap.inn===2?' · 2nd Inn':'');
+    btn.onclick = () => {
+      document.querySelectorAll('.tab-btn').forEach(t=>t.classList.remove('active'));
+      btn.classList.add('active');
+      content.innerHTML = render(snap);
+    };
+    tabs.appendChild(btn);
+  });
+
+  content.innerHTML = render(SNAPS[0]);
+}
+
+init();
+</script>
+</body>
+</html>

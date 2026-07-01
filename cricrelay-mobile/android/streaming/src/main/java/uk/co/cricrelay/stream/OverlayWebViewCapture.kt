@@ -84,8 +84,12 @@ class OverlayWebViewCapture(private val activity: Activity) {
         private const val MAX_CAPTURE_HEIGHT_PX = 640
         private const val MEASURE_INTERVAL_MS = 2000L
 
-        /** CSS padding below the widget so drop shadows are not clipped. */
-        private const val BOTTOM_PAD_CSS = 10
+        /**
+         * Extra CSS px added below the measured widget height. Now 0: the injected capture CSS
+         * removes the board's bottom padding + drop shadow, so the bitmap ends exactly at the
+         * visible bar and the composited GL sprite can sit flush to the frame's bottom edge.
+         */
+        private const val CAPTURE_BOTTOM_PAD_CSS = 0
     }
 
     /** Current raster width in physical pixels (matches encoded stream canvas width). */
@@ -182,6 +186,16 @@ class OverlayWebViewCapture(private val activity: Activity) {
         css.append("#overlay{position:fixed !important;top:0 !important;bottom:auto !important;")
         css.append("left:0 !important;right:0 !important;transform:none !important;")
         css.append("width:auto !important;margin:0 !important;transform-origin:top left !important;}")
+        // Capture-only: strip the board's bottom gap so the rasterized bitmap ends exactly at the
+        // visible bar. The web/OBS overlay keeps its padding + shadow (this injection runs only in
+        // the off-screen capture WebView). Without this the composited GL sprite floats above the
+        // frame's bottom edge by the height of the transparent band (the "not sticking" bug).
+        css.append("body.board-barlow .sb-wrap{padding-bottom:0 !important;}")
+        css.append("body.board-barlow .sb-bar{box-shadow:none !important;}")
+        // Mobile composites the sponsor NATIVELY on the GL layer. The HTML page also renders its own
+        // sponsor (#sponsor-root, for the web/OBS path) — hide it in the capture so it isn't baked
+        // into the board bitmap as a duplicate logo that ignores the native placement.
+        css.append("#sponsor-root,#sponsor-wrap{display:none !important;}")
         // Map the operator's box / text colour prefs onto the overlay's theme variables.
         if (bg.isNotEmpty() || fg.isNotEmpty()) {
             css.append("body.board-barlow{")
@@ -232,7 +246,7 @@ class OverlayWebViewCapture(private val activity: Activity) {
       return JSON.stringify({ready:false,why:'loading'});}
     var r=o.getBoundingClientRect();
     if(r.height<8){return JSON.stringify({ready:false,why:'zero-rect'});}
-    return JSON.stringify({ready:true,h:Math.ceil(r.bottom)+$BOTTOM_PAD_CSS});
+    return JSON.stringify({ready:true,h:Math.ceil(r.bottom)+$CAPTURE_BOTTOM_PAD_CSS});
   }catch(e){return JSON.stringify({ready:false,why:String(e)});}
 })();
 """.trimIndent()

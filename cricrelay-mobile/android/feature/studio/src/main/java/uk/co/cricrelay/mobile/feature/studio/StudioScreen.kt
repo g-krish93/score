@@ -212,6 +212,26 @@ fun StudioScreen(
                 )
             }
         }
+
+        if (state.arrangeMode) {
+            ArrangeOverlay(
+                state = state,
+                onPinch = viewModel::pinchBoard,
+                onDrag = viewModel::dragArrange,
+                onTarget = viewModel::setArrangeTarget,
+                onDone = viewModel::commitArrangeMode,
+                onCancel = viewModel::cancelArrangeMode,
+            )
+        }
+
+        // First-run guided precheck (Camera → Arrange → Ready)
+        if (state.precheckActive && !state.arrangeMode && state.goLiveCountdown == null) {
+            PrecheckCard(
+                state = state,
+                onStartArrange = viewModel::precheckStartArrange,
+                onFinish = viewModel::finishPrecheck,
+            )
+        }
     }
 
     CricRelayBottomSheet(
@@ -240,6 +260,10 @@ fun StudioScreen(
             onSave = { prefs ->
                 viewModel.updateOverlayPrefs(prefs)
                 viewModel.closeSheet()
+            },
+            onArrange = {
+                viewModel.closeSheet()
+                viewModel.enterArrangeMode()
             },
             onDismiss = viewModel::closeSheet,
         )

@@ -73,10 +73,13 @@ struct StudioView: View {
                 .gesture(
                     MagnificationGesture()
                         .onChanged { scale in
+                            // Arrange mode reclaims pinch for board resize (see ArrangeOverlayView).
+                            guard !viewModel.arrangeMode else { return }
                             let newZoom = zoom * Float(scale)
                             viewModel.setZoom(newZoom)
                         }
                         .onEnded { scale in
+                            guard !viewModel.arrangeMode else { return }
                             zoom = max(1, zoom * Float(scale))
                         }
                 )
@@ -94,25 +97,39 @@ struct StudioView: View {
                     .transition(.opacity)
             }
 
-            // Controls overlay
-            VStack(spacing: 0) {
-                topBar
-                Spacer()
-                if let recap = viewModel.recap {
-                    recapBanner(recap)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+            // Controls overlay (hidden while arranging so the whole frame is grabbable)
+            if !viewModel.arrangeMode {
+                VStack(spacing: 0) {
+                    topBar
+                    Spacer()
+                    if let recap = viewModel.recap {
+                        recapBanner(recap)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    if let error = viewModel.error {
+                        errorBanner(error)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    if viewModel.thermalLevel >= 2 {
+                        thermalBanner
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    bottomControls
                 }
-                if let error = viewModel.error {
-                    errorBanner(error)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-                if viewModel.thermalLevel >= 2 {
-                    thermalBanner
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-                bottomControls
+                .ignoresSafeArea(edges: .bottom)
             }
-            .ignoresSafeArea(edges: .bottom)
+
+            // Pre-live Arrange mode: pinch/drag the board + sponsor over the live preview.
+            if viewModel.arrangeMode {
+                ArrangeOverlayView(viewModel: viewModel)
+                    .transition(.opacity)
+            }
+
+            // First-run guided precheck (Camera → Arrange → Ready)
+            if viewModel.precheckActive && !viewModel.arrangeMode && viewModel.goLiveCountdown == nil {
+                PrecheckCard(viewModel: viewModel)
+                    .transition(.opacity)
+            }
         }
         .cricEnterAnimation(value: viewModel.streaming)
         .cricEnterAnimation(value: viewModel.recap != nil, duration: CricMotion.sheetEnterDuration)
@@ -138,12 +155,15 @@ struct StudioView: View {
             StreamCameraEngine.shared.setStatusHandler { event, message in
                 Task { @MainActor in
                     viewModel.previewReady = StreamCameraEngine.shared.isPreviewReady
+                    viewModel.advancePrecheckIfCameraReady()
                     if event == "connected" { viewModel.streaming = true }
                     if event == "thermal" { viewModel.thermalLevel = Int(message) ?? viewModel.thermalLevel }
                     if event == "error" { viewModel.error = "Stream error — tap restart camera." }
                 }
             }
             await StreamCameraEngine.shared.preparePreview(width: 1280, height: 720, fps: 30)
+            viewModel.previewReady = StreamCameraEngine.shared.isPreviewReady
+            viewModel.advancePrecheckIfCameraReady()
         }
         .onDisappear {
             viewModel.stopPolling()
@@ -562,5 +582,234 @@ struct StudioView: View {
         }
 
         return camOk
+    }
+}
+
+// MARK: - Arrange overlay
+
+/// Full-screen direct-manipulation layer shown in Arrange mode over the live composited preview.
+/// Pinch always scales the board (aspect-locked); one-finger drag moves the selected target
+/// (Board or Sponsor). Transparent so the real camera + scoreboard sprite show through.
+/// Mirrors Android's ArrangeOverlay.
+struct ArrangeOverlayView: View {
+    @ObservedObject var viewModel: StudioViewModel
+    @State private var lastPinchScale: CGFloat = 1.0
+    @State private var lastDragTranslation: CGSize = .zero
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                // Transparent gesture surface covering the whole preview.
+                Color.black.opacity(0.001)
+                    .contentShape(Rectangle())
+                    .gesture(dragGesture(in: geo.size))
+                    .simultaneousGesture(pinchGesture())
+
+                // Controls live at the TOP so the lower area (where the board sits) stays grabbable.
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        Button {
+                            viewModel.cancelArrangeMode()
+                        } label: {
+                            Text("Cancel")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                                .background(Color.black.opacity(0.5))
+                                .cornerRadius(10)
+                        }
+                        Button {
+                            viewModel.commitArrangeMode()
+                        } label: {
+                            Text("Done")
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.black)
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                                .background(Color.yellow)
+                                .cornerRadius(10)
+                        }
+                    }
+                    Text("Move:")
+                        .font(.caption)
+                        .foregroundColor(.white)
+                    HStack(spacing: 8) {
+                        arrangeChip("Scoreboard", selected: viewModel.arrangeTarget == .board) {
+                            viewModel.arrangeTarget = .board
+                        }
+                        arrangeChip("Sponsor", selected: viewModel.arrangeTarget == .sponsor) {
+                            viewModel.arrangeTarget = .sponsor
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(16)
+
+                // Persistent hint near the bottom, above the board it describes.
+                VStack {
+                    Spacer()
+                    Text("Drag anywhere to move the \(targetLabel) · pinch with two fingers to resize the scoreboard")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.black.opacity(0.5))
+                        .cornerRadius(8)
+                        .padding(.bottom, 140)
+                        .padding(.horizontal, 24)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+        .ignoresSafeArea()
+    }
+
+    private var targetLabel: String {
+        viewModel.arrangeTarget == .board ? "scoreboard" : "sponsor"
+    }
+
+    /// MagnificationGesture reports cumulative scale — convert to incremental ratios for pinchBoard.
+    private func pinchGesture() -> some Gesture {
+        MagnificationGesture()
+            .onChanged { scale in
+                let increment = scale / lastPinchScale
+                lastPinchScale = scale
+                viewModel.pinchBoard(Double(increment))
+            }
+            .onEnded { _ in
+                lastPinchScale = 1.0
+            }
+    }
+
+    /// DragGesture reports cumulative translation — convert to incremental preview-fraction deltas.
+    private func dragGesture(in size: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 2)
+            .onChanged { value in
+                let dx = value.translation.width - lastDragTranslation.width
+                let dy = value.translation.height - lastDragTranslation.height
+                lastDragTranslation = value.translation
+                let w = max(size.width, 1)
+                let h = max(size.height, 1)
+                viewModel.dragArrange(dxFraction: Double(dx / w), dyFraction: Double(dy / h))
+            }
+            .onEnded { _ in
+                lastDragTranslation = .zero
+            }
+    }
+
+    private func arrangeChip(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.caption)
+                .fontWeight(selected ? .bold : .regular)
+                .foregroundColor(selected ? .white : .white.opacity(0.7))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(selected ? Color.yellow.opacity(0.35) : Color.black.opacity(0.4))
+                .cornerRadius(8)
+        }
+    }
+}
+
+// MARK: - First-run precheck
+
+/// Guided first-run stepper (Camera → Arrange → Ready) gating the first Go Live.
+/// Mirrors the Android precheck card.
+struct PrecheckCard: View {
+    @ObservedObject var viewModel: StudioViewModel
+
+    var body: some View {
+        VStack {
+            Spacer()
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Quick setup before you go live")
+                    .font(.headline)
+                    .foregroundColor(.white)
+
+                precheckRow(
+                    index: 1,
+                    title: "Camera",
+                    done: viewModel.previewReady,
+                    active: viewModel.precheckStep == .camera,
+                    subtitle: viewModel.previewReady ? "Preview is running" : "Waiting for the camera…"
+                )
+                precheckRow(
+                    index: 2,
+                    title: "Arrange board & sponsor",
+                    done: viewModel.precheckStep == .ready,
+                    active: viewModel.precheckStep == .arrange,
+                    subtitle: "Pinch to resize, drag to place them on the frame"
+                )
+                precheckRow(
+                    index: 3,
+                    title: "Ready",
+                    done: false,
+                    active: viewModel.precheckStep == .ready,
+                    subtitle: "You can rearrange any time from the Board menu"
+                )
+
+                HStack(spacing: 12) {
+                    Button("Skip") {
+                        viewModel.finishPrecheck()
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.7))
+
+                    Spacer()
+
+                    switch viewModel.precheckStep {
+                    case .camera:
+                        EmptyView()
+                    case .arrange:
+                        Button {
+                            viewModel.precheckStartArrange()
+                        } label: {
+                            Text("Arrange now")
+                                .font(.subheadline).bold()
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 10)
+                                .background(Color.yellow)
+                                .cornerRadius(8)
+                        }
+                    case .ready:
+                        Button {
+                            viewModel.finishPrecheck()
+                        } label: {
+                            Text("All set")
+                                .font(.subheadline).bold()
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 10)
+                                .background(Color.yellow)
+                                .cornerRadius(8)
+                        }
+                    }
+                }
+            }
+            .padding(18)
+            .background(Color.black.opacity(0.75))
+            .cornerRadius(14)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 120)
+        }
+    }
+
+    private func precheckRow(index: Int, title: String, done: Bool, active: Bool, subtitle: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: done ? "checkmark.circle.fill" : "\(index).circle")
+                .foregroundColor(done ? .green : active ? .yellow : .white.opacity(0.5))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(active || done ? .bold : .regular)
+                    .foregroundColor(.white)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.6))
+            }
+        }
     }
 }

@@ -193,6 +193,7 @@ fun OverlaySheet(
     sponsors: List<Sponsor>,
     onPreview: (OverlayLayoutPrefs) -> Unit,
     onSave: (OverlayLayoutPrefs) -> Unit,
+    onArrange: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var fontScale by remember { mutableStateOf(prefs.fontScale.toFloat()) }
@@ -221,6 +222,7 @@ fun OverlaySheet(
     var sponsorSizeScale by remember { mutableStateOf(prefs.sponsorSizeScale.toFloat()) }
     var sponsorOpacity by remember { mutableStateOf(prefs.sponsorOpacity.toFloat()) }
     var sponsorScrollSpeed by remember { mutableStateOf(prefs.sponsorScrollSpeed.toFloat()) }
+    var sponsorScrollDirection by remember { mutableStateOf(prefs.sponsorScrollDirection) }
     val sponsorScrollMode = SponsorDisplayMode.isScroll(sponsorDisplayMode)
 
     fun buildDraftPrefs(): OverlayLayoutPrefs = prefs.copy(
@@ -245,6 +247,7 @@ fun OverlaySheet(
         sponsorSizeScale = sponsorSizeScale.toDouble(),
         sponsorOpacity = sponsorOpacity.toDouble(),
         sponsorScrollSpeed = sponsorScrollSpeed.toDouble(),
+        sponsorScrollDirection = sponsorScrollDirection,
     )
 
     LaunchedEffect(
@@ -268,6 +271,7 @@ fun OverlaySheet(
         sponsorSizeScale,
         sponsorOpacity,
         sponsorScrollSpeed,
+        sponsorScrollDirection,
     ) {
         delay(80)
         onPreview(buildDraftPrefs())
@@ -277,6 +281,23 @@ fun OverlaySheet(
         title = "Board Edit",
         subtitle = "Scoreboard style, sponsor logos, and watermark. Changes preview live — tap Save board when done.",
     )
+
+    Box(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
+        Text(
+            "◇  Arrange on screen — pinch & drag",
+            style = AppTypography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = AppColors.Accent,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                .background(AppColors.Accent.copy(alpha = 0.12f))
+                .border(1.dp, AppColors.Accent.copy(alpha = 0.6f), RoundedCornerShape(AppSpacing.radiusSm))
+                .clickable { onArrange() }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        )
+    }
+    Spacer(Modifier.height(AppSpacing.md))
 
     val activeSponsors = sponsors.filter { it.isActive }
     Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
@@ -490,6 +511,42 @@ fun OverlaySheet(
                     valueRange = 0f..1f,
                 )
             } else {
+                Text("Scroll direction", style = AppTypography.titleSmall)
+                Spacer(Modifier.height(AppSpacing.xs))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                ) {
+                    listOf(
+                        uk.co.cricrelay.shared.model.SponsorScrollDirection.RTL to "Right → Left",
+                        uk.co.cricrelay.shared.model.SponsorScrollDirection.LTR to "Left → Right",
+                        uk.co.cricrelay.shared.model.SponsorScrollDirection.TTB to "Top → Bottom",
+                        uk.co.cricrelay.shared.model.SponsorScrollDirection.BTT to "Bottom → Top",
+                        uk.co.cricrelay.shared.model.SponsorScrollDirection.FIXED to "Fixed",
+                    ).forEach { (id, label) ->
+                        val selected = sponsorScrollDirection == id
+                        Text(
+                            label,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                                .background(
+                                    if (selected) AppColors.Accent.copy(alpha = 0.2f)
+                                    else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                                )
+                                .border(
+                                    width = if (selected) 1.5.dp else 1.dp,
+                                    color = if (selected) AppColors.Accent else AppColors.Border,
+                                    shape = RoundedCornerShape(AppSpacing.radiusSm),
+                                )
+                                .clickable { sponsorScrollDirection = id }
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            style = AppTypography.bodySmall,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(AppSpacing.sm))
                 LabeledSlider(
                     label = "Scroll speed",
                     valueText = String.format("%.1f×", sponsorScrollSpeed),

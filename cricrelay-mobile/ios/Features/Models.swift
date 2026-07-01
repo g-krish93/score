@@ -204,6 +204,7 @@ struct OverlayLayoutPrefs: Codable {
     var sponsorSizeScale: Double
     var sponsorOpacity: Double
     var sponsorScrollSpeed: Double
+    var sponsorScrollDirection: String
 
     static let watermarkDefaultText = "Visit cricrelay.co.uk"
 
@@ -212,7 +213,8 @@ struct OverlayLayoutPrefs: Codable {
         widthFraction = 1.0
         anchorX = 0.5
         anchorY = 0.85
-        bottomMargin = 8.0
+        // 0 = board sits flush to the frame's bottom edge (operator can lift it in Arrange).
+        bottomMargin = 0.0
         horizontalInset = 0.0
         theme = "barlow"
         fontScale = 1.0
@@ -234,6 +236,7 @@ struct OverlayLayoutPrefs: Codable {
         sponsorSizeScale = 1.0
         sponsorOpacity = 1.0
         sponsorScrollSpeed = 1.0
+        sponsorScrollDirection = SponsorScrollDirection.rtl
     }
 
     enum CodingKeys: String, CodingKey {
@@ -263,6 +266,7 @@ struct OverlayLayoutPrefs: Codable {
         case sponsorSizeScale = "sponsor_size_scale"
         case sponsorOpacity = "sponsor_opacity"
         case sponsorScrollSpeed = "sponsor_scroll_speed"
+        case sponsorScrollDirection = "sponsor_scroll_direction"
     }
 
     /// Tolerant decoder: any missing key falls back to its default so an older server
@@ -303,6 +307,46 @@ struct OverlayLayoutPrefs: Codable {
         sponsorSizeScale = try c.decodeIfPresent(Double.self, forKey: .sponsorSizeScale) ?? sponsorSizeScale
         sponsorOpacity = try c.decodeIfPresent(Double.self, forKey: .sponsorOpacity) ?? sponsorOpacity
         sponsorScrollSpeed = try c.decodeIfPresent(Double.self, forKey: .sponsorScrollSpeed) ?? sponsorScrollSpeed
+        sponsorScrollDirection = SponsorScrollDirection.sanitize(
+            try c.decodeIfPresent(String.self, forKey: .sponsorScrollDirection)
+        )
+    }
+
+    // Uniform pinch-scale bounds + drag range (parity with shared OverlayLayoutPrefs).
+    static let refWidthFraction = 1.0
+    static let refHeightFraction = 0.16
+    static let widthMin = 0.25
+    static let widthMax = 0.98
+    static let heightMin = 0.10
+    static let heightMax = 0.28
+    static let boardScaleMin = 0.4
+    static let boardScaleMax = 1.0
+    static let anchorYMin = 0.30
+    static let anchorYMax = 0.97
+
+    /// Uniform board size multiplier (1.0 ≈ full-width lower-third). Drives both dimensions of the
+    /// fixed-aspect strip, so internal proportions never distort — what the Arrange pinch controls.
+    func boardScale() -> Double {
+        let w = min(max(widthFraction, Self.widthMin), Self.widthMax)
+        return min(max(w / Self.refWidthFraction, Self.boardScaleMin), Self.boardScaleMax)
+    }
+
+    /// Copy scaled uniformly to `scale`; width and height move together (aspect-locked).
+    func withBoardScale(_ scale: Double) -> OverlayLayoutPrefs {
+        let s = min(max(scale, Self.boardScaleMin), Self.boardScaleMax)
+        var out = self
+        out.widthFraction = min(max(Self.refWidthFraction * s, Self.widthMin), Self.widthMax)
+        out.heightFraction = min(max(Self.refHeightFraction * s, Self.heightMin), Self.heightMax)
+        return out
+    }
+
+    /// Copy re-anchored to a normalized preview point (centre of the board).
+    func withAnchor(x: Double, y: Double) -> OverlayLayoutPrefs {
+        var out = self
+        out.anchorX = min(max(x, 0.0), 1.0)
+        out.anchorY = min(max(y, Self.anchorYMin), Self.anchorYMax)
+        out.bottomMargin = 0.0
+        return out
     }
 
     func effectiveSponsorIds() -> [String] {
@@ -356,6 +400,7 @@ struct OverlayLayoutPrefs: Codable {
             sponsorSizeScale: Float(max(0.3, min(3, sponsorSizeScale))),
             sponsorOpacity: Float(max(0.2, min(1, sponsorOpacity))),
             sponsorScrollSpeed: Float(max(0.3, min(3, sponsorScrollSpeed))),
+            sponsorScrollDirection: SponsorScrollDirection.sanitize(sponsorScrollDirection),
             theme: theme.isEmpty ? "barlow" : theme
         )
     }
@@ -402,6 +447,9 @@ struct OverlayLayoutPrefs: Codable {
         if let v = patch["sponsor_scroll_speed"] as? Double {
             merged.sponsorScrollSpeed = max(0.3, min(3, v))
         }
+        if let v = patch["sponsor_scroll_direction"] as? String {
+            merged.sponsorScrollDirection = SponsorScrollDirection.sanitize(v)
+        }
         return merged
     }
 
@@ -416,6 +464,7 @@ struct OverlayLayoutPrefs: Codable {
             "sponsor_size_scale": sponsorSizeScale,
             "sponsor_opacity": sponsorOpacity,
             "sponsor_scroll_speed": sponsorScrollSpeed,
+            "sponsor_scroll_direction": sponsorScrollDirection,
         ]
         if !activeSponsorIds.isEmpty {
             out["active_sponsor_ids"] = activeSponsorIds
@@ -446,6 +495,37 @@ enum SponsorLayoutMode {
     static func allowsMultiSelect(_ mode: String) -> Bool {
         let m = sanitize(mode)
         return m == multi || m == carousel
+    }
+}
+
+enum SponsorScrollDirection {
+    static let ltr = "ltr"
+    static let rtl = "rtl"
+    static let ttb = "ttb"
+    static let btt = "btt"
+    static let fixed = "fixed"
+
+    static let directions: [(id: String, label: String)] = [
+        (rtl, "Right → Left"),
+        (ltr, "Left → Right"),
+        (ttb, "Top → Bottom"),
+        (btt, "Bottom → Top"),
+        (fixed, "Fixed"),
+    ]
+
+    static func sanitize(_ raw: String?) -> String {
+        let d = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? rtl
+        return directions.contains(where: { $0.id == d }) ? d : rtl
+    }
+
+    static func isHorizontal(_ dir: String) -> Bool {
+        let d = sanitize(dir)
+        return d == ltr || d == rtl
+    }
+
+    static func isVertical(_ dir: String) -> Bool {
+        let d = sanitize(dir)
+        return d == ttb || d == btt
     }
 }
 

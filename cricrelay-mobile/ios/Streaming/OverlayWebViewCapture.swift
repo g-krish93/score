@@ -10,7 +10,9 @@ final class OverlayWebViewCapture: NSObject, WKNavigationDelegate {
     private static let minCaptureHeight = 40
     private static let maxCaptureHeight = 640
     private static let measureInterval: TimeInterval = 2.0
-    private static let bottomPadCss = 10
+    // 0: injected capture CSS removes the board's bottom padding + shadow, so the bitmap ends
+    // exactly at the visible bar and the composited sprite can sit flush to the frame's bottom.
+    private static let bottomPadCss = 0
 
     private let webView: WKWebView
     private weak var hostViewController: UIViewController?
@@ -180,6 +182,14 @@ final class OverlayWebViewCapture: NSObject, WKNavigationDelegate {
         var css = "html,body{margin:0 !important;padding:0 !important;background:transparent !important;overflow:hidden !important;}"
         css += "html{font-size:\(rootPx)px !important;}"
         css += "#overlay{position:fixed !important;top:0 !important;bottom:auto !important;left:0 !important;right:0 !important;transform:none !important;width:auto !important;margin:0 !important;transform-origin:top left !important;}"
+        // Capture-only: strip the board's bottom gap so the rasterized bitmap ends exactly at the
+        // visible bar and the composited sprite sits flush to the frame's bottom edge (fixes the
+        // "board not sticking to the bottom" gap seen only in the stream, not the web overlay).
+        css += "body.board-barlow .sb-wrap{padding-bottom:0 !important;}"
+        css += "body.board-barlow .sb-bar{box-shadow:none !important;}"
+        // Mobile composites the sponsor natively on the GL layer; hide the HTML page's own sponsor
+        // (#sponsor-root, web/OBS path) so it isn't baked into the board bitmap as a duplicate.
+        css += "#sponsor-root,#sponsor-wrap{display:none !important;}"
         if !bg.isEmpty || !fg.isEmpty {
             css += "body.board-barlow{"
             if !bg.isEmpty { css += "--sb-navy:\(bg) !important;--sb-dot-dark:\(bg) !important;" }
