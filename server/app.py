@@ -8,7 +8,7 @@ import secrets
 import smtplib
 import threading
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
@@ -46,6 +46,7 @@ from .models_cricrelay import (
     Team,
     Tournament,
     build_play_cricket_scrape_url,
+    canonicalize_cricheroes_scrape_url,
     canonicalize_play_cricket_scrape_url,
     db,
     normalize_play_cricket_club_root,
@@ -63,6 +64,7 @@ from .play_cricket_scraper import scrape_fixtures
 from .scraper_worker import get_live_snapshot, register_relay_worker
 from .stream_api import (
     bearer_org_from_request,
+    companion_token_required,
     issue_stream_token,
     issue_twitch_oauth_state,
     issue_youtube_oauth_state,
@@ -299,6 +301,8 @@ def blank_state():
         "relay_last_error": None,
         "pcs_ingest_token": "",
         "pcs_ble_state": None,
+        "sponsor_enabled": False,
+        "active_sponsor_id": None,
     }
 
 
@@ -1800,10 +1804,10 @@ def _create_cricheroes_stream_org(
     from .models_cricrelay import canonicalize_cricheroes_scrape_url
 
     full_url = canonicalize_cricheroes_scrape_url((match_url or "").strip())
-    if not full_url or "cricheroes" not in full_url.lower():
+    if not full_url:
         return None, (
             "Paste a CricHeroes scorecard URL "
-            "(e.g. https://cricheroes.in/scorecard/<match-id>/.../live)."
+            "(e.g. https://cricheroes.com/scorecard/<match-id>/.../live)."
         )
     mid_match = re.search(r"/scorecard/(\d+)", full_url)
     mid = mid_match.group(1) if mid_match else f"ch-{secrets.token_hex(4)}"
@@ -2419,6 +2423,18 @@ def relay_overlay_data(match_id):
             "last_updated": last_ok,
         }
 
+    sponsor_enabled = bool(data.get("sponsor_enabled", False))
+    active_sponsor_id = data.get("active_sponsor_id")
+    sponsor_payload = None
+    if sponsor_enabled and active_sponsor_id:
+        now = datetime.now(timezone.utc)
+        s = Sponsor.query.filter_by(id=active_sponsor_id, is_active=True).first()
+        if s and (s.active_from is None or s.active_from <= now) and (
+            s.active_to is None or s.active_to >= now
+        ):
+            sponsor_payload = {"logo_url": s.logo_url, "link_url": s.link_url, "name": s.name}
+    payload["sponsor"] = sponsor_payload
+
     resp = jsonify(payload)
     resp.headers["Cache-Control"] = "no-store"
     return resp
@@ -2500,8 +2516,9 @@ def relay_config():
     if mode == "cricheroes":
         if not url:
             return jsonify({"error": "relay_play_cricket_url required when relay_mode is cricheroes (CricHeroes scorecard URL)"}), 400
-        if "cricheroes" not in url.lower():
-            return jsonify({"error": "URL must be a cricheroes.in scorecard page"}), 400
+        url = canonicalize_cricheroes_scrape_url(url)
+        if not url:
+            return jsonify({"error": "URL must be a CricHeroes scorecard page"}), 400
     with match_context():
         state["relay_mode"] = mode
         state["relay_provider"] = mode if mode in {"play_cricket", "cricheroes"} else state.get("relay_provider")
@@ -3733,6 +3750,8 @@ def _overlay_prefs_json(slug: str) -> dict:
             "overlay_scale": float(state.get("overlay_scale") or 1.0),
             "theme": theme,
             "overlay_density": density,
+            "sponsor_enabled": bool(state.get("sponsor_enabled", False)),
+            "active_sponsor_id": state.get("active_sponsor_id"),
         }
 
 
@@ -3766,8 +3785,149 @@ def api_set_overlay(org: Organization, match_slug: str):
         if "overlay_density" in data:
             density = str(data.get("overlay_density") or "expanded").strip().lower()
             state["overlay_density"] = density if density in {"compact", "expanded"} else "expanded"
+        if "sponsor_enabled" in data:
+            state["sponsor_enabled"] = bool(data.get("sponsor_enabled"))
+        if "active_sponsor_id" in data:
+            sid = data.get("active_sponsor_id")
+            state["active_sponsor_id"] = str(sid).strip() if sid else None
         save_state()
     return jsonify(_overlay_prefs_json(slug))
+
+
+def _sponsor_json(s: Sponsor) -> dict:
+    return {
+        "id": s.id,
+        "name": s.name,
+        "logo_url": s.logo_url,
+        "link_url": s.link_url,
+        "is_active": s.is_active,
+        "active_from": s.active_from.isoformat() if s.active_from else None,
+        "active_to": s.active_to.isoformat() if s.active_to else None,
+    }
+
+
+@app.get("/api/sponsors")
+@stream_api_auth_required
+def api_list_sponsors(org: Organization):
+    rows = Sponsor.query.filter_by(organization_id=org.id).order_by(Sponsor.created_at.desc()).all()
+    return jsonify({"ok": True, "sponsors": [_sponsor_json(s) for s in rows]})
+
+
+@app.post("/api/sponsors")
+@stream_api_auth_required
+def api_create_sponsor(org: Organization):
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    s = Sponsor(
+        organization_id=org.id,
+        name=name,
+        logo_url=str(data.get("logo_url") or "").strip() or None,
+        link_url=str(data.get("link_url") or "").strip() or None,
+        is_active=bool(data.get("is_active", True)),
+    )
+    db.session.add(s)
+    db.session.commit()
+    return jsonify({"ok": True, "sponsor": _sponsor_json(s)})
+
+
+@app.patch("/api/sponsors/<sponsor_id>")
+@stream_api_auth_required
+def api_patch_sponsor(org: Organization, sponsor_id: str):
+    s = Sponsor.query.filter_by(id=sponsor_id, organization_id=org.id).first()
+    if not s:
+        return jsonify({"error": "unknown sponsor"}), 404
+    data = request.get_json(silent=True) or {}
+    if "name" in data:
+        s.name = str(data.get("name") or "").strip() or s.name
+    if "logo_url" in data:
+        s.logo_url = str(data.get("logo_url") or "").strip() or None
+    if "link_url" in data:
+        s.link_url = str(data.get("link_url") or "").strip() or None
+    if "is_active" in data:
+        s.is_active = bool(data.get("is_active"))
+    db.session.commit()
+    return jsonify({"ok": True, "sponsor": _sponsor_json(s)})
+
+
+@app.delete("/api/sponsors/<sponsor_id>")
+@stream_api_auth_required
+def api_delete_sponsor(org: Organization, sponsor_id: str):
+    s = Sponsor.query.filter_by(id=sponsor_id, organization_id=org.id).first()
+    if not s:
+        return jsonify({"error": "unknown sponsor"}), 404
+    db.session.delete(s)
+    db.session.commit()
+    return jsonify({"ok": True, "deleted": sponsor_id})
+
+
+@app.post("/api/match/<match_slug>/pair")
+@stream_api_auth_required
+def api_pair_remote(org: Organization, match_slug: str):
+    from .stream_api import REMOTE_PAIR_TOKEN_MAX_AGE, issue_remote_pair_token
+
+    slug = sanitize_match_id(match_slug)
+    if not relay_match_for_org(org, slug):
+        return jsonify({"error": "unknown stream"}), 404
+    token = issue_remote_pair_token(org, slug)
+    expires_at = (datetime.now(timezone.utc) + timedelta(seconds=REMOTE_PAIR_TOKEN_MAX_AGE)).isoformat()
+    return jsonify({"ok": True, "pair_token": token, "expires_at": expires_at})
+
+
+@app.post("/stream/<match_slug>/pair/redeem")
+def public_pair_redeem(match_slug: str):
+    from .stream_api import redeem_remote_pair_token
+
+    data = request.get_json(silent=True) or {}
+    pair_token = str(data.get("pair_token") or "").strip()
+    if not pair_token:
+        return jsonify({"error": "pair_token required"}), 400
+    result = redeem_remote_pair_token(pair_token)
+    if not result or result["slug"] != sanitize_match_id(match_slug):
+        return jsonify({"error": "invalid or expired pairing code"}), 400
+    return jsonify({"ok": True, "companion_token": result["companion_token"], "match_slug": result["slug"]})
+
+
+@app.post("/api/match/<match_slug>/remote/command")
+@companion_token_required
+def api_remote_command(companion_slug: str, companion_org_id: str, match_slug: str):
+    from .stream_api import REMOTE_CONTROL_COMMANDS, redis_client
+
+    slug = sanitize_match_id(match_slug)
+    if slug != companion_slug:
+        return jsonify({"error": "slug mismatch"}), 400
+    data = request.get_json(silent=True) or {}
+    msg_type = str(data.get("type") or "").strip()
+    command = str(data.get("command") or "").strip()
+    if msg_type != "control" or command not in REMOTE_CONTROL_COMMANDS:
+        return jsonify({"error": "invalid command"}), 400
+    import time as _t
+
+    envelope = json.dumps({"type": msg_type, "command": command, "ts": _t.time()})
+    key = f"cricrelay:remote:cmds:{slug}"
+    r = redis_client()
+    r.rpush(key, envelope)
+    r.expire(key, 600)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/match/<match_slug>/remote/commands")
+@stream_api_auth_required
+def api_remote_commands_poll(org: Organization, match_slug: str):
+    from .stream_api import redis_client
+
+    slug = sanitize_match_id(match_slug)
+    if not relay_match_for_org(org, slug):
+        return jsonify({"error": "unknown stream"}), 404
+    key = f"cricrelay:remote:cmds:{slug}"
+    r = redis_client()
+    pipe = r.pipeline()
+    pipe.lrange(key, 0, -1)
+    pipe.delete(key)
+    raw_list, _ = pipe.execute()
+    commands = [json.loads(item) for item in raw_list]
+    return jsonify({"ok": True, "commands": commands})
 
 
 @app.post("/api/match/<match_slug>/scoring")

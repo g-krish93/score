@@ -81,11 +81,25 @@ final class StudioViewModel: ObservableObject {
     @Published var focusIndicator: CGPoint?
     private var focusIndicatorTask: Task<Void, Never>?
 
+    // Thermal / overheat
+    @Published var thermalLevel: Int = 0
+
+    // Mic mute (ephemeral, not persisted)
+    @Published var micMuted = false
+
+    // Sponsors for overlay compositing
+    @Published var sponsors: [Sponsor] = []
+
+    // Remote pairing
+    @Published var pairRemotePayload: String?
+    @Published var pairRemoteExpiresAt: String?
+
     @Published var error: String?
 
     private let api = CricRelayAPI.shared
     private var pollingTask: Task<Void, Never>?
     private var liveTimerTask: Task<Void, Never>?
+    private var remotePollTask: Task<Void, Never>?
 
     init(matchSlug: String) {
         self.matchSlug = matchSlug
@@ -94,6 +108,7 @@ final class StudioViewModel: ObservableObject {
     deinit {
         pollingTask?.cancel()
         liveTimerTask?.cancel()
+        remotePollTask?.cancel()
     }
 
     // MARK: - Load
@@ -128,6 +143,8 @@ final class StudioViewModel: ObservableObject {
 
             // Start polling
             startPolling()
+            startRemoteCommandPolling()
+            sponsors = (try? await api.listSponsors()) ?? []
         } catch {
             self.error = error.localizedDescription
         }
@@ -159,7 +176,11 @@ final class StudioViewModel: ObservableObject {
     /// before going live (parity with Android's syncOverlay / startPreviewOverlayPush).
     private func syncOverlay() {
         guard let url = match?.overlayEmbedUrl, !url.isEmpty else { return }
-        StreamCameraEngine.shared.updateOverlay(url: url, layout: overlayPrefs.toEngineLayout())
+        let logoUrl = overlayPrefs.resolvedSponsorLogoUrl(from: sponsors)
+        StreamCameraEngine.shared.updateOverlay(
+            url: url,
+            layout: overlayPrefs.toEngineLayout(sponsorLogoUrl: logoUrl)
+        )
     }
 
     private func recomputeDestinationReady() {
@@ -197,6 +218,11 @@ final class StudioViewModel: ObservableObject {
     func stopPolling() {
         pollingTask?.cancel()
         pollingTask = nil
+    }
+
+    func stopRemoteCommandPolling() {
+        remotePollTask?.cancel()
+        remotePollTask = nil
     }
 
     // MARK: - Live timer
@@ -305,7 +331,9 @@ final class StudioViewModel: ObservableObject {
             height: 720,
             bitrate: 2_500_000,
             fps: 30,
-            layout: overlayPrefs.toEngineLayout()
+            layout: overlayPrefs.toEngineLayout(
+                sponsorLogoUrl: overlayPrefs.resolvedSponsorLogoUrl(from: sponsors)
+            )
         )
         streaming = StreamCameraEngine.shared.isStreaming
         if streaming {
@@ -386,10 +414,18 @@ final class StudioViewModel: ObservableObject {
         overlayPrefs = prefs
         let url = match?.overlayEmbedUrl ?? ""
         let effectiveUrl = !url.isEmpty ? url : overlayEmbedUrl
-        StreamCameraEngine.shared.updateOverlay(url: effectiveUrl, layout: prefs.toEngineLayout())
+        let logoUrl = prefs.resolvedSponsorLogoUrl(from: sponsors)
+        StreamCameraEngine.shared.updateOverlay(
+            url: effectiveUrl,
+            layout: prefs.toEngineLayout(sponsorLogoUrl: logoUrl)
+        )
         StreamCameraEngine.shared.setKeepScreenOnDuringStream(enabled: prefs.keepScreenOn)
         StreamCameraEngine.shared.setVideoStabilization(enabled: prefs.videoStabilization)
         _ = try? await api.saveOverlayPrefs(slug: matchSlug, prefs: prefs)
+    }
+
+    func loadSponsors() async {
+        sponsors = (try? await api.listSponsors()) ?? []
     }
 
     /// Flip video stabilisation from the on-screen quick toggle, then persist + apply via
@@ -406,6 +442,63 @@ final class StudioViewModel: ObservableObject {
         var prefs = overlayPrefs
         prefs.keepScreenOn.toggle()
         await saveOverlay(prefs)
+    }
+
+    // MARK: - Thermal
+
+    func onLowerQuality() {
+        StreamCameraEngine.shared.stepDownQuality()
+    }
+
+    // MARK: - Mic mute
+
+    func toggleMicMuted() async {
+        let next = !micMuted
+        await StreamCameraEngine.shared.setMicMuted(next)
+        micMuted = next
+    }
+
+    // MARK: - Remote control
+
+    func openPairRemote() async {
+        do {
+            let result = try await api.pairRemote(slug: matchSlug)
+            let base = api.baseUrl.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? api.baseUrl
+            pairRemotePayload = "cricrelay://pair?slug=\(matchSlug)&token=\(result.pairToken)&base=\(base)"
+            pairRemoteExpiresAt = result.expiresAt
+            activeSheet = .pairRemote
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func startRemoteCommandPolling() {
+        remotePollTask?.cancel()
+        remotePollTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard !Task.isCancelled else { return }
+                guard let commands = try? await api.pollRemoteCommands(slug: matchSlug) else { continue }
+                for cmd in commands where cmd.type == "control" {
+                    await dispatchRemoteCommand(cmd.command)
+                }
+            }
+        }
+    }
+
+    private func dispatchRemoteCommand(_ command: String) async {
+        switch command {
+        case "start_broadcast":
+            if !streaming { requestGoLive() }
+        case "stop_broadcast":
+            if streaming { await stopLive() }
+        case "mute_mic":
+            if !micMuted { await toggleMicMuted() }
+        case "toggle_focus_lock":
+            await toggleFocusLock()
+        default:
+            break
+        }
     }
 
     // MARK: - Scoring
@@ -476,6 +569,6 @@ final class StudioViewModel: ObservableObject {
 }
 
 enum StudioSheet: Identifiable {
-    case destination, overlay, scoring, preflight, menu
+    case destination, overlay, scoring, preflight, menu, pairRemote
     var id: String { "\(self)" }
 }

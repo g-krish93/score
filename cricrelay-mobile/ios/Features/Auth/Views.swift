@@ -13,6 +13,7 @@ enum CricTheme {
     static let accent            = Color(red: 0.341, green: 0.780, blue: 1.0)     // #57C7FF
     static let accentBlue        = Color(red: 0.302, green: 0.639, blue: 1.0)     // #4DA3FF
     static let danger            = Color(red: 1.0,   green: 0.361, blue: 0.478)   // #FF5C7A
+    static let warning           = Color(red: 1.0,   green: 0.647, blue: 0.0)     // #FFA500
     static let textMuted         = Color(red: 0.780, green: 0.804, blue: 0.851)   // #C7CDD9
     static let textDim           = Color(red: 0.596, green: 0.631, blue: 0.702)   // #98A1B3
 

@@ -216,6 +216,43 @@ data class PlatformStatus(
     }
 }
 
+data class Sponsor(
+    val id: String = "",
+    val name: String = "",
+    val logoUrl: String? = null,
+    val linkUrl: String? = null,
+    val isActive: Boolean = true,
+) {
+    companion object {
+        fun fromJson(json: JsonObject): Sponsor = Sponsor(
+            id = json.string("id").orEmpty(),
+            name = json.string("name").orEmpty(),
+            logoUrl = json.string("logo_url"),
+            linkUrl = json.string("link_url"),
+            isActive = json.bool("is_active") != false,
+        )
+    }
+}
+
+data class RemoteCommand(
+    val type: String = "",
+    val command: String = "",
+    val ts: Double = 0.0,
+) {
+    companion object {
+        fun fromJson(json: JsonObject): RemoteCommand = RemoteCommand(
+            type = json.string("type").orEmpty(),
+            command = json.string("command").orEmpty(),
+            ts = (json["ts"] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: 0.0,
+        )
+    }
+}
+
+data class PairRemoteResult(
+    val pairToken: String,
+    val expiresAt: String,
+)
+
 @Serializable
 data class OverlayLayoutPrefs(
     // Scoreboard is a thin horizontal strip; height is a constant, font size is the
@@ -237,6 +274,8 @@ data class OverlayLayoutPrefs(
     // Brand watermark burned into the stream; admin-configurable.
     @SerialName("watermark_enabled") val watermarkEnabled: Boolean = true,
     @SerialName("watermark_text") val watermarkText: String = WATERMARK_DEFAULT_TEXT,
+    @SerialName("sponsor_enabled") val sponsorEnabled: Boolean = false,
+    @SerialName("active_sponsor_id") val activeSponsorId: String? = null,
 ) {
     /** Reference board size used when tuning default typography. */
     fun clampedWidthFraction(): Double = widthFraction.coerceIn(WIDTH_MIN, WIDTH_MAX)
@@ -292,6 +331,8 @@ data class OverlayLayoutPrefs(
             watermarkEnabled = json.bool("watermark_enabled") != false,
             watermarkText = json.string("watermark_text")?.takeIf { it.isNotBlank() }
                 ?: WATERMARK_DEFAULT_TEXT,
+            sponsorEnabled = json.bool("sponsor_enabled") == true,
+            activeSponsorId = json.string("active_sponsor_id")?.takeIf { it.isNotBlank() },
         )
     }
 
@@ -311,6 +352,8 @@ data class OverlayLayoutPrefs(
         put("keep_screen_on", keepScreenOn)
         put("watermark_enabled", watermarkEnabled)
         put("watermark_text", watermarkText)
+        put("sponsor_enabled", sponsorEnabled)
+        activeSponsorId?.let { put("active_sponsor_id", it) }
     }
 }
 

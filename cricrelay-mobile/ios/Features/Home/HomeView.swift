@@ -116,6 +116,8 @@ struct HomeView: View {
                 streamsSection
 
                 platformsSection
+
+                remoteControlSection
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 32)
@@ -396,6 +398,41 @@ struct HomeView: View {
         .padding(12)
         .background(CricTheme.surface, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 1))
+    }
+
+    // MARK: - Remote control
+
+    private var remoteControlSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Remote control")
+            NavigationLink {
+                RemoteControlView()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "qrcode.viewfinder")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(CricTheme.primary)
+                        .frame(width: 38, height: 38)
+                        .background(CricTheme.primary.opacity(0.14), in: RoundedRectangle(cornerRadius: 11))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Pair as companion")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.white)
+                        Text("Scan a QR code to control a live broadcast")
+                            .font(.caption)
+                            .foregroundStyle(CricTheme.textDim)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(CricTheme.textDim)
+                }
+                .padding(12)
+                .background(CricTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            }
+            .buttonStyle(PressableScaleStyle())
+        }
     }
 
     // MARK: - Helpers

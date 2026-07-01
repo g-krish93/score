@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -42,12 +43,16 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Scoreboard
 import androidx.compose.material.icons.outlined.Vibration
+import androidx.compose.material.icons.outlined.Whatshot
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -63,6 +68,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import android.os.PowerManager
 import kotlin.math.roundToInt
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.mobile.ui.AppColors
@@ -90,6 +96,8 @@ fun BroadcastCameraUi(
     onToggleStabilization: () -> Unit,
     onToggleKeepScreenOn: () -> Unit,
     onToggleFocusLock: () -> Unit,
+    onToggleMicMuted: () -> Unit,
+    onLowerQuality: () -> Unit,
     onPreviewTap: (Float, Float, Int, Int) -> Unit,
     onPinchZoom: (Float) -> Unit,
     onPreviewSurfaceBound: () -> Unit = {},
@@ -207,6 +215,8 @@ fun BroadcastCameraUi(
                     onToggleStabilization = onToggleStabilization,
                     onToggleKeepScreenOn = onToggleKeepScreenOn,
                     onToggleFocusLock = onToggleFocusLock,
+                    onToggleMicMuted = onToggleMicMuted,
+                    onLowerQuality = onLowerQuality,
                 )
             } else {
                 PortraitControls(
@@ -222,6 +232,8 @@ fun BroadcastCameraUi(
                     onToggleStabilization = onToggleStabilization,
                     onToggleKeepScreenOn = onToggleKeepScreenOn,
                     onToggleFocusLock = onToggleFocusLock,
+                    onToggleMicMuted = onToggleMicMuted,
+                    onLowerQuality = onLowerQuality,
                 )
             }
 
@@ -327,6 +339,7 @@ private fun QuickToggles(
     onToggleStabilization: () -> Unit,
     onToggleKeepScreenOn: () -> Unit,
     onToggleFocusLock: () -> Unit,
+    onToggleMicMuted: () -> Unit,
     modifier: Modifier = Modifier,
     vertical: Boolean = false,
 ) {
@@ -354,13 +367,21 @@ private fun QuickToggles(
             onClick = onToggleKeepScreenOn,
         )
     }
+    val micMute: @Composable () -> Unit = {
+        CameraQuickToggle(
+            label = if (state.micMuted) "Muted" else "Mic",
+            active = state.micMuted,
+            icon = if (state.micMuted) Icons.Outlined.MicOff else Icons.Outlined.Mic,
+            onClick = onToggleMicMuted,
+        )
+    }
     if (vertical) {
         Column(
             modifier = modifier,
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            focusLock(); stabilize(); screenOn()
+            focusLock(); stabilize(); screenOn(); micMute()
         }
     } else {
         Row(
@@ -368,7 +389,7 @@ private fun QuickToggles(
             horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            focusLock(); stabilize(); screenOn()
+            focusLock(); stabilize(); screenOn(); micMute()
         }
     }
 }
@@ -473,7 +494,11 @@ private fun StudioTopBar(
 }
 
 @Composable
-private fun StudioStatusMessages(state: StudioUiState, modifier: Modifier = Modifier) {
+private fun StudioStatusMessages(
+    state: StudioUiState,
+    onLowerQuality: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier = modifier) {
         state.statusMessage.takeIf { it.isNotBlank() && !state.streaming }?.let { msg ->
             Text(
@@ -488,6 +513,35 @@ private fun StudioStatusMessages(state: StudioUiState, modifier: Modifier = Modi
         }
         state.error?.let {
             ErrorBanner(it, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        }
+        if (state.thermalStatus >= PowerManager.THERMAL_STATUS_SEVERE) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .padding(horizontal = 20.dp, vertical = 6.dp)
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.Whatshot,
+                    contentDescription = null,
+                    tint = AppColors.Warning,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Phone is overheating — quality may drop automatically soon.",
+                    color = AppColors.Warning,
+                    modifier = Modifier.weight(1f),
+                )
+                if (state.thermalStatus >= PowerManager.THERMAL_STATUS_CRITICAL) {
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = onLowerQuality) {
+                        Text("Lower quality", color = AppColors.Warning, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
         if (!state.streaming && !state.destinationReady) {
             Text(
@@ -560,6 +614,8 @@ private fun PortraitControls(
     onToggleStabilization: () -> Unit,
     onToggleKeepScreenOn: () -> Unit,
     onToggleFocusLock: () -> Unit,
+    onToggleMicMuted: () -> Unit,
+    onLowerQuality: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -571,7 +627,7 @@ private fun PortraitControls(
         Spacer(Modifier.weight(1f))
 
         Column(modifier = Modifier.padding(bottom = 12.dp)) {
-            StudioStatusMessages(state)
+            StudioStatusMessages(state, onLowerQuality)
             ToolButtons(state, onDestination, onOverlay, onScoring, vertical = false)
             Spacer(Modifier.height(14.dp))
             QuickToggles(
@@ -579,6 +635,7 @@ private fun PortraitControls(
                 onToggleStabilization = onToggleStabilization,
                 onToggleKeepScreenOn = onToggleKeepScreenOn,
                 onToggleFocusLock = onToggleFocusLock,
+                onToggleMicMuted = onToggleMicMuted,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(14.dp))
@@ -626,6 +683,8 @@ private fun LandscapeControls(
     onToggleStabilization: () -> Unit,
     onToggleKeepScreenOn: () -> Unit,
     onToggleFocusLock: () -> Unit,
+    onToggleMicMuted: () -> Unit,
+    onLowerQuality: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -646,6 +705,7 @@ private fun LandscapeControls(
         // or the side rails.
         StudioStatusMessages(
             state = state,
+            onLowerQuality = onLowerQuality,
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(top = 56.dp, start = 88.dp)
@@ -680,6 +740,7 @@ private fun LandscapeControls(
                 onToggleStabilization = onToggleStabilization,
                 onToggleKeepScreenOn = onToggleKeepScreenOn,
                 onToggleFocusLock = onToggleFocusLock,
+                onToggleMicMuted = onToggleMicMuted,
                 vertical = true,
             )
             Spacer(Modifier.height(16.dp))

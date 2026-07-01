@@ -18,6 +18,9 @@ coroutines = "1.9.0"
 okhttp = "4.12.0"
 firebase-bom = "33.7.0"
 rootencoder = "2.4.8"
+zxing = "3.5.3"
+mlkit-barcode = "17.3.0"
+camerax = "1.4.1"
 junit = "4.13.2"
 junit5 = "5.11.4"
 mockk = "1.13.13"
@@ -61,6 +64,12 @@ firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "fir
 firebase-crashlytics = { module = "com.google.firebase:firebase-crashlytics" }
 firebase-analytics = { module = "com.google.firebase:firebase-analytics" }
 rootencoder = { module = "com.github.pedroSG94.RootEncoder:library", version.ref = "rootencoder" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
+mlkit-barcode-scanning = { module = "com.google.mlkit:barcode-scanning", version.ref = "mlkit-barcode" }
+androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
+androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
 junit = { module = "junit:junit", version.ref = "junit" }
 junit5-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit5" }
 junit5-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit5" }

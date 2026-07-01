@@ -21,4 +21,10 @@ data class StudioRoute(val matchSlug: String)
 data class ScoringRoute(val matchSlug: String)
 
 @Serializable
+data class PairRemoteRoute(val matchSlug: String)
+
+@Serializable
+object RemoteControlRoute
+
+@Serializable
 object RegisterRoute

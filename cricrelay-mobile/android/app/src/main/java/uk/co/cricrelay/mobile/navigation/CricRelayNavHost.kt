@@ -8,7 +8,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -18,8 +20,11 @@ import uk.co.cricrelay.mobile.feature.auth.OnboardingScreen
 import uk.co.cricrelay.mobile.feature.auth.RegisterScreen
 import uk.co.cricrelay.mobile.feature.home.CreateStreamScreen
 import uk.co.cricrelay.mobile.feature.home.HomeScreen
+import uk.co.cricrelay.mobile.feature.home.RemoteControlScreen
 import uk.co.cricrelay.mobile.feature.scoring.ScoringScreen
+import uk.co.cricrelay.mobile.feature.studio.PairRemoteScreen
 import uk.co.cricrelay.mobile.feature.studio.StudioScreen
+import uk.co.cricrelay.mobile.feature.studio.StudioViewModel
 
 @Composable
 fun CricRelayNavHost(
@@ -99,6 +104,7 @@ fun CricRelayNavHost(
             HomeScreen(
                 onOpenStudio = { slug -> navController.navigate(StudioRoute(slug)) },
                 onCreateStream = { mode -> navController.navigate(CreateStreamRoute(mode)) },
+                onOpenRemoteControl = { navController.navigate(RemoteControlRoute) },
                 onLogout = {
                     navController.navigate(LoginRoute) {
                         popUpTo(HomeRoute) { inclusive = true }
@@ -139,7 +145,22 @@ fun CricRelayNavHost(
                 matchSlug = route.matchSlug,
                 onBack = { navController.popBackStack() },
                 onOpenScoring = { slug -> navController.navigate(ScoringRoute(slug)) },
+                onPairRemote = { navController.navigate(PairRemoteRoute(route.matchSlug)) },
             )
+        }
+        composable<PairRemoteRoute> { entry ->
+            val route = entry.toRoute<PairRemoteRoute>()
+            val parentEntry = remember(entry) {
+                navController.getBackStackEntry(StudioRoute(route.matchSlug))
+            }
+            val studioViewModel: StudioViewModel = hiltViewModel(parentEntry)
+            PairRemoteScreen(
+                onBack = { navController.popBackStack() },
+                viewModel = studioViewModel,
+            )
+        }
+        composable<RemoteControlRoute> {
+            RemoteControlScreen(onBack = { navController.popBackStack() })
         }
         composable<ScoringRoute> { entry ->
             val route = entry.toRoute<ScoringRoute>()

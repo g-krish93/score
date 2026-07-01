@@ -169,6 +169,76 @@ final class CricRelayAPI {
         return (try? JSONDecoder().decode(OverlayLayoutPrefs.self, from: responseData)) ?? prefs
     }
 
+    // MARK: - Sponsors
+
+    func listSponsors() async throws -> [Sponsor] {
+        let json = try await getJson("/api/sponsors")
+        guard let rows = json["sponsors"] as? [[String: Any]] else { return [] }
+        let data = try JSONSerialization.data(withJSONObject: rows)
+        return (try? JSONDecoder().decode([Sponsor].self, from: data)) ?? []
+    }
+
+    // MARK: - Remote control
+
+    func pairRemote(slug: String) async throws -> PairRemoteResult {
+        let json = try await postJson("/api/match/\(slug)/pair", body: [:])
+        guard let token = json["pair_token"] as? String else { throw URLError(.badServerResponse) }
+        return PairRemoteResult(
+            pairToken: token,
+            expiresAt: json["expires_at"] as? String
+        )
+    }
+
+    func pollRemoteCommands(slug: String) async throws -> [RemoteCommand] {
+        let json = try await getJson("/api/match/\(slug)/remote/commands")
+        guard let rows = json["commands"] as? [[String: Any]] else { return [] }
+        let data = try JSONSerialization.data(withJSONObject: rows)
+        return (try? JSONDecoder().decode([RemoteCommand].self, from: data)) ?? []
+    }
+
+    func redeemPairToken(slug: String, pairToken: String) async throws -> CompanionSession {
+        let json = try await postJson(
+            "/stream/\(slug)/pair/redeem",
+            body: ["pair_token": pairToken],
+            auth: false
+        )
+        guard let token = json["companion_token"] as? String else { throw URLError(.badServerResponse) }
+        return CompanionSession(
+            companionToken: token,
+            matchSlug: json["match_slug"] as? String ?? slug
+        )
+    }
+
+    func sendRemoteCommand(slug: String, command: String, companionToken: String) async throws {
+        _ = try await postJsonWithToken(
+            "/api/match/\(slug)/remote/command",
+            body: ["type": "control", "command": command],
+            token: companionToken
+        )
+    }
+
+    @discardableResult
+    private func postJsonWithToken(
+        _ path: String,
+        body: [String: Any],
+        token: String
+    ) async throws -> [String: Any] {
+        guard let url = URL(string: "\(baseUrl)\(path)") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let message = json["error"] as? String ?? "Request failed"
+            throw NSError(domain: "CricRelayAPI", code: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                          userInfo: [NSLocalizedDescriptionKey: message])
+        }
+        return json
+    }
+
     // MARK: - Request helpers
 
     @discardableResult

@@ -41,6 +41,7 @@ fun StudioScreen(
     matchSlug: String,
     onBack: () -> Unit,
     onOpenScoring: (String) -> Unit,
+    onPairRemote: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: StudioViewModel = hiltViewModel(),
 ) {
@@ -193,6 +194,8 @@ fun StudioScreen(
                         )
                     },
                     onToggleFocusLock = viewModel::onToggleFocusLock,
+                    onToggleMicMuted = viewModel::onToggleMicMuted,
+                    onLowerQuality = viewModel::onLowerQuality,
                     onShare = state.watchUrl.takeIf { it.isNotBlank() }?.let { url ->
                         {
                             context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
@@ -229,6 +232,7 @@ fun StudioScreen(
     ) {
         OverlaySheet(
             prefs = state.overlayPrefs,
+            sponsors = state.sponsors,
             onSave = viewModel::updateOverlayPrefs,
             onDismiss = viewModel::closeSheet,
         )
@@ -263,6 +267,7 @@ fun StudioScreen(
     ) {
         StudioMenuSheet(
             onRestartPreview = viewModel::prepareCamera,
+            onPairRemote = onPairRemote,
             onDismiss = viewModel::closeSheet,
         )
     }

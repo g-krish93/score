@@ -106,6 +106,10 @@ struct StudioView: View {
                     errorBanner(error)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
+                if viewModel.thermalLevel >= 2 {
+                    thermalBanner
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 bottomControls
             }
             .ignoresSafeArea(edges: .bottom)
@@ -125,15 +129,17 @@ struct StudioView: View {
             case .scoring:     ScoringSheet(viewModel: viewModel)
             case .preflight:   PreflightSheet(viewModel: viewModel)
             case .menu:        StudioMenuSheet(viewModel: viewModel)
+            case .pairRemote:  PairRemoteSheet(viewModel: viewModel)
             }
         }
         .task {
             cameraPermissionGranted = await requestCameraPermission()
             await viewModel.load()
-            StreamCameraEngine.shared.setStatusHandler { event, _ in
+            StreamCameraEngine.shared.setStatusHandler { event, message in
                 Task { @MainActor in
                     viewModel.previewReady = StreamCameraEngine.shared.isPreviewReady
                     if event == "connected" { viewModel.streaming = true }
+                    if event == "thermal" { viewModel.thermalLevel = Int(message) ?? viewModel.thermalLevel }
                     if event == "error" { viewModel.error = "Stream error — tap restart camera." }
                 }
             }
@@ -141,6 +147,7 @@ struct StudioView: View {
         }
         .onDisappear {
             viewModel.stopPolling()
+            viewModel.stopRemoteCommandPolling()
             StreamCameraEngine.shared.setStatusHandler(nil)
             UIDevice.current.endGeneratingDeviceOrientationNotifications()
         }
@@ -257,6 +264,12 @@ struct StudioView: View {
                 systemImage: "sun.max.fill",
                 active: viewModel.overlayPrefs.keepScreenOn
             ) { Task { await viewModel.toggleKeepScreenOn() } }
+
+            quickTogglePill(
+                label: viewModel.micMuted ? "Muted" : "Mic",
+                systemImage: viewModel.micMuted ? "mic.slash.fill" : "mic.fill",
+                active: viewModel.micMuted
+            ) { Task { await viewModel.toggleMicMuted() } }
         }
     }
 
@@ -454,6 +467,30 @@ struct StudioView: View {
         }
         .padding(14)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Thermal banner
+
+    private var thermalBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "flame.fill")
+                .foregroundStyle(CricTheme.warning)
+                .font(.footnote)
+            Text("Phone is overheating — quality may drop automatically soon.")
+                .font(.footnote)
+                .foregroundStyle(CricTheme.warning)
+                .lineLimit(2)
+            Spacer()
+            if viewModel.thermalLevel >= 3 {
+                Button("Lower quality") { viewModel.onLowerQuality() }
+                    .font(.footnote.bold())
+                    .foregroundStyle(CricTheme.warning)
+            }
+        }
+        .padding(12)
+        .background(CricTheme.warning.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
     }

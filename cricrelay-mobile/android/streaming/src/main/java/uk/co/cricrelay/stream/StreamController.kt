@@ -16,6 +16,7 @@ data class StreamStatus(
     val streaming: Boolean = false,
     val paused: Boolean = false,
     val lastEvent: StreamEvent? = null,
+    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,
 )
 
 /**
@@ -43,6 +44,11 @@ class StreamController @Inject constructor() {
                 streaming = StreamCameraEngine.isStreaming,
                 paused = StreamCameraEngine.isStreamPaused,
                 lastEvent = StreamEvent(event, message),
+                thermalStatus = if (event == "thermal") {
+                    message.toIntOrNull() ?: _status.value.thermalStatus
+                } else {
+                    _status.value.thermalStatus
+                },
             )
         }
     }
@@ -175,7 +181,15 @@ class StreamController @Inject constructor() {
 
     fun setVideoStabilization(enabled: Boolean) = StreamCameraEngine.setVideoStabilization(enabled)
 
+    fun setMicMuted(muted: Boolean) = StreamCameraEngine.setMicMuted(muted)
+
+    fun isMicMuted(): Boolean = StreamCameraEngine.isMicMuted()
+
+    fun setSponsorLayer(enabled: Boolean, logoUrl: String) = StreamCameraEngine.setSponsorLayer(enabled, logoUrl)
+
     fun setKeepScreenOnDuringStream(enabled: Boolean) = StreamCameraEngine.setKeepScreenOnDuringStream(enabled)
+
+    fun stepDownQuality() = StreamCameraEngine.stepDownQuality()
 
     private fun startForegroundService(activity: Activity) {
         try {

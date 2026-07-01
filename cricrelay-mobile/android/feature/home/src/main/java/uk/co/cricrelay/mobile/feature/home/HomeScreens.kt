@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.PhonelinkRing
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SmartDisplay
 import androidx.compose.material.icons.outlined.SportsCricket
@@ -106,6 +107,7 @@ import uk.co.cricrelay.shared.model.StreamMatch
 fun HomeScreen(
     onOpenStudio: (String) -> Unit,
     onCreateStream: (String) -> Unit,
+    onOpenRemoteControl: () -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
@@ -165,6 +167,21 @@ fun HomeScreen(
                             )
                         }
                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Remote control") },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Outlined.PhonelinkRing,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                        tint = AppColors.OnBackground,
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onOpenRemoteControl()
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text("Sign out") },
                                 leadingIcon = {

@@ -21,6 +21,8 @@ final class StreamCameraEngine: NSObject {
         var opacity: Float = 1.0
         var watermarkEnabled: Bool = true
         var watermarkText: String = "Visit cricrelay.co.uk"
+        var sponsorEnabled: Bool = false
+        var sponsorLogoUrl: String = ""
     }
 
     private let mixer = MediaMixer()
@@ -29,8 +31,12 @@ final class StreamCameraEngine: NSObject {
     private weak var hkView: MTHKView?
     private var overlayCapture: OverlayWebViewCapture?
     private var overlayTimer: Timer?
+    private var overlayRefreshInterval: TimeInterval = 0.5
+    private var lastThermalState: ProcessInfo.ThermalState = .nominal
     private var overlayObject: ImageScreenObject?
     private var watermarkObject: ImageScreenObject?
+    private var sponsorObject: ImageScreenObject?
+    private var appliedSponsorLogoUrl: String?
     private var appliedWatermarkText: String?
     private var overlayLayout = OverlayLayout()
     private var overlayUrl = ""
@@ -44,6 +50,7 @@ final class StreamCameraEngine: NSObject {
     private var previewReady = false
     private var keepScreenOnDuringStream = false
     private var videoStabilizationEnabled = true
+    private var micMuted = false
     private var streamRotation = 0
     /// True when the encoded frame is portrait (w < h) — mirrors Android's streamIsPortrait.
     private var streamIsPortrait = false
@@ -78,6 +85,25 @@ final class StreamCameraEngine: NSObject {
         videoStabilizationEnabled = enabled
         Task { await applyVideoStabilizationSetting() }
     }
+
+    /// Manual mitigation for the "Lower quality" banner button.
+    /// Spike first: HaishinKit's RTMPStream/MediaMixer live-bitrate change API before wiring for real.
+    func stepDownQuality() {
+        // TODO(spike): apply a lower bitrate via the real HaishinKit API once confirmed.
+    }
+
+    func setMicMuted(_ muted: Bool) async {
+        guard micMuted != muted else { return }
+        micMuted = muted
+        if streamPaused { return }
+        if muted {
+            await mixer.detachAudio()
+        } else if let audio = AVCaptureDevice.default(for: .audio) {
+            try? await mixer.attachAudio(audio)
+        }
+    }
+
+    func isMicMuted() -> Bool { micMuted }
 
     func attachView(_ view: MTHKView) {
         registerLifecycleObservers()
@@ -132,6 +158,7 @@ final class StreamCameraEngine: NSObject {
                 overlayCapture?.loadUrl(overlayUrl)
             }
             await ensureWatermarkObject()
+            await ensureSponsorObject()
             // Composite the scoreboard overlay into the preview too (parity with Android's
             // startPreviewOverlayPush). The overlay ImageScreenObject lives on mixer.screen, which
             // feeds both the MTHKView preview and the RTMP output, so the operator sees the
@@ -193,6 +220,7 @@ final class StreamCameraEngine: NSObject {
         Task {
             await ensureOverlayObject()
             await ensureWatermarkObject()
+            await ensureSponsorObject()
             // When not yet live, drive the preview overlay so the scoreboard shows in the preview
             // (parity with Android). While live, startStream already runs the refresh loop.
             if !publishing, !overlayUrl.isEmpty {
@@ -263,6 +291,7 @@ final class StreamCameraEngine: NSObject {
             }
             await ensureOverlayObject()
             await ensureWatermarkObject()
+            await ensureSponsorObject()
             startOverlayRefresh()
 
             let (base, name) = splitRtmp(endpoint)
@@ -315,6 +344,9 @@ final class StreamCameraEngine: NSObject {
         streamPaused = false
         await hidePauseBlackOverlay()
         configureAudioSession()
+        if !micMuted, let audio = AVCaptureDevice.default(for: .audio) {
+            try? await mixer.attachAudio(audio)
+        }
         startOverlayRefresh()
         emit("resumed", "")
     }
@@ -520,7 +552,7 @@ final class StreamCameraEngine: NSObject {
             if let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
                 let stabilizationEnabled = videoStabilizationEnabled
                 try await mixer.attachVideo(camera, track: 0) { unit in
-                    unit.preferredVideoStabilizationMode = stabilizationEnabled ? .standard : .off
+                    unit.preferredVideoStabilizationMode = stabilizationEnabled ? .cinematicExtended : .off
                 }
             }
             var vmSettings = await mixer.videoMixerSettings
@@ -543,7 +575,7 @@ final class StreamCameraEngine: NSObject {
         let enabled = videoStabilizationEnabled
         // Stabilisation is applied on the capture connection via VideoDeviceUnit, not AVCaptureDevice.
         try? await mixer.configuration(video: 0) { unit in
-            unit.preferredVideoStabilizationMode = enabled ? .standard : .off
+            unit.preferredVideoStabilizationMode = enabled ? .cinematicExtended : .off
         }
     }
 
@@ -597,6 +629,43 @@ final class StreamCameraEngine: NSObject {
             }
             watermarkObject?.cgImage = cg
             appliedWatermarkText = text
+        }.value
+    }
+
+    /// Adds (or refreshes) the sponsor logo in the bottom-right of the encoded frame.
+    private func ensureSponsorObject() async {
+        let enabled = overlayLayout.sponsorEnabled
+        let url = overlayLayout.sponsorLogoUrl
+        if !enabled || url.isEmpty {
+            await Task { @ScreenActor in
+                if let obj = sponsorObject {
+                    try? await mixer.screen.removeChild(obj)
+                    sponsorObject = nil
+                    appliedSponsorLogoUrl = nil
+                }
+            }.value
+            return
+        }
+        guard appliedSponsorLogoUrl != url || sponsorObject == nil else { return }
+        guard let remoteURL = URL(string: url) else { return }
+        let data: Data
+        do {
+            (data, _) = try await URLSession.shared.data(from: remoteURL)
+        } catch {
+            return
+        }
+        guard let cg = UIImage(data: data)?.cgImage else { return }
+        await Task { @ScreenActor in
+            if sponsorObject == nil {
+                let obj = ImageScreenObject()
+                obj.horizontalAlignment = .right
+                obj.verticalAlignment = .bottom
+                obj.layoutMargin = UIEdgeInsets(top: 0, left: 0, bottom: 18, right: 18)
+                sponsorObject = obj
+                try? await mixer.screen.addChild(obj)
+            }
+            sponsorObject?.cgImage = cg
+            appliedSponsorLogoUrl = url
         }.value
     }
 
@@ -682,7 +751,7 @@ final class StreamCameraEngine: NSObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.overlayTimer?.invalidate()
-            self.overlayTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self.overlayTimer = Timer.scheduledTimer(withTimeInterval: self.overlayRefreshInterval, repeats: true) { [weak self] _ in
                 self?.refreshOverlayFrame()
             }
         }
@@ -760,6 +829,35 @@ final class StreamCameraEngine: NSObject {
             name: UIApplication.willEnterForegroundNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(thermalStateChanged),
+            name: ProcessInfo.thermalStateDidChangeNotification,
+            object: nil
+        )
+        thermalStateChanged()
+    }
+
+    @objc private func thermalStateChanged() {
+        let state = ProcessInfo.processInfo.thermalState
+        lastThermalState = state
+        switch state {
+        case .critical:
+            overlayRefreshInterval = 1.75
+        case .serious:
+            overlayRefreshInterval = 1.0
+        default:
+            overlayRefreshInterval = 0.5
+        }
+        let raw: Int
+        switch state {
+        case .nominal: raw = 0
+        case .fair: raw = 1
+        case .serious: raw = 2
+        case .critical: raw = 3
+        @unknown default: raw = 0
+        }
+        emit("thermal", String(raw))
     }
 
     @objc private func appDidEnterBackground() {

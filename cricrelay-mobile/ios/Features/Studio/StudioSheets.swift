@@ -161,7 +161,13 @@ struct OverlaySheet: View {
             }
         }
         .preferredColorScheme(.dark)
-        .onAppear { draft = viewModel.overlayPrefs }
+        .onAppear {
+            draft = viewModel.overlayPrefs
+            Task { await viewModel.loadSponsors() }
+            if draft.activeSponsorId == nil, let first = viewModel.sponsors.first(where: { $0.isActive }) {
+                draft.activeSponsorId = first.id
+            }
+        }
     }
 
     private var themeSelector: some View {
@@ -238,6 +244,9 @@ struct OverlaySheet: View {
                 .tint(CricTheme.primary)
                 .font(.subheadline)
                 .foregroundStyle(.white)
+            Text("Strong stabilization slightly narrows the camera's field of view.")
+                .font(.caption)
+                .foregroundStyle(CricTheme.textDim)
             Toggle("Keep screen on", isOn: $draft.keepScreenOn)
                 .tint(CricTheme.primary)
                 .font(.subheadline)
@@ -259,6 +268,44 @@ struct OverlaySheet: View {
             }
             .cricEnterAnimation(value: draft.watermarkEnabled, duration: CricMotion.sheetEnterDuration)
             .cricExitAnimation(value: draft.watermarkEnabled)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle("Sponsor logo", isOn: $draft.sponsorEnabled)
+                    .tint(CricTheme.primary)
+                    .font(.subheadline)
+                    .foregroundStyle(.white)
+                Text("Shown bottom-right on the broadcast")
+                    .font(.caption)
+                    .foregroundStyle(CricTheme.textDim)
+                if draft.sponsorEnabled && sponsors.count > 1 {
+                    sponsorPicker
+                }
+            }
+            .cricEnterAnimation(value: draft.sponsorEnabled, duration: CricMotion.sheetEnterDuration)
+        }
+    }
+
+    private var sponsors: [Sponsor] { viewModel.sponsors }
+
+    private var sponsorPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(sponsors.filter(\.isActive)) { sponsor in
+                    Button {
+                        draft.activeSponsorId = sponsor.id
+                    } label: {
+                        Text(sponsor.name)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(draft.activeSponsorId == sponsor.id ? CricTheme.onPrimary : .white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                draft.activeSponsorId == sponsor.id ? CricTheme.primary : CricTheme.surface,
+                                in: Capsule()
+                            )
+                    }
+                }
+            }
         }
     }
 
@@ -483,6 +530,25 @@ struct StudioMenuSheet: View {
                                 .frame(width: 36, height: 36)
                                 .background(CricTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
                             Text("Restart camera preview")
+                                .font(.subheadline)
+                                .foregroundStyle(.white)
+                            Spacer()
+                        }
+                        .padding(14)
+                        .background(CricTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+                    }
+
+                    Button {
+                        dismiss()
+                        Task { await viewModel.openPairRemote() }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "qrcode")
+                                .font(.system(size: 17))
+                                .foregroundStyle(CricTheme.primary)
+                                .frame(width: 36, height: 36)
+                                .background(CricTheme.primary.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+                            Text("Pair Remote")
                                 .font(.subheadline)
                                 .foregroundStyle(.white)
                             Spacer()

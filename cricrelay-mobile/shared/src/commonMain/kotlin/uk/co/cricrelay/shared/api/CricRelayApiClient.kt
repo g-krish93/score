@@ -22,6 +22,9 @@ import uk.co.cricrelay.shared.model.FixturesResponse
 import uk.co.cricrelay.shared.model.GoLiveResult
 import uk.co.cricrelay.shared.model.MatchDayStatus
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
+import uk.co.cricrelay.shared.model.PairRemoteResult
+import uk.co.cricrelay.shared.model.RemoteCommand
+import uk.co.cricrelay.shared.model.Sponsor
 import uk.co.cricrelay.shared.model.ScoringConfig
 import uk.co.cricrelay.shared.model.StreamMatch
 import uk.co.cricrelay.shared.model.array
@@ -344,6 +347,71 @@ class CricRelayApiClient(
         }
         val body = parseJsonObject(response)
         requireSuccess(response, body, "Failed to save overlay settings")
+    }
+
+    suspend fun listSponsors(): List<Sponsor> {
+        val response = httpClient.get("$baseUrl/api/sponsors") {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Failed to load sponsors")
+        return body.array("sponsors").mapNotNull { el ->
+            (el as? JsonObject)?.let { Sponsor.fromJson(it) }
+        }
+    }
+
+    suspend fun pairRemote(matchSlug: String): PairRemoteResult {
+        val response = httpClient.post(matchUri(matchSlug, "pair")) {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Failed to create pairing code")
+        val token = body.string("pair_token").orEmpty()
+        if (token.isBlank()) throw ApiException("Pairing code missing from server response")
+        return PairRemoteResult(
+            pairToken = token,
+            expiresAt = body.string("expires_at").orEmpty(),
+        )
+    }
+
+    suspend fun pollRemoteCommands(matchSlug: String): List<RemoteCommand> {
+        val response = httpClient.get(matchUri(matchSlug, "remote/commands")) {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Failed to poll remote commands")
+        return body.array("commands").mapNotNull { el ->
+            (el as? JsonObject)?.let { RemoteCommand.fromJson(it) }
+        }
+    }
+
+    suspend fun redeemPairToken(matchSlug: String, pairToken: String, apiBase: String = baseUrl): String {
+        val slug = encode(matchSlug)
+        val normalizedBase = normalizeApiBaseUrl(apiBase)
+        val response = httpClient.post("$normalizedBase/stream/$slug/pair/redeem") {
+            contentType(ContentType.Application.Json)
+            setBody(buildJsonObject { put("pair_token", pairToken) })
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Failed to redeem pairing code")
+        val companionToken = body.string("companion_token").orEmpty()
+        if (companionToken.isBlank()) throw ApiException("Companion token missing from server response")
+        return companionToken
+    }
+
+    suspend fun sendRemoteCommand(matchSlug: String, companionToken: String, command: String) {
+        val response = httpClient.post(matchUri(matchSlug, "remote/command")) {
+            header(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+            header(HttpHeaders.Authorization, "Bearer $companionToken")
+            setBody(buildJsonObject {
+                put("type", "control")
+                put("command", command)
+            })
+        }
+        if (!response.status.isSuccess()) {
+            val body = parseJsonObject(response)
+            throw ApiException(body["error"]?.toString()?.trim('"') ?: "Remote command failed")
+        }
     }
 
     suspend fun youtubeAuthorizeUrl(): String {

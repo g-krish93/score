@@ -7,10 +7,20 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Any, Callable
 
+import redis as _redis_lib
 from flask import jsonify, request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from .models_cricrelay import Organization, RelayMatch, db
+
+_redis_client = None
+
+
+def redis_client():
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = _redis_lib.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+    return _redis_client
 
 
 def _stream_token_serializer():
@@ -77,6 +87,73 @@ def org_id_from_youtube_oauth_state(state: str) -> str | None:
         return None
     oid = str((payload or {}).get("oid") or "").strip()
     return oid or None
+
+
+def _remote_pair_serializer():
+    from flask import current_app
+
+    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="cricrelay-remote-pair")
+
+
+def _companion_session_serializer():
+    from flask import current_app
+
+    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="cricrelay-companion-session")
+
+
+REMOTE_PAIR_TOKEN_MAX_AGE = 300
+COMPANION_TOKEN_MAX_AGE = 6 * 60 * 60
+
+REMOTE_CONTROL_COMMANDS = {
+    "start_broadcast",
+    "stop_broadcast",
+    "mute_mic",
+    "toggle_focus_lock",
+}
+
+
+def issue_remote_pair_token(org: Organization, match_slug: str) -> str:
+    return _remote_pair_serializer().dumps({"oid": org.id, "slug": match_slug})
+
+
+def redeem_remote_pair_token(pair_token: str) -> dict | None:
+    """Validates a scanned pairing token and issues a scoped companion session token.
+    Overwrites any prior companion pairing for this match (one-active-companion policy)."""
+    try:
+        payload = _remote_pair_serializer().loads(pair_token, max_age=REMOTE_PAIR_TOKEN_MAX_AGE)
+    except (SignatureExpired, BadSignature):
+        return None
+    org_id = str(payload.get("oid") or "").strip()
+    slug = str(payload.get("slug") or "").strip()
+    if not org_id or not slug:
+        return None
+    import uuid as _uuid
+
+    jti = _uuid.uuid4().hex
+    companion_token = _companion_session_serializer().dumps({"oid": org_id, "slug": slug, "jti": jti})
+    redis_client().setex(f"cricrelay:companion:{slug}", COMPANION_TOKEN_MAX_AGE, jti)
+    return {"companion_token": companion_token, "slug": slug}
+
+
+def companion_token_required(view: Callable):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        auth = (request.headers.get("Authorization") or "").strip()
+        if not auth.lower().startswith("bearer "):
+            return jsonify({"error": "unauthorized"}), 401
+        token = auth[7:].strip()
+        try:
+            payload = _companion_session_serializer().loads(token, max_age=COMPANION_TOKEN_MAX_AGE)
+        except (SignatureExpired, BadSignature):
+            return jsonify({"error": "unauthorized"}), 401
+        slug = str(payload.get("slug") or "").strip()
+        jti = str(payload.get("jti") or "").strip()
+        current = redis_client().get(f"cricrelay:companion:{slug}")
+        if not current or current.decode() != jti:
+            return jsonify({"error": "pairing_superseded"}), 410
+        return view(slug, str(payload.get("oid") or ""), *args, **kwargs)
+
+    return wrapped
 
 
 def _twitch_oauth_serializer():

@@ -19,7 +19,9 @@ import uk.co.cricrelay.mobile.database.toDomain
 import uk.co.cricrelay.shared.model.MatchDayStatus
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.shared.model.PlatformStatus
+import uk.co.cricrelay.shared.model.RemoteCommand
 import uk.co.cricrelay.shared.model.ScoringConfig
+import uk.co.cricrelay.shared.model.Sponsor
 import uk.co.cricrelay.shared.model.StreamMatch
 import uk.co.cricrelay.shared.repository.ApiClientProvider
 import uk.co.cricrelay.shared.repository.StreamRepository
@@ -72,6 +74,9 @@ data class StudioUiState(
     val focusX: Float? = null,
     val focusY: Float? = null,
     val focusLocked: Boolean = false,
+    val micMuted: Boolean = false,
+    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,
+    val sponsors: List<Sponsor> = emptyList(),
     val overlayPreview: androidx.compose.ui.graphics.ImageBitmap? = null,
     val goLiveCountdown: Int? = null,
     val recap: StreamRecap? = null,
@@ -100,6 +105,7 @@ class StudioViewModel @Inject constructor(
     private var liveTimerJob: Job? = null
     private var countdownJob: Job? = null
     private var focusReticleJob: Job? = null
+    private var remotePollJob: Job? = null
     private var matchSlug: String = ""
     private var permissionsGranted = false
     private var previewSurfaceBound = false
@@ -141,6 +147,7 @@ class StudioViewModel @Inject constructor(
                         // rotating before Go Live) clears it inside resetFocusState(), so mirror
                         // the real state here rather than letting the padlock drift out of sync.
                         focusLocked = streamController.isFocusLocked(),
+                        thermalStatus = status.thermalStatus,
                         statusMessage = when {
                             status.streaming -> it.statusMessage
                             status.previewReady && it.statusMessage == "Starting camera…" -> ""
@@ -198,6 +205,7 @@ class StudioViewModel @Inject constructor(
 
                 revealStudio(match, creds)
                 startMatchDayPolling(slug)
+                startRemoteCommandPolling(slug)
                 loadStudioExtras(slug, match)
             } catch (e: Exception) {
                 _uiState.update {
@@ -228,6 +236,7 @@ class StudioViewModel @Inject constructor(
     private suspend fun loadStudioExtras(slug: String, match: StreamMatch) {
         val overlayPrefs = runCatching { streamRepository.getOverlayPrefs(slug) }
             .getOrDefault(OverlayLayoutPrefs())
+        val sponsors = runCatching { streamRepository.listSponsors() }.getOrDefault(emptyList())
         val scoring = runCatching { streamRepository.getScoring(slug) }.getOrNull()
         val youtube = runCatching { streamRepository.youtubePlatformStatus() }
             .getOrDefault(PlatformStatus())
@@ -248,6 +257,7 @@ class StudioViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 overlayPrefs = overlayPrefs,
+                sponsors = sponsors,
                 scoring = scoring,
                 destination = destination,
                 destinationReady = destinationReady,
@@ -257,6 +267,52 @@ class StudioViewModel @Inject constructor(
         streamController.setVideoStabilization(overlayPrefs.videoStabilization)
         streamController.setKeepScreenOnDuringStream(overlayPrefs.keepScreenOn)
         syncOverlay(match, overlayPrefs)
+        syncSponsorLayer(overlayPrefs, sponsors)
+    }
+
+    private fun startRemoteCommandPolling(slug: String) {
+        remotePollJob?.cancel()
+        remotePollJob = viewModelScope.launch {
+            while (isActive) {
+                runCatching { streamRepository.pollRemoteCommands(slug) }
+                    .onSuccess { commands -> handleRemoteCommands(commands) }
+                delay(1_500)
+            }
+        }
+    }
+
+    private fun handleRemoteCommands(commands: List<RemoteCommand>) {
+        if (commands.isEmpty()) return
+        for (cmd in commands) {
+            if (cmd.type != "control") continue
+            when (cmd.command) {
+                "start_broadcast" -> {
+                    if (!_uiState.value.streaming && _uiState.value.destinationReady) {
+                        goLive()
+                    }
+                }
+                "stop_broadcast" -> {
+                    if (_uiState.value.streaming) stopLive()
+                }
+                "mute_mic" -> onToggleMicMuted()
+                "toggle_focus_lock" -> onToggleFocusLock()
+            }
+        }
+    }
+
+    private fun resolveSponsorLogoUrl(prefs: OverlayLayoutPrefs, sponsors: List<Sponsor>): String {
+        if (!prefs.sponsorEnabled) return ""
+        val activeId = prefs.activeSponsorId
+        val sponsor = when {
+            !activeId.isNullOrBlank() -> sponsors.find { it.id == activeId }
+            else -> sponsors.firstOrNull { it.isActive }
+        }
+        return sponsor?.logoUrl.orEmpty()
+    }
+
+    private fun syncSponsorLayer(prefs: OverlayLayoutPrefs, sponsors: List<Sponsor> = _uiState.value.sponsors) {
+        val logoUrl = resolveSponsorLogoUrl(prefs, sponsors)
+        streamController.setSponsorLayer(prefs.sponsorEnabled, logoUrl)
     }
 
     private fun resetCameraGate() {
@@ -309,6 +365,7 @@ class StudioViewModel @Inject constructor(
     private fun syncOverlay(match: StreamMatch, prefs: OverlayLayoutPrefs) {
         if (match.overlayEmbedUrl.isBlank()) return
         streamController.updateOverlay(match.overlayEmbedUrl, prefs.toEngineLayout())
+        syncSponsorLayer(prefs)
     }
 
     private fun startMatchDayPolling(slug: String) {
@@ -383,6 +440,7 @@ class StudioViewModel @Inject constructor(
                 streamController.setVideoStabilization(prefs.videoStabilization)
                 streamController.setKeepScreenOnDuringStream(prefs.keepScreenOn)
                 syncOverlay(match, prefs)
+                syncSponsorLayer(prefs)
                 _uiState.update { it.copy(overlayPrefs = prefs) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = e.message) }
@@ -419,6 +477,30 @@ class StudioViewModel @Inject constructor(
             val ok = streamController.lockFocus()
             _uiState.update { it.copy(focusLocked = ok) }
         }
+    }
+
+    fun onToggleMicMuted() {
+        val next = !_uiState.value.micMuted
+        streamController.setMicMuted(next)
+        _uiState.update { it.copy(micMuted = next) }
+    }
+
+    suspend fun createPairingCode(): Pair<String, String> {
+        val result = streamRepository.pairRemote(matchSlug)
+        val base = apiClientProvider.get().baseUrl
+        val payload = buildString {
+            append("cricrelay://pair?slug=")
+            append(java.net.URLEncoder.encode(matchSlug, Charsets.UTF_8.name()))
+            append("&token=")
+            append(java.net.URLEncoder.encode(result.pairToken, Charsets.UTF_8.name()))
+            append("&base=")
+            append(java.net.URLEncoder.encode(base, Charsets.UTF_8.name()))
+        }
+        return payload to result.expiresAt
+    }
+
+    fun onLowerQuality() {
+        streamController.stepDownQuality()
     }
 
     fun onPinchZoom(scale: Float) {
@@ -592,6 +674,7 @@ class StudioViewModel @Inject constructor(
         matchDayJob?.cancel()
         liveTimerJob?.cancel()
         countdownJob?.cancel()
+        remotePollJob?.cancel()
         streamController.setPreviewOverlayListener(null)
         streamController.destroyOverlayCapture()
         streamController.hideNativePreview()

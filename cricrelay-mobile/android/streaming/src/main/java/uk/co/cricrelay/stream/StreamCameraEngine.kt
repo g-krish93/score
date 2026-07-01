@@ -3,6 +3,7 @@ package uk.co.cricrelay.stream
 import android.app.Activity
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -10,6 +11,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.Surface
@@ -20,6 +22,7 @@ import com.pedro.encoder.utils.gl.AspectRatioMode
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
@@ -46,6 +49,8 @@ object StreamCameraEngine : ConnectChecker {
         val opacity: Float = 1.0f,
         val watermarkEnabled: Boolean = true,
         val watermarkText: String = "Visit cricrelay.co.uk",
+        val sponsorEnabled: Boolean = false,
+        val sponsorLogoUrl: String = "",
     )
 
     private const val MAX_WIDTH = 1280
@@ -64,6 +69,12 @@ object StreamCameraEngine : ConnectChecker {
     private var imageFilter: ImageObjectFilterRender? = null
     private var watermarkFilter: ImageObjectFilterRender? = null
     private var appliedWatermarkText: String? = null
+    private var sponsorFilter: ImageObjectFilterRender? = null
+    private var appliedSponsorLogoUrl: String? = null
+    private var sponsorBitmapWidth: Int = 160
+    private var sponsorBitmapHeight: Int = 80
+    private var sponsorFetchUrlInFlight: String? = null
+    private val sponsorFetchExecutor = Executors.newSingleThreadExecutor()
     // TODO(paywall): once Stripe is wired, free-tier streams force the watermark on
     // regardless of the admin toggle — for now the toggle in Board Edit wins.
     private const val IS_FREE_USER = true
@@ -95,8 +106,13 @@ object StreamCameraEngine : ConnectChecker {
     private var audioManager: AudioManager? = null
     private var pauseBlackFilter: BlackFilterRender? = null
     private var streamPaused = false
+    private var micMuted = false
     private var deviceTier = DeviceCapabilities.Tier.HIGH
     private var overlayRefreshMs = 500L
+    private var thermalStatusListener: PowerManager.OnThermalStatusChangedListener? = null
+    private var thermalPollRunnable: Runnable? = null
+    private var lastThermalStatus: Int = PowerManager.THERMAL_STATUS_NONE
+    private const val THERMAL_POLL_MS = 30_000L
     private var surfaceValid = true
     // True while the encoder renders to the offscreen GL interface (screen locked / app
     // backgrounded without PiP). Keeps the broadcast alive when the SurfaceView surface is gone.
@@ -231,6 +247,7 @@ object StreamCameraEngine : ConnectChecker {
             val cam = camera ?: return@postDelayed
             if (cam.isStreaming != true) return@postDelayed
             ensureWatermarkFilter()
+            ensureSponsorFilter()
             if (overlayUrl.isNotEmpty() && !streamPaused) {
                 ensureOverlayFilter()
                 if (lastOverlayBitmap != null) applyOverlaySprite()
@@ -273,8 +290,70 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
+    private fun registerThermalMonitor(context: Context) {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (thermalStatusListener != null) return
+            val listener = PowerManager.OnThermalStatusChangedListener { status ->
+                onThermalStatusChanged(status)
+            }
+            thermalStatusListener = listener
+            try {
+                pm.addThermalStatusListener(listener)
+                onThermalStatusChanged(pm.currentThermalStatus)
+            } catch (_: Exception) {
+            }
+        } else {
+            if (thermalPollRunnable != null) return
+            val runnable = object : Runnable {
+                override fun run() {
+                    val stressed = DeviceCapabilities.isThermalStressed(context)
+                    onThermalStatusChanged(
+                        if (stressed) PowerManager.THERMAL_STATUS_MODERATE else PowerManager.THERMAL_STATUS_NONE,
+                    )
+                    mainHandler.postDelayed(this, THERMAL_POLL_MS)
+                }
+            }
+            thermalPollRunnable = runnable
+            mainHandler.post(runnable)
+        }
+    }
+
+    private fun unregisterThermalMonitor(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            thermalStatusListener?.let { listener ->
+                try {
+                    (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)
+                        ?.removeThermalStatusListener(listener)
+                } catch (_: Exception) {
+                }
+            }
+            thermalStatusListener = null
+        }
+        thermalPollRunnable?.let { mainHandler.removeCallbacks(it) }
+        thermalPollRunnable = null
+    }
+
+    private fun onThermalStatusChanged(status: Int) {
+        lastThermalStatus = status
+        overlayRefreshMs = when {
+            status >= PowerManager.THERMAL_STATUS_SEVERE ->
+                (DeviceCapabilities.overlayRefreshMs(deviceTier) * 2.5).toLong().coerceAtMost(3500L)
+            status >= PowerManager.THERMAL_STATUS_MODERATE ->
+                (DeviceCapabilities.overlayRefreshMs(deviceTier) * 1.5).toLong().coerceAtMost(2500L)
+            else -> DeviceCapabilities.overlayRefreshMs(deviceTier)
+        }
+        emit("thermal", status.toString())
+    }
+
+    /** Manual mitigation for the overheat banner's "Lower quality" button. */
+    fun stepDownQuality() {
+        // TODO(spike): RootEncoder 2.4.8 live-bitrate API — stop+restart if unavailable.
+    }
+
     fun attachView(view: OpenGlView, act: Activity) {
         refreshDeviceTier(act.applicationContext)
+        registerThermalMonitor(act.applicationContext)
         appContext = act.applicationContext
         audioManager = act.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         activity = act
@@ -583,6 +662,7 @@ object StreamCameraEngine : ConnectChecker {
                     // Re-establish the watermark after every (re)prepare — covers rotation
                     // and streams with no scoreboard (where the capture loop never runs).
                     ensureWatermarkFilter()
+                    ensureSponsorFilter()
                 }
             }
         }
@@ -612,6 +692,7 @@ object StreamCameraEngine : ConnectChecker {
             overlayLayout = layout
             syncOverlayCaptureWidth()
             ensureWatermarkFilter()
+            ensureSponsorFilter()
             if (overlayUrl.isEmpty()) return@runOnMain
             ensureOverlayCapture()?.apply {
                 setStyle(layout.fontScale, layout.bgColor, layout.textColor)
@@ -779,6 +860,7 @@ object StreamCameraEngine : ConnectChecker {
                 resetFocusState()
             } else {
                 ensureWatermarkFilter()
+                ensureSponsorFilter()
                 return true
             }
         }
@@ -854,6 +936,7 @@ object StreamCameraEngine : ConnectChecker {
             if (ready) {
                 syncOverlayCaptureWidth()
                 ensureWatermarkFilter()
+                ensureSponsorFilter()
             }
             ready
         } catch (t: Exception) {
@@ -1008,13 +1091,35 @@ object StreamCameraEngine : ConnectChecker {
         streamPaused = false
         removePauseBlackFilter()
         try {
-            cam.enableAudio()
+            if (!micMuted) cam.enableAudio()
         } catch (_: Exception) {
         }
         if (overlayUrl.isNotEmpty() && imageFilter != null) {
             startOverlayRefresh()
         }
         emit(StreamCaptureService.EVENT_RESUMED, "")
+    }
+
+    fun setMicMuted(muted: Boolean) {
+        micMuted = muted
+        val cam = camera ?: return
+        if (streamPaused) return
+        try {
+            if (muted) cam.disableAudio() else cam.enableAudio()
+        } catch (_: Exception) {
+        }
+    }
+
+    fun isMicMuted(): Boolean = micMuted
+
+    fun setSponsorLayer(enabled: Boolean, logoUrl: String) {
+        runOnMain {
+            overlayLayout = overlayLayout.copy(
+                sponsorEnabled = enabled,
+                sponsorLogoUrl = logoUrl,
+            )
+            ensureSponsorFilter()
+        }
     }
 
     private fun removePauseBlackFilter() {
@@ -1029,6 +1134,7 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     private fun releaseCamera() {
+        appContext?.let { unregisterThermalMonitor(it) }
         stopPreviewOverlayPush()
         if (camera?.isStreaming == true) {
             stopStreamInternal()
@@ -1155,10 +1261,12 @@ object StreamCameraEngine : ConnectChecker {
     private fun dropStaleGlFilterRefs() {
         watermarkFilter = null
         imageFilter = null
+        sponsorFilter = null
         // Force the watermark bitmap to be re-uploaded on the next ensureWatermarkFilter(): a fresh
         // ImageObjectFilterRender has no texture, and ensureWatermarkFilter only calls setImage when
         // the text changes. Without this, the watermark goes blank after a glInterface swap.
         appliedWatermarkText = null
+        appliedSponsorLogoUrl = null
     }
 
     private fun clearOverlayFilter() {
@@ -1270,6 +1378,92 @@ object StreamCameraEngine : ConnectChecker {
         )
         filter.setScale(sprite.scaleX, sprite.scaleY)
         filter.setPosition(sprite.positionX, sprite.positionY)
+    }
+
+    private fun fetchSponsorBitmap(url: String): Bitmap? = try {
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 5000
+        conn.readTimeout = 5000
+        conn.inputStream.use { BitmapFactory.decodeStream(it) }
+    } catch (e: Exception) {
+        CricrelayLog.w("Sponsor logo fetch failed: ${e.message}")
+        null
+    }
+
+    private fun ensureSponsorFilter() {
+        val cam = camera ?: return
+        if (!overlayLayout.sponsorEnabled || overlayLayout.sponsorLogoUrl.isBlank()) {
+            clearSponsorFilter()
+            return
+        }
+        if (!cam.isOnPreview && !cam.isStreaming) return
+        val filter = sponsorFilter ?: try {
+            ImageObjectFilterRender().also {
+                cam.glInterface.addFilter(it)
+                sponsorFilter = it
+            }
+        } catch (e: Exception) {
+            CricrelayLog.w("Sponsor filter failed: ${e.message}")
+            return
+        }
+        val wantUrl = overlayLayout.sponsorLogoUrl
+        if (appliedSponsorLogoUrl != wantUrl) {
+            if (sponsorFetchUrlInFlight == wantUrl) return
+            sponsorFetchUrlInFlight = wantUrl
+            sponsorFetchExecutor.execute {
+                val bmp = fetchSponsorBitmap(wantUrl)
+                mainHandler.post {
+                    sponsorFetchUrlInFlight = null
+                    if (overlayLayout.sponsorLogoUrl != wantUrl) return@post
+                    val liveFilter = sponsorFilter ?: return@post
+                    if (bmp != null) {
+                        try {
+                            sponsorBitmapWidth = bmp.width
+                            sponsorBitmapHeight = bmp.height
+                            liveFilter.setImage(bmp)
+                            appliedSponsorLogoUrl = wantUrl
+                            applySponsorSprite(liveFilter)
+                        } catch (e: Exception) {
+                            CricrelayLog.w("Sponsor image failed: ${e.message}")
+                        }
+                    }
+                }
+            }
+            return
+        }
+        applySponsorSprite(filter)
+    }
+
+    private fun clearSponsorFilter() {
+        val cam = camera ?: return
+        sponsorFilter?.let { filter ->
+            try {
+                cam.glInterface.removeFilter(filter)
+            } catch (_: Exception) {
+            }
+        }
+        sponsorFilter = null
+        appliedSponsorLogoUrl = null
+    }
+
+    private fun applySponsorSprite(filter: ImageObjectFilterRender) {
+        val canvasW = encodedCanvasWidth()
+        val canvasH = encodedCanvasHeight()
+        filter.setDefaultScale(canvasW, canvasH)
+        val sprite = WatermarkSpriteLayout.compute(
+            WatermarkSpriteLayout.Params(
+                canvasW = canvasW,
+                canvasH = canvasH,
+                bitmapWidth = sponsorBitmapWidth.coerceAtLeast(160),
+                bitmapHeight = sponsorBitmapHeight.coerceAtLeast(WATERMARK_BMP_HEIGHT),
+                heightPct = WATERMARK_HEIGHT_PCT,
+                rightEdgePct = WATERMARK_RIGHT_EDGE_PCT,
+                topPct = WATERMARK_TOP_PCT,
+                maxWidthPct = WATERMARK_MAX_WIDTH_PCT,
+            ),
+        )
+        filter.setScale(sprite.scaleX, sprite.scaleY)
+        filter.setPosition(sprite.positionX, 100f - sprite.scaleY - WATERMARK_TOP_PCT)
     }
 
     private fun ensureOverlayFilter() {
@@ -1475,6 +1669,7 @@ object StreamCameraEngine : ConnectChecker {
                 }
                 ensureOverlayFilter()
                 ensureWatermarkFilter()
+                ensureSponsorFilter()
                 val filter = imageFilter ?: run {
                     if (!forGl.isRecycled) forGl.recycle()
                     return@runOnMain

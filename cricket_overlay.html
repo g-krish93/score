@@ -242,6 +242,19 @@
   @keyframes ball-wkt     { 0%,100%{transform:scale(1)} 50%{transform:scale(1.12)} }
   /* Seamless ticker: text is doubled, so -50% = one full copy scrolled off left */
   @keyframes ticker-run   { from{transform:translateX(0)} to{transform:translateX(-50%)} }
+
+  /* ── SPONSOR LOGO (bottom-right, above score overlay) ── */
+  #sponsor-logo {
+    position: fixed;
+    bottom: 95px;
+    right: 12px;
+    max-height: 48px;
+    max-width: 120px;
+    object-fit: contain;
+    display: none;
+    z-index: 100;
+    pointer-events: none;
+  }
 </style>
 </head>
 <body>
@@ -387,6 +400,7 @@
 
   </div>
 </div>
+<img id="sponsor-logo" alt="" />
 
 <script>
 // ══════════════════════════════════════════════════════════
@@ -817,6 +831,14 @@ function renderPreMatch(data) {
 // ══════════════════════════════════════════════════════════
 function render(data) {
   if (!data) return;
+
+  const sponsorEl = document.getElementById('sponsor-logo');
+  if (data.sponsor && data.sponsor.logo_url) {
+    sponsorEl.src = data.sponsor.logo_url;
+    sponsorEl.style.display = 'block';
+  } else {
+    sponsorEl.style.display = 'none';
+  }
 
   // Pre-match: no innings yet — show fixture details
   if (isPreMatch(data)) {

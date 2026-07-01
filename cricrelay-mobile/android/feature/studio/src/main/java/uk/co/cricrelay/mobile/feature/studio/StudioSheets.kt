@@ -62,6 +62,7 @@ import uk.co.cricrelay.mobile.ui.SelectableOptionCard
 import uk.co.cricrelay.mobile.ui.SheetHeader
 import uk.co.cricrelay.mobile.ui.StudioTextField
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
+import uk.co.cricrelay.shared.model.Sponsor
 
 @Composable
 fun DestinationSheet(
@@ -201,6 +202,7 @@ private val boardThemes = listOf(
 @Composable
 fun OverlaySheet(
     prefs: OverlayLayoutPrefs,
+    sponsors: List<Sponsor>,
     onSave: (OverlayLayoutPrefs) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -214,6 +216,8 @@ fun OverlaySheet(
     var overlayTheme by remember { mutableStateOf(prefs.theme.ifBlank { "classic" }) }
     var watermarkEnabled by remember { mutableStateOf(prefs.watermarkEnabled) }
     var watermarkText by remember { mutableStateOf(prefs.watermarkText) }
+    var sponsorEnabled by remember { mutableStateOf(prefs.sponsorEnabled) }
+    var activeSponsorId by remember { mutableStateOf(prefs.activeSponsorId) }
 
     SheetHeader(
         title = "Board Edit",
@@ -361,6 +365,61 @@ fun OverlaySheet(
     }
 
     Spacer(Modifier.height(AppSpacing.md))
+    Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Sponsor logo", style = AppTypography.titleSmall)
+                Text(
+                    "Shown bottom-right on the broadcast",
+                    style = AppTypography.bodySmall,
+                )
+            }
+            Switch(
+                checked = sponsorEnabled,
+                onCheckedChange = { sponsorEnabled = it },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = AppColors.OnPrimary,
+                    checkedTrackColor = AppColors.Primary,
+                    uncheckedThumbColor = AppColors.OnBackgroundDim,
+                    uncheckedTrackColor = AppColors.SurfaceElevated,
+                ),
+            )
+        }
+        if (sponsorEnabled && sponsors.size > 1) {
+            Spacer(Modifier.height(AppSpacing.sm))
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+            ) {
+                items(sponsors.filter { it.isActive }) { sponsor ->
+                    val selected = activeSponsorId == sponsor.id ||
+                        (activeSponsorId.isNullOrBlank() && sponsor.id == sponsors.firstOrNull { it.isActive }?.id)
+                    Text(
+                        sponsor.name,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                            .background(
+                                if (selected) AppColors.Accent.copy(alpha = 0.2f)
+                                else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                            )
+                            .border(
+                                width = if (selected) 1.5.dp else 1.dp,
+                                color = if (selected) AppColors.Accent else AppColors.Border,
+                                shape = RoundedCornerShape(AppSpacing.radiusSm),
+                            )
+                            .clickable { activeSponsorId = sponsor.id }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        style = AppTypography.bodySmall,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                    )
+                }
+            }
+        }
+    }
+
+    Spacer(Modifier.height(AppSpacing.md))
     PrimaryButton(
         text = "Save board",
         onClick = {
@@ -377,6 +436,8 @@ fun OverlaySheet(
                     watermarkEnabled = watermarkEnabled,
                     watermarkText = watermarkText.trim()
                         .ifBlank { OverlayLayoutPrefs.WATERMARK_DEFAULT_TEXT },
+                    sponsorEnabled = sponsorEnabled,
+                    activeSponsorId = activeSponsorId?.takeIf { sponsorEnabled },
                 ),
             )
             onDismiss()
@@ -551,6 +612,7 @@ fun PreflightSheet(
 @Composable
 fun StudioMenuSheet(
     onRestartPreview: () -> Unit,
+    onPairRemote: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     SheetHeader(title = "Broadcast menu")
@@ -559,6 +621,15 @@ fun StudioMenuSheet(
         text = "Restart camera preview",
         onClick = {
             onRestartPreview()
+            onDismiss()
+        },
+        modifier = Modifier.padding(horizontal = AppSpacing.lg),
+    )
+    Spacer(Modifier.height(AppSpacing.sm))
+    SecondaryButton(
+        text = "Pair Remote",
+        onClick = {
+            onPairRemote()
             onDismiss()
         },
         modifier = Modifier.padding(horizontal = AppSpacing.lg),

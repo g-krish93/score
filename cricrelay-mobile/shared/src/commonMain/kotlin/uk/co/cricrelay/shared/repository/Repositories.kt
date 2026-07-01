@@ -131,6 +131,21 @@ class StreamRepository(
     suspend fun setOverlayPrefs(matchSlug: String, prefs: OverlayLayoutPrefs) =
         apiClientProvider.get().setOverlayPrefs(matchSlug, prefs)
 
+    suspend fun listSponsors(): List<uk.co.cricrelay.shared.model.Sponsor> =
+        apiClientProvider.get().listSponsors()
+
+    suspend fun pairRemote(matchSlug: String): uk.co.cricrelay.shared.model.PairRemoteResult =
+        apiClientProvider.get().pairRemote(matchSlug)
+
+    suspend fun pollRemoteCommands(matchSlug: String): List<uk.co.cricrelay.shared.model.RemoteCommand> =
+        apiClientProvider.get().pollRemoteCommands(matchSlug)
+
+    suspend fun redeemPairToken(matchSlug: String, pairToken: String, apiBase: String): String =
+        apiClientProvider.get().redeemPairToken(matchSlug, pairToken, apiBase)
+
+    suspend fun sendRemoteCommand(matchSlug: String, companionToken: String, command: String) =
+        apiClientProvider.get().sendRemoteCommand(matchSlug, companionToken, command)
+
     suspend fun getAppBuilds(): JsonObject = apiClientProvider.get().getAppBuilds()
 }
 

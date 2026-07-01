@@ -119,6 +119,47 @@ struct PlatformStatus: Codable {
     }
 }
 
+struct Sponsor: Identifiable, Codable {
+    var id: String
+    var name: String
+    var logoUrl: String?
+    var linkUrl: String?
+    var isActive: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case logoUrl = "logo_url"
+        case linkUrl = "link_url"
+        case isActive = "is_active"
+    }
+}
+
+struct PairRemoteResult: Codable {
+    var pairToken: String
+    var expiresAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case pairToken = "pair_token"
+        case expiresAt = "expires_at"
+    }
+}
+
+struct CompanionSession: Codable {
+    var companionToken: String
+    var matchSlug: String
+
+    enum CodingKeys: String, CodingKey {
+        case companionToken = "companion_token"
+        case matchSlug = "match_slug"
+    }
+}
+
+struct RemoteCommand: Codable {
+    var type: String
+    var command: String
+    var ts: Double?
+}
+
 struct OverlayLayoutPrefs: Codable {
     var heightFraction: Double
     var widthFraction: Double
@@ -136,6 +177,8 @@ struct OverlayLayoutPrefs: Codable {
     // Brand watermark burned into the stream; admin-configurable.
     var watermarkEnabled: Bool
     var watermarkText: String
+    var sponsorEnabled: Bool
+    var activeSponsorId: String?
 
     static let watermarkDefaultText = "Visit cricrelay.co.uk"
 
@@ -155,6 +198,8 @@ struct OverlayLayoutPrefs: Codable {
         keepScreenOn = true
         watermarkEnabled = true
         watermarkText = OverlayLayoutPrefs.watermarkDefaultText
+        sponsorEnabled = false
+        activeSponsorId = nil
     }
 
     enum CodingKeys: String, CodingKey {
@@ -173,6 +218,8 @@ struct OverlayLayoutPrefs: Codable {
         case keepScreenOn = "keep_screen_on"
         case watermarkEnabled = "watermark_enabled"
         case watermarkText = "watermark_text"
+        case sponsorEnabled = "sponsor_enabled"
+        case activeSponsorId = "active_sponsor_id"
     }
 
     /// Tolerant decoder: any missing key falls back to its default so an older server
@@ -196,9 +243,24 @@ struct OverlayLayoutPrefs: Codable {
         watermarkEnabled = try c.decodeIfPresent(Bool.self, forKey: .watermarkEnabled) ?? watermarkEnabled
         let wm = try c.decodeIfPresent(String.self, forKey: .watermarkText) ?? watermarkText
         watermarkText = wm.isEmpty ? OverlayLayoutPrefs.watermarkDefaultText : wm
+        sponsorEnabled = try c.decodeIfPresent(Bool.self, forKey: .sponsorEnabled) ?? sponsorEnabled
+        activeSponsorId = try c.decodeIfPresent(String.self, forKey: .activeSponsorId)
     }
 
-    func toEngineLayout() -> StreamCameraEngine.OverlayLayout {
+    func resolvedSponsorLogoUrl(from sponsors: [Sponsor]) -> String {
+        guard sponsorEnabled else { return "" }
+        if let id = activeSponsorId,
+           let logo = sponsors.first(where: { $0.id == id })?.logoUrl,
+           !logo.isEmpty {
+            return logo
+        }
+        if let logo = sponsors.first(where: { $0.isActive })?.logoUrl, !logo.isEmpty {
+            return logo
+        }
+        return ""
+    }
+
+    func toEngineLayout(sponsorLogoUrl: String = "") -> StreamCameraEngine.OverlayLayout {
         StreamCameraEngine.OverlayLayout(
             heightFraction: Float(heightFraction),
             widthFraction: Float(widthFraction),
@@ -211,7 +273,9 @@ struct OverlayLayoutPrefs: Codable {
             textColor: textColor,
             opacity: Float(max(0.2, min(1.0, opacity))),
             watermarkEnabled: watermarkEnabled,
-            watermarkText: watermarkText
+            watermarkText: watermarkText,
+            sponsorEnabled: sponsorEnabled,
+            sponsorLogoUrl: sponsorLogoUrl
         )
     }
 }
