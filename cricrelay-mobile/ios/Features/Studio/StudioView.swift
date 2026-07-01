@@ -147,10 +147,10 @@ struct StudioView: View {
         .onAppear {
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
         }
-        .onChange(of: verticalSizeClass) { _, _ in
+        .onChange(of: verticalSizeClass) { _ in
             Task { await viewModel.onOrientationChanged() }
         }
-        .onChange(of: horizontalSizeClass) { _, _ in
+        .onChange(of: horizontalSizeClass) { _ in
             Task { await viewModel.onOrientationChanged() }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in

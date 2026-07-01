@@ -541,17 +541,9 @@ final class StreamCameraEngine: NSObject {
     private func applyVideoStabilizationSetting() async {
         guard devicesAttached else { return }
         let enabled = videoStabilizationEnabled
-        do {
-            try await mixer.configuration(video: 0) { unit in
-                unit.preferredVideoStabilizationMode = enabled ? .standard : .off
-            }
-        } catch {
-            _ = await configureDevice { device in
-                if device.activeFormat.isVideoStabilizationModeSupported(.standard) {
-                    device.preferredVideoStabilizationMode = enabled ? .standard : .off
-                }
-                return true
-            }
+        // Stabilisation is applied on the capture connection via VideoDeviceUnit, not AVCaptureDevice.
+        try? await mixer.configuration(video: 0) { unit in
+            unit.preferredVideoStabilizationMode = enabled ? .standard : .off
         }
     }
 
