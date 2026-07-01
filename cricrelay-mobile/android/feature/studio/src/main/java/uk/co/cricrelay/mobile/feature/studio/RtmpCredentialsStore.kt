@@ -77,5 +77,6 @@ fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.toEngineLayout(
         sponsorSizeScale = sponsorSizeScale.toFloat().coerceIn(0.3f, 3f),
         sponsorOpacity = sponsorOpacity.toFloat().coerceIn(0.2f, 1f),
         sponsorScrollSpeed = sponsorScrollSpeed.toFloat().coerceIn(0.3f, 3f),
+        theme = uk.co.cricrelay.shared.model.OverlayLayoutPrefs.sanitizeTheme(theme),
     )
 }

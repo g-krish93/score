@@ -132,6 +132,14 @@ def build_match_details_url(base_url: str, match_id: str) -> str:
     return f"{b}/match_details?id={mid}"
 
 
+CRICHEROES_HOSTS = {"cricheroes.com", "cricheroes.in"}
+
+
+def _is_cricheroes_host(netloc: str) -> bool:
+    host = (netloc or "").lower().split(":")[0]
+    return host in CRICHEROES_HOSTS or any(host.endswith("." + h) for h in CRICHEROES_HOSTS)
+
+
 def _cricheroes_match_id_from_url(url: str) -> str:
     """Extract numeric match id from CricHeroes scorecard URLs."""
     raw = (url or "").strip()
@@ -151,18 +159,16 @@ def _cricheroes_match_id_from_url(url: str) -> str:
 def canonicalize_cricheroes_scrape_url(url: str) -> str:
     """Normalize CricHeroes URLs to a canonical scorecard scrape target."""
     raw = (url or "").strip()
-    if not raw or "cricheroes" not in raw.lower():
-        return raw
+    if not raw:
+        return ""
     parsed = urlparse(raw if "://" in raw else f"https://{raw}")
-    if not parsed.netloc:
-        return raw
+    if not parsed.netloc or not _is_cricheroes_host(parsed.netloc):
+        return ""
     mid = _cricheroes_match_id_from_url(raw)
     if not mid:
-        return raw
+        return ""
     scheme = parsed.scheme or "https"
     netloc = parsed.netloc.lower()
-    if not netloc.endswith("cricheroes.in"):
-        return raw
     path = (parsed.path or "").lower()
     if "/individual/" in path and "/live" in path:
         return f"{scheme}://{netloc}/scorecard/{mid}/live"
@@ -172,20 +178,20 @@ def canonicalize_cricheroes_scrape_url(url: str) -> str:
 
 
 def normalize_cricheroes_team_root(raw: str) -> str:
-    """Turn user input into ``https://cricheroes.in/team/<id>/<slug>``."""
+    """Turn user input into ``https://cricheroes.com/team/<id>/<slug>``."""
     s = (raw or "").strip().strip("<>")
     if not s:
         return ""
-    if "://" in s or "cricheroes.in" in s.lower():
+    if "://" in s or any(h in s.lower() for h in CRICHEROES_HOSTS):
         to_parse = s if "://" in s else f"https://{s}"
         parsed = urlparse(to_parse)
-        if "cricheroes.in" not in (parsed.netloc or "").lower():
+        if not _is_cricheroes_host(parsed.netloc or ""):
             return ""
         return f"https://{parsed.netloc}{parsed.path.rstrip('/')}"
     m = re.fullmatch(r"(\d+)(?:/([a-zA-Z0-9-]+))?", s.split("/")[0])
     if m:
         slug = m.group(2) or "team"
-        return f"https://cricheroes.in/team/{m.group(1)}/{slug}"
+        return f"https://cricheroes.com/team/{m.group(1)}/{slug}"
     return ""
 
 

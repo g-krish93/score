@@ -77,7 +77,6 @@ data class StudioUiState(
     val micMuted: Boolean = false,
     val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,
     val sponsors: List<Sponsor> = emptyList(),
-    val overlayPreview: androidx.compose.ui.graphics.ImageBitmap? = null,
     val goLiveCountdown: Int? = null,
     val recap: StreamRecap? = null,
     val inPip: Boolean = false,
@@ -122,20 +121,6 @@ class StudioViewModel @Inject constructor(
     }
 
     init {
-        streamController.setPreviewOverlayListener { bytes, w, h ->
-            val bitmap = runCatching {
-                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            }.getOrNull()
-            if (bitmap == null) {
-                android.util.Log.w("Cricrelay", "overlay preview decode failed (${bytes.size} bytes)")
-                return@setPreviewOverlayListener
-            }
-            android.util.Log.d(
-                "Cricrelay",
-                "overlay preview frame ${bitmap.width}x${bitmap.height} (push ${w}x$h)",
-            )
-            _uiState.update { it.copy(overlayPreview = bitmap.asImageBitmap()) }
-        }
         viewModelScope.launch {
             streamController.status.collect { status ->
                 _uiState.update {
@@ -702,7 +687,6 @@ class StudioViewModel @Inject constructor(
         liveTimerJob?.cancel()
         countdownJob?.cancel()
         remotePollJob?.cancel()
-        streamController.setPreviewOverlayListener(null)
         streamController.destroyOverlayCapture()
         streamController.hideNativePreview()
         super.onCleared()
@@ -713,7 +697,6 @@ class StudioViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 previewReady = false,
-                overlayPreview = null,
                 statusMessage = if (it.streaming) it.statusMessage else "Starting camera…",
             )
         }

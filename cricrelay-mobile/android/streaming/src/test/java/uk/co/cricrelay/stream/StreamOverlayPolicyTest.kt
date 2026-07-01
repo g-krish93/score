@@ -8,9 +8,9 @@ import org.junit.Test
 class StreamOverlayPolicyTest {
 
     @Test
-    fun `preview without listener does not refresh overlay`() {
+    fun `preview without streaming refreshes GL overlay`() {
         assertEquals(
-            StreamOverlayPolicy.RefreshMode.None,
+            StreamOverlayPolicy.RefreshMode.PreviewGlRefresh,
             StreamOverlayPolicy.refreshMode(
                 isStreaming = false,
                 hasPreviewListener = false,
@@ -44,8 +44,8 @@ class StreamOverlayPolicyTest {
     }
 
     @Test
-    fun `GL overlay never attaches during preview`() {
-        assertFalse(StreamOverlayPolicy.shouldAttachGlOverlayOnPreview(isStreaming = false))
+    fun `GL overlay attaches during preview`() {
+        assertTrue(StreamOverlayPolicy.shouldAttachGlOverlayOnPreview(isStreaming = false))
         assertFalse(StreamOverlayPolicy.shouldAttachGlOverlayOnPreview(isStreaming = true))
     }
 

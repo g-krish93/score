@@ -124,13 +124,12 @@ struct OverlaySheet: View {
     @State private var draft = OverlayLayoutPrefs()
     @State private var savedOnDismiss = false
 
-    private let themes: [(id: String, emoji: String, label: String, color: Color)] = [
-        ("classic",  "🏏", "Classic",  CricTheme.primary),
-        ("compact",  "📋", "Compact",  CricTheme.accent),
-        ("ai",       "🤖", "AI",       Color.purple),
-        ("stadium",  "🏟", "Stadium",  Color.green),
-        ("neon",     "⚡", "Neon",     Color.yellow),
-        ("minimal",  "⬜", "Minimal",  CricTheme.textDim),
+    private let boardColors: [(name: String, bg: String, text: String, color: Color)] = [
+        ("Default", "", "", Color(red: 0.09, green: 0.16, blue: 0.30)),
+        ("Dark", "#0E1A24", "#FFFFFF", Color(red: 0.05, green: 0.10, blue: 0.14)),
+        ("Black", "#000000", "#FFFFFF", Color.black),
+        ("Light", "#FFFFFF", "#16294D", Color.white),
+        ("Teal", "#0B3D3A", "#7CF6D6", Color(red: 0.04, green: 0.24, blue: 0.23)),
     ]
 
     var body: some View {
@@ -138,7 +137,7 @@ struct OverlaySheet: View {
             StudioBackdrop {
                 ScrollView {
                     VStack(spacing: 20) {
-                        themeSelector
+                        boardColorSelector
                         Divider().overlay(Color.white.opacity(0.1))
                         overlaySliders
                     }
@@ -166,6 +165,7 @@ struct OverlaySheet: View {
         .onAppear {
             savedOnDismiss = false
             draft = viewModel.overlayPrefs
+            draft.theme = "barlow"
             Task { await viewModel.loadSponsors() }
             if draft.activeSponsorIds.isEmpty, draft.activeSponsorId == nil,
                let first = viewModel.sponsors.first(where: { $0.isActive }) {
@@ -209,33 +209,29 @@ struct OverlaySheet: View {
         ].joined(separator: "|")
     }
 
-    private var themeSelector: some View {
+    private var boardColorSelector: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sheetSectionLabel("Style")
+            sheetSectionLabel("Board colour")
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(themes, id: \.id) { theme in
-                        Button { draft.theme = theme.id } label: {
+                    ForEach(boardColors, id: \.name) { preset in
+                        let selected = draft.bgColor == preset.bg && draft.textColor == preset.text
+                        Button {
+                            draft.bgColor = preset.bg
+                            draft.textColor = preset.text
+                            draft.theme = "barlow"
+                        } label: {
                             VStack(spacing: 6) {
-                                Text(theme.emoji)
-                                    .font(.system(size: 24))
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(preset.color)
                                     .frame(width: 52, height: 52)
-                                    .background(
-                                        draft.theme == theme.id
-                                            ? theme.color.opacity(0.2)
-                                            : CricTheme.surface,
-                                        in: RoundedRectangle(cornerRadius: 12)
-                                    )
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12)
-                                            .stroke(
-                                                draft.theme == theme.id ? theme.color : Color.clear,
-                                                lineWidth: 2
-                                            )
+                                            .stroke(selected ? CricTheme.accent : Color.clear, lineWidth: 2)
                                     )
-                                Text(theme.label)
+                                Text(preset.name)
                                     .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(draft.theme == theme.id ? theme.color : CricTheme.textDim)
+                                    .foregroundStyle(selected ? CricTheme.accent : CricTheme.textDim)
                             }
                         }
                     }

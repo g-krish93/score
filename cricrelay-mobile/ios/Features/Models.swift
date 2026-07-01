@@ -214,7 +214,7 @@ struct OverlayLayoutPrefs: Codable {
         anchorY = 0.85
         bottomMargin = 8.0
         horizontalInset = 0.0
-        theme = "classic"
+        theme = "barlow"
         fontScale = 1.0
         bgColor = ""
         textColor = ""
@@ -337,7 +337,7 @@ struct OverlayLayoutPrefs: Codable {
             widthFraction: Float(widthFraction),
             anchorX: Float(anchorX),
             anchorY: Float(anchorY),
-            bottomMarginFraction: Float(bottomMargin / 400),
+            bottomMarginFraction: Float(bottomMargin / 720),
             horizontalInsetFraction: Float(horizontalInset / 400),
             fontScale: Float(fontScale),
             bgColor: bgColor,
@@ -355,7 +355,8 @@ struct OverlayLayoutPrefs: Codable {
             sponsorPositionY: Float(max(0, min(1, sponsorPositionY))),
             sponsorSizeScale: Float(max(0.3, min(3, sponsorSizeScale))),
             sponsorOpacity: Float(max(0.2, min(1, sponsorOpacity))),
-            sponsorScrollSpeed: Float(max(0.3, min(3, sponsorScrollSpeed)))
+            sponsorScrollSpeed: Float(max(0.3, min(3, sponsorScrollSpeed))),
+            theme: theme.isEmpty ? "barlow" : theme
         )
     }
 

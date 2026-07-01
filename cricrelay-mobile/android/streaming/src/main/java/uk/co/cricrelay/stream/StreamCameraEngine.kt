@@ -60,6 +60,7 @@ object StreamCameraEngine : ConnectChecker {
         val sponsorSizeScale: Float = 1f,
         val sponsorOpacity: Float = 1f,
         val sponsorScrollSpeed: Float = 1f,
+        val theme: String = "barlow",
     )
 
     private const val MAX_WIDTH = 1280
@@ -711,18 +712,18 @@ object StreamCameraEngine : ConnectChecker {
             ensureWatermarkFilter()
             ensureSponsorFilter()
             if (overlayUrl.isEmpty()) return@runOnMain
+            val themedUrl = OverlayThemeBridge.urlWithTheme(overlayUrl, layout.theme)
             ensureOverlayCapture()?.apply {
-                setStyle(layout.fontScale, layout.bgColor, layout.textColor)
-                loadUrl(overlayUrl)
+                loadUrl(themedUrl)
+                setStyle(layout.fontScale, layout.bgColor, layout.textColor, layout.theme)
             }
             stopPreviewOverlayRefresh()
-            when (
-                StreamOverlayPolicy.refreshMode(
-                    isStreaming = camera?.isStreaming == true,
-                    hasPreviewListener = previewOverlayListener != null,
-                    overlayUrlBlank = false,
-                )
-            ) {
+            val refreshMode = StreamOverlayPolicy.refreshMode(
+                isStreaming = camera?.isStreaming == true,
+                hasPreviewListener = previewOverlayListener != null,
+                overlayUrlBlank = false,
+            )
+            when (refreshMode) {
                 StreamOverlayPolicy.RefreshMode.StreamRefresh -> {
                     if (imageFilter != null && lastOverlayBitmap != null) {
                         applyOverlaySprite()
@@ -731,8 +732,11 @@ object StreamCameraEngine : ConnectChecker {
                         startOverlayRefresh()
                     }
                 }
-                StreamOverlayPolicy.RefreshMode.PreviewPush -> startPreviewOverlayPush()
-                StreamOverlayPolicy.RefreshMode.None -> stopPreviewOverlayPush()
+                StreamOverlayPolicy.RefreshMode.PreviewGlRefresh -> startPreviewOverlayRefresh()
+                StreamOverlayPolicy.RefreshMode.None -> {
+                    stopPreviewOverlayPush()
+                    stopPreviewOverlayRefresh()
+                }
             }
         }
     }
@@ -1077,8 +1081,8 @@ object StreamCameraEngine : ConnectChecker {
         openGlView?.keepScreenOn = false
         abandonStreamAudioFocus()
         resetEncoderAfterRtmpStop()
-        if (previewOverlayListener != null && overlayUrl.isNotEmpty()) {
-            startPreviewOverlayPush()
+        if (overlayUrl.isNotEmpty()) {
+            startPreviewOverlayRefresh()
         }
     }
 
@@ -1231,13 +1235,20 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
+    private fun captureOverlayAfterStyleChange() {
+        val streaming = camera?.isStreaming == true && !streamPaused
+        captureAndApplyOverlayInternal(requireStreaming = streaming)
+    }
+
     private fun ensureOverlayCapture(): OverlayWebViewCapture? {
         val act = activity ?: return null
         if (overlayCapture == null) {
             overlayCapture = OverlayWebViewCapture(act).also { capture ->
+                capture.onStyleApplied = {
+                    mainHandler.post { captureOverlayAfterStyleChange() }
+                }
                 capture.onPageReady = {
-                    // Periodic preview push handles refresh; avoid an extra capture on load.
-                    CricrelayLog.d("overlay WebView page ready — preview push will refresh")
+                    CricrelayLog.d("overlay WebView page ready — capture via applyMeasureScript")
                 }
             }
         }
@@ -1249,8 +1260,13 @@ object StreamCameraEngine : ConnectChecker {
         if (overlayUrl.isEmpty() || activity == null) return
         syncOverlayCaptureWidth()
         ensureOverlayCapture()?.apply {
-            setStyle(overlayLayout.fontScale, overlayLayout.bgColor, overlayLayout.textColor)
-            loadUrl(overlayUrl)
+            loadUrl(OverlayThemeBridge.urlWithTheme(overlayUrl, overlayLayout.theme))
+            setStyle(
+                overlayLayout.fontScale,
+                overlayLayout.bgColor,
+                overlayLayout.textColor,
+                overlayLayout.theme,
+            )
         }
         when (
             StreamOverlayPolicy.refreshMode(
@@ -1262,7 +1278,7 @@ object StreamCameraEngine : ConnectChecker {
             StreamOverlayPolicy.RefreshMode.StreamRefresh -> {
                 if (imageFilter != null && overlayRunnable == null) startOverlayRefresh()
             }
-            StreamOverlayPolicy.RefreshMode.PreviewPush -> startPreviewOverlayPush()
+            StreamOverlayPolicy.RefreshMode.PreviewGlRefresh -> startPreviewOverlayRefresh()
             StreamOverlayPolicy.RefreshMode.None -> Unit
         }
     }
@@ -1273,7 +1289,9 @@ object StreamCameraEngine : ConnectChecker {
         mainHandler.postDelayed({
             try {
                 if (overlayUrl.isNotEmpty()) {
-                    ensureOverlayCapture()?.loadUrl(overlayUrl)
+                    ensureOverlayCapture()?.loadUrl(
+                        OverlayThemeBridge.urlWithTheme(overlayUrl, overlayLayout.theme),
+                    )
                 }
                 startOverlayRefresh()
             } catch (e: Exception) {
@@ -1760,7 +1778,7 @@ object StreamCameraEngine : ConnectChecker {
         if (camera?.isStreaming == true || overlayPausedForMemory) return
         stopPreviewOverlayRefresh()
         if (overlayUrl.isEmpty()) return
-        ensureOverlayCapture()?.loadUrl(overlayUrl)
+        ensureOverlayCapture()?.loadUrl(OverlayThemeBridge.urlWithTheme(overlayUrl, overlayLayout.theme))
         val interval = (overlayRefreshMs * 2).coerceIn(800L, 2500L)
         val runnable = object : Runnable {
             override fun run() {

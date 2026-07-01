@@ -22,6 +22,10 @@ final class OverlayWebViewCapture: NSObject, WKNavigationDelegate {
     private var fontScale: Float = 1.0
     private var bgColor: String = ""
     private var textColor: String = ""
+    private var overlayTheme: String = "barlow"
+
+    /// Fired after measure/style JS has been applied (safe to capture).
+    var onStyleApplied: (() -> Void)?
 
     init(hostViewController: UIViewController) {
         self.hostViewController = hostViewController
@@ -34,12 +38,27 @@ final class OverlayWebViewCapture: NSObject, WKNavigationDelegate {
         webView.scrollView.backgroundColor = .clear
     }
 
-    func setStyle(fontScale: Float, bgColor: String, textColor: String) {
+    func setStyle(fontScale: Float, bgColor: String, textColor: String, theme: String = "barlow") {
         self.fontScale = min(max(fontScale, 0.6), 2.0)
         self.bgColor = bgColor.trimmingCharacters(in: .whitespaces)
         self.textColor = textColor.trimmingCharacters(in: .whitespaces)
+        let nextTheme = theme.trimmingCharacters(in: .whitespaces).lowercased().isEmpty ? "barlow" : theme.lowercased()
+        let themeChanged = nextTheme != overlayTheme
+        overlayTheme = nextTheme
         DispatchQueue.main.async { [weak self] in
-            self?.webView.evaluateJavaScript(self?.measureScript() ?? "", completionHandler: nil)
+            guard let self else { return }
+            if themeChanged { self.captureHeightPx = 0 }
+            self.applyMeasureScript(triggerCapture: true, themeChanged: themeChanged)
+        }
+    }
+
+    private func applyMeasureScript(triggerCapture: Bool, themeChanged: Bool) {
+        webView.evaluateJavaScript(measureScript()) { [weak self] _, _ in
+            guard let self else { return }
+            self.webView.setNeedsDisplay()
+            if triggerCapture {
+                self.onStyleApplied?()
+            }
         }
     }
 
@@ -162,6 +181,10 @@ final class OverlayWebViewCapture: NSObject, WKNavigationDelegate {
         css += "html{font-size:\(rootPx)px !important;}"
         css += "#overlay{position:fixed !important;top:0 !important;bottom:auto !important;left:0 !important;right:0 !important;transform:none !important;width:auto !important;margin:0 !important;transform-origin:top left !important;}"
         if !bg.isEmpty || !fg.isEmpty {
+            css += "body.board-barlow{"
+            if !bg.isEmpty { css += "--sb-navy:\(bg) !important;--sb-dot-dark:\(bg) !important;" }
+            if !fg.isEmpty { css += "--sb-ink:\(fg) !important;" }
+            css += "}"
             css += ":root{"
             if !bg.isEmpty { css += "--bg:\(bg) !important;--bg2:\(bg) !important;" }
             if !fg.isEmpty { css += "--text:\(fg) !important;" }
@@ -170,13 +193,19 @@ final class OverlayWebViewCapture: NSObject, WKNavigationDelegate {
         return css
     }
 
+    private func themeClassScript() -> String {
+        OverlayThemeBridge.applyThemeScript(mobileTheme: overlayTheme)
+    }
+
     private func measureScript() -> String {
         let cssLiteral = injectedCss()
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "'", with: "\\'")
+        let themeScript = themeClassScript()
         return """
         (function(){
           try{
+            \(themeScript)
             var vp=document.querySelector('meta[name=viewport]');
             if(!vp){vp=document.createElement('meta');vp.setAttribute('name','viewport');
               (document.head||document.documentElement).appendChild(vp);}

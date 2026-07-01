@@ -55,9 +55,14 @@ class OverlayWebViewCapture(private val activity: Activity) {
     /** Fired on the main thread after the embed page finishes loading. */
     var onPageReady: (() -> Unit)? = null
 
+    /** Fired on the main thread after measure/style JS has been applied (safe to capture). */
+    var onStyleApplied: (() -> Unit)? = null
+
     @Volatile private var fontScale: Float = 1.0f
     @Volatile private var bgColor: String = ""
     @Volatile private var textColor: String = ""
+    @Volatile private var overlayTheme: String = "barlow"
+    @Volatile private var lastLoadedUrl: String = ""
 
     /** Physical bitmap width — tracks the encoded RTMP frame width (varies by phone tier / orientation). */
     @Volatile private var captureWidthPx = DESIGN_WIDTH_PX
@@ -114,11 +119,39 @@ class OverlayWebViewCapture(private val activity: Activity) {
 
     private fun initialScalePercent(): Int = captureWidthPx * 100 / DESIGN_WIDTH_PX
 
-    fun setStyle(fontScale: Float, bgColor: String, textColor: String) {
+    fun setStyle(fontScale: Float, bgColor: String, textColor: String, theme: String = "barlow") {
         this.fontScale = fontScale.coerceIn(0.6f, 2.0f)
         this.bgColor = bgColor.trim()
         this.textColor = textColor.trim()
-        runOnMain { webView?.evaluateJavascript(measureScript(), null) }
+        val nextTheme = theme.trim().lowercase().ifBlank { "barlow" }
+        val themeChanged = nextTheme != overlayTheme
+        overlayTheme = nextTheme
+        runOnMain {
+            if (themeChanged) captureHeightPx = 0
+            applyMeasureScript(triggerCapture = pageLoaded, themeChanged = themeChanged)
+        }
+    }
+
+    /** Inject viewport/style/theme CSS; latch height; optionally notify when safe to capture. */
+    private fun applyMeasureScript(triggerCapture: Boolean, themeChanged: Boolean = false) {
+        val view = webView ?: return
+        view.evaluateJavascript(measureScript()) { result ->
+            view.postInvalidate()
+            val obj = parseJson(result)
+            var measureReady = false
+            if (obj != null && obj.optBoolean("ready", false)) {
+                val cssHeight = obj.optInt("h", 0)
+                if (cssHeight > 0) {
+                    val physHeight = (cssHeight * captureWidthPx / DESIGN_WIDTH_PX)
+                        .coerceIn(MIN_CAPTURE_HEIGHT_PX, MAX_CAPTURE_HEIGHT_PX)
+                    captureHeightPx = physHeight
+                    measureReady = true
+                }
+            }
+            if (triggerCapture && pageLoaded && captureHeightPx > 0) {
+                onStyleApplied?.invoke()
+            }
+        }
     }
 
     /**
@@ -151,6 +184,14 @@ class OverlayWebViewCapture(private val activity: Activity) {
         css.append("width:auto !important;margin:0 !important;transform-origin:top left !important;}")
         // Map the operator's box / text colour prefs onto the overlay's theme variables.
         if (bg.isNotEmpty() || fg.isNotEmpty()) {
+            css.append("body.board-barlow{")
+            if (bg.isNotEmpty()) {
+                css.append("--sb-navy:$bg !important;--sb-dot-dark:$bg !important;")
+            }
+            if (fg.isNotEmpty()) {
+                css.append("--sb-ink:$fg !important;")
+            }
+            css.append("}")
             css.append(":root{")
             if (bg.isNotEmpty()) css.append("--bg:$bg !important;--bg2:$bg !important;")
             if (fg.isNotEmpty()) css.append("--text:$fg !important;")
@@ -159,6 +200,8 @@ class OverlayWebViewCapture(private val activity: Activity) {
         return css.toString()
     }
 
+    private fun themeClassScript(): String = OverlayThemeBridge.applyThemeScript(overlayTheme)
+
     /**
      * Ensure the persistent style tag exists (head survives content rebuilds, but be
      * defensive) and report whether the scoreboard rendered plus its height in CSS px.
@@ -166,9 +209,11 @@ class OverlayWebViewCapture(private val activity: Activity) {
      */
     private fun measureScript(): String {
         val cssLiteral = buildInjectedCss().replace("\\", "\\\\").replace("'", "\\'")
+        val themeScript = themeClassScript()
         return """
 (function(){
   try{
+    $themeScript
     // Force the CSS viewport to the overlay's 1280px design width on every device so the
     // strip lays out identically to Chrome (cricket_overlay.html ships width=device-width).
     var vp=document.querySelector('meta[name=viewport]');
@@ -222,7 +267,9 @@ class OverlayWebViewCapture(private val activity: Activity) {
                         pageLoaded = true
                         captureHeightPx = 0
                         CricrelayLog.d("overlay WebView page finished: $url")
-                        view?.let { runMeasure(it) }
+                        view?.let {
+                            applyMeasureScript(triggerCapture = true, themeChanged = false)
+                        }
                         startMeasureLoop()
                         onPageReady?.invoke()
                     }
@@ -320,15 +367,19 @@ class OverlayWebViewCapture(private val activity: Activity) {
         }
     }
 
-    fun loadUrl(url: String) {
-        if (url.isBlank()) return
+    /** @return true when a new navigation was started (capture deferred until page load). */
+    fun loadUrl(url: String): Boolean {
+        if (url.isBlank()) return false
+        var reloading = false
         runOnMain {
             ensureAttached()
             val view = webView ?: return@runOnMain
             try {
-                if (view.url != url) {
+                if (lastLoadedUrl != url) {
+                    lastLoadedUrl = url
                     pageLoaded = false
                     captureHeightPx = 0
+                    reloading = true
                     CricrelayLog.d("overlay WebView load: $url")
                     view.loadUrl(url)
                 }
@@ -336,6 +387,7 @@ class OverlayWebViewCapture(private val activity: Activity) {
                 CricrelayLog.w("overlay WebView load failed: ${e.message}")
             }
         }
+        return reloading
     }
 
     /**

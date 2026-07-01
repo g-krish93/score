@@ -32,6 +32,7 @@ final class StreamCameraEngine: NSObject {
         var sponsorSizeScale: Float = 1.0
         var sponsorOpacity: Float = 1.0
         var sponsorScrollSpeed: Float = 1.0
+        var theme: String = "barlow"
     }
 
     private let mixer = MediaMixer()
@@ -167,9 +168,12 @@ final class StreamCameraEngine: NSObject {
                 overlayCapture?.setStyle(
                     fontScale: overlayLayout.fontScale,
                     bgColor: overlayLayout.bgColor,
-                    textColor: overlayLayout.textColor
+                    textColor: overlayLayout.textColor,
+                    theme: overlayLayout.theme
                 )
-                overlayCapture?.loadUrl(overlayUrl)
+                overlayCapture?.loadUrl(
+                    OverlayThemeBridge.urlWithTheme(baseUrl: overlayUrl, mobileTheme: overlayLayout.theme)
+                )
             }
             await ensureWatermarkObject()
             await ensureSponsorObject()
@@ -219,14 +223,18 @@ final class StreamCameraEngine: NSObject {
             overlayCapture?.setStyle(
                 fontScale: layout.fontScale,
                 bgColor: layout.bgColor,
-                textColor: layout.textColor
+                textColor: layout.textColor,
+                theme: layout.theme
             )
-            overlayCapture?.loadUrl(url)
+            overlayCapture?.loadUrl(
+                OverlayThemeBridge.urlWithTheme(baseUrl: url, mobileTheme: layout.theme)
+            )
         } else {
             overlayCapture?.setStyle(
                 fontScale: layout.fontScale,
                 bgColor: layout.bgColor,
-                textColor: layout.textColor
+                textColor: layout.textColor,
+                theme: layout.theme
             )
         }
         overlayLayout = layout
@@ -299,9 +307,12 @@ final class StreamCameraEngine: NSObject {
                 overlayCapture?.setStyle(
                     fontScale: layout.fontScale,
                     bgColor: layout.bgColor,
-                    textColor: layout.textColor
+                    textColor: layout.textColor,
+                    theme: layout.theme
                 )
-                overlayCapture?.loadUrl(self.overlayUrl)
+                overlayCapture?.loadUrl(
+                    OverlayThemeBridge.urlWithTheme(baseUrl: self.overlayUrl, mobileTheme: layout.theme)
+                )
             }
             await ensureOverlayObject()
             await ensureWatermarkObject()

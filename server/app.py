@@ -1211,17 +1211,17 @@ def normalize_overlay_size(value, fallback_scale=None) -> int:
     return 3
 
 
-VALID_OVERLAY_THEMES = {"classic", "neon", "minimal", "compact", "ai", "stadium"}
+VALID_OVERLAY_THEMES = {"barlow"}
 
 def _sanitize_overlay_theme(raw) -> str:
-    t = str(raw or "classic").strip().lower()
-    return t if t in VALID_OVERLAY_THEMES else "classic"
+    t = str(raw or "barlow").strip().lower()
+    return t if t in VALID_OVERLAY_THEMES else "barlow"
 
 def read_relay_overlay_prefs(slug):
     safe = sanitize_match_id(slug)
     path = state_path_for(safe)
     if not path.exists():
-        return {"overlay_size": 3, "overlay_scale": 1.0, "theme": "classic"}
+        return {"overlay_size": 3, "overlay_scale": 1.0, "theme": "barlow"}
     try:
         with path.open("r", encoding="utf-8") as fh:
             s = json.load(fh)
@@ -1232,7 +1232,7 @@ def read_relay_overlay_prefs(slug):
             "theme": _sanitize_overlay_theme(s.get("theme")),
         }
     except Exception:
-        return {"overlay_size": 3, "overlay_scale": 1.0, "theme": "classic"}
+        return {"overlay_size": 3, "overlay_scale": 1.0, "theme": "barlow"}
 
 
 @app.get("/")
@@ -2587,6 +2587,17 @@ def relay_overlay_data(match_id):
                 "scroll_speed": float(data.get("sponsor_scroll_speed") or 1.0),
             }
     payload["sponsor"] = sponsor_payload
+
+    row = RelayMatch.query.filter_by(score_match_slug=slug).first()
+    relay_src = (getattr(row, "relay_source", None) or "scraper").strip().lower()
+    payload["relay_source"] = relay_src
+    payload["relay_mode"] = mode
+    if mode == "cricheroes" or relay_src == "cricheroes":
+        payload["data_pattern"] = "cricheroes"
+    elif mode in ("play_cricket", "pcs_ble") or relay_src in ("scraper", "pcs_ble"):
+        payload["data_pattern"] = "play_cricket"
+    else:
+        payload["data_pattern"] = mode or "manual"
 
     resp = jsonify(payload)
     resp.headers["Cache-Control"] = "no-store"

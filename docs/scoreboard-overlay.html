@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cricket Scoreboard Overlay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ============================================================
+     CRICKET SCOREBOARD — BROADCAST OVERLAY
+     Drop into OBS / vMix / Streamlabs as a Browser Source.
+     Set the source width to 1180 (or a multiple) and height to
+     ~130. Background is transparent so it composites over video.
+     Update values live via the #ids or the setScore() helper
+     at the bottom of this file.
+     ============================================================ */
+
+  :root{
+    --navy:#16294d;
+    --panel:#eef0f3;
+    --panel-line:#d7dbe1;
+    --gold:#d4a017;
+    --ink:#16294d;
+    --muted:#6a7180;
+    --navy-muted:#8f9bb3;
+    --dot-dark:#16294d;
+    --dot-zero-bg:#c9ced6;
+    --dot-zero-fg:#4a5163;
+    --dot-wicket:#c0392b;
+  }
+
+  *{ box-sizing:border-box; }
+
+  html,body{
+    margin:0;
+    background:transparent;      /* transparent for streaming */
+    font-family:'Barlow', sans-serif;
+  }
+
+  /* Position the overlay where you want it on screen */
+  .sb-overlay{
+    position:fixed;
+    left:50%;
+    bottom:24px;
+    transform:translateX(-50%);
+    width:1180px;
+  }
+
+  /* ---------- Main bar ---------- */
+  .sb-bar{
+    display:flex;
+    height:76px;
+    border-radius:8px;
+    overflow:hidden;
+    box-shadow:0 4px 14px rgba(0,0,0,.28);
+  }
+
+  .sb-navy{ background:var(--navy); }
+  .sb-panel{ background:var(--panel); }
+
+  /* End caps (teams + crest) — equal width so score stays centered */
+  .sb-team{
+    flex:none;
+    width:214px;
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:0 20px 0 18px;
+  }
+  .sb-team--right{ justify-content:flex-end; padding:0 18px 0 20px; gap:12px; }
+
+  .sb-crest{
+    width:48px; height:48px;
+    display:flex; align-items:center; justify-content:center;
+    color:#e8ecf3; flex:none;
+  }
+  .sb-team-name{
+    font-family:'Barlow Condensed', sans-serif;
+    font-weight:700; color:#fff;
+    line-height:.98; font-size:22px; letter-spacing:.3px;
+    white-space:nowrap;
+  }
+
+  /* Batsmen / bowler panels grow equally so 126/3 is dead-centre */
+  .sb-bat{
+    position:relative; flex:1; min-width:0;
+    display:flex; flex-direction:column; justify-content:center;
+    padding:8px 20px 12px;
+  }
+  .sb-bat::after{
+    content:""; position:absolute; left:0; bottom:0;
+    width:100%; height:4px; background:var(--gold);
+  }
+  .sb-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:5px 0;
+  }
+  .sb-name{
+    display:flex; align-items:center; gap:7px;
+    font-family:'Barlow Condensed', sans-serif;
+    font-weight:600; font-size:19px; color:var(--ink); letter-spacing:.3px;
+  }
+  .sb-strike{ width:9px; height:10px; fill:var(--ink); }
+  .sb-fig{ font-family:'Barlow Condensed', sans-serif; color:var(--ink); }
+  .sb-fig b{ font-size:20px; }
+  .sb-fig span{ font-size:15px; color:var(--muted); }
+  .sb-div{ height:1px; background:var(--panel-line); }
+
+  /* Centre score block */
+  .sb-score{
+    flex:none; width:240px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:0 24px;
+  }
+  .sb-runs{
+    font-family:'Barlow Condensed', sans-serif;
+    font-weight:700; color:#fff; font-size:44px; line-height:.9; letter-spacing:.5px;
+  }
+  .sb-overs{ display:flex; align-items:baseline; gap:6px; margin-top:2px; }
+  .sb-overs b{ font-family:'Barlow Condensed', sans-serif; font-weight:700; color:#fff; font-size:19px; }
+  .sb-overs span{ font-family:'Barlow Condensed', sans-serif; font-weight:600; color:var(--navy-muted); font-size:14px; letter-spacing:1px; }
+
+  /* Bowler + this-over dots */
+  .sb-bowl{
+    flex:1; min-width:0;
+    display:flex; flex-direction:column; justify-content:center; gap:8px;
+    padding:8px 22px;
+  }
+  .sb-bowl-line{ display:flex; align-items:center; gap:10px; }
+  .sb-dots{ display:flex; gap:7px; }
+  .sb-dot{
+    width:26px; height:26px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Barlow Condensed', sans-serif; font-weight:700; font-size:14px;
+    background:var(--dot-dark); color:#fff;
+  }
+  .sb-dot--zero{ background:var(--dot-zero-bg); color:var(--dot-zero-fg); }
+  .sb-dot--wicket{ background:var(--dot-wicket); color:#fff; }
+
+  /* ---------- Stats row ---------- */
+  .sb-stats{ display:flex; margin-top:6px; gap:6px; }
+  .sb-stat{
+    flex:1; height:34px; border-radius:6px;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    background:var(--panel);
+  }
+  .sb-stat--dark{ background:var(--navy); }
+  .sb-stat .k{
+    font-family:'Barlow Condensed', sans-serif; font-weight:600; font-size:14px;
+    color:var(--muted); letter-spacing:1px;
+  }
+  .sb-stat .v{
+    font-family:'Barlow Condensed', sans-serif; font-weight:700; font-size:16px; color:var(--ink);
+  }
+  .sb-stat--dark .k{ color:var(--navy-muted); }
+  .sb-stat--dark .v{ color:#fff; }
+</style>
+</head>
+<body>
+
+  <div class="sb-overlay">
+    <!-- MAIN BAR -->
+    <div class="sb-bar">
+
+      <!-- Left team -->
+      <div class="sb-team sb-navy">
+        <div class="sb-crest">
+          <svg viewBox="0 0 48 48" width="46" height="46" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M24 4l4 5 6-2-1 6 6 2-4 5 4 5-6 2 1 6-6-2-4 5-4-5-6 2 1-6-6-2 4-5-4-5 6-2-1-6 6 2z" opacity=".5"/>
+            <circle cx="24" cy="26" r="9"/>
+            <path d="M24 17v18M15 26h18" stroke-width="1.2"/>
+            <rect x="20" y="38" width="8" height="6" rx="1"/>
+          </svg>
+        </div>
+        <div class="sb-team-name" id="sb-left-team">WORTHING<br>WARRIORS CC</div>
+      </div>
+
+      <!-- Batsmen -->
+      <div class="sb-bat sb-panel">
+        <div class="sb-row">
+          <span class="sb-name" id="sb-bat1-name">A. KRISHNAN</span>
+          <span class="sb-fig"><b id="sb-bat1-runs">42</b> <span id="sb-bat1-balls">(35)</span></span>
+        </div>
+        <div class="sb-div"></div>
+        <div class="sb-row">
+          <span class="sb-name">
+            <svg class="sb-strike" viewBox="0 0 9 10"><path d="M0 0l9 5-9 5z"/></svg>
+            <span id="sb-bat2-name">ADHITH</span>
+          </span>
+          <span class="sb-fig"><b id="sb-bat2-runs">18</b> <span id="sb-bat2-balls">(16)</span></span>
+        </div>
+      </div>
+
+      <!-- Centre score -->
+      <div class="sb-score sb-navy">
+        <div class="sb-runs" id="sb-runs">126/3</div>
+        <div class="sb-overs"><b id="sb-overs">18.4</b> <span>OVERS</span></div>
+      </div>
+
+      <!-- Bowler -->
+      <div class="sb-bowl sb-panel">
+        <div class="sb-bowl-line">
+          <span class="sb-name" id="sb-bowl-name">R. SHARMA</span>
+          <span class="sb-fig"><b id="sb-bowl-figs">0-24</b> <span id="sb-bowl-overs">(3.4)</span></span>
+        </div>
+        <div class="sb-dots" id="sb-dots">
+          <span class="sb-dot">1</span>
+          <span class="sb-dot">1</span>
+          <span class="sb-dot sb-dot--zero">0</span>
+          <span class="sb-dot sb-dot--wicket">W</span>
+          <span class="sb-dot">1</span>
+          <span class="sb-dot sb-dot--zero">0</span>
+        </div>
+      </div>
+
+      <!-- Right team -->
+      <div class="sb-team sb-team--right sb-navy">
+        <div class="sb-team-name" id="sb-right-team">NEWBERY CC</div>
+        <div class="sb-crest">
+          <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M8 8h32v20c0 8-8 14-16 16C16 42 8 36 8 28z"/>
+            <path d="M24 12v28M14 20h20" stroke-width="1.1"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATS ROW -->
+    <div class="sb-stats">
+      <div class="sb-stat"><span class="k">TARGET:</span><span class="v" id="sb-target">167</span></div>
+      <div class="sb-stat sb-stat--dark"><span class="k">CRR:</span><span class="v" id="sb-crr">6.76</span></div>
+      <div class="sb-stat"><span class="k">REQUIRED RR:</span><span class="v" id="sb-rrr">8.20</span></div>
+    </div>
+  </div>
+
+  <script>
+    /* ---------------------------------------------------------
+       LIVE UPDATE HELPERS
+       Call from your app / console / websocket handler.
+       --------------------------------------------------------- */
+
+    // Update any text values in one call. Pass only what changed.
+    function setScore(d){
+      const map = {
+        leftTeam:'sb-left-team',  rightTeam:'sb-right-team',
+        runs:'sb-runs',           overs:'sb-overs',
+        bat1Name:'sb-bat1-name',  bat1Runs:'sb-bat1-runs', bat1Balls:'sb-bat1-balls',
+        bat2Name:'sb-bat2-name',  bat2Runs:'sb-bat2-runs', bat2Balls:'sb-bat2-balls',
+        bowlName:'sb-bowl-name',  bowlFigs:'sb-bowl-figs', bowlOvers:'sb-bowl-overs',
+        target:'sb-target',       crr:'sb-crr',            rrr:'sb-rrr'
+      };
+      for (const key in d){
+        const el = document.getElementById(map[key]);
+        if (el && d[key] != null) el.innerHTML = d[key];
+      }
+    }
+
+    // Render the "this over" dots. Pass an array like:
+    // ['1','1','0','W','1','0']  ('W' = wicket, '0' = dot ball,
+    //  '4'/'6' etc = runs, 'WD'/'NB' = extras)
+    function setOver(balls){
+      const wrap = document.getElementById('sb-dots');
+      wrap.innerHTML = '';
+      balls.forEach(b => {
+        const s = document.createElement('span');
+        s.className = 'sb-dot'
+          + (b === 'W' ? ' sb-dot--wicket' : b === '0' ? ' sb-dot--zero' : '');
+        s.textContent = b;
+        wrap.appendChild(s);
+      });
+    }
+
+    // Example:
+    // setScore({ runs:'131/3', overs:'19.1', crr:'6.83', rrr:'9.00' });
+    // setOver(['1','4','0','W','6','1']);
+  </script>
+</body>
+</html>

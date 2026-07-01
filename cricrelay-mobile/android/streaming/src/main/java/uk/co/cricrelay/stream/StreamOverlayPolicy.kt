@@ -1,14 +1,14 @@
 package uk.co.cricrelay.stream
 
 /**
- * Decides when scoreboard GL refresh runs. Preview must not attach GL overlay filters
- * (Compose shows the camera; overlay burns in only while RTMP is live).
+ * Decides when scoreboard GL refresh runs. Pre-stream preview burns the overlay into the
+ * camera GL surface (parity with iOS) so WYSIWYG matches the RTMP output.
  */
 object StreamOverlayPolicy {
 
     enum class RefreshMode {
         None,
-        PreviewPush,
+        PreviewGlRefresh,
         StreamRefresh,
     }
 
@@ -19,11 +19,10 @@ object StreamOverlayPolicy {
     ): RefreshMode {
         if (overlayUrlBlank) return RefreshMode.None
         if (isStreaming) return RefreshMode.StreamRefresh
-        if (hasPreviewListener) return RefreshMode.PreviewPush
-        return RefreshMode.None
+        return RefreshMode.PreviewGlRefresh
     }
 
-    fun shouldAttachGlOverlayOnPreview(isStreaming: Boolean): Boolean = false
+    fun shouldAttachGlOverlayOnPreview(isStreaming: Boolean): Boolean = !isStreaming
 
     fun shouldAttachGlOverlayOnStream(isStreaming: Boolean, overlayUrlBlank: Boolean): Boolean =
         isStreaming && !overlayUrlBlank

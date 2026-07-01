@@ -119,14 +119,6 @@ fun BroadcastCameraUi(
         val previewWidth = constraints.maxWidth
         val previewHeight = constraints.maxHeight
         val landscape = previewWidth > previewHeight
-        val density = LocalDensity.current
-        // Board Edit "Position" slider — same bottom-margin math as the burned-in GL overlay.
-        val positionLift = with(density) {
-            state.overlayPrefs.bottomMarginPx(previewHeight).toDp()
-        }
-        val boardScaleX = state.overlayPrefs.boardDisplayScaleX()
-        val boardScaleY = state.overlayPrefs.boardDisplayScaleY()
-
         CameraPreviewLayer(
             modifier = Modifier.fillMaxSize(),
             onPreviewSurfaceBound = onPreviewSurfaceBound,
@@ -138,52 +130,7 @@ fun BroadcastCameraUi(
             return@BoxWithConstraints
         }
 
-        // Thin scoreboard strip in the preview (before streaming). Portrait: above the
-        // bottom controls. Landscape: full width along the bottom (controls are on the right).
-        if (!state.streaming) {
-            state.overlayPreview?.let { board ->
-                val boardAlpha = state.overlayPrefs.opacity.toFloat().coerceIn(0.2f, 1f)
-                val widthFrac = state.overlayPrefs.clampedWidthFraction().toFloat()
-                val boardSlotModifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(
-                        start = with(density) {
-                            (state.overlayPrefs.horizontalInset.toFloat() / 400f * previewWidth)
-                                .toInt().toDp()
-                        },
-                        end = with(density) {
-                            (state.overlayPrefs.horizontalInset.toFloat() / 400f * previewWidth)
-                                .toInt().toDp()
-                        },
-                        bottom = if (landscape) {
-                            14.dp + positionLift
-                        } else {
-                            272.dp + positionLift
-                        },
-                    )
-                    .fillMaxWidth(widthFrac)
-                // Bitmap matches stream canvas width (1280px); preview uses same width/inset as GL.
-                Box(
-                    modifier = boardSlotModifier,
-                    contentAlignment = Alignment.BottomCenter,
-                ) {
-                    Image(
-                        bitmap = board,
-                        contentDescription = "Scoreboard preview",
-                        contentScale = ContentScale.FillWidth,
-                        alpha = boardAlpha,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .graphicsLayer {
-                                scaleX = boardScaleX
-                                scaleY = boardScaleY
-                                transformOrigin = TransformOrigin(0.5f, 1f)
-                            }
-                            .clip(RoundedCornerShape(10.dp)),
-                    )
-                }
-            }
-        }
+        // Scoreboard is burned into the camera GL surface during preview and stream (parity with iOS).
 
         // Watermark is burned into the camera GL surface (see StreamCameraEngine), so it's
         // already visible on this preview — no separate Compose overlay needed.

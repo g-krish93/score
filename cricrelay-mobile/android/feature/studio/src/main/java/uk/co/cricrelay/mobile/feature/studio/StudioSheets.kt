@@ -175,32 +175,14 @@ fun DestinationSheet(
     }
 }
 
-/** Overlay visual style sent to the web scoreboard as the `theme` value. */
-private data class OverlayStyle(
-    val id: String,
-    val emoji: String,
-    val label: String,
-    val description: String,
-    val swatch: Color,
-)
-
-private val overlayStyles = listOf(
-    OverlayStyle("classic",  "🏏", "Broadcast", "Sky/ESPN blue",        Color(0xFF1A3683)),
-    OverlayStyle("compact",  "📋", "Compact",   "Slim ticker bar",      Color(0xFF080E28)),
-    OverlayStyle("ai",       "🤖", "AI Neural", "Purple glassmorphism", Color(0xFF3B0764)),
-    OverlayStyle("stadium",  "🏟", "Stadium",   "T20 night amber",      Color(0xFF1C0F00)),
-    OverlayStyle("neon",     "⚡", "Neon",       "Cyan glow",            Color(0xFF060B1A)),
-    OverlayStyle("minimal",  "⬜", "Minimal",    "Clean dark",           Color(0xFF111111)),
-)
-
-/** A named scoreboard color theme. Empty strings mean "use the web overlay's own colors". */
+/** Named scoreboard colour preset (maps to overlay bg/text CSS variables). */
 private data class BoardTheme(val name: String, val bg: String, val text: String, val swatch: Color)
 
 private val boardThemes = listOf(
-    BoardTheme("Default", "", "", Color(0xFF243140)),
+    BoardTheme("Default", "", "", Color(0xFF16294D)),
     BoardTheme("Dark", "#0E1A24", "#FFFFFF", Color(0xFF0E1A24)),
     BoardTheme("Black", "#000000", "#FFFFFF", Color(0xFF000000)),
-    BoardTheme("Light", "#FFFFFF", "#0E1A24", Color(0xFFFFFFFF)),
+    BoardTheme("Light", "#FFFFFF", "#16294D", Color(0xFFFFFFFF)),
     BoardTheme("Teal", "#0B3D3A", "#7CF6D6", Color(0xFF0B3D3A)),
 )
 
@@ -220,7 +202,7 @@ fun OverlaySheet(
     var bottomMargin by remember { mutableStateOf(prefs.bottomMargin.toFloat()) }
     var bg by remember { mutableStateOf(prefs.bgColor) }
     var text by remember { mutableStateOf(prefs.textColor) }
-    var overlayTheme by remember { mutableStateOf(prefs.theme.ifBlank { "classic" }) }
+    var overlayTheme by remember { mutableStateOf("barlow") }
     var watermarkEnabled by remember { mutableStateOf(prefs.watermarkEnabled) }
     var watermarkText by remember { mutableStateOf(prefs.watermarkText) }
     var sponsorEnabled by remember { mutableStateOf(prefs.sponsorEnabled) }
@@ -249,7 +231,7 @@ fun OverlaySheet(
         bottomMargin = bottomMargin.toDouble(),
         bgColor = bg,
         textColor = text,
-        theme = overlayTheme,
+        theme = "barlow",
         watermarkEnabled = watermarkEnabled,
         watermarkText = watermarkText.trim().ifBlank { OverlayLayoutPrefs.WATERMARK_DEFAULT_TEXT },
         sponsorEnabled = sponsorEnabled,
@@ -272,6 +254,8 @@ fun OverlaySheet(
         opacity,
         bottomMargin,
         overlayTheme,
+        bg,
+        text,
         watermarkEnabled,
         watermarkText,
         sponsorEnabled,
@@ -520,7 +504,7 @@ fun OverlaySheet(
     Spacer(Modifier.height(AppSpacing.md))
 
     Text(
-        "Overlay style",
+        "Board colour",
         style = AppTypography.titleSmall,
         modifier = Modifier.padding(horizontal = AppSpacing.lg),
     )
@@ -530,8 +514,8 @@ fun OverlaySheet(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = AppSpacing.lg),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
     ) {
-        items(overlayStyles) { style ->
-            val selected = overlayTheme == style.id
+        items(boardThemes) { preset ->
+            val selected = bg == preset.bg && text == preset.text
             Column(
                 modifier = Modifier
                     .width(76.dp)
@@ -544,37 +528,30 @@ fun OverlaySheet(
                         color = if (selected) AppColors.Accent.copy(alpha = 0.8f) else AppColors.Border,
                         shape = RoundedCornerShape(AppSpacing.radiusSm),
                     )
-                    .clickable { overlayTheme = style.id }
+                    .clickable {
+                        bg = preset.bg
+                        text = preset.text
+                    }
                     .padding(vertical = 10.dp, horizontal = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
                     modifier = Modifier
                         .size(34.dp)
-                        .background(style.swatch, CircleShape)
+                        .background(preset.swatch, CircleShape)
                         .border(
                             width = if (selected) 1.5.dp else 1.dp,
                             color = if (selected) AppColors.Accent else Color.White.copy(alpha = 0.20f),
                             shape = CircleShape,
                         ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(style.emoji, fontSize = 14.sp)
-                }
+                )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    style.label,
+                    preset.name,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (selected) AppColors.OnBackground else AppColors.OnBackgroundMuted,
                     maxLines = 1,
-                )
-                Text(
-                    style.description,
-                    fontSize = 8.sp,
-                    color = AppColors.OnBackgroundDim,
-                    maxLines = 2,
-                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }

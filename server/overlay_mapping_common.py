@@ -88,6 +88,28 @@ def format_bowlers(bowlers: list) -> list:
     ]
 
 
+def last_over_balls(snapshot: dict, active_inn_raw: dict) -> list[str]:
+    """
+    Return the ball sequence for the last completed over, sourced from the
+    ball_by_ball dict that play_cricket_scraper populates via Playwright.
+    Only shown from the 2nd over onwards (so the first completed over is visible).
+    """
+    bbb: dict = snapshot.get("ball_by_ball") or {}
+    if not bbb:
+        return []
+    try:
+        completed = int(str(active_inn_raw.get("overs", "0")).split(".")[0])
+    except (ValueError, TypeError):
+        return []
+    if completed < 2:
+        return []
+    # Try exact match first, then one over earlier as fallback
+    balls = bbb.get(completed) or bbb.get(str(completed))
+    if not balls:
+        balls = bbb.get(completed - 1) or bbb.get(str(completed - 1))
+    return balls or []
+
+
 def derive_live_state(batting: list, bowling: list) -> dict:
     not_out = [b for b in batting if b.get("status") == "not_out"]
     striker = batter_to_overlay(not_out[0]) if len(not_out) >= 1 else empty_batter()
@@ -203,7 +225,7 @@ def snapshot_to_overlay(
             "non_striker": empty_batter(),
             "current_bowler": empty_bowler(),
             "current_partnership": {"runs": 0, "balls": 0},
-            "recent_over": [],
+            "recent_over": last_over_balls(snapshot, {}),
             "target": None,
             "stale": stale,
             "last_updated": last_ok_at,
@@ -254,7 +276,7 @@ def snapshot_to_overlay(
         "non_striker": live["non_striker"],
         "current_bowler": live["current_bowler"],
         "current_partnership": live["current_partnership"],
-        "recent_over": [],
+        "recent_over": last_over_balls(snapshot, active_inn_raw),
         "target": target,
         "stale": stale,
         "last_updated": last_ok_at,

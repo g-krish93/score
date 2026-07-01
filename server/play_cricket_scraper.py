@@ -1,5 +1,7 @@
 """Parse Play-Cricket HTML into snapshots and fixture lists."""
 import re
+import threading
+import time
 from dataclasses import asdict, dataclass
 from typing import Optional
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -13,6 +15,14 @@ from .models_cricrelay import (
 )
 
 DEFAULT_TIMEOUT = 15
+
+# ── Ball-by-ball cache ──────────────────────────────────────────────────────
+# Populated by a background Playwright fetch when overs_int changes.
+# Keyed by canonical match URL. Never read/written on the hot poll path
+# except under _bbb_lock for the is_alive() / cache-merge check.
+_bbb_cache: dict[str, dict] = {}   # url → {"at_over": N, "balls": {over_num: [labels]}}
+_bbb_threads: dict[str, threading.Thread] = {}
+_bbb_lock = threading.Lock()
 SCORE_LINE_RE = re.compile(
     r"^(?P<team>.+?)\s+(?P<runs>\d+)\s*/\s*(?P<wkts>\d+)\s*\((?P<overs>\d+(?:\.\d+)?)\)$"
 )
@@ -612,6 +622,142 @@ def _merge_snapshot_fields(target: dict, source: dict, keys: tuple[str, ...]) ->
             target[key] = source.get(key)
 
 
+# ── Ball-by-ball helpers ──────────────────────────────────────────────────────
+
+_BBB_OUTCOME_JS = """() => {
+    const overContainers = Array.from(document.querySelectorAll('[class*="OverContainer"]'));
+    return overContainers.map(overDiv => {
+        const heading = overDiv.querySelector('[class*="OverHeading"]');
+        const overText = heading ? heading.textContent.trim() : '';
+        const overNum = parseInt((overText.match(/Over\\s+(\\d+)/i) || [])[1] || '0');
+
+        const ballDivs = Array.from(overDiv.querySelectorAll('[class*="BallContainerInner"]'));
+        const seen = new Set();
+        const balls = [];
+        ballDivs.forEach(div => {
+            const cols = Array.from(div.querySelectorAll('[class*="StandardContainer"]'));
+            const ballId  = cols[0] ? cols[0].textContent.trim() : '';
+            const outcome = cols[1] ? cols[1].textContent.trim() : '';
+            const key = ballId + '|' + outcome;
+            if (!seen.has(key) && ballId) { seen.add(key); balls.push(outcome); }
+        });
+        return { overNum, balls };
+    });
+}"""
+
+
+def _outcome_to_ball_label(outcome: str) -> str:
+    """Map InteractSport ball-outcome text to a single overlay pill label."""
+    o = (outcome or "").lower().strip()
+    if "wicket" in o:
+        return "W"
+    if "wide" in o:
+        return "Wd"
+    if "no ball" in o:
+        return "NB"
+    if "0 run" in o or "no run" in o:
+        return "."
+    # "1 bye" / "1 leg bye" — extras delivery, not off bat, show as dot
+    if "bye" in o:
+        return "."
+    m = re.match(r"(\d+)\s+run", o)
+    return m.group(1) if m else "."
+
+
+def scrape_ball_by_ball(url: str, timeout: int = 25) -> dict[int, list[str]]:
+    """
+    Fetch ball-by-ball data from the Play Cricket website using Playwright.
+
+    The ball-by-ball tab is rendered by an InteractSport React widget that
+    only loads when the tab is clicked — not present in the static HTML returned
+    by requests.get().  Returns {over_number: [ball_labels]} for all completed
+    overs found in the widget.  Overs are 1-indexed (Over 1 = first over).
+    """
+    try:
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError(
+            "playwright is not installed — "
+            "run: pip install playwright && playwright install chromium"
+        ) from exc
+
+    url = canonicalize_play_cricket_scrape_url(url)
+    result: dict[int, list[str]] = {}
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1280, "height": 720},
+            )
+            page.goto(url, wait_until="networkidle", timeout=timeout * 1000)
+
+            tab = page.query_selector("#iasBallbyballtab-tab")
+            if not tab:
+                return result
+            tab.click()
+
+            try:
+                page.wait_for_selector('[class*="OverContainer"]', timeout=15_000)
+            except PlaywrightTimeoutError:
+                return result
+
+            # Brief pause so React finishes rendering all overs
+            page.wait_for_timeout(800)
+
+            # If the widget shows innings tabs (completed match / 2nd innings),
+            # click the second tab so we get the most recent batting innings' balls.
+            inn_tabs = page.query_selector_all('[class*="PeriodTabs__TabItem"]')
+            if len(inn_tabs) >= 2:
+                try:
+                    inn_tabs[-1].click()
+                    page.wait_for_timeout(600)
+                except Exception:
+                    pass
+
+            overs_raw: list[dict] = page.evaluate(_BBB_OUTCOME_JS)
+            for over in overs_raw:
+                over_num = int(over.get("overNum") or 0)
+                if over_num <= 0:
+                    continue
+                labels = [_outcome_to_ball_label(o) for o in (over.get("balls") or [])]
+                if labels:
+                    result[over_num] = labels
+
+        except Exception:
+            pass
+        finally:
+            browser.close()
+
+    return result
+
+
+def _fetch_bbb_background(url: str, overs_int: int) -> None:
+    """Background daemon thread: Playwright fetch → write to _bbb_cache."""
+    try:
+        balls = scrape_ball_by_ball(url)
+    except Exception:
+        balls = {}
+    with _bbb_lock:
+        _bbb_cache[url] = {"at_over": overs_int, "balls": balls}
+
+
+def _active_overs_int(snapshot_data: dict) -> int:
+    """Return the number of complete overs for the active (latest) innings."""
+    active = snapshot_data.get("innings_2") or snapshot_data.get("innings_1")
+    if not active:
+        return 0
+    try:
+        return int(str(active.get("overs", "0")).split(".")[0])
+    except (ValueError, TypeError):
+        return 0
+
+
 def scrape_match(url: str) -> dict:
     url = canonicalize_play_cricket_scrape_url(url)
     html = fetch_page_html(url)
@@ -701,6 +847,29 @@ def scrape_match(url: str) -> dict:
                 data[f"{key}_extras"] = {}
     except Exception:
         pass  # Rich parsing is additive; never break the basic snapshot
+
+    # ── Ball-by-ball: merge cached data + trigger Playwright fetch on over change ──
+    overs_int = _active_overs_int(data)
+    with _bbb_lock:
+        cached = _bbb_cache.get(url, {})
+        cached_at_over = cached.get("at_over", -1)
+        thread_running = (
+            url in _bbb_threads and _bbb_threads[url].is_alive()
+        )
+        # Expose whatever balls we already have (may be from a previous over)
+        data["ball_by_ball"] = cached.get("balls") or {}
+
+        # Trigger a fresh Playwright fetch only when the over count advances
+        # and no fetch is already in flight. Guard: >= 2 so over 1 is complete.
+        if overs_int >= 2 and overs_int != cached_at_over and not thread_running:
+            t = threading.Thread(
+                target=_fetch_bbb_background,
+                args=(url, overs_int),
+                name=f"bbb-{url[-12:]}",
+                daemon=True,
+            )
+            _bbb_threads[url] = t
+            t.start()
 
     return data
 

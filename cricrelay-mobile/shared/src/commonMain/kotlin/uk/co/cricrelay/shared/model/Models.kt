@@ -325,7 +325,7 @@ data class OverlayLayoutPrefs(
     @SerialName("overlay_anchor_y") val anchorY: Double = 0.85,
     @SerialName("overlay_bottom_margin") val bottomMargin: Double = 8.0,
     @SerialName("overlay_horizontal_inset") val horizontalInset: Double = 0.0,
-    @SerialName("theme") val theme: String = "classic",
+    @SerialName("theme") val theme: String = "barlow",
     // Configurable scoreboard appearance (Board Edit sheet).
     @SerialName("overlay_font_scale") val fontScale: Double = 1.0,
     @SerialName("overlay_bg_color") val bgColor: String = "",
@@ -377,14 +377,12 @@ data class OverlayLayoutPrefs(
         const val FONT_MAX = 2.0
         const val WATERMARK_DEFAULT_TEXT = "Visit cricrelay.co.uk"
 
-        private val validThemes = setOf("classic", "neon", "minimal", "compact", "ai", "stadium")
+        private val validThemes = setOf("barlow")
 
-        private fun sanitizeTheme(raw: String?): String {
+        fun sanitizeTheme(raw: String?): String {
             val t = raw?.trim()?.lowercase().orEmpty()
             if (t in validThemes) return t
-            // Legacy mobile default before theme picker.
-            if (t == "dark") return "classic"
-            return "classic"
+            return "barlow"
         }
 
         fun fromJson(json: JsonObject): OverlayLayoutPrefs = OverlayLayoutPrefs(
