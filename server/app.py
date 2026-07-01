@@ -7,6 +7,7 @@ import re
 import secrets
 import smtplib
 import threading
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -34,6 +35,7 @@ from flask_cors import CORS
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import inspect, text
+from werkzeug.utils import secure_filename
 
 from .models_cricrelay import (
     ClubUser,
@@ -303,6 +305,26 @@ def blank_state():
         "pcs_ble_state": None,
         "sponsor_enabled": False,
         "active_sponsor_id": None,
+        "sponsor_display_mode": "static",
+        "sponsor_position_x": 0.92,
+        "sponsor_position_y": 0.88,
+        "sponsor_size_scale": 1.0,
+        "sponsor_opacity": 1.0,
+        "sponsor_scroll_speed": 1.0,
+        "overlay_height_fraction": 0.16,
+        "overlay_width_fraction": 1.0,
+        "overlay_anchor_x": 0.5,
+        "overlay_anchor_y": 0.85,
+        "overlay_bottom_margin": 8.0,
+        "overlay_horizontal_inset": 0.0,
+        "overlay_font_scale": 1.0,
+        "overlay_bg_color": "",
+        "overlay_text_color": "",
+        "overlay_opacity": 1.0,
+        "video_stabilization": True,
+        "keep_screen_on": True,
+        "watermark_enabled": True,
+        "watermark_text": "Visit cricrelay.co.uk",
     }
 
 
@@ -1583,6 +1605,9 @@ def _dashboard_fixture_data(org):
         "twitch_oauth_configured": tw.oauth_configured(),
         "twitch_live_active": bool(org.twitch_active_match_slug),
         "twitch_active_match_slug": org.twitch_active_match_slug or "",
+        "sponsors": Sponsor.query.filter_by(organization_id=org.id)
+        .order_by(Sponsor.created_at.desc())
+        .all(),
     }
 
 
@@ -1937,6 +1962,105 @@ def dashboard_relay_delete():
         flash("Unknown stream.", "error")
         return redirect(url_for("dashboard"))
     flash("Stream removed. Add a new match any time.", "success")
+    return redirect(url_for("dashboard"))
+
+
+SPONSOR_LOGO_MAX_BYTES = 2 * 1024 * 1024
+SPONSOR_LOGO_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+
+def _sponsor_static_root() -> Path:
+    return Path(app.static_folder or "../static") / "sponsors"
+
+
+def _sponsor_logo_public_url(org_id: str, filename: str) -> str:
+    base = _public_base_url().rstrip("/")
+    return f"{base}/static/sponsors/{org_id}/{filename}"
+
+
+def _save_sponsor_logo_upload(org: Organization, file_storage) -> str:
+    """Persist an uploaded logo under static/sponsors/<org_id>/ and return its public URL."""
+    if not file_storage or not file_storage.filename:
+        raise ValueError("Choose a logo image to upload.")
+    raw_name = secure_filename(file_storage.filename)
+    ext = Path(raw_name).suffix.lower()
+    if ext not in SPONSOR_LOGO_EXTS:
+        raise ValueError("Logo must be PNG, JPG, WEBP, or GIF.")
+    file_storage.stream.seek(0, os.SEEK_END)
+    size = file_storage.stream.tell()
+    file_storage.stream.seek(0)
+    if size <= 0:
+        raise ValueError("Logo file is empty.")
+    if size > SPONSOR_LOGO_MAX_BYTES:
+        raise ValueError("Logo must be 2 MB or smaller.")
+    dest_dir = _sponsor_static_root() / org.id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}{ext}"
+    dest = dest_dir / filename
+    file_storage.save(dest)
+    return _sponsor_logo_public_url(org.id, filename)
+
+
+def _try_delete_sponsor_logo_file(logo_url: str | None, org_id: str) -> None:
+    if not logo_url:
+        return
+    marker = f"/static/sponsors/{org_id}/"
+    if marker not in logo_url:
+        return
+    filename = logo_url.split(marker, 1)[-1].split("?")[0]
+    path = _sponsor_static_root() / org_id / filename
+    if path.is_file():
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+@app.post("/dashboard/sponsors/add")
+@login_required
+def dashboard_sponsors_add():
+    org = _org_from_session()
+    name = str(request.form.get("sponsor_name") or "").strip()
+    link_url = str(request.form.get("link_url") or "").strip() or None
+    logo = request.files.get("logo")
+    if not name:
+        flash("Sponsor name is required.", "error")
+        return redirect(url_for("dashboard"))
+    try:
+        logo_url = _save_sponsor_logo_upload(org, logo)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("dashboard"))
+    except Exception:
+        flash("Could not save logo — try again.", "error")
+        return redirect(url_for("dashboard"))
+    s = Sponsor(
+        organization_id=org.id,
+        name=name,
+        logo_url=logo_url,
+        link_url=link_url,
+        is_active=True,
+    )
+    db.session.add(s)
+    db.session.commit()
+    flash(f"Sponsor “{name}” added — pick it in the Stream app under Style → Sponsor logo.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/dashboard/sponsors/delete")
+@login_required
+def dashboard_sponsors_delete():
+    org = _org_from_session()
+    sponsor_id = str(request.form.get("sponsor_id") or "").strip()
+    s = Sponsor.query.filter_by(id=sponsor_id, organization_id=org.id).first()
+    if not s:
+        flash("Unknown sponsor.", "error")
+        return redirect(url_for("dashboard"))
+    logo_url = s.logo_url
+    db.session.delete(s)
+    db.session.commit()
+    _try_delete_sponsor_logo_file(logo_url, org.id)
+    flash("Sponsor removed.", "success")
     return redirect(url_for("dashboard"))
 
 
@@ -2432,7 +2556,17 @@ def relay_overlay_data(match_id):
         if s and (s.active_from is None or s.active_from <= now) and (
             s.active_to is None or s.active_to >= now
         ):
-            sponsor_payload = {"logo_url": s.logo_url, "link_url": s.link_url, "name": s.name}
+            sponsor_payload = {
+                "logo_url": s.logo_url,
+                "link_url": s.link_url,
+                "name": s.name,
+                "display_mode": _sanitize_sponsor_display_mode(data.get("sponsor_display_mode")),
+                "position_x": float(data.get("sponsor_position_x") or 0.92),
+                "position_y": float(data.get("sponsor_position_y") or 0.88),
+                "size_scale": float(data.get("sponsor_size_scale") or 1.0),
+                "opacity": float(data.get("sponsor_opacity") or 1.0),
+                "scroll_speed": float(data.get("sponsor_scroll_speed") or 1.0),
+            }
     payload["sponsor"] = sponsor_payload
 
     resp = jsonify(payload)
@@ -3736,6 +3870,108 @@ def api_get_scoring(org: Organization, match_slug: str):
     )
 
 
+def _sanitize_sponsor_display_mode(raw) -> str:
+    modes = {
+        "static",
+        "scroll_top",
+        "scroll_bottom",
+        "scroll_above_board",
+        "scroll_below_board",
+    }
+    m = str(raw or "static").strip().lower()
+    return m if m in modes else "static"
+
+
+OVERLAY_LAYOUT_STATE_KEYS = (
+    "overlay_height_fraction",
+    "overlay_width_fraction",
+    "overlay_anchor_x",
+    "overlay_anchor_y",
+    "overlay_bottom_margin",
+    "overlay_horizontal_inset",
+    "overlay_font_scale",
+    "overlay_bg_color",
+    "overlay_text_color",
+    "overlay_opacity",
+    "video_stabilization",
+    "keep_screen_on",
+    "watermark_enabled",
+    "watermark_text",
+    "sponsor_enabled",
+    "active_sponsor_id",
+    "sponsor_display_mode",
+    "sponsor_position_x",
+    "sponsor_position_y",
+    "sponsor_size_scale",
+    "sponsor_opacity",
+    "sponsor_scroll_speed",
+)
+
+
+def _overlay_layout_from_state() -> dict:
+    merge_missing_state_keys(state)
+    defaults = blank_state()
+    out: dict = {}
+    for key in OVERLAY_LAYOUT_STATE_KEYS:
+        out[key] = state.get(key, defaults.get(key))
+    out["sponsor_display_mode"] = _sanitize_sponsor_display_mode(out.get("sponsor_display_mode"))
+    out["sponsor_position_x"] = max(0.0, min(1.0, float(out.get("sponsor_position_x") or 0.92)))
+    out["sponsor_position_y"] = max(0.0, min(1.0, float(out.get("sponsor_position_y") or 0.88)))
+    out["sponsor_size_scale"] = max(0.3, min(3.0, float(out.get("sponsor_size_scale") or 1.0)))
+    out["sponsor_opacity"] = max(0.2, min(1.0, float(out.get("sponsor_opacity") or 1.0)))
+    out["sponsor_scroll_speed"] = max(0.3, min(3.0, float(out.get("sponsor_scroll_speed") or 1.0)))
+    return out
+
+
+def _apply_overlay_layout_to_state(data: dict) -> None:
+    merge_missing_state_keys(state)
+    if "overlay_size" in data:
+        state["overlay_size"] = normalize_overlay_size(
+            data.get("overlay_size"), data.get("overlay_scale")
+        )
+        state["overlay_scale"] = round(0.8 + (state["overlay_size"] - 1) * 0.25, 2)
+    if "theme" in data:
+        state["theme"] = _sanitize_overlay_theme(data.get("theme"))
+    elif "overlay_theme" in data:
+        state["theme"] = _sanitize_overlay_theme(data.get("overlay_theme"))
+    if "overlay_density" in data:
+        density = str(data.get("overlay_density") or "expanded").strip().lower()
+        state["overlay_density"] = density if density in {"compact", "expanded"} else "expanded"
+    for key in OVERLAY_LAYOUT_STATE_KEYS:
+        if key not in data:
+            continue
+        val = data[key]
+        if key == "sponsor_display_mode":
+            state[key] = _sanitize_sponsor_display_mode(val)
+        elif key in {"sponsor_enabled", "video_stabilization", "keep_screen_on", "watermark_enabled"}:
+            state[key] = bool(val)
+        elif key == "active_sponsor_id":
+            state[key] = str(val).strip() if val else None
+        elif key in {
+            "sponsor_position_x",
+            "sponsor_position_y",
+            "sponsor_size_scale",
+            "sponsor_opacity",
+            "sponsor_scroll_speed",
+            "overlay_height_fraction",
+            "overlay_width_fraction",
+            "overlay_anchor_x",
+            "overlay_anchor_y",
+            "overlay_bottom_margin",
+            "overlay_horizontal_inset",
+            "overlay_font_scale",
+            "overlay_opacity",
+        }:
+            try:
+                state[key] = float(val)
+            except (TypeError, ValueError):
+                pass
+        elif key in {"overlay_bg_color", "overlay_text_color", "watermark_text"}:
+            state[key] = str(val or "")
+        else:
+            state[key] = val
+
+
 def _overlay_prefs_json(slug: str) -> dict:
     with match_context(slug):
         merge_missing_state_keys(state)
@@ -3744,14 +3980,14 @@ def _overlay_prefs_json(slug: str) -> dict:
         density = str(state.get("overlay_density") or "expanded").strip().lower()
         if density not in {"compact", "expanded"}:
             density = "expanded"
+        layout = _overlay_layout_from_state()
         return {
             "ok": True,
             "overlay_size": size,
             "overlay_scale": float(state.get("overlay_scale") or 1.0),
             "theme": theme,
             "overlay_density": density,
-            "sponsor_enabled": bool(state.get("sponsor_enabled", False)),
-            "active_sponsor_id": state.get("active_sponsor_id"),
+            **layout,
         }
 
 
@@ -3772,24 +4008,7 @@ def api_set_overlay(org: Organization, match_slug: str):
         return jsonify({"error": "unknown stream"}), 404
     data = request.get_json(silent=True) or {}
     with match_context(slug):
-        merge_missing_state_keys(state)
-        if "overlay_size" in data:
-            state["overlay_size"] = normalize_overlay_size(
-                data.get("overlay_size"), data.get("overlay_scale")
-            )
-            state["overlay_scale"] = round(0.8 + (state["overlay_size"] - 1) * 0.25, 2)
-        if "theme" in data:
-            state["theme"] = _sanitize_overlay_theme(data.get("theme"))
-        elif "overlay_theme" in data:
-            state["theme"] = _sanitize_overlay_theme(data.get("overlay_theme"))
-        if "overlay_density" in data:
-            density = str(data.get("overlay_density") or "expanded").strip().lower()
-            state["overlay_density"] = density if density in {"compact", "expanded"} else "expanded"
-        if "sponsor_enabled" in data:
-            state["sponsor_enabled"] = bool(data.get("sponsor_enabled"))
-        if "active_sponsor_id" in data:
-            sid = data.get("active_sponsor_id")
-            state["active_sponsor_id"] = str(sid).strip() if sid else None
+        _apply_overlay_layout_to_state(data)
         save_state()
     return jsonify(_overlay_prefs_json(slug))
 
@@ -3889,6 +4108,88 @@ def public_pair_redeem(match_slug: str):
     return jsonify({"ok": True, "companion_token": result["companion_token"], "match_slug": result["slug"]})
 
 
+def _remote_sponsor_overlay_patch(raw: dict) -> dict:
+    """Extract and sanitize sponsor overlay fields from a companion remote payload."""
+    if not isinstance(raw, dict):
+        return {}
+    from .stream_api import REMOTE_SPONSOR_OVERLAY_KEYS
+
+    out: dict = {}
+    for key in REMOTE_SPONSOR_OVERLAY_KEYS:
+        if key not in raw:
+            continue
+        val = raw[key]
+        if key == "sponsor_enabled":
+            out[key] = bool(val)
+        elif key == "active_sponsor_id":
+            sid = str(val or "").strip()
+            out[key] = sid if sid else None
+        elif key == "sponsor_display_mode":
+            out[key] = _sanitize_sponsor_display_mode(val)
+        elif key in {
+            "sponsor_position_x",
+            "sponsor_position_y",
+            "sponsor_size_scale",
+            "sponsor_opacity",
+            "sponsor_scroll_speed",
+        }:
+            try:
+                fval = float(val)
+            except (TypeError, ValueError):
+                continue
+            if key in {"sponsor_position_x", "sponsor_position_y"}:
+                out[key] = max(0.0, min(1.0, fval))
+            elif key == "sponsor_size_scale":
+                out[key] = max(0.3, min(3.0, fval))
+            elif key == "sponsor_opacity":
+                out[key] = max(0.2, min(1.0, fval))
+            else:
+                out[key] = max(0.3, min(3.0, fval))
+    return out
+
+
+@app.get("/api/match/<match_slug>/remote/context")
+@companion_token_required
+def api_remote_context(companion_slug: str, companion_org_id: str, match_slug: str):
+    slug = sanitize_match_id(match_slug)
+    if slug != companion_slug:
+        return jsonify({"error": "slug mismatch"}), 400
+    if not relay_match_for_org_id(companion_org_id, slug):
+        return jsonify({"error": "unknown stream"}), 404
+    overlay = _overlay_prefs_json(slug)
+    from .stream_api import REMOTE_SPONSOR_OVERLAY_KEYS
+
+    sponsor_prefs = {k: overlay.get(k) for k in REMOTE_SPONSOR_OVERLAY_KEYS if k in overlay}
+    rows = (
+        Sponsor.query.filter_by(organization_id=companion_org_id)
+        .order_by(Sponsor.created_at.desc())
+        .all()
+    )
+    watch_url = ""
+    sess = (
+        StreamSession.query.filter_by(match_slug=slug, organization_id=companion_org_id)
+        .order_by(StreamSession.started_at.desc())
+        .first()
+    )
+    if sess and sess.watch_url:
+        watch_url = str(sess.watch_url).strip()
+    return jsonify(
+        {
+            "ok": True,
+            "sponsor_prefs": sponsor_prefs,
+            "sponsors": [_sponsor_json(s) for s in rows],
+            "watch_url": watch_url,
+        }
+    )
+
+
+def relay_match_for_org_id(org_id: str, match_slug: str) -> RelayMatch | None:
+    slug = (match_slug or "").strip()
+    if not slug or not org_id:
+        return None
+    return RelayMatch.query.filter_by(organization_id=org_id, score_match_slug=slug).first()
+
+
 @app.post("/api/match/<match_slug>/remote/command")
 @companion_token_required
 def api_remote_command(companion_slug: str, companion_org_id: str, match_slug: str):
@@ -3900,11 +4201,19 @@ def api_remote_command(companion_slug: str, companion_org_id: str, match_slug: s
     data = request.get_json(silent=True) or {}
     msg_type = str(data.get("type") or "").strip()
     command = str(data.get("command") or "").strip()
-    if msg_type != "control" or command not in REMOTE_CONTROL_COMMANDS:
-        return jsonify({"error": "invalid command"}), 400
     import time as _t
 
-    envelope = json.dumps({"type": msg_type, "command": command, "ts": _t.time()})
+    if msg_type == "control":
+        if command not in REMOTE_CONTROL_COMMANDS:
+            return jsonify({"error": "invalid command"}), 400
+        envelope = json.dumps({"type": msg_type, "command": command, "ts": _t.time()})
+    elif msg_type == "overlay":
+        patch = _remote_sponsor_overlay_patch(data.get("prefs") or {})
+        if not patch:
+            return jsonify({"error": "overlay prefs required"}), 400
+        envelope = json.dumps({"type": msg_type, "prefs": patch, "ts": _t.time()})
+    else:
+        return jsonify({"error": "invalid command type"}), 400
     key = f"cricrelay:remote:cmds:{slug}"
     r = redis_client()
     r.rpush(key, envelope)

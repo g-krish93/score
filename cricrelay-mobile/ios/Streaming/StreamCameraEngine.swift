@@ -23,6 +23,12 @@ final class StreamCameraEngine: NSObject {
         var watermarkText: String = "Visit cricrelay.co.uk"
         var sponsorEnabled: Bool = false
         var sponsorLogoUrl: String = ""
+        var sponsorDisplayMode: String = "static"
+        var sponsorPositionX: Float = 0.92
+        var sponsorPositionY: Float = 0.88
+        var sponsorSizeScale: Float = 1.0
+        var sponsorOpacity: Float = 1.0
+        var sponsorScrollSpeed: Float = 1.0
     }
 
     private let mixer = MediaMixer()
@@ -37,6 +43,8 @@ final class StreamCameraEngine: NSObject {
     private var watermarkObject: ImageScreenObject?
     private var sponsorObject: ImageScreenObject?
     private var appliedSponsorLogoUrl: String?
+    private var sponsorScrollTimer: Timer?
+    private var sponsorScrollOffset: CGFloat = 0
     private var appliedWatermarkText: String?
     private var overlayLayout = OverlayLayout()
     private var overlayUrl = ""
@@ -632,11 +640,12 @@ final class StreamCameraEngine: NSObject {
         }.value
     }
 
-    /// Adds (or refreshes) the sponsor logo in the bottom-right of the encoded frame.
+    /// Adds (or refreshes) the sponsor logo on the encoded frame.
     private func ensureSponsorObject() async {
         let enabled = overlayLayout.sponsorEnabled
         let url = overlayLayout.sponsorLogoUrl
         if !enabled || url.isEmpty {
+            stopSponsorScroll()
             await Task { @ScreenActor in
                 if let obj = sponsorObject {
                     try? await mixer.screen.removeChild(obj)
@@ -646,7 +655,11 @@ final class StreamCameraEngine: NSObject {
             }.value
             return
         }
-        guard appliedSponsorLogoUrl != url || sponsorObject == nil else { return }
+        if appliedSponsorLogoUrl == url, sponsorObject != nil {
+            await layoutSponsorObject()
+            startSponsorScrollIfNeeded()
+            return
+        }
         guard let remoteURL = URL(string: url) else { return }
         let data: Data
         do {
@@ -654,19 +667,91 @@ final class StreamCameraEngine: NSObject {
         } catch {
             return
         }
-        guard let cg = UIImage(data: data)?.cgImage else { return }
+        guard let rawImage = UIImage(data: data) else { return }
+        let image = applyImageOpacity(rawImage, opacity: overlayLayout.sponsorOpacity)
+        guard let cg = image.cgImage else { return }
         await Task { @ScreenActor in
             if sponsorObject == nil {
                 let obj = ImageScreenObject()
-                obj.horizontalAlignment = .right
-                obj.verticalAlignment = .bottom
-                obj.layoutMargin = UIEdgeInsets(top: 0, left: 0, bottom: 18, right: 18)
                 sponsorObject = obj
                 try? await mixer.screen.addChild(obj)
             }
             sponsorObject?.cgImage = cg
             appliedSponsorLogoUrl = url
+            await layoutSponsorObject()
+            startSponsorScrollIfNeeded()
         }.value
+    }
+
+    private func isSponsorScrollMode() -> Bool {
+        overlayLayout.sponsorDisplayMode.hasPrefix("scroll")
+    }
+
+    private func stopSponsorScroll() {
+        DispatchQueue.main.async { [weak self] in
+            self?.sponsorScrollTimer?.invalidate()
+            self?.sponsorScrollTimer = nil
+        }
+    }
+
+    private func startSponsorScrollIfNeeded() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.sponsorScrollTimer?.invalidate()
+            guard self.overlayLayout.sponsorEnabled, self.isSponsorScrollMode() else { return }
+            self.sponsorScrollTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                let speed = CGFloat(max(0.3, min(3, self.overlayLayout.sponsorScrollSpeed)))
+                self.sponsorScrollOffset -= speed * 4
+                let w = CGFloat(self.encodedCanvasWidth())
+                if self.sponsorScrollOffset < -w { self.sponsorScrollOffset = w }
+                Task { await self.layoutSponsorObject() }
+            }
+        }
+    }
+
+    @ScreenActor
+    private func layoutSponsorObject() async {
+        guard let obj = sponsorObject, let cg = obj.cgImage else { return }
+        let canvasW = CGFloat(encodedCanvasWidth())
+        let canvasH = CGFloat(encodedCanvasHeight())
+        let scale = CGFloat(max(0.3, min(3, overlayLayout.sponsorSizeScale)))
+        let aspect = CGFloat(cg.height) / max(CGFloat(cg.width), 1)
+        let imgW = canvasW * 0.18 * scale
+        let imgH = imgW * aspect
+        if isSponsorScrollMode() {
+            obj.horizontalAlignment = .left
+            obj.verticalAlignment = .top
+            let y = sponsorScrollY(canvasH: canvasH, imgH: imgH)
+            obj.layoutMargin = UIEdgeInsets(top: y, left: sponsorScrollOffset, bottom: 0, right: 0)
+        } else {
+            obj.horizontalAlignment = .left
+            obj.verticalAlignment = .top
+            let cx = CGFloat(max(0, min(1, overlayLayout.sponsorPositionX))) * canvasW
+            let cy = CGFloat(max(0, min(1, overlayLayout.sponsorPositionY))) * canvasH
+            obj.layoutMargin = UIEdgeInsets(
+                top: max(0, cy - imgH / 2),
+                left: max(0, cx - imgW / 2),
+                bottom: 0,
+                right: 0
+            )
+        }
+    }
+
+    private func sponsorScrollY(canvasH: CGFloat, imgH: CGFloat) -> CGFloat {
+        let boardTop = CGFloat(overlayLayout.anchorY) * canvasH - CGFloat(overlayLayout.heightFraction) * canvasH
+        switch overlayLayout.sponsorDisplayMode {
+        case "scroll_top":
+            return 8
+        case "scroll_bottom":
+            return max(8, canvasH - imgH - 8)
+        case "scroll_above_board":
+            return max(8, boardTop - imgH - 8)
+        case "scroll_below_board":
+            return min(canvasH - imgH - 8, CGFloat(overlayLayout.anchorY) * canvasH + 8)
+        default:
+            return CGFloat(overlayLayout.sponsorPositionY) * canvasH
+        }
     }
 
     /// Renders the watermark text onto a translucent rounded pill (white text, ~82%).

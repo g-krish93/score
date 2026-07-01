@@ -104,6 +104,45 @@ def _auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
+def test_dashboard_sponsor_logo_upload(client, monkeypatch, tmp_path):
+    c, _fake = client
+    org_id, _token, _slug = _seed_org_and_match()
+    static_root = tmp_path / "static"
+    static_root.mkdir()
+    monkeypatch.setattr("server.app.app.static_folder", str(static_root))
+    monkeypatch.setattr("server.app._public_base_url", lambda: "https://test.example")
+
+    with app.app_context():
+        org = db.session.get(Organization, org_id)
+
+    with c.session_transaction() as sess:
+        sess["org_id"] = org_id
+
+    # Minimal 1×1 PNG
+    png = bytes.fromhex(
+        "89504e470d0a1a0a0000000d49484452"
+        "000000010000000108060000001f15c489"
+        "0000000a49444154789c630001000000050001"
+        "0d0a2db40000000049454e44ae426082"
+    )
+    from io import BytesIO
+
+    data = {
+        "sponsor_name": "Local Brew Co",
+        "link_url": "https://localbrew.example",
+        "logo": (BytesIO(png), "logo.png"),
+    }
+    resp = c.post("/dashboard/sponsors/add", data=data, content_type="multipart/form-data")
+    assert resp.status_code == 302
+
+    with app.app_context():
+        rows = Sponsor.query.filter_by(organization_id=org_id).all()
+        assert len(rows) == 1
+        assert rows[0].name == "Local Brew Co"
+        assert rows[0].logo_url.startswith("https://test.example/static/sponsors/")
+        assert (static_root / "sponsors" / org_id).is_dir()
+
+
 def test_sponsor_crud_and_overlay_prefs(client):
     c, _fake = client
     _org_id, token, slug = _seed_org_and_match()
@@ -132,12 +171,30 @@ def test_sponsor_crud_and_overlay_prefs(client):
     overlay = c.post(
         f"/api/match/{slug}/overlay",
         headers=headers,
-        data=json.dumps({"sponsor_enabled": True, "active_sponsor_id": sponsor_id}),
+        data=json.dumps({
+            "sponsor_enabled": True,
+            "active_sponsor_id": sponsor_id,
+            "sponsor_display_mode": "scroll_above_board",
+            "sponsor_position_x": 0.1,
+            "sponsor_size_scale": 1.5,
+            "sponsor_opacity": 0.8,
+            "sponsor_scroll_speed": 2.0,
+        }),
     )
     assert overlay.status_code == 200
     body = overlay.get_json()
     assert body["sponsor_enabled"] is True
     assert body["active_sponsor_id"] == sponsor_id
+    assert body["sponsor_display_mode"] == "scroll_above_board"
+    assert body["sponsor_size_scale"] == 1.5
+
+    relay = c.get(f"/m/{slug}/overlay-data")
+    assert relay.status_code == 200
+    sponsor = relay.get_json().get("sponsor")
+    assert sponsor is not None
+    assert sponsor["display_mode"] == "scroll_above_board"
+    assert sponsor["size_scale"] == 1.5
+    assert sponsor["scroll_speed"] == 2.0
 
     deleted = c.delete(f"/api/sponsors/{sponsor_id}", headers=headers)
     assert deleted.status_code == 200
@@ -195,3 +252,59 @@ def test_remote_pair_redeem_command_poll(client):
         data=json.dumps({"type": "control", "command": "mute_mic"}),
     )
     assert stale.status_code == 410
+
+
+def test_remote_sponsor_context_and_overlay_command(client):
+    c, _fake = client
+    _org_id, token, slug = _seed_org_and_match()
+    headers = _auth_headers(token)
+
+    create = c.post(
+        "/api/sponsors",
+        headers=headers,
+        data=json.dumps({"name": "Remote Brew", "logo_url": "https://example.com/rb.png"}),
+    )
+    sponsor_id = create.get_json()["sponsor"]["id"]
+    c.post(
+        f"/api/match/{slug}/overlay",
+        headers=headers,
+        data=json.dumps({"sponsor_enabled": True, "active_sponsor_id": sponsor_id}),
+    )
+
+    pair = c.post(f"/api/match/{slug}/pair", headers=headers)
+    companion_token = c.post(
+        f"/stream/{slug}/pair/redeem",
+        data=json.dumps({"pair_token": pair.get_json()["pair_token"]}),
+        content_type="application/json",
+    ).get_json()["companion_token"]
+    cmd_headers = {
+        "Authorization": f"Bearer {companion_token}",
+        "Content-Type": "application/json",
+    }
+
+    ctx = c.get(f"/api/match/{slug}/remote/context", headers=cmd_headers)
+    assert ctx.status_code == 200
+    body = ctx.get_json()
+    assert body["sponsor_prefs"]["sponsor_enabled"] is True
+    assert len(body["sponsors"]) == 1
+
+    sent = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps(
+            {
+                "type": "overlay",
+                "prefs": {
+                    "sponsor_display_mode": "scroll_top",
+                    "sponsor_size_scale": 1.8,
+                },
+            }
+        ),
+    )
+    assert sent.status_code == 200
+
+    polled = c.get(f"/api/match/{slug}/remote/commands", headers=headers)
+    cmd = polled.get_json()["commands"][0]
+    assert cmd["type"] == "overlay"
+    assert cmd["prefs"]["sponsor_display_mode"] == "scroll_top"
+    assert cmd["prefs"]["sponsor_size_scale"] == 1.8

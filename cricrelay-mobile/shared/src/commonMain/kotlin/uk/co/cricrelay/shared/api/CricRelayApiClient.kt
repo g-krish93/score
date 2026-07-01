@@ -24,6 +24,7 @@ import uk.co.cricrelay.shared.model.MatchDayStatus
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.shared.model.PairRemoteResult
 import uk.co.cricrelay.shared.model.RemoteCommand
+import uk.co.cricrelay.shared.model.RemoteCompanionContext
 import uk.co.cricrelay.shared.model.Sponsor
 import uk.co.cricrelay.shared.model.ScoringConfig
 import uk.co.cricrelay.shared.model.StreamMatch
@@ -412,6 +413,34 @@ class CricRelayApiClient(
             val body = parseJsonObject(response)
             throw ApiException(body["error"]?.toString()?.trim('"') ?: "Remote command failed")
         }
+    }
+
+    suspend fun sendRemoteOverlayPrefs(
+        matchSlug: String,
+        companionToken: String,
+        prefs: OverlayLayoutPrefs,
+    ) {
+        val response = httpClient.post(matchUri(matchSlug, "remote/command")) {
+            header(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+            header(HttpHeaders.Authorization, "Bearer $companionToken")
+            setBody(buildJsonObject {
+                put("type", "overlay")
+                put("prefs", prefs.sponsorPatchJson())
+            })
+        }
+        if (!response.status.isSuccess()) {
+            val body = parseJsonObject(response)
+            throw ApiException(body["error"]?.toString()?.trim('"') ?: "Remote overlay update failed")
+        }
+    }
+
+    suspend fun getRemoteContext(matchSlug: String, companionToken: String): RemoteCompanionContext {
+        val response = httpClient.get(matchUri(matchSlug, "remote/context")) {
+            header(HttpHeaders.Authorization, "Bearer $companionToken")
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Failed to load remote context")
+        return RemoteCompanionContext.fromJson(body)
     }
 
     suspend fun youtubeAuthorizeUrl(): String {

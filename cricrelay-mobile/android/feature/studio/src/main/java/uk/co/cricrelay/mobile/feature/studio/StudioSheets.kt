@@ -42,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,6 +64,7 @@ import uk.co.cricrelay.mobile.ui.SheetHeader
 import uk.co.cricrelay.mobile.ui.StudioTextField
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.shared.model.Sponsor
+import uk.co.cricrelay.shared.model.SponsorDisplayMode
 
 @Composable
 fun DestinationSheet(
@@ -203,6 +205,7 @@ private val boardThemes = listOf(
 fun OverlaySheet(
     prefs: OverlayLayoutPrefs,
     sponsors: List<Sponsor>,
+    onPreview: (OverlayLayoutPrefs) -> Unit,
     onSave: (OverlayLayoutPrefs) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -218,6 +221,56 @@ fun OverlaySheet(
     var watermarkText by remember { mutableStateOf(prefs.watermarkText) }
     var sponsorEnabled by remember { mutableStateOf(prefs.sponsorEnabled) }
     var activeSponsorId by remember { mutableStateOf(prefs.activeSponsorId) }
+    var sponsorDisplayMode by remember { mutableStateOf(prefs.sponsorDisplayMode) }
+    var sponsorPositionX by remember { mutableStateOf(prefs.sponsorPositionX.toFloat()) }
+    var sponsorPositionY by remember { mutableStateOf(prefs.sponsorPositionY.toFloat()) }
+    var sponsorSizeScale by remember { mutableStateOf(prefs.sponsorSizeScale.toFloat()) }
+    var sponsorOpacity by remember { mutableStateOf(prefs.sponsorOpacity.toFloat()) }
+    var sponsorScrollSpeed by remember { mutableStateOf(prefs.sponsorScrollSpeed.toFloat()) }
+    val sponsorScrollMode = SponsorDisplayMode.isScroll(sponsorDisplayMode)
+
+    fun buildDraftPrefs(): OverlayLayoutPrefs = prefs.copy(
+        widthFraction = widthFraction.toDouble(),
+        heightFraction = heightFraction.toDouble(),
+        fontScale = fontScale.toDouble(),
+        opacity = opacity.toDouble(),
+        bottomMargin = bottomMargin.toDouble(),
+        bgColor = bg,
+        textColor = text,
+        theme = overlayTheme,
+        watermarkEnabled = watermarkEnabled,
+        watermarkText = watermarkText.trim().ifBlank { OverlayLayoutPrefs.WATERMARK_DEFAULT_TEXT },
+        sponsorEnabled = sponsorEnabled,
+        activeSponsorId = activeSponsorId?.takeIf { sponsorEnabled },
+        sponsorDisplayMode = sponsorDisplayMode,
+        sponsorPositionX = sponsorPositionX.toDouble(),
+        sponsorPositionY = sponsorPositionY.toDouble(),
+        sponsorSizeScale = sponsorSizeScale.toDouble(),
+        sponsorOpacity = sponsorOpacity.toDouble(),
+        sponsorScrollSpeed = sponsorScrollSpeed.toDouble(),
+    )
+
+    LaunchedEffect(
+        fontScale,
+        widthFraction,
+        heightFraction,
+        opacity,
+        bottomMargin,
+        overlayTheme,
+        watermarkEnabled,
+        watermarkText,
+        sponsorEnabled,
+        activeSponsorId,
+        sponsorDisplayMode,
+        sponsorPositionX,
+        sponsorPositionY,
+        sponsorSizeScale,
+        sponsorOpacity,
+        sponsorScrollSpeed,
+    ) {
+        delay(80)
+        onPreview(buildDraftPrefs())
+    }
 
     SheetHeader(
         title = "Board Edit",
@@ -373,7 +426,7 @@ fun OverlaySheet(
             Column(modifier = Modifier.weight(1f)) {
                 Text("Sponsor logo", style = AppTypography.titleSmall)
                 Text(
-                    "Shown bottom-right on the broadcast",
+                    "On-stream sponsor graphics — fixed or scrolling",
                     style = AppTypography.bodySmall,
                 )
             }
@@ -388,8 +441,12 @@ fun OverlaySheet(
                 ),
             )
         }
-        if (sponsorEnabled && sponsors.size > 1) {
+        if (sponsorEnabled && sponsors.any { it.isActive }) {
             Spacer(Modifier.height(AppSpacing.sm))
+            Text(
+                "Select sponsor for this match",
+                style = AppTypography.bodySmall,
+            )
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
             ) {
@@ -416,6 +473,87 @@ fun OverlaySheet(
                     )
                 }
             }
+        } else if (sponsorEnabled && sponsors.none { it.isActive }) {
+            Spacer(Modifier.height(AppSpacing.sm))
+            Text(
+                "No sponsors yet — upload logos in the web dashboard under Sponsor logos.",
+                style = AppTypography.bodySmall,
+                color = AppColors.Warning,
+            )
+        }
+        if (sponsorEnabled) {
+            Spacer(Modifier.height(AppSpacing.md))
+            Text("Sponsor display", style = AppTypography.titleSmall)
+            Spacer(Modifier.height(AppSpacing.sm))
+            val modes = listOf(
+                SponsorDisplayMode.STATIC to "Fixed",
+                SponsorDisplayMode.SCROLL_TOP to "Scroll top",
+                SponsorDisplayMode.SCROLL_ABOVE_BOARD to "Above board",
+                SponsorDisplayMode.SCROLL_BELOW_BOARD to "Below board",
+                SponsorDisplayMode.SCROLL_BOTTOM to "Scroll bottom",
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                items(modes) { (id, label) ->
+                    val selected = sponsorDisplayMode == id
+                    Text(
+                        label,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                            .background(
+                                if (selected) AppColors.Primary.copy(alpha = 0.25f)
+                                else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                            )
+                            .border(
+                                width = if (selected) 1.5.dp else 1.dp,
+                                color = if (selected) AppColors.Primary else AppColors.Border,
+                                shape = RoundedCornerShape(AppSpacing.radiusSm),
+                            )
+                            .clickable { sponsorDisplayMode = id }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        style = AppTypography.bodySmall,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                    )
+                }
+            }
+            Spacer(Modifier.height(AppSpacing.sm))
+            LabeledSlider(
+                label = "Logo size",
+                valueText = "${(sponsorSizeScale * 100).toInt()}%",
+                value = sponsorSizeScale,
+                onValueChange = { sponsorSizeScale = it },
+                valueRange = 0.3f..3f,
+            )
+            LabeledSlider(
+                label = "Logo opacity",
+                valueText = "${(sponsorOpacity * 100).toInt()}%",
+                value = sponsorOpacity,
+                onValueChange = { sponsorOpacity = it },
+                valueRange = 0.2f..1f,
+            )
+            if (!sponsorScrollMode) {
+                LabeledSlider(
+                    label = "Horizontal position",
+                    valueText = "${(sponsorPositionX * 100).toInt()}%",
+                    value = sponsorPositionX,
+                    onValueChange = { sponsorPositionX = it },
+                    valueRange = 0f..1f,
+                )
+                LabeledSlider(
+                    label = "Vertical position",
+                    valueText = "${(sponsorPositionY * 100).toInt()}%",
+                    value = sponsorPositionY,
+                    onValueChange = { sponsorPositionY = it },
+                    valueRange = 0f..1f,
+                )
+            } else {
+                LabeledSlider(
+                    label = "Scroll speed",
+                    valueText = String.format("%.1f×", sponsorScrollSpeed),
+                    value = sponsorScrollSpeed,
+                    onValueChange = { sponsorScrollSpeed = it },
+                    valueRange = 0.3f..3f,
+                )
+            }
         }
     }
 
@@ -423,23 +561,7 @@ fun OverlaySheet(
     PrimaryButton(
         text = "Save board",
         onClick = {
-            onSave(
-                prefs.copy(
-                    widthFraction = widthFraction.toDouble(),
-                    heightFraction = heightFraction.toDouble(),
-                    fontScale = fontScale.toDouble(),
-                    opacity = opacity.toDouble(),
-                    bottomMargin = bottomMargin.toDouble(),
-                    bgColor = bg,
-                    textColor = text,
-                    theme = overlayTheme,
-                    watermarkEnabled = watermarkEnabled,
-                    watermarkText = watermarkText.trim()
-                        .ifBlank { OverlayLayoutPrefs.WATERMARK_DEFAULT_TEXT },
-                    sponsorEnabled = sponsorEnabled,
-                    activeSponsorId = activeSponsorId?.takeIf { sponsorEnabled },
-                ),
-            )
+            onSave(buildDraftPrefs())
             onDismiss()
         },
         modifier = Modifier.padding(horizontal = AppSpacing.lg),

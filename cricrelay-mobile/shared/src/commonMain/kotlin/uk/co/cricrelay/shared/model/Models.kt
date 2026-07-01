@@ -237,14 +237,41 @@ data class Sponsor(
 data class RemoteCommand(
     val type: String = "",
     val command: String = "",
+    val prefs: JsonObject? = null,
     val ts: Double = 0.0,
 ) {
     companion object {
         fun fromJson(json: JsonObject): RemoteCommand = RemoteCommand(
             type = json.string("type").orEmpty(),
             command = json.string("command").orEmpty(),
+            prefs = json["prefs"] as? JsonObject,
             ts = (json["ts"] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: 0.0,
         )
+    }
+
+    fun mergeSponsorInto(base: OverlayLayoutPrefs): OverlayLayoutPrefs? {
+        val patch = prefs ?: return null
+        return base.mergeSponsorPatch(patch)
+    }
+}
+
+data class RemoteCompanionContext(
+    val sponsorPrefs: OverlayLayoutPrefs,
+    val sponsors: List<Sponsor>,
+    val watchUrl: String = "",
+) {
+    companion object {
+        fun fromJson(json: JsonObject): RemoteCompanionContext {
+            val prefsObj = (json["sponsor_prefs"] as? JsonObject) ?: buildJsonObject { }
+            val sponsors = json.array("sponsors").mapNotNull { el ->
+                (el as? JsonObject)?.let { Sponsor.fromJson(it) }
+            }
+            return RemoteCompanionContext(
+                sponsorPrefs = OverlayLayoutPrefs.fromJson(prefsObj),
+                sponsors = sponsors,
+                watchUrl = json.string("watch_url").orEmpty(),
+            )
+        }
     }
 }
 
@@ -252,6 +279,23 @@ data class PairRemoteResult(
     val pairToken: String,
     val expiresAt: String,
 )
+
+object SponsorDisplayMode {
+    const val STATIC = "static"
+    const val SCROLL_TOP = "scroll_top"
+    const val SCROLL_BOTTOM = "scroll_bottom"
+    const val SCROLL_ABOVE_BOARD = "scroll_above_board"
+    const val SCROLL_BELOW_BOARD = "scroll_below_board"
+
+    val ALL = setOf(STATIC, SCROLL_TOP, SCROLL_BOTTOM, SCROLL_ABOVE_BOARD, SCROLL_BELOW_BOARD)
+
+    fun sanitize(raw: String?): String {
+        val m = raw?.trim()?.lowercase().orEmpty()
+        return if (m in ALL) m else STATIC
+    }
+
+    fun isScroll(mode: String): Boolean = mode.startsWith("scroll")
+}
 
 @Serializable
 data class OverlayLayoutPrefs(
@@ -276,6 +320,13 @@ data class OverlayLayoutPrefs(
     @SerialName("watermark_text") val watermarkText: String = WATERMARK_DEFAULT_TEXT,
     @SerialName("sponsor_enabled") val sponsorEnabled: Boolean = false,
     @SerialName("active_sponsor_id") val activeSponsorId: String? = null,
+    /** static | scroll_top | scroll_bottom | scroll_above_board | scroll_below_board */
+    @SerialName("sponsor_display_mode") val sponsorDisplayMode: String = SponsorDisplayMode.STATIC,
+    @SerialName("sponsor_position_x") val sponsorPositionX: Double = 0.92,
+    @SerialName("sponsor_position_y") val sponsorPositionY: Double = 0.88,
+    @SerialName("sponsor_size_scale") val sponsorSizeScale: Double = 1.0,
+    @SerialName("sponsor_opacity") val sponsorOpacity: Double = 1.0,
+    @SerialName("sponsor_scroll_speed") val sponsorScrollSpeed: Double = 1.0,
 ) {
     /** Reference board size used when tuning default typography. */
     fun clampedWidthFraction(): Double = widthFraction.coerceIn(WIDTH_MIN, WIDTH_MAX)
@@ -333,6 +384,12 @@ data class OverlayLayoutPrefs(
                 ?: WATERMARK_DEFAULT_TEXT,
             sponsorEnabled = json.bool("sponsor_enabled") == true,
             activeSponsorId = json.string("active_sponsor_id")?.takeIf { it.isNotBlank() },
+            sponsorDisplayMode = SponsorDisplayMode.sanitize(json.string("sponsor_display_mode")),
+            sponsorPositionX = json.double("sponsor_position_x")?.coerceIn(0.0, 1.0) ?: 0.92,
+            sponsorPositionY = json.double("sponsor_position_y")?.coerceIn(0.0, 1.0) ?: 0.88,
+            sponsorSizeScale = json.double("sponsor_size_scale")?.coerceIn(0.3, 3.0) ?: 1.0,
+            sponsorOpacity = json.double("sponsor_opacity")?.coerceIn(0.2, 1.0) ?: 1.0,
+            sponsorScrollSpeed = json.double("sponsor_scroll_speed")?.coerceIn(0.3, 3.0) ?: 1.0,
         )
     }
 
@@ -354,11 +411,53 @@ data class OverlayLayoutPrefs(
         put("watermark_text", watermarkText)
         put("sponsor_enabled", sponsorEnabled)
         activeSponsorId?.let { put("active_sponsor_id", it) }
+        put("sponsor_display_mode", sponsorDisplayMode)
+        put("sponsor_position_x", sponsorPositionX)
+        put("sponsor_position_y", sponsorPositionY)
+        put("sponsor_size_scale", sponsorSizeScale)
+        put("sponsor_opacity", sponsorOpacity)
+        put("sponsor_scroll_speed", sponsorScrollSpeed)
+    }
+
+    /** Merge sponsor-only fields from a remote companion patch onto existing prefs. */
+    fun mergeSponsorPatch(patch: JsonObject): OverlayLayoutPrefs {
+        val base = toJson().toMutableMap()
+        for (key in SPONSOR_PATCH_KEYS) {
+            if (patch[key] != null) {
+                base[key] = patch[key]!!
+            }
+        }
+        return OverlayLayoutPrefs.fromJson(JsonObject(base))
+    }
+
+    fun sponsorPatchJson(): JsonObject = buildJsonObject {
+        put("sponsor_enabled", sponsorEnabled)
+        activeSponsorId?.let { put("active_sponsor_id", it) }
+        put("sponsor_display_mode", sponsorDisplayMode)
+        put("sponsor_position_x", sponsorPositionX)
+        put("sponsor_position_y", sponsorPositionY)
+        put("sponsor_size_scale", sponsorSizeScale)
+        put("sponsor_opacity", sponsorOpacity)
+        put("sponsor_scroll_speed", sponsorScrollSpeed)
     }
 }
 
+private val SPONSOR_PATCH_KEYS = setOf(
+    "sponsor_enabled",
+    "active_sponsor_id",
+    "sponsor_display_mode",
+    "sponsor_position_x",
+    "sponsor_position_y",
+    "sponsor_size_scale",
+    "sponsor_opacity",
+    "sponsor_scroll_speed",
+)
+
 internal fun JsonObject.string(key: String): String? =
     (this[key] as? JsonPrimitive)?.contentOrNull
+
+internal fun JsonObject.double(key: String): Double? =
+    (this[key] as? JsonPrimitive)?.content?.toDoubleOrNull()
 
 internal fun JsonObject.bool(key: String): Boolean? =
     (this[key] as? JsonPrimitive)?.booleanOrNull

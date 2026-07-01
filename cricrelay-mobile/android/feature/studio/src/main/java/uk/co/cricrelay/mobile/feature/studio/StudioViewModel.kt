@@ -284,18 +284,28 @@ class StudioViewModel @Inject constructor(
     private fun handleRemoteCommands(commands: List<RemoteCommand>) {
         if (commands.isEmpty()) return
         for (cmd in commands) {
-            if (cmd.type != "control") continue
-            when (cmd.command) {
-                "start_broadcast" -> {
-                    if (!_uiState.value.streaming && _uiState.value.destinationReady) {
-                        goLive()
+            when (cmd.type) {
+                "control" -> when (cmd.command) {
+                    "start_broadcast" -> {
+                        if (!_uiState.value.streaming && _uiState.value.destinationReady) {
+                            goLive()
+                        }
+                    }
+                    "stop_broadcast" -> {
+                        if (_uiState.value.streaming) stopLive()
+                    }
+                    "mute_mic" -> onToggleMicMuted()
+                    "toggle_focus_lock" -> onToggleFocusLock()
+                    "toggle_sponsor" -> {
+                        val prefs = _uiState.value.overlayPrefs.copy(
+                            sponsorEnabled = !_uiState.value.overlayPrefs.sponsorEnabled,
+                        )
+                        updateOverlayPrefs(prefs)
                     }
                 }
-                "stop_broadcast" -> {
-                    if (_uiState.value.streaming) stopLive()
+                "overlay" -> {
+                    cmd.mergeSponsorInto(_uiState.value.overlayPrefs)?.let { updateOverlayPrefs(it) }
                 }
-                "mute_mic" -> onToggleMicMuted()
-                "toggle_focus_lock" -> onToggleFocusLock()
             }
         }
     }
@@ -311,8 +321,16 @@ class StudioViewModel @Inject constructor(
     }
 
     private fun syncSponsorLayer(prefs: OverlayLayoutPrefs, sponsors: List<Sponsor> = _uiState.value.sponsors) {
+        val match = _uiState.value.match ?: return
+        if (match.overlayEmbedUrl.isBlank()) {
+            streamController.setSponsorLayer(
+                prefs.sponsorEnabled,
+                resolveSponsorLogoUrl(prefs, sponsors),
+            )
+            return
+        }
         val logoUrl = resolveSponsorLogoUrl(prefs, sponsors)
-        streamController.setSponsorLayer(prefs.sponsorEnabled, logoUrl)
+        streamController.updateOverlay(match.overlayEmbedUrl, prefs.toEngineLayout(logoUrl))
     }
 
     private fun resetCameraGate() {
@@ -364,8 +382,20 @@ class StudioViewModel @Inject constructor(
 
     private fun syncOverlay(match: StreamMatch, prefs: OverlayLayoutPrefs) {
         if (match.overlayEmbedUrl.isBlank()) return
-        streamController.updateOverlay(match.overlayEmbedUrl, prefs.toEngineLayout())
+        val logoUrl = resolveSponsorLogoUrl(prefs, _uiState.value.sponsors)
+        streamController.updateOverlay(match.overlayEmbedUrl, prefs.toEngineLayout(logoUrl))
+    }
+
+    /** Push overlay/sponsor prefs to the camera preview without persisting to the server. */
+    fun previewOverlayPrefs(prefs: OverlayLayoutPrefs) {
+        val match = _uiState.value.match ?: return
+        syncOverlay(match, prefs)
         syncSponsorLayer(prefs)
+    }
+
+    /** Restore the last saved overlay on the preview after cancel/dismiss without save. */
+    fun revertOverlayPreview() {
+        previewOverlayPrefs(_uiState.value.overlayPrefs)
     }
 
     private fun startMatchDayPolling(slug: String) {
@@ -391,7 +421,16 @@ class StudioViewModel @Inject constructor(
         }
     }
 
-    fun openSheet(sheet: StudioSheet) = _uiState.update { it.copy(activeSheet = sheet, error = null) }
+    fun openSheet(sheet: StudioSheet) {
+        if (sheet == StudioSheet.Overlay) {
+            viewModelScope.launch {
+                val sponsors = runCatching { streamRepository.listSponsors() }.getOrDefault(emptyList())
+                _uiState.update { it.copy(activeSheet = sheet, error = null, sponsors = sponsors) }
+            }
+            return
+        }
+        _uiState.update { it.copy(activeSheet = sheet, error = null) }
+    }
 
     fun closeSheet() = _uiState.update { it.copy(activeSheet = StudioSheet.None) }
 
@@ -545,7 +584,8 @@ class StudioViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(busy = true, error = null, statusMessage = "Connecting…") }
             try {
-                val layout = state.overlayPrefs.toEngineLayout()
+                val logoUrl = resolveSponsorLogoUrl(state.overlayPrefs, state.sponsors)
+                val layout = state.overlayPrefs.toEngineLayout(logoUrl)
                 val watchUrl: String
                 when (state.destination) {
                     StreamDestination.Custom -> {

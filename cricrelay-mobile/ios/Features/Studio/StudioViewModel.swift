@@ -412,6 +412,23 @@ final class StudioViewModel: ObservableObject {
 
     func saveOverlay(_ prefs: OverlayLayoutPrefs) async {
         overlayPrefs = prefs
+        applyOverlayPreview(prefs)
+        StreamCameraEngine.shared.setKeepScreenOnDuringStream(enabled: prefs.keepScreenOn)
+        StreamCameraEngine.shared.setVideoStabilization(enabled: prefs.videoStabilization)
+        _ = try? await api.saveOverlayPrefs(slug: matchSlug, prefs: prefs)
+    }
+
+    /// Push overlay/sponsor prefs to the camera preview without persisting to the server.
+    func previewOverlay(_ prefs: OverlayLayoutPrefs) {
+        applyOverlayPreview(prefs)
+    }
+
+    /// Restore the last saved overlay on the preview after cancel/dismiss without save.
+    func revertOverlayPreview() {
+        applyOverlayPreview(overlayPrefs)
+    }
+
+    private func applyOverlayPreview(_ prefs: OverlayLayoutPrefs) {
         let url = match?.overlayEmbedUrl ?? ""
         let effectiveUrl = !url.isEmpty ? url : overlayEmbedUrl
         let logoUrl = prefs.resolvedSponsorLogoUrl(from: sponsors)
@@ -419,9 +436,6 @@ final class StudioViewModel: ObservableObject {
             url: effectiveUrl,
             layout: prefs.toEngineLayout(sponsorLogoUrl: logoUrl)
         )
-        StreamCameraEngine.shared.setKeepScreenOnDuringStream(enabled: prefs.keepScreenOn)
-        StreamCameraEngine.shared.setVideoStabilization(enabled: prefs.videoStabilization)
-        _ = try? await api.saveOverlayPrefs(slug: matchSlug, prefs: prefs)
     }
 
     func loadSponsors() async {
@@ -482,6 +496,11 @@ final class StudioViewModel: ObservableObject {
                 for cmd in commands where cmd.type == "control" {
                     await dispatchRemoteCommand(cmd.command)
                 }
+                for cmd in commands where cmd.type == "overlay" {
+                    if let patch = cmd.prefs {
+                        await applyRemoteOverlayPatch(patch)
+                    }
+                }
             }
         }
     }
@@ -496,9 +515,18 @@ final class StudioViewModel: ObservableObject {
             if !micMuted { await toggleMicMuted() }
         case "toggle_focus_lock":
             await toggleFocusLock()
+        case "toggle_sponsor":
+            var prefs = overlayPrefs
+            prefs.sponsorEnabled.toggle()
+            await saveOverlay(prefs)
         default:
             break
         }
+    }
+
+    private func applyRemoteOverlayPatch(_ patch: [String: Any]) async {
+        let merged = overlayPrefs.mergeSponsorPatch(patch)
+        await saveOverlay(merged)
     }
 
     // MARK: - Scoring

@@ -23,3 +23,5 @@ archive/pcs-ble-relay/build/
 archive/pcs-ble-relay/.dart_tool/
 **/terraform.tfvars
 !**/terraform.tfvars.example
+# Club-uploaded sponsor logos (dashboard upload)
+static/sponsors/

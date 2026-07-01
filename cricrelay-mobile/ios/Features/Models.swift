@@ -154,10 +154,26 @@ struct CompanionSession: Codable {
     }
 }
 
-struct RemoteCommand: Codable {
+struct RemoteCommand {
     var type: String
     var command: String
     var ts: Double?
+    var prefs: [String: Any]?
+
+    static func from(_ dict: [String: Any]) -> RemoteCommand {
+        RemoteCommand(
+            type: dict["type"] as? String ?? "",
+            command: dict["command"] as? String ?? "",
+            ts: dict["ts"] as? Double,
+            prefs: dict["prefs"] as? [String: Any]
+        )
+    }
+}
+
+struct RemoteCompanionContext {
+    var sponsorPrefs: OverlayLayoutPrefs
+    var sponsors: [Sponsor]
+    var watchUrl: String
 }
 
 struct OverlayLayoutPrefs: Codable {
@@ -179,6 +195,12 @@ struct OverlayLayoutPrefs: Codable {
     var watermarkText: String
     var sponsorEnabled: Bool
     var activeSponsorId: String?
+    var sponsorDisplayMode: String
+    var sponsorPositionX: Double
+    var sponsorPositionY: Double
+    var sponsorSizeScale: Double
+    var sponsorOpacity: Double
+    var sponsorScrollSpeed: Double
 
     static let watermarkDefaultText = "Visit cricrelay.co.uk"
 
@@ -200,6 +222,12 @@ struct OverlayLayoutPrefs: Codable {
         watermarkText = OverlayLayoutPrefs.watermarkDefaultText
         sponsorEnabled = false
         activeSponsorId = nil
+        sponsorDisplayMode = SponsorDisplayMode.staticMode
+        sponsorPositionX = 0.92
+        sponsorPositionY = 0.88
+        sponsorSizeScale = 1.0
+        sponsorOpacity = 1.0
+        sponsorScrollSpeed = 1.0
     }
 
     enum CodingKeys: String, CodingKey {
@@ -220,6 +248,12 @@ struct OverlayLayoutPrefs: Codable {
         case watermarkText = "watermark_text"
         case sponsorEnabled = "sponsor_enabled"
         case activeSponsorId = "active_sponsor_id"
+        case sponsorDisplayMode = "sponsor_display_mode"
+        case sponsorPositionX = "sponsor_position_x"
+        case sponsorPositionY = "sponsor_position_y"
+        case sponsorSizeScale = "sponsor_size_scale"
+        case sponsorOpacity = "sponsor_opacity"
+        case sponsorScrollSpeed = "sponsor_scroll_speed"
     }
 
     /// Tolerant decoder: any missing key falls back to its default so an older server
@@ -245,6 +279,14 @@ struct OverlayLayoutPrefs: Codable {
         watermarkText = wm.isEmpty ? OverlayLayoutPrefs.watermarkDefaultText : wm
         sponsorEnabled = try c.decodeIfPresent(Bool.self, forKey: .sponsorEnabled) ?? sponsorEnabled
         activeSponsorId = try c.decodeIfPresent(String.self, forKey: .activeSponsorId)
+        sponsorDisplayMode = SponsorDisplayMode.sanitize(
+            try c.decodeIfPresent(String.self, forKey: .sponsorDisplayMode)
+        )
+        sponsorPositionX = try c.decodeIfPresent(Double.self, forKey: .sponsorPositionX) ?? sponsorPositionX
+        sponsorPositionY = try c.decodeIfPresent(Double.self, forKey: .sponsorPositionY) ?? sponsorPositionY
+        sponsorSizeScale = try c.decodeIfPresent(Double.self, forKey: .sponsorSizeScale) ?? sponsorSizeScale
+        sponsorOpacity = try c.decodeIfPresent(Double.self, forKey: .sponsorOpacity) ?? sponsorOpacity
+        sponsorScrollSpeed = try c.decodeIfPresent(Double.self, forKey: .sponsorScrollSpeed) ?? sponsorScrollSpeed
     }
 
     func resolvedSponsorLogoUrl(from sponsors: [Sponsor]) -> String {
@@ -275,8 +317,88 @@ struct OverlayLayoutPrefs: Codable {
             watermarkEnabled: watermarkEnabled,
             watermarkText: watermarkText,
             sponsorEnabled: sponsorEnabled,
-            sponsorLogoUrl: sponsorLogoUrl
+            sponsorLogoUrl: sponsorLogoUrl,
+            sponsorDisplayMode: sponsorDisplayMode,
+            sponsorPositionX: Float(max(0, min(1, sponsorPositionX))),
+            sponsorPositionY: Float(max(0, min(1, sponsorPositionY))),
+            sponsorSizeScale: Float(max(0.3, min(3, sponsorSizeScale))),
+            sponsorOpacity: Float(max(0.2, min(1, sponsorOpacity))),
+            sponsorScrollSpeed: Float(max(0.3, min(3, sponsorScrollSpeed)))
         )
+    }
+
+    func mergeSponsorPatch(_ patch: [String: Any]) -> OverlayLayoutPrefs {
+        var merged = self
+        if let v = patch["sponsor_enabled"] as? Bool { merged.sponsorEnabled = v }
+        if let v = patch["active_sponsor_id"] as? String {
+            merged.activeSponsorId = v.isEmpty ? nil : v
+        } else if patch["active_sponsor_id"] is NSNull {
+            merged.activeSponsorId = nil
+        }
+        if let v = patch["sponsor_display_mode"] as? String {
+            merged.sponsorDisplayMode = SponsorDisplayMode.sanitize(v)
+        }
+        if let v = patch["sponsor_position_x"] as? Double {
+            merged.sponsorPositionX = max(0, min(1, v))
+        }
+        if let v = patch["sponsor_position_x"] as? Int {
+            merged.sponsorPositionX = max(0, min(1, Double(v)))
+        }
+        if let v = patch["sponsor_position_y"] as? Double {
+            merged.sponsorPositionY = max(0, min(1, v))
+        }
+        if let v = patch["sponsor_position_y"] as? Int {
+            merged.sponsorPositionY = max(0, min(1, Double(v)))
+        }
+        if let v = patch["sponsor_size_scale"] as? Double {
+            merged.sponsorSizeScale = max(0.3, min(3, v))
+        }
+        if let v = patch["sponsor_opacity"] as? Double {
+            merged.sponsorOpacity = max(0.2, min(1, v))
+        }
+        if let v = patch["sponsor_scroll_speed"] as? Double {
+            merged.sponsorScrollSpeed = max(0.3, min(3, v))
+        }
+        return merged
+    }
+
+    func sponsorPatchDictionary() -> [String: Any] {
+        var out: [String: Any] = [
+            "sponsor_enabled": sponsorEnabled,
+            "sponsor_display_mode": sponsorDisplayMode,
+            "sponsor_position_x": sponsorPositionX,
+            "sponsor_position_y": sponsorPositionY,
+            "sponsor_size_scale": sponsorSizeScale,
+            "sponsor_opacity": sponsorOpacity,
+            "sponsor_scroll_speed": sponsorScrollSpeed,
+        ]
+        if let id = activeSponsorId { out["active_sponsor_id"] = id }
+        return out
+    }
+}
+
+enum SponsorDisplayMode {
+    static let staticMode = "static"
+    static let scrollTop = "scroll_top"
+    static let scrollBottom = "scroll_bottom"
+    static let scrollAboveBoard = "scroll_above_board"
+    static let scrollBelowBoard = "scroll_below_board"
+
+    static let modes: [(id: String, label: String)] = [
+        (staticMode, "Fixed"),
+        (scrollTop, "Scroll top"),
+        (scrollAboveBoard, "Above board"),
+        (scrollBelowBoard, "Below board"),
+        (scrollBottom, "Scroll bottom"),
+    ]
+
+    static func isScroll(_ mode: String) -> Bool {
+        mode.hasPrefix("scroll")
+    }
+
+    static func sanitize(_ raw: String?) -> String {
+        let m = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? staticMode
+        return modes.contains(where: { $0.id == m }) ? m : staticMode
     }
 }
 

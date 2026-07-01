@@ -51,6 +51,12 @@ object StreamCameraEngine : ConnectChecker {
         val watermarkText: String = "Visit cricrelay.co.uk",
         val sponsorEnabled: Boolean = false,
         val sponsorLogoUrl: String = "",
+        val sponsorDisplayMode: String = "static",
+        val sponsorPositionX: Float = 0.92f,
+        val sponsorPositionY: Float = 0.88f,
+        val sponsorSizeScale: Float = 1f,
+        val sponsorOpacity: Float = 1f,
+        val sponsorScrollSpeed: Float = 1f,
     )
 
     private const val MAX_WIDTH = 1280
@@ -75,6 +81,8 @@ object StreamCameraEngine : ConnectChecker {
     private var sponsorBitmapHeight: Int = 80
     private var sponsorFetchUrlInFlight: String? = null
     private val sponsorFetchExecutor = Executors.newSingleThreadExecutor()
+    private var sponsorScrollRunnable: Runnable? = null
+    private var sponsorScrollOffsetPct: Float = 100f
     // TODO(paywall): once Stripe is wired, free-tier streams force the watermark on
     // regardless of the admin toggle — for now the toggle in Board Edit wins.
     private const val IS_FREE_USER = true
@@ -1122,6 +1130,30 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
+    private fun isSponsorScrollMode(): Boolean =
+        overlayLayout.sponsorDisplayMode.startsWith("scroll")
+
+    private fun startSponsorScroll() {
+        stopSponsorScroll()
+        if (!overlayLayout.sponsorEnabled || !isSponsorScrollMode()) return
+        val runnable = object : Runnable {
+            override fun run() {
+                val speed = overlayLayout.sponsorScrollSpeed.coerceIn(0.3f, 3f)
+                sponsorScrollOffsetPct -= speed * 0.45f
+                if (sponsorScrollOffsetPct < -120f) sponsorScrollOffsetPct = 110f
+                sponsorFilter?.let { applySponsorSprite(it) }
+                mainHandler.postDelayed(this, 33L)
+            }
+        }
+        sponsorScrollRunnable = runnable
+        mainHandler.post(runnable)
+    }
+
+    private fun stopSponsorScroll() {
+        sponsorScrollRunnable?.let { mainHandler.removeCallbacks(it) }
+        sponsorScrollRunnable = null
+    }
+
     private fun removePauseBlackFilter() {
         val cam = camera ?: return
         pauseBlackFilter?.let { filter ->
@@ -1420,9 +1452,11 @@ object StreamCameraEngine : ConnectChecker {
                         try {
                             sponsorBitmapWidth = bmp.width
                             sponsorBitmapHeight = bmp.height
-                            liveFilter.setImage(bmp)
+                            val opaque = applyBitmapOpacity(bmp, overlayLayout.sponsorOpacity.coerceIn(0.2f, 1f))
+                            liveFilter.setImage(opaque)
                             appliedSponsorLogoUrl = wantUrl
                             applySponsorSprite(liveFilter)
+                            if (isSponsorScrollMode()) startSponsorScroll() else stopSponsorScroll()
                         } catch (e: Exception) {
                             CricrelayLog.w("Sponsor image failed: ${e.message}")
                         }
@@ -1432,18 +1466,21 @@ object StreamCameraEngine : ConnectChecker {
             return
         }
         applySponsorSprite(filter)
+        if (isSponsorScrollMode()) startSponsorScroll() else stopSponsorScroll()
     }
 
-    private fun clearSponsorFilter() {
-        val cam = camera ?: return
-        sponsorFilter?.let { filter ->
-            try {
-                cam.glInterface.removeFilter(filter)
-            } catch (_: Exception) {
-            }
+    private fun sponsorHeightPct(): Float =
+        WATERMARK_HEIGHT_PCT * overlayLayout.sponsorSizeScale.coerceIn(0.3f, 3f)
+
+    private fun sponsorScrollYPercent(spriteScaleY: Float): Float {
+        val boardTop = overlayLayout.anchorY * 100f - overlayLayout.heightFraction * 100f
+        return when (overlayLayout.sponsorDisplayMode) {
+            "scroll_top" -> 4f
+            "scroll_bottom" -> 96f - spriteScaleY
+            "scroll_above_board" -> (boardTop - spriteScaleY - 2f).coerceAtLeast(2f)
+            "scroll_below_board" -> (overlayLayout.anchorY * 100f + 2f).coerceAtMost(98f - spriteScaleY)
+            else -> overlayLayout.sponsorPositionY * 100f
         }
-        sponsorFilter = null
-        appliedSponsorLogoUrl = null
     }
 
     private fun applySponsorSprite(filter: ImageObjectFilterRender) {
@@ -1456,14 +1493,35 @@ object StreamCameraEngine : ConnectChecker {
                 canvasH = canvasH,
                 bitmapWidth = sponsorBitmapWidth.coerceAtLeast(160),
                 bitmapHeight = sponsorBitmapHeight.coerceAtLeast(WATERMARK_BMP_HEIGHT),
-                heightPct = WATERMARK_HEIGHT_PCT,
+                heightPct = sponsorHeightPct(),
                 rightEdgePct = WATERMARK_RIGHT_EDGE_PCT,
                 topPct = WATERMARK_TOP_PCT,
                 maxWidthPct = WATERMARK_MAX_WIDTH_PCT,
             ),
         )
         filter.setScale(sprite.scaleX, sprite.scaleY)
-        filter.setPosition(sprite.positionX, 100f - sprite.scaleY - WATERMARK_TOP_PCT)
+        if (isSponsorScrollMode()) {
+            val y = sponsorScrollYPercent(sprite.scaleY)
+            val x = sponsorScrollOffsetPct - sprite.scaleX
+            filter.setPosition(x, y)
+        } else {
+            val cx = overlayLayout.sponsorPositionX.coerceIn(0f, 1f) * 100f
+            val cy = overlayLayout.sponsorPositionY.coerceIn(0f, 1f) * 100f
+            filter.setPosition(cx - sprite.scaleX / 2f, cy - sprite.scaleY / 2f)
+        }
+    }
+
+    private fun clearSponsorFilter() {
+        stopSponsorScroll()
+        val cam = camera ?: return
+        sponsorFilter?.let { filter ->
+            try {
+                cam.glInterface.removeFilter(filter)
+            } catch (_: Exception) {
+            }
+        }
+        sponsorFilter = null
+        appliedSponsorLogoUrl = null
     }
 
     private fun ensureOverlayFilter() {

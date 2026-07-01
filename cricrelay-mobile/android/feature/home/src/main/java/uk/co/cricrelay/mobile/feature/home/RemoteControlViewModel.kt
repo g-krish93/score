@@ -3,11 +3,15 @@ package uk.co.cricrelay.mobile.feature.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
+import uk.co.cricrelay.shared.model.Sponsor
 import uk.co.cricrelay.shared.repository.StreamRepository
 import javax.inject.Inject
 
@@ -17,6 +21,10 @@ data class RemoteControlUiState(
     val busy: Boolean = false,
     val statusMessage: String = "",
     val error: String? = null,
+    val contextLoading: Boolean = false,
+    val sponsors: List<Sponsor> = emptyList(),
+    val sponsorPrefs: OverlayLayoutPrefs = OverlayLayoutPrefs(),
+    val watchUrl: String = "",
 )
 
 @HiltViewModel
@@ -26,6 +34,7 @@ class RemoteControlViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RemoteControlUiState())
     val uiState: StateFlow<RemoteControlUiState> = _uiState.asStateFlow()
+    private var sponsorSendJob: Job? = null
 
     init {
         companionTokenStore.load()?.let { session ->
@@ -36,6 +45,7 @@ class RemoteControlViewModel @Inject constructor(
                     statusMessage = "Paired to ${session.matchSlug}",
                 )
             }
+            loadContext()
         }
     }
 
@@ -72,6 +82,7 @@ class RemoteControlViewModel @Inject constructor(
                         error = null,
                     )
                 }
+                loadContext()
             } catch (e: Exception) {
                 error(e.message ?: "Pairing failed")
             }
@@ -87,10 +98,15 @@ class RemoteControlViewModel @Inject constructor(
             _uiState.update { it.copy(busy = true, error = null) }
             try {
                 streamRepository.sendRemoteCommand(session.matchSlug, session.companionToken, command)
+                if (command == "toggle_sponsor") {
+                    _uiState.update {
+                        it.copy(sponsorPrefs = it.sponsorPrefs.copy(sponsorEnabled = !it.sponsorPrefs.sponsorEnabled))
+                    }
+                }
                 _uiState.update {
                     it.copy(
                         busy = false,
-                        statusMessage = "Sent: $command",
+                        statusMessage = "Sent: ${command.replace('_', ' ')}",
                     )
                 }
             } catch (e: Exception) {
@@ -99,7 +115,57 @@ class RemoteControlViewModel @Inject constructor(
         }
     }
 
+    fun updateSponsorPrefs(transform: (OverlayLayoutPrefs) -> OverlayLayoutPrefs) {
+        val next = transform(_uiState.value.sponsorPrefs)
+        _uiState.update { it.copy(sponsorPrefs = next) }
+        scheduleSponsorSend(next)
+    }
+
+    fun refreshContext() = loadContext()
+
+    private fun scheduleSponsorSend(prefs: OverlayLayoutPrefs) {
+        sponsorSendJob?.cancel()
+        sponsorSendJob = viewModelScope.launch {
+            delay(120)
+            val session = companionTokenStore.load() ?: return@launch
+            try {
+                streamRepository.sendRemoteOverlayPrefs(
+                    session.matchSlug,
+                    session.companionToken,
+                    prefs,
+                )
+                _uiState.update {
+                    it.copy(statusMessage = "Sponsor updated on broadcast phone")
+                }
+            } catch (e: Exception) {
+                error(e.message ?: "Sponsor update failed")
+            }
+        }
+    }
+
+    private fun loadContext() {
+        val session = companionTokenStore.load() ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(contextLoading = true, error = null) }
+            try {
+                val ctx = streamRepository.getRemoteContext(session.matchSlug, session.companionToken)
+                _uiState.update {
+                    it.copy(
+                        contextLoading = false,
+                        sponsors = ctx.sponsors,
+                        sponsorPrefs = ctx.sponsorPrefs,
+                        watchUrl = ctx.watchUrl,
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(contextLoading = false) }
+                error(e.message ?: "Failed to load sponsor settings")
+            }
+        }
+    }
+
     fun unpair() {
+        sponsorSendJob?.cancel()
         companionTokenStore.clear()
         _uiState.update {
             RemoteControlUiState(statusMessage = "Scan a pairing code from the broadcast phone")
@@ -107,6 +173,6 @@ class RemoteControlViewModel @Inject constructor(
     }
 
     private fun error(message: String) {
-        _uiState.update { it.copy(busy = false, error = message) }
+        _uiState.update { it.copy(busy = false, contextLoading = false, error = message) }
     }
 }

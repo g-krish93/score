@@ -49,7 +49,9 @@ fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.bottomMarginPx(frameHeightPx
     return (frameHeightPx * fraction).toInt()
 }
 
-fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.toEngineLayout(): uk.co.cricrelay.stream.StreamCameraEngine.OverlayLayout {
+fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.toEngineLayout(
+    sponsorLogoUrl: String = "",
+): uk.co.cricrelay.stream.StreamCameraEngine.OverlayLayout {
     return uk.co.cricrelay.stream.StreamCameraEngine.OverlayLayout(
         heightFraction = heightFraction.toFloat(),
         widthFraction = widthFraction.toFloat(),
@@ -64,6 +66,12 @@ fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.toEngineLayout(): uk.co.cric
         watermarkEnabled = watermarkEnabled,
         watermarkText = watermarkText,
         sponsorEnabled = sponsorEnabled,
-        sponsorLogoUrl = "",
+        sponsorLogoUrl = sponsorLogoUrl,
+        sponsorDisplayMode = uk.co.cricrelay.shared.model.SponsorDisplayMode.sanitize(sponsorDisplayMode),
+        sponsorPositionX = sponsorPositionX.toFloat().coerceIn(0f, 1f),
+        sponsorPositionY = sponsorPositionY.toFloat().coerceIn(0f, 1f),
+        sponsorSizeScale = sponsorSizeScale.toFloat().coerceIn(0.3f, 3f),
+        sponsorOpacity = sponsorOpacity.toFloat().coerceIn(0.2f, 1f),
+        sponsorScrollSpeed = sponsorScrollSpeed.toFloat().coerceIn(0.3f, 3f),
     )
 }

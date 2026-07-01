@@ -228,12 +228,19 @@ fun StudioScreen(
 
     CricRelayBottomSheet(
         visible = state.activeSheet == StudioSheet.Overlay,
-        onDismiss = viewModel::closeSheet,
+        onDismiss = {
+            viewModel.revertOverlayPreview()
+            viewModel.closeSheet()
+        },
     ) {
         OverlaySheet(
             prefs = state.overlayPrefs,
             sponsors = state.sponsors,
-            onSave = viewModel::updateOverlayPrefs,
+            onPreview = viewModel::previewOverlayPrefs,
+            onSave = { prefs ->
+                viewModel.updateOverlayPrefs(prefs)
+                viewModel.closeSheet()
+            },
             onDismiss = viewModel::closeSheet,
         )
     }

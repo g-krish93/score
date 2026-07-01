@@ -19,9 +19,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -30,13 +34,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.unit.dp
+import uk.co.cricrelay.mobile.ui.AppColors
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -44,7 +49,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
-import uk.co.cricrelay.mobile.ui.AppColors
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import uk.co.cricrelay.mobile.ui.LabeledSlider
+import uk.co.cricrelay.shared.model.SponsorDisplayMode
 import uk.co.cricrelay.mobile.ui.AppSpacing
 import uk.co.cricrelay.mobile.ui.AppTypography
 import uk.co.cricrelay.mobile.ui.CameraCircleButton
@@ -144,7 +159,8 @@ fun RemoteControlScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
                 ) {
                     PrimaryButton(
@@ -168,11 +184,155 @@ fun RemoteControlScreen(
                         onClick = { viewModel.sendCommand("toggle_focus_lock") },
                     )
                     Spacer(Modifier.height(AppSpacing.sm))
+                    RemoteSponsorSection(
+                        state = state,
+                        onRefresh = viewModel::refreshContext,
+                        onPrefsChange = viewModel::updateSponsorPrefs,
+                    )
+                    Spacer(Modifier.height(AppSpacing.sm))
                     GhostButton(text = "Unpair", onClick = viewModel::unpair)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun RemoteSponsorSection(
+    state: RemoteControlUiState,
+    onRefresh: () -> Unit,
+    onPrefsChange: ((uk.co.cricrelay.shared.model.OverlayLayoutPrefs) -> uk.co.cricrelay.shared.model.OverlayLayoutPrefs) -> Unit,
+) {
+    val prefs = state.sponsorPrefs
+    val scrollMode = SponsorDisplayMode.isScroll(prefs.sponsorDisplayMode)
+    val activeSponsors = state.sponsors.filter { it.isActive }
+
+    Text("Sponsor overlay", style = AppTypography.titleSmall, color = AppColors.OnBackground)
+    Text(
+        "Changes apply on the broadcast phone — camera preview is not shown here.",
+        style = AppTypography.bodySmall,
+        color = AppColors.OnBackgroundDim,
+    )
+    if (state.watchUrl.isNotBlank()) {
+        Text(
+            "Watch live: ${state.watchUrl}",
+            style = AppTypography.bodySmall,
+            color = AppColors.Accent,
+        )
+    }
+    if (state.contextLoading) {
+        Text("Loading sponsor settings…", style = AppTypography.bodySmall, color = AppColors.OnBackgroundMuted)
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Sponsor logo", style = AppTypography.bodyMedium, modifier = Modifier.weight(1f))
+        Switch(
+            checked = prefs.sponsorEnabled,
+            onCheckedChange = { enabled ->
+                onPrefsChange { it.copy(sponsorEnabled = enabled) }
+            },
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = AppColors.OnPrimary,
+                checkedTrackColor = AppColors.Primary,
+            ),
+        )
+    }
+    if (prefs.sponsorEnabled && activeSponsors.isNotEmpty()) {
+        Text("Select sponsor", style = AppTypography.bodySmall, color = AppColors.OnBackgroundMuted)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+            items(activeSponsors) { sponsor ->
+                val selected = prefs.activeSponsorId == sponsor.id ||
+                    (prefs.activeSponsorId.isNullOrBlank() && sponsor.id == activeSponsors.firstOrNull()?.id)
+                Text(
+                    sponsor.name,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                        .background(
+                            if (selected) AppColors.Primary.copy(alpha = 0.25f)
+                            else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                        )
+                        .border(
+                            width = if (selected) 1.5.dp else 1.dp,
+                            color = if (selected) AppColors.Primary else AppColors.Border,
+                            shape = RoundedCornerShape(AppSpacing.radiusSm),
+                        )
+                        .clickable { onPrefsChange { it.copy(activeSponsorId = sponsor.id) } }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    style = AppTypography.bodySmall,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                )
+            }
+        }
+    }
+    if (prefs.sponsorEnabled) {
+        Text("Display mode", style = AppTypography.bodySmall, color = AppColors.OnBackgroundMuted)
+        val modes = listOf(
+            SponsorDisplayMode.STATIC to "Fixed",
+            SponsorDisplayMode.SCROLL_TOP to "Scroll top",
+            SponsorDisplayMode.SCROLL_ABOVE_BOARD to "Above board",
+            SponsorDisplayMode.SCROLL_BELOW_BOARD to "Below board",
+            SponsorDisplayMode.SCROLL_BOTTOM to "Scroll bottom",
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+            items(modes) { (id, label) ->
+                val selected = prefs.sponsorDisplayMode == id
+                Text(
+                    label,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                        .clickable { onPrefsChange { it.copy(sponsorDisplayMode = id) } }
+                        .background(
+                            if (selected) AppColors.Accent.copy(alpha = 0.2f)
+                            else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                        )
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    style = AppTypography.bodySmall,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                )
+            }
+        }
+        LabeledSlider(
+            label = "Logo size",
+            valueText = "${(prefs.sponsorSizeScale * 100).toInt()}%",
+            value = prefs.sponsorSizeScale.toFloat(),
+            onValueChange = { v -> onPrefsChange { it.copy(sponsorSizeScale = v.toDouble()) } },
+            valueRange = 0.3f..3f,
+        )
+        LabeledSlider(
+            label = "Logo opacity",
+            valueText = "${(prefs.sponsorOpacity * 100).toInt()}%",
+            value = prefs.sponsorOpacity.toFloat(),
+            onValueChange = { v -> onPrefsChange { it.copy(sponsorOpacity = v.toDouble()) } },
+            valueRange = 0.2f..1f,
+        )
+        if (!scrollMode) {
+            LabeledSlider(
+                label = "Horizontal position",
+                valueText = "${(prefs.sponsorPositionX * 100).toInt()}%",
+                value = prefs.sponsorPositionX.toFloat(),
+                onValueChange = { v -> onPrefsChange { it.copy(sponsorPositionX = v.toDouble()) } },
+                valueRange = 0f..1f,
+            )
+            LabeledSlider(
+                label = "Vertical position",
+                valueText = "${(prefs.sponsorPositionY * 100).toInt()}%",
+                value = prefs.sponsorPositionY.toFloat(),
+                onValueChange = { v -> onPrefsChange { it.copy(sponsorPositionY = v.toDouble()) } },
+                valueRange = 0f..1f,
+            )
+        } else {
+            LabeledSlider(
+                label = "Scroll speed",
+                valueText = String.format("%.1f×", prefs.sponsorScrollSpeed),
+                value = prefs.sponsorScrollSpeed.toFloat(),
+                onValueChange = { v -> onPrefsChange { it.copy(sponsorScrollSpeed = v.toDouble()) } },
+                valueRange = 0.3f..3f,
+            )
+        }
+    }
+    GhostButton(text = "Refresh from broadcast", onClick = onRefresh)
 }
 
 @Composable

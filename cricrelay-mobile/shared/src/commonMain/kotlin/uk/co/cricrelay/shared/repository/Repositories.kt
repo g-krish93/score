@@ -146,6 +146,15 @@ class StreamRepository(
     suspend fun sendRemoteCommand(matchSlug: String, companionToken: String, command: String) =
         apiClientProvider.get().sendRemoteCommand(matchSlug, companionToken, command)
 
+    suspend fun sendRemoteOverlayPrefs(
+        matchSlug: String,
+        companionToken: String,
+        prefs: uk.co.cricrelay.shared.model.OverlayLayoutPrefs,
+    ) = apiClientProvider.get().sendRemoteOverlayPrefs(matchSlug, companionToken, prefs)
+
+    suspend fun getRemoteContext(matchSlug: String, companionToken: String) =
+        apiClientProvider.get().getRemoteContext(matchSlug, companionToken)
+
     suspend fun getAppBuilds(): JsonObject = apiClientProvider.get().getAppBuilds()
 }
 

@@ -122,6 +122,7 @@ struct OverlaySheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var draft = OverlayLayoutPrefs()
+    @State private var savedOnDismiss = false
 
     private let themes: [(id: String, emoji: String, label: String, color: Color)] = [
         ("classic",  "🏏", "Classic",  CricTheme.primary),
@@ -153,6 +154,7 @@ struct OverlaySheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        savedOnDismiss = true
                         Task { await viewModel.saveOverlay(draft) }
                         dismiss()
                     }
@@ -162,12 +164,44 @@ struct OverlaySheet: View {
         }
         .preferredColorScheme(.dark)
         .onAppear {
+            savedOnDismiss = false
             draft = viewModel.overlayPrefs
             Task { await viewModel.loadSponsors() }
             if draft.activeSponsorId == nil, let first = viewModel.sponsors.first(where: { $0.isActive }) {
                 draft.activeSponsorId = first.id
             }
         }
+        .onDisappear {
+            if !savedOnDismiss {
+                viewModel.revertOverlayPreview()
+            }
+        }
+        .task(id: overlayPreviewToken) {
+            try? await Task.sleep(for: .milliseconds(80))
+            viewModel.previewOverlay(draft)
+        }
+    }
+
+    /// Stable key so slider drags debounce into one preview push (~80 ms).
+    private var overlayPreviewToken: String {
+        [
+            draft.theme,
+            String(draft.widthFraction),
+            String(draft.heightFraction),
+            String(draft.fontScale),
+            String(draft.opacity),
+            String(draft.bottomMargin),
+            String(draft.watermarkEnabled),
+            draft.watermarkText,
+            String(draft.sponsorEnabled),
+            draft.activeSponsorId ?? "",
+            draft.sponsorDisplayMode,
+            String(draft.sponsorPositionX),
+            String(draft.sponsorPositionY),
+            String(draft.sponsorSizeScale),
+            String(draft.sponsorOpacity),
+            String(draft.sponsorScrollSpeed),
+        ].joined(separator: "|")
     }
 
     private var themeSelector: some View {
@@ -274,15 +308,82 @@ struct OverlaySheet: View {
                     .tint(CricTheme.primary)
                     .font(.subheadline)
                     .foregroundStyle(.white)
-                Text("Shown bottom-right on the broadcast")
+                Text("On-stream sponsor graphics — fixed or scrolling")
                     .font(.caption)
                     .foregroundStyle(CricTheme.textDim)
-                if draft.sponsorEnabled && sponsors.count > 1 {
+                if draft.sponsorEnabled && !sponsors.filter(\.isActive).isEmpty {
+                    Text("Select sponsor for this match")
+                        .font(.caption)
+                        .foregroundStyle(CricTheme.textDim)
                     sponsorPicker
+                    sponsorDisplayControls
+                } else if draft.sponsorEnabled && sponsors.filter(\.isActive).isEmpty {
+                    Text("No sponsors yet — upload logos in the web dashboard under Sponsor logos.")
+                        .font(.caption)
+                        .foregroundStyle(CricTheme.warning)
                 }
             }
             .cricEnterAnimation(value: draft.sponsorEnabled, duration: CricMotion.sheetEnterDuration)
         }
+    }
+
+    private var sponsorDisplayControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sheetSectionLabel("Sponsor display")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(SponsorDisplayMode.modes, id: \.id) { mode in
+                        Button {
+                            draft.sponsorDisplayMode = mode.id
+                        } label: {
+                            Text(mode.label)
+                                .font(.caption.weight(draft.sponsorDisplayMode == mode.id ? .bold : .regular))
+                                .foregroundStyle(draft.sponsorDisplayMode == mode.id ? CricTheme.onPrimary : .white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(
+                                    draft.sponsorDisplayMode == mode.id ? CricTheme.primary : CricTheme.surface,
+                                    in: Capsule()
+                                )
+                        }
+                    }
+                }
+            }
+            sliderRow(
+                label: "Logo size",
+                value: $draft.sponsorSizeScale,
+                range: 0.3...3.0,
+                format: { "\(Int($0 * 100))%" }
+            )
+            sliderRow(
+                label: "Logo opacity",
+                value: $draft.sponsorOpacity,
+                range: 0.2...1.0,
+                format: { "\(Int($0 * 100))%" }
+            )
+            if SponsorDisplayMode.isScroll(draft.sponsorDisplayMode) {
+                sliderRow(
+                    label: "Scroll speed",
+                    value: $draft.sponsorScrollSpeed,
+                    range: 0.3...3.0,
+                    format: { String(format: "%.1f×", $0) }
+                )
+            } else {
+                sliderRow(
+                    label: "Horizontal position",
+                    value: $draft.sponsorPositionX,
+                    range: 0...1,
+                    format: { "\(Int($0 * 100))%" }
+                )
+                sliderRow(
+                    label: "Vertical position",
+                    value: $draft.sponsorPositionY,
+                    range: 0...1,
+                    format: { "\(Int($0 * 100))%" }
+                )
+            }
+        }
+        .padding(.top, 4)
     }
 
     private var sponsors: [Sponsor] { viewModel.sponsors }

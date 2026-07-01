@@ -109,6 +109,18 @@ REMOTE_CONTROL_COMMANDS = {
     "stop_broadcast",
     "mute_mic",
     "toggle_focus_lock",
+    "toggle_sponsor",
+}
+
+REMOTE_SPONSOR_OVERLAY_KEYS = {
+    "sponsor_enabled",
+    "active_sponsor_id",
+    "sponsor_display_mode",
+    "sponsor_position_x",
+    "sponsor_position_y",
+    "sponsor_size_scale",
+    "sponsor_opacity",
+    "sponsor_scroll_speed",
 }
 
 

@@ -1,7 +1,7 @@
 import SwiftUI
 import AVFoundation
 
-// MARK: - Companion remote control (scan QR → send commands)
+// MARK: - Companion remote control (scan QR → send commands + sponsor overlay)
 
 struct RemoteControlView: View {
     @State private var phase: Phase = .scan
@@ -9,6 +9,11 @@ struct RemoteControlView: View {
     @State private var companionToken = ""
     @State private var statusMessage = ""
     @State private var error: String?
+    @State private var sponsors: [Sponsor] = []
+    @State private var sponsorPrefs = OverlayLayoutPrefs()
+    @State private var watchUrl = ""
+    @State private var contextLoading = false
+    @State private var sponsorSendTask: Task<Void, Never>?
 
     private let api = CricRelayAPI.shared
 
@@ -59,35 +64,183 @@ struct RemoteControlView: View {
     }
 
     private var controlsContent: some View {
-        VStack(spacing: 16) {
-            Text("Paired to \(matchSlug)")
-                .font(.subheadline.bold())
-                .foregroundStyle(.white)
+        ScrollView {
+            VStack(spacing: 16) {
+                Text("Paired to \(matchSlug)")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.white)
 
-            if !statusMessage.isEmpty {
-                Text(statusMessage)
+                if !statusMessage.isEmpty {
+                    Text(statusMessage)
+                        .font(.caption)
+                        .foregroundStyle(CricTheme.accent)
+                }
+
+                controlButton("Start broadcast", icon: "play.fill", command: "start_broadcast")
+                controlButton("Stop broadcast", icon: "stop.fill", command: "stop_broadcast")
+                controlButton("Mute mic", icon: "mic.slash.fill", command: "mute_mic")
+                controlButton("Toggle focus lock", icon: "lock.fill", command: "toggle_focus_lock")
+
+                Divider().overlay(Color.white.opacity(0.1))
+
+                sponsorSection
+
+                Button("Unpair") {
+                    CompanionTokenStore.clear()
+                    phase = .scan
+                    matchSlug = ""
+                    companionToken = ""
+                    statusMessage = ""
+                    sponsors = []
+                    sponsorPrefs = OverlayLayoutPrefs()
+                }
+                .font(.subheadline)
+                .foregroundStyle(CricTheme.danger)
+                .padding(.top, 12)
+            }
+            .padding(24)
+        }
+    }
+
+    private var sponsorSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Sponsor overlay")
+                .font(.headline)
+                .foregroundStyle(.white)
+            Text("Changes apply on the broadcast phone — camera preview is not shown here.")
+                .font(.caption)
+                .foregroundStyle(CricTheme.textDim)
+            if !watchUrl.isEmpty {
+                Text("Watch live: \(watchUrl)")
                     .font(.caption)
                     .foregroundStyle(CricTheme.accent)
             }
-
-            controlButton("Start broadcast", icon: "play.fill", command: "start_broadcast")
-            controlButton("Stop broadcast", icon: "stop.fill", command: "stop_broadcast")
-            controlButton("Mute mic", icon: "mic.slash.fill", command: "mute_mic")
-            controlButton("Toggle focus lock", icon: "lock.fill", command: "toggle_focus_lock")
-
-            Button("Unpair") {
-                CompanionTokenStore.clear()
-                phase = .scan
-                matchSlug = ""
-                companionToken = ""
-                statusMessage = ""
+            if contextLoading {
+                Text("Loading sponsor settings…")
+                    .font(.caption)
+                    .foregroundStyle(CricTheme.textMuted)
             }
-            .font(.subheadline)
-            .foregroundStyle(CricTheme.danger)
-            .padding(.top, 12)
+
+            Toggle("Sponsor logo", isOn: Binding(
+                get: { sponsorPrefs.sponsorEnabled },
+                set: { sponsorPrefs.sponsorEnabled = $0; scheduleSponsorSend() }
+            ))
+            .tint(CricTheme.primary)
+
+            if sponsorPrefs.sponsorEnabled {
+                let active = sponsors.filter(\.isActive)
+                if !active.isEmpty {
+                    Text("Select sponsor")
+                        .font(.caption)
+                        .foregroundStyle(CricTheme.textDim)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(active) { sponsor in
+                                Button {
+                                    sponsorPrefs.activeSponsorId = sponsor.id
+                                    scheduleSponsorSend()
+                                } label: {
+                                    Text(sponsor.name)
+                                        .font(.caption.weight(sponsorPrefs.activeSponsorId == sponsor.id ? .bold : .regular))
+                                        .foregroundStyle(sponsorPrefs.activeSponsorId == sponsor.id ? CricTheme.onPrimary : .white)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            sponsorPrefs.activeSponsorId == sponsor.id ? CricTheme.primary : CricTheme.surface,
+                                            in: Capsule()
+                                        )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Text("Display mode")
+                    .font(.caption)
+                    .foregroundStyle(CricTheme.textDim)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(SponsorDisplayMode.modes, id: \.id) { mode in
+                            Button {
+                                sponsorPrefs.sponsorDisplayMode = mode.id
+                                scheduleSponsorSend()
+                            } label: {
+                                Text(mode.label)
+                                    .font(.caption.weight(sponsorPrefs.sponsorDisplayMode == mode.id ? .bold : .regular))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        sponsorPrefs.sponsorDisplayMode == mode.id ? CricTheme.primary.opacity(0.35) : CricTheme.surface,
+                                        in: Capsule()
+                                    )
+                            }
+                        }
+                    }
+                }
+
+                remoteSlider(
+                    label: "Logo size",
+                    value: $sponsorPrefs.sponsorSizeScale,
+                    range: 0.3...3.0,
+                    format: { "\(Int($0 * 100))%" }
+                )
+                remoteSlider(
+                    label: "Logo opacity",
+                    value: $sponsorPrefs.sponsorOpacity,
+                    range: 0.2...1.0,
+                    format: { "\(Int($0 * 100))%" }
+                )
+                if SponsorDisplayMode.isScroll(sponsorPrefs.sponsorDisplayMode) {
+                    remoteSlider(
+                        label: "Scroll speed",
+                        value: $sponsorPrefs.sponsorScrollSpeed,
+                        range: 0.3...3.0,
+                        format: { String(format: "%.1f×", $0) }
+                    )
+                } else {
+                    remoteSlider(
+                        label: "Horizontal position",
+                        value: $sponsorPrefs.sponsorPositionX,
+                        range: 0...1,
+                        format: { "\(Int($0 * 100))%" }
+                    )
+                    remoteSlider(
+                        label: "Vertical position",
+                        value: $sponsorPrefs.sponsorPositionY,
+                        range: 0...1,
+                        format: { "\(Int($0 * 100))%" }
+                    )
+                }
+            }
+
+            Button("Refresh from broadcast") {
+                Task { await loadContext() }
+            }
+            .font(.caption)
+            .foregroundStyle(CricTheme.textMuted)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private func remoteSlider(
+        label: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        format: (Double) -> String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label)
+                    .font(.subheadline)
+                    .foregroundStyle(CricTheme.textMuted)
+                Spacer()
+                Text(format(value.wrappedValue))
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(CricTheme.primary)
+            }
+            Slider(value: value, in: range)
+                .tint(CricTheme.primary)
+                .onChange(of: value.wrappedValue) { _, _ in scheduleSponsorSend() }
+        }
     }
 
     private func controlButton(_ label: String, icon: String, command: String) -> some View {
@@ -116,6 +269,7 @@ struct RemoteControlView: View {
             companionToken = saved.token
             matchSlug = saved.slug
             phase = .controls
+            Task { await loadContext() }
         }
     }
 
@@ -140,6 +294,7 @@ struct RemoteControlView: View {
             CompanionTokenStore.save(token: companionToken, slug: matchSlug)
             phase = .controls
             statusMessage = "Paired successfully"
+            await loadContext()
         } catch {
             self.error = error.localizedDescription
         }
@@ -149,9 +304,49 @@ struct RemoteControlView: View {
         guard !matchSlug.isEmpty, !companionToken.isEmpty else { return }
         do {
             try await api.sendRemoteCommand(slug: matchSlug, command: command, companionToken: companionToken)
+            if command == "toggle_sponsor" {
+                sponsorPrefs.sponsorEnabled.toggle()
+            }
             statusMessage = "Sent \(command.replacingOccurrences(of: "_", with: " "))"
         } catch {
             statusMessage = ""
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func scheduleSponsorSend() {
+        sponsorSendTask?.cancel()
+        sponsorSendTask = Task {
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            await sendSponsorPrefs()
+        }
+    }
+
+    private func sendSponsorPrefs() async {
+        guard !matchSlug.isEmpty, !companionToken.isEmpty else { return }
+        do {
+            try await api.sendRemoteOverlayPrefs(
+                slug: matchSlug,
+                prefs: sponsorPrefs,
+                companionToken: companionToken
+            )
+            statusMessage = "Sponsor updated on broadcast phone"
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func loadContext() async {
+        guard !matchSlug.isEmpty, !companionToken.isEmpty else { return }
+        contextLoading = true
+        defer { contextLoading = false }
+        do {
+            let ctx = try await api.getRemoteContext(slug: matchSlug, companionToken: companionToken)
+            sponsors = ctx.sponsors
+            sponsorPrefs = ctx.sponsorPrefs
+            watchUrl = ctx.watchUrl
+        } catch {
             self.error = error.localizedDescription
         }
     }

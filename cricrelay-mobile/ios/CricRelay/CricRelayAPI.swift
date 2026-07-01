@@ -192,8 +192,7 @@ final class CricRelayAPI {
     func pollRemoteCommands(slug: String) async throws -> [RemoteCommand] {
         let json = try await getJson("/api/match/\(slug)/remote/commands")
         guard let rows = json["commands"] as? [[String: Any]] else { return [] }
-        let data = try JSONSerialization.data(withJSONObject: rows)
-        return (try? JSONDecoder().decode([RemoteCommand].self, from: data)) ?? []
+        return rows.map { RemoteCommand.from($0) }
     }
 
     func redeemPairToken(slug: String, pairToken: String) async throws -> CompanionSession {
@@ -215,6 +214,45 @@ final class CricRelayAPI {
             body: ["type": "control", "command": command],
             token: companionToken
         )
+    }
+
+    func sendRemoteOverlayPrefs(slug: String, prefs: OverlayLayoutPrefs, companionToken: String) async throws {
+        _ = try await postJsonWithToken(
+            "/api/match/\(slug)/remote/command",
+            body: ["type": "overlay", "prefs": prefs.sponsorPatchDictionary()],
+            token: companionToken
+        )
+    }
+
+    func getRemoteContext(slug: String, companionToken: String) async throws -> RemoteCompanionContext {
+        let json = try await getJsonWithToken("/api/match/\(slug)/remote/context", token: companionToken)
+        var prefs = OverlayLayoutPrefs()
+        if let patch = json["sponsor_prefs"] as? [String: Any] {
+            prefs = prefs.mergeSponsorPatch(patch)
+        }
+        let sponsorRows = json["sponsors"] as? [[String: Any]] ?? []
+        let sponsors: [Sponsor] = sponsorRows.compactMap { row in
+            guard let data = try? JSONSerialization.data(withJSONObject: row),
+                  let sponsor = try? JSONDecoder().decode(Sponsor.self, from: data) else { return nil }
+            return sponsor
+        }
+        return RemoteCompanionContext(
+            sponsorPrefs: prefs,
+            sponsors: sponsors,
+            watchUrl: json["watch_url"] as? String ?? ""
+        )
+    }
+
+    private func getJsonWithToken(_ path: String, token: String) async throws -> [String: Any] {
+        guard let url = URL(string: "\(baseUrl)\(path)") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw URLError(.badServerResponse)
+        }
+        return json
     }
 
     @discardableResult
