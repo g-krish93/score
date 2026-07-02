@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Brand mark "1e" — cream 22-yard pitch with two crease lines. Drawn for the
+     adaptive-icon safe zone (66dp circle in a 108dp canvas); the green surface
+     comes from the icon background layer. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#22D3A8"
-        android:pathData="M54,8a46,46 0 1,1 0,92a46,46 0 1,1 0,-92z"/>
+        android:fillColor="#D8C9A3"
+        android:pathData="M48.8,30.8 L59.2,30.8 A6,6 0 0 1 65.2,36.8 L65.2,71.2 A6,6 0 0 1 59.2,77.2 L48.8,77.2 A6,6 0 0 1 42.8,71.2 L42.8,36.8 A6,6 0 0 1 48.8,30.8 Z"/>
     <path
-        android:fillColor="#0F172A"
-        android:pathData="M38,52h32v8H38zM42,36h8v28h-8zM58,36h8v28h-8z"/>
+        android:fillColor="#2E5E32"
+        android:pathData="M47.1,36.8 L60.9,36.8 L60.9,39 L47.1,39 Z M47.1,69 L60.9,69 L60.9,71.2 L47.1,71.2 Z"/>
 </vector>

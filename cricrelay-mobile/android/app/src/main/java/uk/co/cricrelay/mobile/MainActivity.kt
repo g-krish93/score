@@ -10,16 +10,25 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import uk.co.cricrelay.mobile.navigation.CricRelayNavHost
+import uk.co.cricrelay.mobile.splash.CricketSplash
 import uk.co.cricrelay.mobile.ui.CricRelayTheme
 import uk.co.cricrelay.shared.repository.AuthRepository
 import uk.co.cricrelay.stream.CameraPreviewHost
@@ -52,7 +61,13 @@ class MainActivity : ComponentActivity() {
                         .fillMaxSize()
                         .background(Color.Transparent),
                 ) {
-                    BootstrapNavHost(authRepository = authRepository)
+                    val startDestination = rememberStartDestination(authRepository)
+                    if (startDestination != null) {
+                        CricRelayNavHost(startDestination = startDestination)
+                    }
+                    // Gated on the destination so an early tap-to-skip holds the logo
+                    // lockup instead of exposing an empty window while auth resolves.
+                    ColdStartSplash(appReady = startDestination != null)
                 }
             }
         }
@@ -139,9 +154,27 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Opening splash overlay — plays once per cold start on top of the nav host (which
+ * bootstraps the session underneath), then fades out on the logo lockup frame once
+ * [appReady] says there is content to land on. rememberSaveable keeps it from
+ * replaying on rotation or process restore.
+ */
 @Composable
-private fun BootstrapNavHost(authRepository: AuthRepository) {
-    val startDestination = androidx.compose.runtime.produceState<String?>(initialValue = null) {
+private fun ColdStartSplash(appReady: Boolean) {
+    var splashDone by rememberSaveable { mutableStateOf(false) }
+    AnimatedVisibility(
+        visible = !(splashDone && appReady),
+        enter = EnterTransition.None,
+        exit = fadeOut(tween(350)),
+    ) {
+        CricketSplash(onFinished = { splashDone = true })
+    }
+}
+
+@Composable
+private fun rememberStartDestination(authRepository: AuthRepository): String? =
+    androidx.compose.runtime.produceState<String?>(initialValue = null) {
         val session = authRepository.currentSession()
         value = when {
             session.token.isNullOrBlank() -> "login"
@@ -149,8 +182,3 @@ private fun BootstrapNavHost(authRepository: AuthRepository) {
             else -> "home"
         }
     }.value
-
-    if (startDestination != null) {
-        CricRelayNavHost(startDestination = startDestination)
-    }
-}

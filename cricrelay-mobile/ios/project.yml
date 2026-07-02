@@ -61,10 +61,14 @@ targets:
         CFBundleName: CricRelay Live
         CFBundleDisplayName: CricRelay Live
         CFBundleIdentifier: uk.co.cricrelay.stream
-        CFBundleShortVersionString: "2.0.3"
-        CFBundleVersion: "26"
+        CFBundleShortVersionString: "2.0.4"
+        CFBundleVersion: "27"
         LSRequiresIPhoneOS: true
-        UILaunchScreen: {}
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIAppFonts:
+          - Archivo-ExtraBold.ttf
+          - DMSans-Medium.ttf
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UIRequiredDeviceCapabilities:

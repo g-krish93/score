@@ -17,8 +17,8 @@ android {
         applicationId = "uk.co.cricrelay.stream"
         minSdk = 24
         targetSdk = 35
-        versionCode = 26
-        versionName = "2.0.3"
+        versionCode = 27
+        versionName = "2.0.4"
     }
 
     signingConfigs {

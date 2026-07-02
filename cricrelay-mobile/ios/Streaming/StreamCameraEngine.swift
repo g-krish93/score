@@ -40,6 +40,9 @@ final class StreamCameraEngine: NSObject {
     private var connection = RTMPConnection()
     private var rtmpStream: RTMPStream?
     private weak var hkView: MTHKView?
+    // Which MTHKView is currently wired into the stream's outputs. Studio creates a fresh
+    // view every visit while this singleton keeps the stream, so attach must be re-runnable.
+    private weak var streamOutputView: MTHKView?
     private var overlayCapture: OverlayWebViewCapture?
     private var overlayTimer: Timer?
     private var overlayRefreshInterval: TimeInterval = 0.5
@@ -164,6 +167,10 @@ final class StreamCameraEngine: NSObject {
         if hkView === view {
             hkView = nil
             previewReady = false
+        }
+        if streamOutputView === view, let stream = rtmpStream {
+            streamOutputView = nil
+            Task { await stream.removeOutput(view) }
         }
     }
 
@@ -298,7 +305,7 @@ final class StreamCameraEngine: NSObject {
         }
 
         let endpoint = StreamCameraEngine.buildRtmpEndpoint(rtmpUrl: rtmpUrl, streamKey: streamKey)
-        guard endpoint.hasPrefix("rtmp://") else {
+        guard endpoint.hasPrefix("rtmp://") || endpoint.hasPrefix("rtmps://") else {
             emit("error", "Invalid RTMP URL")
             return
         }
@@ -539,14 +546,21 @@ final class StreamCameraEngine: NSObject {
     // MARK: - Private
 
     private func ensureStream() async -> RTMPStream {
+        let stream: RTMPStream
         if let existing = rtmpStream {
-            return existing
+            stream = existing
+        } else {
+            stream = RTMPStream(connection: connection)
+            rtmpStream = stream
+            await mixer.addOutput(stream)
+            streamOutputView = nil
         }
-        let stream = RTMPStream(connection: connection)
-        rtmpStream = stream
-        await mixer.addOutput(stream)
-        if let view = hkView {
+        if let view = hkView, streamOutputView !== view {
+            if let old = streamOutputView {
+                await stream.removeOutput(old)
+            }
             await stream.addOutput(view)
+            streamOutputView = view
         }
         return stream
     }
@@ -555,9 +569,10 @@ final class StreamCameraEngine: NSObject {
     /// Reusing a closed RTMPStream/RTMPConnection can crash inside HaishinKit on publish.
     private func resetRtmpSession() async {
         if let stream = rtmpStream {
-            if let view = hkView {
+            if let view = streamOutputView {
                 await stream.removeOutput(view)
             }
+            streamOutputView = nil
             await mixer.removeOutput(stream)
             try? await stream.close()
             rtmpStream = nil

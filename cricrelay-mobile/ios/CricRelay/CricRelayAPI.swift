@@ -59,11 +59,10 @@ final class CricRelayAPI {
         try await sendDelete("/api/streams/\(slug)")
     }
 
-    func renameStream(slug: String, label: String) async throws -> StreamMatch {
+    /// PATCH returns only `stream: {slug, label}` — not a full StreamMatch — so don't decode one.
+    func renameStream(slug: String, label: String) async throws {
         let json = try await sendPatch("/api/streams/\(slug)", body: ["label": label])
-        guard let streamJson = json["stream"] as? [String: Any] else { throw URLError(.badServerResponse) }
-        let data = try JSONSerialization.data(withJSONObject: streamJson)
-        return try JSONDecoder().decode(StreamMatch.self, from: data)
+        guard json["stream"] is [String: Any] else { throw URLError(.badServerResponse) }
     }
 
     // MARK: - Match day

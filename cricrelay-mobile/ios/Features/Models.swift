@@ -255,18 +255,20 @@ struct OverlayLayoutPrefs: Codable {
         sponsorScrollDirection = SponsorScrollDirection.rtl
     }
 
+    // Board-geometry keys carry the overlay_ prefix on the wire — the server's
+    // OVERLAY_LAYOUT_STATE_KEYS and the shared KMP model both use these names.
     enum CodingKeys: String, CodingKey {
-        case heightFraction = "height_fraction"
-        case widthFraction = "width_fraction"
-        case anchorX = "anchor_x"
-        case anchorY = "anchor_y"
-        case bottomMargin = "bottom_margin"
-        case horizontalInset = "horizontal_inset"
+        case heightFraction = "overlay_height_fraction"
+        case widthFraction = "overlay_width_fraction"
+        case anchorX = "overlay_anchor_x"
+        case anchorY = "overlay_anchor_y"
+        case bottomMargin = "overlay_bottom_margin"
+        case horizontalInset = "overlay_horizontal_inset"
         case theme
-        case fontScale = "font_scale"
-        case bgColor = "bg_color"
-        case textColor = "text_color"
-        case opacity
+        case fontScale = "overlay_font_scale"
+        case bgColor = "overlay_bg_color"
+        case textColor = "overlay_text_color"
+        case opacity = "overlay_opacity"
         case videoStabilization = "video_stabilization"
         case stabilizationLevel = "stabilization_level"
         case keepScreenOn = "keep_screen_on"
@@ -286,22 +288,48 @@ struct OverlayLayoutPrefs: Codable {
         case sponsorScrollDirection = "sponsor_scroll_direction"
     }
 
+    /// Board keys as older iOS builds wrote them into the local overlay_prefs cache
+    /// (unprefixed). Read-only fallback so an existing device doesn't lose its arrangement.
+    private enum LegacyBoardKeys: String, CodingKey {
+        case heightFraction = "height_fraction"
+        case widthFraction = "width_fraction"
+        case anchorX = "anchor_x"
+        case anchorY = "anchor_y"
+        case bottomMargin = "bottom_margin"
+        case horizontalInset = "horizontal_inset"
+        case fontScale = "font_scale"
+        case bgColor = "bg_color"
+        case textColor = "text_color"
+        case opacity
+    }
+
     /// Tolerant decoder: any missing key falls back to its default so an older server
     /// (which may omit the watermark fields) never wipes the whole prefs object.
     init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        heightFraction = try c.decodeIfPresent(Double.self, forKey: .heightFraction) ?? heightFraction
-        widthFraction = try c.decodeIfPresent(Double.self, forKey: .widthFraction) ?? widthFraction
-        anchorX = try c.decodeIfPresent(Double.self, forKey: .anchorX) ?? anchorX
-        anchorY = try c.decodeIfPresent(Double.self, forKey: .anchorY) ?? anchorY
-        bottomMargin = try c.decodeIfPresent(Double.self, forKey: .bottomMargin) ?? bottomMargin
-        horizontalInset = try c.decodeIfPresent(Double.self, forKey: .horizontalInset) ?? horizontalInset
+        let legacy = try decoder.container(keyedBy: LegacyBoardKeys.self)
+        heightFraction = try c.decodeIfPresent(Double.self, forKey: .heightFraction)
+            ?? legacy.decodeIfPresent(Double.self, forKey: .heightFraction) ?? heightFraction
+        widthFraction = try c.decodeIfPresent(Double.self, forKey: .widthFraction)
+            ?? legacy.decodeIfPresent(Double.self, forKey: .widthFraction) ?? widthFraction
+        anchorX = try c.decodeIfPresent(Double.self, forKey: .anchorX)
+            ?? legacy.decodeIfPresent(Double.self, forKey: .anchorX) ?? anchorX
+        anchorY = try c.decodeIfPresent(Double.self, forKey: .anchorY)
+            ?? legacy.decodeIfPresent(Double.self, forKey: .anchorY) ?? anchorY
+        bottomMargin = try c.decodeIfPresent(Double.self, forKey: .bottomMargin)
+            ?? legacy.decodeIfPresent(Double.self, forKey: .bottomMargin) ?? bottomMargin
+        horizontalInset = try c.decodeIfPresent(Double.self, forKey: .horizontalInset)
+            ?? legacy.decodeIfPresent(Double.self, forKey: .horizontalInset) ?? horizontalInset
         theme = try c.decodeIfPresent(String.self, forKey: .theme) ?? theme
-        fontScale = try c.decodeIfPresent(Double.self, forKey: .fontScale) ?? fontScale
-        bgColor = try c.decodeIfPresent(String.self, forKey: .bgColor) ?? bgColor
-        textColor = try c.decodeIfPresent(String.self, forKey: .textColor) ?? textColor
-        opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? opacity
+        fontScale = try c.decodeIfPresent(Double.self, forKey: .fontScale)
+            ?? legacy.decodeIfPresent(Double.self, forKey: .fontScale) ?? fontScale
+        bgColor = try c.decodeIfPresent(String.self, forKey: .bgColor)
+            ?? legacy.decodeIfPresent(String.self, forKey: .bgColor) ?? bgColor
+        textColor = try c.decodeIfPresent(String.self, forKey: .textColor)
+            ?? legacy.decodeIfPresent(String.self, forKey: .textColor) ?? textColor
+        opacity = try c.decodeIfPresent(Double.self, forKey: .opacity)
+            ?? legacy.decodeIfPresent(Double.self, forKey: .opacity) ?? opacity
         // Prefer the 3-level field; fall back to the legacy boolean from old writers.
         if let level = try c.decodeIfPresent(Int.self, forKey: .stabilizationLevel) {
             stabilizationLevel = StabilizationLevel.sanitize(level)

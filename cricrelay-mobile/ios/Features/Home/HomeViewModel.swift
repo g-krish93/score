@@ -42,9 +42,9 @@ final class HomeViewModel: ObservableObject {
 
     func renameStream(slug: String, label: String) async {
         do {
-            let updated = try await api.renameStream(slug: slug, label: label)
+            try await api.renameStream(slug: slug, label: label)
             if let idx = streams.firstIndex(where: { $0.slug == slug }) {
-                streams[idx] = updated
+                streams[idx].label = label
             }
         } catch {
             self.error = error.localizedDescription

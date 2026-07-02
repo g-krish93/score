@@ -611,8 +611,8 @@ struct ScoringSheet: View {
                             }
                         }
 
-                        if let config = viewModel.scoringConfig, !config.scorerUrl.isEmpty {
-                            Link(destination: URL(string: config.scorerUrl)!) {
+                        if let config = viewModel.scoringConfig, let scorerUrl = URL(string: config.scorerUrl) {
+                            Link(destination: scorerUrl) {
                                 HStack {
                                     Image(systemName: "safari")
                                     Text("Open scorer in browser")

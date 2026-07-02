@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon layer: the pitch silhouette with the crease lines punched out. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M48.8,30.8 L59.2,30.8 A6,6 0 0 1 65.2,36.8 L65.2,71.2 A6,6 0 0 1 59.2,77.2 L48.8,77.2 A6,6 0 0 1 42.8,71.2 L42.8,36.8 A6,6 0 0 1 48.8,30.8 Z M47.1,36.8 L60.9,36.8 L60.9,39 L47.1,39 Z M47.1,69 L60.9,69 L60.9,71.2 L47.1,71.2 Z"/>
+</vector>

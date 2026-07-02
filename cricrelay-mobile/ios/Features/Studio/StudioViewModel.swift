@@ -326,6 +326,8 @@ final class StudioViewModel: ObservableObject {
         for i in stride(from: 3, through: 1, by: -1) {
             goLiveCountdown = i
             try? await Task.sleep(nanoseconds: 800_000_000)
+            // Cancel tapped mid-countdown (cancelCountdown nils this) — don't go live.
+            if goLiveCountdown == nil || Task.isCancelled { return }
         }
         goLiveCountdown = nil
         await goLive()

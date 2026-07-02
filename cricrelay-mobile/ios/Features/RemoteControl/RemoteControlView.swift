@@ -327,7 +327,11 @@ struct RemoteControlView: View {
             error = "Not a CricRelay pairing code"
             return
         }
-        let items = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        // uniquingKeysWith: a scanned QR is external input — a repeated query key must not trap.
+        let items = Dictionary(
+            (components.queryItems ?? []).map { ($0.name, $0.value ?? "") },
+            uniquingKeysWith: { first, _ in first }
+        )
         guard let slug = items["slug"], !slug.isEmpty,
               let token = items["token"], !token.isEmpty else {
             error = "Invalid pairing code"
