@@ -196,6 +196,7 @@ fun OverlaySheet(
     onArrange: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var showScoreboard by remember { mutableStateOf(prefs.overlayEnabled) }
     var fontScale by remember { mutableStateOf(prefs.fontScale.toFloat()) }
     var widthFraction by remember { mutableStateOf(prefs.clampedWidthFraction().toFloat()) }
     var heightFraction by remember { mutableStateOf(prefs.clampedHeightFraction().toFloat()) }
@@ -226,6 +227,7 @@ fun OverlaySheet(
     val sponsorScrollMode = SponsorDisplayMode.isScroll(sponsorDisplayMode)
 
     fun buildDraftPrefs(): OverlayLayoutPrefs = prefs.copy(
+        overlayEnabled = showScoreboard,
         widthFraction = widthFraction.toDouble(),
         heightFraction = heightFraction.toDouble(),
         fontScale = fontScale.toDouble(),
@@ -251,6 +253,7 @@ fun OverlaySheet(
     )
 
     LaunchedEffect(
+        showScoreboard,
         fontScale,
         widthFraction,
         heightFraction,
@@ -282,22 +285,53 @@ fun OverlaySheet(
         subtitle = "Scoreboard style, sponsor logos, and watermark. Changes preview live — tap Save board when done.",
     )
 
-    Box(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
-        Text(
-            "◇  Arrange on screen — pinch & drag",
-            style = AppTypography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = AppColors.Accent,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(AppSpacing.radiusSm))
-                .background(AppColors.Accent.copy(alpha = 0.12f))
-                .border(1.dp, AppColors.Accent.copy(alpha = 0.6f), RoundedCornerShape(AppSpacing.radiusSm))
-                .clickable { onArrange() }
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-        )
+    // Master switch for the score bar — off for book-scored matches where there's no data
+    // feed and an empty scoreboard bar would just clutter the preview and stream.
+    Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Show scoreboard", style = AppTypography.titleSmall)
+                Text(
+                    "Turn off when scoring in a book — removes the score bar from the preview " +
+                        "and the stream. Watermark and sponsor logos are unaffected.",
+                    style = AppTypography.bodySmall,
+                )
+            }
+            Switch(
+                checked = showScoreboard,
+                onCheckedChange = { showScoreboard = it },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = AppColors.OnPrimary,
+                    checkedTrackColor = AppColors.Primary,
+                    uncheckedThumbColor = AppColors.OnBackgroundDim,
+                    uncheckedTrackColor = AppColors.SurfaceElevated,
+                ),
+            )
+        }
     }
     Spacer(Modifier.height(AppSpacing.md))
+
+    if (showScoreboard) {
+        Box(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
+            Text(
+                "◇  Arrange on screen — pinch & drag",
+                style = AppTypography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = AppColors.Accent,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                    .background(AppColors.Accent.copy(alpha = 0.12f))
+                    .border(1.dp, AppColors.Accent.copy(alpha = 0.6f), RoundedCornerShape(AppSpacing.radiusSm))
+                    .clickable { onArrange() }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+            )
+        }
+        Spacer(Modifier.height(AppSpacing.md))
+    }
 
     val activeSponsors = sponsors.filter { it.isActive }
     Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
@@ -560,101 +594,103 @@ fun OverlaySheet(
 
     Spacer(Modifier.height(AppSpacing.md))
 
-    Text(
-        "Board colour",
-        style = AppTypography.titleSmall,
-        modifier = Modifier.padding(horizontal = AppSpacing.lg),
-    )
-    Spacer(Modifier.height(AppSpacing.sm))
-    LazyRow(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = AppSpacing.lg),
-        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
-    ) {
-        items(boardThemes) { preset ->
-            val selected = bg == preset.bg && text == preset.text
-            Column(
-                modifier = Modifier
-                    .width(76.dp)
-                    .clip(RoundedCornerShape(AppSpacing.radiusSm))
-                    .background(
-                        if (selected) AppColors.Accent.copy(alpha = 0.12f) else AppColors.SurfaceElevated.copy(alpha = 0.7f),
-                    )
-                    .border(
-                        width = if (selected) 1.5.dp else 1.dp,
-                        color = if (selected) AppColors.Accent.copy(alpha = 0.8f) else AppColors.Border,
-                        shape = RoundedCornerShape(AppSpacing.radiusSm),
-                    )
-                    .clickable {
-                        bg = preset.bg
-                        text = preset.text
-                    }
-                    .padding(vertical = 10.dp, horizontal = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Box(
+    if (showScoreboard) {
+        Text(
+            "Board colour",
+            style = AppTypography.titleSmall,
+            modifier = Modifier.padding(horizontal = AppSpacing.lg),
+        )
+        Spacer(Modifier.height(AppSpacing.sm))
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = AppSpacing.lg),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+        ) {
+            items(boardThemes) { preset ->
+                val selected = bg == preset.bg && text == preset.text
+                Column(
                     modifier = Modifier
-                        .size(34.dp)
-                        .background(preset.swatch, CircleShape)
+                        .width(76.dp)
+                        .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                        .background(
+                            if (selected) AppColors.Accent.copy(alpha = 0.12f) else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                        )
                         .border(
                             width = if (selected) 1.5.dp else 1.dp,
-                            color = if (selected) AppColors.Accent else Color.White.copy(alpha = 0.20f),
-                            shape = CircleShape,
-                        ),
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    preset.name,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (selected) AppColors.OnBackground else AppColors.OnBackgroundMuted,
-                    maxLines = 1,
-                )
+                            color = if (selected) AppColors.Accent.copy(alpha = 0.8f) else AppColors.Border,
+                            shape = RoundedCornerShape(AppSpacing.radiusSm),
+                        )
+                        .clickable {
+                            bg = preset.bg
+                            text = preset.text
+                        }
+                        .padding(vertical = 10.dp, horizontal = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .background(preset.swatch, CircleShape)
+                            .border(
+                                width = if (selected) 1.5.dp else 1.dp,
+                                color = if (selected) AppColors.Accent else Color.White.copy(alpha = 0.20f),
+                                shape = CircleShape,
+                            ),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        preset.name,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (selected) AppColors.OnBackground else AppColors.OnBackgroundMuted,
+                        maxLines = 1,
+                    )
+                }
             }
         }
-    }
 
-    Spacer(Modifier.height(AppSpacing.md))
+        Spacer(Modifier.height(AppSpacing.md))
 
-    Column(
-        modifier = Modifier.padding(horizontal = AppSpacing.lg),
-        verticalArrangement = Arrangement.spacedBy(AppSpacing.xs),
-    ) {
-        LabeledSlider(
-            label = "Board width",
-            valueText = "${(widthFraction * 100).toInt()}%",
-            value = widthFraction,
-            onValueChange = { widthFraction = it },
-            valueRange = 0.25f..0.98f,
-        )
-        LabeledSlider(
-            label = "Board height",
-            valueText = "${(heightFraction * 100).toInt()}%",
-            value = heightFraction,
-            onValueChange = { heightFraction = it },
-            valueRange = 0.10f..0.28f,
-        )
-        LabeledSlider(
-            label = "Font size",
-            valueText = "${(fontScale * 100).toInt()}%",
-            value = fontScale,
-            onValueChange = { fontScale = it },
-            valueRange = OverlayLayoutPrefs.FONT_MIN.toFloat()..OverlayLayoutPrefs.FONT_MAX.toFloat(),
-        )
-        LabeledSlider(
-            label = "Opacity",
-            valueText = "${(opacity * 100).toInt()}%",
-            value = opacity,
-            onValueChange = { opacity = it },
-            valueRange = 0.2f..1.0f,
-        )
-        LabeledSlider(
-            label = "Position",
-            valueText = "${bottomMargin.toInt()}",
-            value = bottomMargin,
-            onValueChange = { bottomMargin = it },
-            valueRange = 0f..48f,
-        )
+        Column(
+            modifier = Modifier.padding(horizontal = AppSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.xs),
+        ) {
+            LabeledSlider(
+                label = "Board width",
+                valueText = "${(widthFraction * 100).toInt()}%",
+                value = widthFraction,
+                onValueChange = { widthFraction = it },
+                valueRange = 0.25f..0.98f,
+            )
+            LabeledSlider(
+                label = "Board height",
+                valueText = "${(heightFraction * 100).toInt()}%",
+                value = heightFraction,
+                onValueChange = { heightFraction = it },
+                valueRange = 0.10f..0.28f,
+            )
+            LabeledSlider(
+                label = "Font size",
+                valueText = "${(fontScale * 100).toInt()}%",
+                value = fontScale,
+                onValueChange = { fontScale = it },
+                valueRange = OverlayLayoutPrefs.FONT_MIN.toFloat()..OverlayLayoutPrefs.FONT_MAX.toFloat(),
+            )
+            LabeledSlider(
+                label = "Opacity",
+                valueText = "${(opacity * 100).toInt()}%",
+                value = opacity,
+                onValueChange = { opacity = it },
+                valueRange = 0.2f..1.0f,
+            )
+            LabeledSlider(
+                label = "Position",
+                valueText = "${bottomMargin.toInt()}",
+                value = bottomMargin,
+                onValueChange = { bottomMargin = it },
+                valueRange = 0f..48f,
+            )
+        }
     }
 
     Spacer(Modifier.height(AppSpacing.md))
@@ -845,9 +881,15 @@ fun PreflightSheet(
             index = 1,
             hint = "Set a destination or paste a stream key first",
         )
+        // Scoreboard intentionally off (book scoring) counts as ready — nothing to composite.
         PreflightRow(
-            label = "Scoreboard on stream",
-            ok = state.match?.overlayEmbedUrl?.isNotBlank() == true,
+            label = if (state.overlayPrefs.overlayEnabled) {
+                "Scoreboard on stream"
+            } else {
+                "Scoreboard off (book scoring)"
+            },
+            ok = !state.overlayPrefs.overlayEnabled ||
+                state.match?.overlayEmbedUrl?.isNotBlank() == true,
             index = 2,
             hint = "Overlay URL missing — check the stream setup",
         )

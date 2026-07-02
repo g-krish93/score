@@ -44,9 +44,37 @@ class StreamOverlayPolicyTest {
     }
 
     @Test
+    fun `disabled scoreboard never refreshes even with url and stream`() {
+        assertEquals(
+            StreamOverlayPolicy.RefreshMode.None,
+            StreamOverlayPolicy.refreshMode(
+                isStreaming = true,
+                hasPreviewListener = true,
+                overlayUrlBlank = false,
+                overlayEnabled = false,
+            ),
+        )
+        assertEquals(
+            StreamOverlayPolicy.RefreshMode.None,
+            StreamOverlayPolicy.refreshMode(
+                isStreaming = false,
+                hasPreviewListener = false,
+                overlayUrlBlank = false,
+                overlayEnabled = false,
+            ),
+        )
+    }
+
+    @Test
     fun `GL overlay attaches during preview`() {
         assertTrue(StreamOverlayPolicy.shouldAttachGlOverlayOnPreview(isStreaming = false))
         assertFalse(StreamOverlayPolicy.shouldAttachGlOverlayOnPreview(isStreaming = true))
+        assertFalse(
+            StreamOverlayPolicy.shouldAttachGlOverlayOnPreview(
+                isStreaming = false,
+                overlayEnabled = false,
+            ),
+        )
     }
 
     @Test
@@ -61,6 +89,13 @@ class StreamOverlayPolicyTest {
             StreamOverlayPolicy.shouldAttachGlOverlayOnStream(
                 isStreaming = false,
                 overlayUrlBlank = false,
+            ),
+        )
+        assertFalse(
+            StreamOverlayPolicy.shouldAttachGlOverlayOnStream(
+                isStreaming = true,
+                overlayUrlBlank = false,
+                overlayEnabled = false,
             ),
         )
     }
