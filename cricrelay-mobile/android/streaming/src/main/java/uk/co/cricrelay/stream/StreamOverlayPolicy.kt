@@ -16,14 +16,21 @@ object StreamOverlayPolicy {
         isStreaming: Boolean,
         hasPreviewListener: Boolean,
         overlayUrlBlank: Boolean,
+        overlayEnabled: Boolean = true,
     ): RefreshMode {
+        // Scoreboard intentionally off (book scoring): no capture loop runs anywhere.
+        if (!overlayEnabled) return RefreshMode.None
         if (overlayUrlBlank) return RefreshMode.None
         if (isStreaming) return RefreshMode.StreamRefresh
         return RefreshMode.PreviewGlRefresh
     }
 
-    fun shouldAttachGlOverlayOnPreview(isStreaming: Boolean): Boolean = !isStreaming
+    fun shouldAttachGlOverlayOnPreview(isStreaming: Boolean, overlayEnabled: Boolean = true): Boolean =
+        !isStreaming && overlayEnabled
 
-    fun shouldAttachGlOverlayOnStream(isStreaming: Boolean, overlayUrlBlank: Boolean): Boolean =
-        isStreaming && !overlayUrlBlank
+    fun shouldAttachGlOverlayOnStream(
+        isStreaming: Boolean,
+        overlayUrlBlank: Boolean,
+        overlayEnabled: Boolean = true,
+    ): Boolean = isStreaming && !overlayUrlBlank && overlayEnabled
 }

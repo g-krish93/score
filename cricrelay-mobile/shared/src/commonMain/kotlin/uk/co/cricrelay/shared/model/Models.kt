@@ -372,6 +372,10 @@ data class OverlayLayoutPrefs(
     @SerialName("video_stabilization") val videoStabilization: Boolean = true,
     @SerialName("stabilization_level") val stabilizationLevel: Int = StabilizationLevel.STANDARD,
     @SerialName("keep_screen_on") val keepScreenOn: Boolean = true,
+    // Master switch for the score bar. Off for book-scored matches with no data feed —
+    // an empty scoreboard bar would just clutter the stream. Local-only pref (the server
+    // ignores unknown overlay keys; the per-slug cache is authoritative).
+    @SerialName("overlay_enabled") val overlayEnabled: Boolean = true,
     // Brand watermark burned into the stream; admin-configurable.
     @SerialName("watermark_enabled") val watermarkEnabled: Boolean = true,
     @SerialName("watermark_text") val watermarkText: String = WATERMARK_DEFAULT_TEXT,
@@ -491,6 +495,7 @@ data class OverlayLayoutPrefs(
                 videoStabilization = stabilizationLevel > StabilizationLevel.OFF,
                 stabilizationLevel = stabilizationLevel,
                 keepScreenOn = json.bool("keep_screen_on") != false,
+                overlayEnabled = json.bool("overlay_enabled") != false,
                 watermarkEnabled = json.bool("watermark_enabled") != false,
                 watermarkText = json.string("watermark_text")?.takeIf { it.isNotBlank() }
                     ?: WATERMARK_DEFAULT_TEXT,
@@ -528,6 +533,7 @@ data class OverlayLayoutPrefs(
         put("video_stabilization", stabilizationLevel > StabilizationLevel.OFF)
         put("stabilization_level", stabilizationLevel)
         put("keep_screen_on", keepScreenOn)
+        put("overlay_enabled", overlayEnabled)
         put("watermark_enabled", watermarkEnabled)
         put("watermark_text", watermarkText)
         put("sponsor_enabled", sponsorEnabled)

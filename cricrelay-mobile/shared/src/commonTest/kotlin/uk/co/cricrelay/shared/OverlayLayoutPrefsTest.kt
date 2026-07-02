@@ -78,6 +78,23 @@ class OverlayLayoutPrefsTest {
     }
 
     @Test
+    fun `overlay enabled round-trips through json and defaults to on`() {
+        assertEquals(JsonPrimitive(true), OverlayLayoutPrefs().toJson()["overlay_enabled"])
+        assertEquals(
+            JsonPrimitive(false),
+            OverlayLayoutPrefs(overlayEnabled = false).toJson()["overlay_enabled"],
+        )
+
+        assertFalse(
+            OverlayLayoutPrefs.fromJson(
+                buildJsonObject { put("overlay_enabled", false) },
+            ).overlayEnabled,
+        )
+        // Absent key (old cache / old server payload) keeps the scoreboard on.
+        assertTrue(OverlayLayoutPrefs.fromJson(buildJsonObject { }).overlayEnabled)
+    }
+
+    @Test
     fun `withStabilizationLevel sanitizes and keeps the boolean in sync`() {
         assertEquals(
             StabilizationLevel.CINEMATIC,

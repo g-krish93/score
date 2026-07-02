@@ -62,6 +62,7 @@ fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.toEngineLayout(
 ): uk.co.cricrelay.stream.StreamCameraEngine.OverlayLayout {
     val urls = sponsorLogoUrls.filter { it.isNotBlank() }
     return uk.co.cricrelay.stream.StreamCameraEngine.OverlayLayout(
+        overlayEnabled = overlayEnabled,
         heightFraction = heightFraction.toFloat(),
         widthFraction = widthFraction.toFloat(),
         anchorX = anchorX.toFloat(),

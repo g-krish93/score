@@ -50,6 +50,8 @@ object StreamCameraEngine : ConnectChecker {
     )
 
     data class OverlayLayout(
+        // Master switch for the score bar (off for book-scored matches with no data feed).
+        val overlayEnabled: Boolean = true,
         val heightFraction: Float = 0.16f,
         val widthFraction: Float = 1.0f,
         val anchorX: Float = 0.5f,
@@ -842,6 +844,16 @@ object StreamCameraEngine : ConnectChecker {
             syncOverlayCaptureWidth()
             ensureWatermarkFilter()
             ensureSponsorFilter()
+            // Scoreboard disabled (e.g. scoring in a book): stop every capture loop and remove
+            // the board sprite so no empty bar is composited into the preview or stream.
+            // Watermark and sponsor filters above stay untouched.
+            if (!layout.overlayEnabled) {
+                stopOverlayRefresh()
+                stopPreviewOverlayPush()
+                stopPreviewOverlayRefresh()
+                clearBoardFilter()
+                return@runOnMain
+            }
             if (overlayUrl.isEmpty()) return@runOnMain
             val themedUrl = OverlayThemeBridge.urlWithTheme(overlayUrl, layout.theme)
             ensureOverlayCapture()?.apply {
@@ -853,15 +865,16 @@ object StreamCameraEngine : ConnectChecker {
                 isStreaming = camera?.isStreaming == true,
                 hasPreviewListener = previewOverlayListener != null,
                 overlayUrlBlank = false,
+                overlayEnabled = true,
             )
             when (refreshMode) {
                 StreamOverlayPolicy.RefreshMode.StreamRefresh -> {
                     if (imageFilter != null && lastOverlayBitmap != null) {
                         applyOverlaySprite()
                     }
-                    if (imageFilter != null) {
-                        startOverlayRefresh()
-                    }
+                    // Started even when the sprite is gone (disable→enable toggle mid-broadcast):
+                    // the loop's first tick rebuilds the filter together with a fresh capture.
+                    startOverlayRefresh()
                 }
                 StreamOverlayPolicy.RefreshMode.PreviewGlRefresh -> startPreviewOverlayRefresh()
                 StreamOverlayPolicy.RefreshMode.None -> {
@@ -884,7 +897,7 @@ object StreamCameraEngine : ConnectChecker {
     ) {
         overlayLayout = layout
         overlayUrl = url
-        pendingOverlayAfterConnect = url.isNotEmpty()
+        pendingOverlayAfterConnect = url.isNotEmpty() && layout.overlayEnabled
 
         val endpoint = StreamCaptureService.buildEndpoint(rtmpUrl, streamKey)
         if (!endpoint.startsWith("rtmp://")) {
@@ -1454,7 +1467,7 @@ object StreamCameraEngine : ConnectChecker {
 
     /** Overlay URL may be set before the GL view attaches an Activity — restart capture then. */
     private fun resumeOverlayPreviewIfNeeded() {
-        if (overlayUrl.isEmpty() || activity == null) return
+        if (overlayUrl.isEmpty() || activity == null || !overlayLayout.overlayEnabled) return
         syncOverlayCaptureWidth()
         ensureOverlayCapture()?.apply {
             loadUrl(OverlayThemeBridge.urlWithTheme(overlayUrl, overlayLayout.theme))
@@ -1551,7 +1564,8 @@ object StreamCameraEngine : ConnectChecker {
         appliedWatermarkText = null
     }
 
-    private fun clearOverlayFilter() {
+    /** Remove just the scoreboard sprite (watermark + sponsor stay composited). */
+    private fun clearBoardFilter() {
         val cam = camera ?: return
         imageFilter?.let { filter ->
             try {
@@ -1560,6 +1574,10 @@ object StreamCameraEngine : ConnectChecker {
             }
         }
         imageFilter = null
+    }
+
+    private fun clearOverlayFilter() {
+        clearBoardFilter()
         clearWatermarkFilter()
     }
 
@@ -1937,6 +1955,12 @@ object StreamCameraEngine : ConnectChecker {
 
     private fun ensureOverlayFilter() {
         val cam = camera ?: return
+        // Scoreboard disabled (e.g. scoring in a book): remove the board sprite entirely so
+        // no empty bar is composited into the preview or stream.
+        if (!overlayLayout.overlayEnabled) {
+            clearBoardFilter()
+            return
+        }
         if (imageFilter != null) {
             if (lastOverlayBitmap != null) applyOverlaySprite()
             return
@@ -2001,7 +2025,7 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     private fun startOverlayRefresh() {
-        if (overlayPausedForMemory) return
+        if (overlayPausedForMemory || !overlayLayout.overlayEnabled) return
         stopOverlayRefresh()
         val interval = overlayRefreshMs
         val runnable = object : Runnable {
@@ -2024,7 +2048,7 @@ object StreamCameraEngine : ConnectChecker {
 
     private fun startPreviewOverlayPush() {
         if (previewOverlayPushActive) return
-        if (camera?.isStreaming == true || overlayPausedForMemory) return
+        if (camera?.isStreaming == true || overlayPausedForMemory || !overlayLayout.overlayEnabled) return
         if (overlayUrl.isEmpty() || previewOverlayListener == null) {
             CricrelayLog.w(
                 "startPreviewOverlayPush skipped: urlEmpty=${overlayUrl.isEmpty()} listener=${previewOverlayListener != null}",
@@ -2054,7 +2078,7 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     private fun startPreviewOverlayRefresh() {
-        if (camera?.isStreaming == true || overlayPausedForMemory) return
+        if (camera?.isStreaming == true || overlayPausedForMemory || !overlayLayout.overlayEnabled) return
         stopPreviewOverlayRefresh()
         if (overlayUrl.isEmpty()) return
         ensureOverlayCapture()?.loadUrl(OverlayThemeBridge.urlWithTheme(overlayUrl, overlayLayout.theme))

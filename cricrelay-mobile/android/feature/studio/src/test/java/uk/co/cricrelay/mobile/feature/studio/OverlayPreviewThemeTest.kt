@@ -41,6 +41,12 @@ class OverlayPreviewThemeTest {
     }
 
     @Test
+    fun `toEngineLayout carries the scoreboard master switch`() {
+        assertTrue(OverlayLayoutPrefs().toEngineLayout().overlayEnabled)
+        assertTrue(!OverlayLayoutPrefs(overlayEnabled = false).toEngineLayout().overlayEnabled)
+    }
+
+    @Test
     fun `sanitizeTheme maps legacy values to barlow`() {
         assertEquals("barlow", OverlayLayoutPrefs.sanitizeTheme("unknown"))
         assertEquals("barlow", OverlayLayoutPrefs.sanitizeTheme("classic"))
