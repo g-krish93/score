@@ -35,6 +35,10 @@ import uk.co.cricrelay.shared.util.normalizeApiBaseUrl
 
 class ApiException(message: String) : Exception(message)
 
+// 2 MB: big enough to ride out TCP slow start (~2.7s at the 6 Mbps 1080p threshold), small
+// enough to finish fast on a good link and fail fast through a proxy body-size cap.
+private const val UPLOAD_PROBE_BYTES = 2_000_000
+
 class CricRelayApiClient(
     private val httpClient: HttpClient,
     baseUrl: String,
@@ -329,6 +333,30 @@ class CricRelayApiClient(
         if (!response.status.isSuccess()) {
             val body = parseJsonObject(response)
             throw ApiException(body["error"]?.toString()?.trim('"') ?: "Failed to update broadcast status")
+        }
+    }
+
+    /**
+     * Measure usable upload throughput by timing a discarded POST to the club server. Returns
+     * megabits/second, or null when the probe can't run (old server without the endpoint,
+     * proxy body-size limit, offline). TCP slow start makes short probes read a little low —
+     * that errs toward the conservative (lower-resolution) choice, which is the right bias
+     * for a live broadcast.
+     */
+    suspend fun measureUploadMbps(probeBytes: Int = UPLOAD_PROBE_BYTES): Double? {
+        val payload = ByteArray(probeBytes)
+        return try {
+            val mark = kotlin.time.TimeSource.Monotonic.markNow()
+            val response = httpClient.post("$baseUrl/api/net-probe") {
+                token?.takeIf { it.isNotBlank() }?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+                contentType(ContentType.Application.OctetStream)
+                setBody(payload)
+            }
+            val seconds = mark.elapsedNow().toDouble(kotlin.time.DurationUnit.SECONDS)
+            if (!response.status.isSuccess() || seconds <= 0.0) return null
+            probeBytes * 8.0 / seconds / 1_000_000.0
+        } catch (_: Exception) {
+            null
         }
     }
 

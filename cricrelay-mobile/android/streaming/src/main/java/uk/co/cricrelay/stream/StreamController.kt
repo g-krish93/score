@@ -32,12 +32,17 @@ class StreamController @Inject constructor() {
     private val _pipMode = MutableStateFlow(false)
     val pipMode: StateFlow<Boolean> = _pipMode.asStateFlow()
 
+    /** Broadcast health (~1/sec while live; null when not streaming) for the studio HUD. */
+    private val _streamStats = MutableStateFlow<StreamCameraEngine.StreamStats?>(null)
+    val streamStats: StateFlow<StreamCameraEngine.StreamStats?> = _streamStats.asStateFlow()
+
     private var activity: Activity? = null
 
     val isStreaming: Boolean
         get() = StreamCameraEngine.isStreaming
 
     init {
+        StreamCameraEngine.setStatsListener { stats -> _streamStats.value = stats }
         StreamCameraEngine.setStatusListener { event, message ->
             _status.value = _status.value.copy(
                 previewReady = StreamCameraEngine.isPreviewReady,
@@ -74,11 +79,15 @@ class StreamController @Inject constructor() {
     /** Effective encoded frame size (w to h) for the PiP aspect ratio. */
     fun currentStreamAspect(): Pair<Int, Int> = StreamCameraEngine.currentStreamAspect()
 
+    /**
+     * width/height/bitrate 0 = auto: the engine picks per device tier (HIGH phones capture and
+     * stream 1080p @ 4.5 Mbps, others 720p @ 2.5 Mbps) with the usual step-down fallback tiers.
+     */
     fun preparePreview(
-        width: Int = 1280,
-        height: Int = 720,
+        width: Int = 0,
+        height: Int = 0,
         fps: Int = 30,
-        bitrateBps: Int = 2_500_000,
+        bitrateBps: Int = 0,
         rotation: Int = 0,
     ): Boolean {
         if (StreamCameraEngine.isStreaming) return StreamCameraEngine.isPreviewReady
@@ -113,6 +122,13 @@ class StreamController @Inject constructor() {
             CameraPreviewHost.refreshPreviewSurface()
         }
     }
+
+    /** True when this device's tier defaults to 1080p capture. */
+    fun supports1080p(): Boolean = StreamCameraEngine.supports1080p()
+
+    /** Re-prepare at an explicit quality before Go Live (no-op if already prepared at it). */
+    fun ensurePreparedQuality(width: Int, height: Int, bitrateBps: Int): Boolean =
+        StreamCameraEngine.ensurePreparedQuality(width, height, bitrateBps)
 
     /** Feed the live device orientation (Surface.ROTATION_* in degrees) from a sensor listener. */
     fun setDeviceOrientation(surfaceRotationDegrees: Int) {
@@ -184,6 +200,10 @@ class StreamController @Inject constructor() {
 
     fun isFocusLocked(): Boolean = StreamCameraEngine.isFocusLocked()
 
+    /** 0 = off, 1 = standard, 2 = cinematic (shared StabilizationLevel). */
+    fun setStabilizationLevel(level: Int) = StreamCameraEngine.setStabilizationLevel(level)
+
+    /** Back-compat boolean passthrough; prefer [setStabilizationLevel]. */
     fun setVideoStabilization(enabled: Boolean) = StreamCameraEngine.setVideoStabilization(enabled)
 
     fun setMicMuted(muted: Boolean) = StreamCameraEngine.setMicMuted(muted)

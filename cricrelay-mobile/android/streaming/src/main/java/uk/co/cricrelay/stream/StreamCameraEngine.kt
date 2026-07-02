@@ -20,6 +20,7 @@ import com.pedro.encoder.input.gl.render.filters.BlackFilterRender
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 import com.pedro.encoder.utils.gl.AspectRatioMode
 import com.pedro.library.rtmp.RtmpCamera2
+import com.pedro.library.util.BitrateAdapter
 import com.pedro.library.view.OpenGlView
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -35,6 +36,18 @@ import java.util.concurrent.TimeUnit
  * 4. overlay WebView + GL filter when RTMP connects (preview uses Flutter WebView)
  */
 object StreamCameraEngine : ConnectChecker {
+
+    /** Live broadcast health, published ~once a second while streaming (null when not live). */
+    data class StreamStats(
+        val sentBitrateBps: Long,
+        val targetBitrateBps: Int,
+        val maxBitrateBps: Int,
+        val width: Int,
+        val height: Int,
+        val fps: Int,
+        val congested: Boolean,
+        val droppedVideoFrames: Long,
+    )
 
     data class OverlayLayout(
         val heightFraction: Float = 0.16f,
@@ -64,13 +77,14 @@ object StreamCameraEngine : ConnectChecker {
         val theme: String = "barlow",
     )
 
-    private const val MAX_WIDTH = 1280
+    private const val MAX_WIDTH = 1920
     // Reference prefs (the defaults in OverlayLayoutPrefs). When the user sliders sit at
     // these values the overlay bitmap renders at its NATIVE aspect ratio — wMul/hMul == 1.
     private const val REF_OVERLAY_WIDTH_FRACTION = 1.0f
     private const val REF_OVERLAY_HEIGHT_FRACTION = 0.16f
-    private const val MAX_HEIGHT = 720
+    private const val MAX_HEIGHT = 1080
     private const val DEFAULT_BITRATE = 2500000
+    private const val MAX_BITRATE = 8_000_000
     private const val DEFAULT_FPS = 30
 
     private var camera: RtmpCamera2? = null
@@ -109,8 +123,9 @@ object StreamCameraEngine : ConnectChecker {
     private var previewOverlayPushActive = false
     private var previewOverlayRefreshRunnable: Runnable? = null
     private var previewOverlayListener: ((ByteArray, Int, Int) -> Unit)? = null
-    private var streamWidth = MAX_WIDTH
-    private var streamHeight = MAX_HEIGHT
+    // Conservative 720p until preparePreview resolves the device tier — never assume 1080p.
+    private var streamWidth = 1280
+    private var streamHeight = 720
     private var streamFps = DEFAULT_FPS
     private var streamBitrate = DEFAULT_BITRATE
     private var streamRotation = 0
@@ -125,13 +140,18 @@ object StreamCameraEngine : ConnectChecker {
     private var pendingOverlayAfterConnect = false
     private var prepareInFlight = false
     private var previewSurfaceRunnable: Runnable? = null
-    private var videoStabilizationEnabled = true
+    // 0 = off, 1 = standard (EIS ON + OIS), 2 = cinematic (EIS PREVIEW_STABILIZATION + OIS).
+    // Mirrors shared StabilizationLevel; :streaming has no dependency on :shared.
+    private var stabilizationLevel = 1
+    private var reflectOkLogged = false
     private var keepScreenOnDuringStream = false
     private var audioManager: AudioManager? = null
     private var pauseBlackFilter: BlackFilterRender? = null
     private var streamPaused = false
     private var micMuted = false
-    private var deviceTier = DeviceCapabilities.Tier.HIGH
+    // MID until attachView measures the device — "auto" resolution must never guess 1080p
+    // on a phone we haven't sized up yet.
+    private var deviceTier = DeviceCapabilities.Tier.MID
     private var overlayRefreshMs = 500L
     private var thermalStatusListener: PowerManager.OnThermalStatusChangedListener? = null
     private var thermalPollRunnable: Runnable? = null
@@ -144,6 +164,11 @@ object StreamCameraEngine : ConnectChecker {
     private var overlayPausedForMemory = false
     private var overlayCaptureInFlight = false
     private var focusLocked = false
+    // Adaptive bitrate: created on RTMP connect, fed by onNewBitrate, steps the encoder
+    // bitrate up/down with the real network via setVideoBitrateOnFly.
+    private var bitrateAdapter: BitrateAdapter? = null
+    private var currentTargetBitrate = DEFAULT_BITRATE
+    private var statsListener: ((StreamStats?) -> Unit)? = null
 
     val isStreaming: Boolean
         get() = camera?.isStreaming == true
@@ -158,24 +183,59 @@ object StreamCameraEngine : ConnectChecker {
         statusListener = listener
     }
 
+    /** Broadcast-health updates ~1/sec while live; a null value means the stream ended. */
+    fun setStatsListener(listener: ((StreamStats?) -> Unit)?) {
+        statsListener = listener
+    }
+
     fun setKeepScreenOnDuringStream(enabled: Boolean) {
         keepScreenOnDuringStream = enabled
     }
 
-    fun setVideoStabilization(enabled: Boolean) {
-        videoStabilizationEnabled = enabled
+    /** Back-compat shim for boolean callers (e.g. old remote payloads). */
+    fun setVideoStabilization(enabled: Boolean) = setStabilizationLevel(if (enabled) 1 else 0)
+
+    fun setStabilizationLevel(level: Int) {
+        stabilizationLevel = level.coerceIn(0, 2)
         val cam = camera ?: return
-        if (cam.isStreaming) return
-        runOnMain {
-            try {
-                if (enabled) {
-                    cam.enableVideoStabilization()
-                } else {
+        if (cam.isStreaming) return // pre-stream setting: changing EIS live can hiccup the encoder
+        runOnMain { applyStabilization(cam, live = true) }
+    }
+
+    /**
+     * Off = EIS 0 + OIS 0; Standard = EIS ON(1) + OIS ON; Cinematic = EIS PREVIEW_STABILIZATION(2)
+     * + OIS ON. RootEncoder's enableVideoStabilization() hard-codes EIS mode 1, so cinematic goes
+     * through the reflected builder ([Camera2Controls.setEisMode]) and clamps down to the best
+     * supported mode on older devices; if reflection is unavailable it degrades to EIS 1.
+     */
+    private fun applyStabilization(cam: RtmpCamera2, live: Boolean) {
+        CricrelayLog.d("applyStabilization level=$stabilizationLevel live=$live")
+        try {
+            when (stabilizationLevel) {
+                0 -> {
                     cam.disableVideoStabilization()
+                    runCatching { cam.disableOpticalVideoStabilization() }
                 }
-            } catch (_: Exception) {
+                1 -> {
+                    cam.enableVideoStabilization()
+                    runCatching { cam.enableOpticalVideoStabilization() }
+                }
+                2 -> {
+                    if (!Camera2Controls.setEisMode(cam, 2, live)) {
+                        cam.enableVideoStabilization()
+                    }
+                    runCatching { cam.enableOpticalVideoStabilization() }
+                }
             }
+        } catch (_: Exception) {
         }
+    }
+
+    /** One-time diagnostic so a debug run shows whether the correct path (not fallback) is live. */
+    private fun logReflectStateOnce(cam: RtmpCamera2) {
+        if (reflectOkLogged) return
+        reflectOkLogged = true
+        CricrelayLog.d("Camera2Controls.reflectOk=${Camera2Controls.reflectOk(cam)}")
     }
 
     /** Surface lost (rotation, PiP) — wait for surfaceChanged before prepare again. */
@@ -441,10 +501,16 @@ object StreamCameraEngine : ConnectChecker {
             streamRotation = rotation.coerceIn(0, 360)
             streamIsPortrait = streamRotation == 90 || streamRotation == 270
         }
-        streamWidth = width.coerceIn(640, MAX_WIDTH)
-        streamHeight = height.coerceIn(360, MAX_HEIGHT)
+        // width/height/bitrate <= 0 mean "auto": pick by device tier (HIGH phones capture and
+        // stream 1080p; the camera session itself runs at this size, so preview sharpness and
+        // stream quality both track it).
+        val reqWidth = if (width > 0) width else DeviceCapabilities.defaultStreamWidth(deviceTier)
+        val reqHeight = if (height > 0) height else DeviceCapabilities.defaultStreamHeight(deviceTier)
+        val reqBitrate = if (bitrate > 0) bitrate else DeviceCapabilities.defaultStreamBitrate(deviceTier)
+        streamWidth = reqWidth.coerceIn(640, MAX_WIDTH)
+        streamHeight = reqHeight.coerceIn(360, MAX_HEIGHT)
         streamFps = fps.coerceIn(24, 30)
-        streamBitrate = bitrate.coerceIn(800000, 4500000)
+        streamBitrate = reqBitrate.coerceIn(800000, MAX_BITRATE)
         var ok = false
         try {
             runOnMainSync { ok = preparePreviewOnMain() }
@@ -452,6 +518,25 @@ object StreamCameraEngine : ConnectChecker {
             return false
         }
         return ok
+    }
+
+    /** True when this device's tier defaults to 1080p capture. */
+    fun supports1080p(): Boolean = deviceTier == DeviceCapabilities.Tier.HIGH
+
+    /**
+     * Re-prepare the pipeline at an explicit quality right before Go Live (pre-stream only —
+     * resolution is fixed once live). No-op when the requested quality is already prepared.
+     */
+    fun ensurePreparedQuality(width: Int, height: Int, bitrateBps: Int): Boolean {
+        if (camera?.isStreaming == true) return false
+        var alreadyPrepared = false
+        runOnMainSync {
+            alreadyPrepared = encoderPrepared && camera?.isOnPreview == true &&
+                streamWidth == width && streamHeight == height && streamBitrate == bitrateBps
+        }
+        if (alreadyPrepared) return true
+        CricrelayLog.d("ensurePreparedQuality: re-preparing at ${width}x$height @ ${bitrateBps / 1000}kbps")
+        return resetPreviewForOrientation(width, height, streamFps, bitrateBps, streamRotation)
     }
 
     /** Re-prepare encoder when orientation changes before Go Live (not while streaming). */
@@ -599,18 +684,26 @@ object StreamCameraEngine : ConnectChecker {
     /**
      * Freeze autofocus at its current (converged) distance so a fielder, umpire, or passer-by
      * crossing between the camera and the pitch can't pull focus off the strip. The operator
-     * frames + taps the pitch (continuous AF converges), then locks — turning AF off holds the
-     * lens where it is. At long range the depth of field comfortably spans both ends of the
+     * frames + taps the pitch (AF converges), then locks — the lens is held at the exact
+     * converged distance. At long range the depth of field comfortably spans both ends of the
      * pitch, so one locked distance keeps the whole strip sharp. [unlockFocus] resumes AF.
+     *
+     * Uses [Camera2Controls.lockFocusAtCurrentDistance] (reads LENS_FOCUS_DISTANCE from a capture
+     * result, then AF_MODE_OFF at that distance). RootEncoder's disableAutoFocus() alone sets AF
+     * off WITHOUT a lens distance, which resets the lens to the builder default (infinity) and
+     * visibly loses the tapped focus — kept only as the reflection-unavailable fallback.
      */
     fun lockFocus(): Boolean {
         var ok = false
         runOnMainSync {
             val cam = camera ?: return@runOnMainSync
-            try {
-                ok = cam.disableAutoFocus()
-            } catch (_: Exception) {
-                ok = false
+            ok = Camera2Controls.lockFocusAtCurrentDistance(cam)
+            if (!ok) {
+                try {
+                    ok = cam.disableAutoFocus()
+                } catch (_: Exception) {
+                    ok = false
+                }
             }
             focusLocked = ok
         }
@@ -618,8 +711,11 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     /**
-     * Tap to focus at a point (continuous AF). Tapping always releases an existing lock so the
-     * operator can re-aim and re-lock. Returns the focus result and the resulting lock state.
+     * Tap to focus at a point. Tapping always releases an existing lock so the operator can
+     * re-aim and re-lock. Runs a correct sensor-space Camera2 focus ([Camera2Controls.tapToFocus]:
+     * one-shot converge-and-hold with AF+AE metering at the tap); falls back to RootEncoder's
+     * tapToFocus(MotionEvent) only if reflection is unavailable. Returns the focus result and the
+     * resulting lock state.
      */
     fun tapToFocusAt(viewWidth: Int, viewHeight: Int, x: Float, y: Float): Map<String, Any> {
         var focused = false
@@ -641,20 +737,24 @@ object StreamCameraEngine : ConnectChecker {
                 focusLocked = false
             }
 
-            val event = MotionEvent.obtain(
-                SystemClock.uptimeMillis(),
-                SystemClock.uptimeMillis(),
-                MotionEvent.ACTION_UP,
-                px,
-                py,
-                0,
-            )
-            try {
-                focused = cam.tapToFocus(event)
-            } catch (_: Exception) {
-                focused = false
-            } finally {
-                event.recycle()
+            logReflectStateOnce(cam)
+            focused = Camera2Controls.tapToFocus(cam, w, h, px, py, frontFacing = false)
+            if (!focused) {
+                val event = MotionEvent.obtain(
+                    SystemClock.uptimeMillis(),
+                    SystemClock.uptimeMillis(),
+                    MotionEvent.ACTION_UP,
+                    px,
+                    py,
+                    0,
+                )
+                try {
+                    focused = cam.tapToFocus(event)
+                } catch (_: Exception) {
+                    focused = false
+                } finally {
+                    event.recycle()
+                }
             }
         }
         return mapOf("focused" to focused, "locked" to focusLocked)
@@ -970,11 +1070,10 @@ object StreamCameraEngine : ConnectChecker {
                 CricrelayLog.e("prepareVideo FAILED on all tiers — preview stays black")
                 return false
             }
-            if (videoStabilizationEnabled && deviceTier != DeviceCapabilities.Tier.LOW) {
-                try {
-                    cam.enableVideoStabilization()
-                } catch (_: Exception) {
-                }
+            if (stabilizationLevel > 0 && deviceTier != DeviceCapabilities.Tier.LOW) {
+                // Builder-only at prepare (no setRepeatingRequest): the preview hasn't started,
+                // so the value bakes into the first repeating request — same as RootEncoder.
+                applyStabilization(cam, live = false)
             }
             encoderPrepared = true
             preparedVideoRotation = streamRotation
@@ -982,6 +1081,18 @@ object StreamCameraEngine : ConnectChecker {
                 cam.startPreview()
             }
             val ready = cam.isOnPreview
+            if (ready) {
+                // RootEncoder only creates its builder/session when the camera opens
+                // (startPreview) — the pre-prepare pass above could bake at most EIS 1 via
+                // RootEncoder's flag replay. Now that the reflected builder exists: switch the
+                // HAL to its video-tuned processing path, top Cinematic up to
+                // PREVIEW_STABILIZATION(2), and log the truthful reflect state.
+                Camera2Controls.applyCaptureQuality(cam, live = true)
+                if (stabilizationLevel == 2 && deviceTier != DeviceCapabilities.Tier.LOW) {
+                    applyStabilization(cam, live = true)
+                }
+                logReflectStateOnce(cam)
+            }
             // RootEncoder stores the raw (pre-rotation) dims in width/height, but when rotation is
             // 90/270 it builds the encoder MediaFormat as createVideoFormat(height, width) — i.e. the
             // actual encoded frame is swapped to portrait. Report the effective (post-swap) size.
@@ -1015,7 +1126,7 @@ object StreamCameraEngine : ConnectChecker {
         val reqW = streamWidth
         val reqH = streamHeight
         val reqFps = streamFps.coerceIn(24, 30)
-        val reqBitrate = streamBitrate.coerceIn(800000, 4500000)
+        val reqBitrate = streamBitrate.coerceIn(800000, MAX_BITRATE)
         val landscapeSteps = listOf(
             VideoTier(reqW, reqH, reqFps, reqBitrate),
             VideoTier(1280, 720, reqFps.coerceAtMost(30), reqBitrate.coerceAtMost(2500000)),
@@ -1113,6 +1224,8 @@ object StreamCameraEngine : ConnectChecker {
         pendingOverlayAfterConnect = false
         streamPaused = false
         backgroundRendering = false
+        bitrateAdapter = null
+        statsListener?.invoke(null)
         removePauseBlackFilter()
         stopOverlayRefresh()
         clearOverlayFilter()
@@ -2065,6 +2178,18 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     override fun onConnectionSuccess() {
+        // Follow the real network: RootEncoder reports the sent bitrate once a second
+        // (onNewBitrate); the adapter steps the encoder toward the prepared maximum when there
+        // is headroom and cuts it on congestion (setVideoBitrateOnFly = live MediaCodec param).
+        // Resolution stays fixed for the session — mid-stream re-prepare is the golden-path crash.
+        currentTargetBitrate = streamBitrate
+        bitrateAdapter = BitrateAdapter { bitrate ->
+            currentTargetBitrate = bitrate
+            try {
+                camera?.setVideoBitrateOnFly(bitrate)
+            } catch (_: Exception) {
+            }
+        }.apply { setMaxBitrate(streamBitrate) }
         attachOverlayAfterConnect()
         emit(StreamCaptureService.EVENT_CONNECTED, "")
     }
@@ -2074,10 +2199,29 @@ object StreamCameraEngine : ConnectChecker {
         emit(StreamCaptureService.EVENT_ERROR, reason.ifBlank { "RTMP connection failed" })
     }
 
-    override fun onNewBitrate(bitrate: Long) {}
+    override fun onNewBitrate(bitrate: Long) {
+        val cam = camera ?: return
+        if (!cam.isStreaming) return
+        // >20% of the RTMP send cache in use = the uplink can't keep up right now.
+        val congested = runCatching { cam.streamClient.hasCongestion(20f) }.getOrDefault(false)
+        bitrateAdapter?.adaptBitrate(bitrate, congested)
+        val stats = StreamStats(
+            sentBitrateBps = bitrate,
+            targetBitrateBps = currentTargetBitrate,
+            maxBitrateBps = streamBitrate,
+            width = encodedCanvasWidth(),
+            height = encodedCanvasHeight(),
+            fps = streamFps,
+            congested = congested,
+            droppedVideoFrames = runCatching { cam.streamClient.getDroppedVideoFrames() }.getOrDefault(0L),
+        )
+        mainHandler.post { statsListener?.invoke(stats) }
+    }
 
     override fun onDisconnect() {
         pendingOverlayAfterConnect = false
+        bitrateAdapter = null
+        mainHandler.post { statsListener?.invoke(null) }
         emit(StreamCaptureService.EVENT_DISCONNECTED, "")
     }
 

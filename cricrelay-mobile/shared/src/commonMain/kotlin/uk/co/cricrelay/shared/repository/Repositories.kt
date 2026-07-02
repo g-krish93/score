@@ -3,6 +3,7 @@ package uk.co.cricrelay.shared.repository
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import uk.co.cricrelay.shared.api.CricRelayApiClient
@@ -65,6 +66,9 @@ class AuthRepository(
     suspend fun markOnboardingComplete() = sessionStore.markOnboardingComplete()
 }
 
+// If 2 MB hasn't uploaded within this window the uplink is below ~2 Mbps — no need to wait longer.
+private const val UPLOAD_PROBE_TIMEOUT_MS = 8_000L
+
 class StreamRepository(
     private val apiClientProvider: ApiClientProvider,
 ) {
@@ -124,6 +128,27 @@ class StreamRepository(
     suspend fun youtubeDisconnect() = apiClientProvider.get().youtubeDisconnect()
 
     suspend fun twitchDisconnect() = apiClientProvider.get().twitchDisconnect()
+
+    /**
+     * Upload throughput to the club server in Mbps. Semantics for the Go Live quality choice:
+     * - a number: the measured rate;
+     * - 0.0: the probe timed out mid-upload — the uplink is measurably slower than the floor;
+     * - null: the probe couldn't run at all (old server, offline) — network quality UNKNOWN,
+     *   callers should keep their current default rather than downgrade.
+     */
+    suspend fun measureUploadMbps(): Double? {
+        var unavailable = false
+        val measured = withTimeoutOrNull(UPLOAD_PROBE_TIMEOUT_MS) {
+            val mbps = apiClientProvider.get().measureUploadMbps()
+            if (mbps == null) unavailable = true
+            mbps
+        }
+        return when {
+            unavailable -> null
+            measured == null -> 0.0
+            else -> measured
+        }
+    }
 
     suspend fun getOverlayPrefs(matchSlug: String): OverlayLayoutPrefs =
         apiClientProvider.get().getOverlayPrefs(matchSlug)

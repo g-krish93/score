@@ -3942,6 +3942,7 @@ OVERLAY_LAYOUT_STATE_KEYS = (
     "overlay_text_color",
     "overlay_opacity",
     "video_stabilization",
+    "stabilization_level",
     "keep_screen_on",
     "watermark_enabled",
     "watermark_text",
@@ -3976,6 +3977,19 @@ def _overlay_layout_from_state() -> dict:
     out["sponsor_size_scale"] = max(0.3, min(3.0, float(out.get("sponsor_size_scale") or 1.0)))
     out["sponsor_opacity"] = max(0.2, min(1.0, float(out.get("sponsor_opacity") or 1.0)))
     out["sponsor_scroll_speed"] = max(0.3, min(3.0, float(out.get("sponsor_scroll_speed") or 1.0)))
+    # Stabilization: the 3-level field is the source of truth; legacy states that only have the
+    # boolean map on->STANDARD(1)/off->OFF(0). Keep the wire-compat boolean consistent with it.
+    # (Deliberately NOT in blank_state: merge_missing_state_keys would back-fill level=1 onto old
+    # states where the user had turned stabilization off.)
+    lvl = state.get("stabilization_level")
+    if lvl is None:
+        lvl = 1 if out.get("video_stabilization", True) else 0
+    try:
+        lvl = max(0, min(2, int(lvl)))
+    except (TypeError, ValueError):
+        lvl = 1
+    out["stabilization_level"] = lvl
+    out["video_stabilization"] = lvl > 0
     return out
 
 
@@ -4001,6 +4015,11 @@ def _apply_overlay_layout_to_state(data: dict) -> None:
             state[key] = _sanitize_sponsor_display_mode(val)
         elif key in {"sponsor_enabled", "video_stabilization", "keep_screen_on", "watermark_enabled"}:
             state[key] = bool(val)
+        elif key == "stabilization_level":
+            try:
+                state[key] = max(0, min(2, int(val)))
+            except (TypeError, ValueError):
+                pass
         elif key == "active_sponsor_id":
             state[key] = str(val).strip() if val else None
         elif key == "active_sponsor_ids":
@@ -4036,6 +4055,14 @@ def _apply_overlay_layout_to_state(data: dict) -> None:
             state[key] = str(val or "")
         else:
             state[key] = val
+    # Keep the stabilization pair consistent: the level wins when the writer sent it; a
+    # legacy bool-only writer maps on->STANDARD(1)/off->OFF(0).
+    if "stabilization_level" in data:
+        lvl = state.get("stabilization_level")
+        if isinstance(lvl, int):
+            state["video_stabilization"] = lvl > 0
+    elif "video_stabilization" in data:
+        state["stabilization_level"] = 1 if state.get("video_stabilization") else 0
 
 
 def _overlay_prefs_json(slug: str) -> dict:
@@ -4064,6 +4091,15 @@ def api_get_overlay(org: Organization, match_slug: str):
     if not relay_match_for_org(org, slug):
         return jsonify({"error": "unknown stream"}), 404
     return jsonify(_overlay_prefs_json(slug))
+
+
+@app.post("/api/net-probe")
+@stream_api_auth_required
+def api_net_probe(org: Organization):
+    """Upload bandwidth probe: the app times this discarded POST (~2 MB) right before Go Live
+    to choose the stream resolution (1080p needs ~6 Mbps of uplink headroom)."""
+    size = len(request.get_data(cache=False) or b"")
+    return jsonify({"ok": True, "bytes": size})
 
 
 @app.post("/api/match/<match_slug>/overlay")

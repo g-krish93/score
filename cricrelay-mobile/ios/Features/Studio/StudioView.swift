@@ -161,7 +161,11 @@ struct StudioView: View {
                     if event == "error" { viewModel.error = "Stream error — tap restart camera." }
                 }
             }
-            await StreamCameraEngine.shared.preparePreview(width: 1280, height: 720, fps: 30)
+            await StreamCameraEngine.shared.preparePreview(
+                width: StreamCameraEngine.defaultStreamWidth,
+                height: StreamCameraEngine.defaultStreamHeight,
+                fps: 30
+            )
             viewModel.previewReady = StreamCameraEngine.shared.isPreviewReady
             viewModel.advancePrecheckIfCameraReady()
         }
@@ -300,10 +304,11 @@ struct StudioView: View {
                 active: viewModel.focusLocked
             ) { Task { await viewModel.toggleFocusLock() } }
 
+            // Cycles Off → Standard → Cinematic (parity with Android's quick-toggle rail).
             quickTogglePill(
-                label: "Stabilize",
+                label: stabilizationPillLabel,
                 systemImage: "gyroscope",
-                active: viewModel.overlayPrefs.videoStabilization
+                active: viewModel.overlayPrefs.stabilizationLevel > StabilizationLevel.off.rawValue
             ) { Task { await viewModel.toggleStabilization() } }
 
             quickTogglePill(
@@ -317,6 +322,14 @@ struct StudioView: View {
                 systemImage: viewModel.micMuted ? "mic.slash.fill" : "mic.fill",
                 active: viewModel.micMuted
             ) { Task { await viewModel.toggleMicMuted() } }
+        }
+    }
+
+    private var stabilizationPillLabel: String {
+        switch viewModel.overlayPrefs.stabilizationLevel {
+        case StabilizationLevel.cinematic.rawValue: return "Cinematic"
+        case StabilizationLevel.standard.rawValue: return "Standard"
+        default: return "Stabilize"
         }
     }
 

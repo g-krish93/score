@@ -200,9 +200,10 @@ fun StudioScreen(
                     onScoring = { viewModel.openSheet(StudioSheet.Scoring) },
                     onMenu = { viewModel.openSheet(StudioSheet.Menu) },
                     onToggleStabilization = {
+                        // Cycle Off → Standard → Cinematic (least invasive fit for the toggle rail).
                         viewModel.updateOverlayPrefs(
-                            state.overlayPrefs.copy(
-                                videoStabilization = !state.overlayPrefs.videoStabilization,
+                            state.overlayPrefs.withStabilizationLevel(
+                                (state.overlayPrefs.stabilizationLevel + 1) % 3,
                             ),
                         )
                     },

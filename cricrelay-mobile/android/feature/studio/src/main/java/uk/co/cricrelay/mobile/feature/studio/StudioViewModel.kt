@@ -106,6 +106,8 @@ data class StudioUiState(
     val precheckActive: Boolean = false,
     val precheckStep: PrecheckStep = PrecheckStep.Camera,
     val orientationMode: OrientationMode = OrientationMode.Auto,
+    // Broadcast health for the on-screen HUD (~1/sec while live; null when not streaming).
+    val streamStats: uk.co.cricrelay.stream.StreamCameraEngine.StreamStats? = null,
 ) {
     val destinationLabel: String
         get() = when (destination) {
@@ -121,6 +123,7 @@ class StudioViewModel @Inject constructor(
     private val streamController: StreamController,
     private val apiClientProvider: ApiClientProvider,
     private val rtmpStore: RtmpCredentialsStore,
+    private val localPrefs: StudioLocalPrefsStore,
     private val streamDao: StreamDao,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(StudioUiState())
@@ -147,6 +150,11 @@ class StudioViewModel @Inject constructor(
     }
 
     init {
+        viewModelScope.launch {
+            streamController.streamStats.collect { stats ->
+                _uiState.update { it.copy(streamStats = stats) }
+            }
+        }
         viewModelScope.launch {
             streamController.status.collect { status ->
                 _uiState.update {
@@ -255,8 +263,13 @@ class StudioViewModel @Inject constructor(
     }
 
     private suspend fun loadStudioExtras(slug: String, match: StreamMatch) {
-        val overlayPrefs = runCatching { streamRepository.getOverlayPrefs(slug) }
+        // Local-first: this phone owns its studio setup. The server copy only seeds a fresh
+        // install; camera/device settings are never read from the server at all.
+        val cachedPrefs = localPrefs.loadOverlayPrefs(slug)
+        val basePrefs = cachedPrefs ?: runCatching { streamRepository.getOverlayPrefs(slug) }
             .getOrDefault(OverlayLayoutPrefs())
+            .also { localPrefs.saveOverlayPrefs(slug, it) }
+        val overlayPrefs = localPrefs.loadDeviceSettings().appliedTo(basePrefs)
         val sponsors = runCatching { streamRepository.listSponsors() }.getOrDefault(emptyList())
         val scoring = runCatching { streamRepository.getScoring(slug) }.getOrNull()
         val youtube = runCatching { streamRepository.youtubePlatformStatus() }
@@ -285,7 +298,7 @@ class StudioViewModel @Inject constructor(
                 zoomLevel = streamController.currentZoom(),
             )
         }
-        streamController.setVideoStabilization(overlayPrefs.videoStabilization)
+        streamController.setStabilizationLevel(overlayPrefs.stabilizationLevel)
         streamController.setKeepScreenOnDuringStream(overlayPrefs.keepScreenOn)
         syncOverlay(match, overlayPrefs)
         syncSponsorLayer(overlayPrefs, sponsors)
@@ -588,17 +601,23 @@ class StudioViewModel @Inject constructor(
 
     fun updateOverlayPrefs(prefs: OverlayLayoutPrefs) {
         val match = _uiState.value.match ?: return
+        // Local persistence + camera apply first — the studio must work fully offline.
+        localPrefs.saveOverlayPrefs(match.slug, prefs)
+        localPrefs.saveDeviceSettings(
+            DeviceStreamSettings(
+                stabilizationLevel = prefs.stabilizationLevel,
+                keepScreenOn = prefs.keepScreenOn,
+            ),
+        )
+        streamController.setStabilizationLevel(prefs.stabilizationLevel)
+        streamController.setKeepScreenOnDuringStream(prefs.keepScreenOn)
+        syncOverlay(match, prefs)
+        syncSponsorLayer(prefs)
+        _uiState.update { it.copy(overlayPrefs = prefs) }
+        // Best-effort mirror to the server so the club dashboard and remote companion stay
+        // informed — a failure never blocks or reverts the local studio.
         viewModelScope.launch {
-            try {
-                streamRepository.setOverlayPrefs(match.slug, prefs)
-                streamController.setVideoStabilization(prefs.videoStabilization)
-                streamController.setKeepScreenOnDuringStream(prefs.keepScreenOn)
-                syncOverlay(match, prefs)
-                syncSponsorLayer(prefs)
-                _uiState.update { it.copy(overlayPrefs = prefs) }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(error = e.message) }
-            }
+            runCatching { streamRepository.setOverlayPrefs(match.slug, prefs) }
         }
     }
 
@@ -695,11 +714,26 @@ class StudioViewModel @Inject constructor(
 
     fun dismissRecap() = _uiState.update { it.copy(recap = null) }
 
+    /**
+     * Size the encoder to the ground's real uplink before going live: time an upload probe and
+     * prepare 1080p only with comfortable headroom, else 720p. Resolution can't change once the
+     * broadcast starts, so this is the one moment to choose; the live BitrateAdapter handles
+     * in-stream dips from there. Probe unavailable (old server/offline) ⇒ keep the tier default.
+     */
+    private suspend fun autoSelectGoLiveQuality() {
+        if (!streamController.supports1080p()) return
+        val mbps = runCatching { streamRepository.measureUploadMbps() }.getOrNull()
+        val choice = GoLiveQualityPolicy.choose(deviceSupports1080 = true, measuredMbps = mbps) ?: return
+        streamController.ensurePreparedQuality(choice.width, choice.height, choice.bitrateBps)
+    }
+
     fun goLive() {
         val match = _uiState.value.match ?: return
         val state = _uiState.value
         viewModelScope.launch {
-            _uiState.update { it.copy(busy = true, error = null, statusMessage = "Connecting…") }
+            _uiState.update { it.copy(busy = true, error = null, statusMessage = "Checking connection…") }
+            autoSelectGoLiveQuality()
+            _uiState.update { it.copy(statusMessage = "Connecting…") }
             try {
                 val logoUrls = state.overlayPrefs.resolveSponsorLogoUrls(state.sponsors)
                 val layout = state.overlayPrefs.toEngineLayout(logoUrls)

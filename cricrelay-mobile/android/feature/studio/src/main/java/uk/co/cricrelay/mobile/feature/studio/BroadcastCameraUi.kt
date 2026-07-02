@@ -76,8 +76,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import android.os.PowerManager
+import java.util.Locale
 import kotlin.math.roundToInt
+import uk.co.cricrelay.stream.StreamCameraEngine
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
+import uk.co.cricrelay.shared.model.StabilizationLevel
 import uk.co.cricrelay.mobile.ui.AppColors
 import uk.co.cricrelay.mobile.ui.AppMotion
 import uk.co.cricrelay.mobile.ui.BroadcastGradientScrim
@@ -297,6 +300,53 @@ private fun ToolButtons(
     }
 }
 
+/**
+ * Broadcast-health HUD under the LIVE badge (professional-camera style): encoded quality, the
+ * bitrate actually leaving the phone, and a status dot — green when tracking the prepared
+ * maximum, amber while the adaptive encoder has stepped the bitrate down for the network,
+ * red while the uplink is congested (RTMP send cache backing up).
+ */
+@Composable
+private fun StreamStatsBadge(stats: StreamCameraEngine.StreamStats) {
+    val quality = "${minOf(stats.width, stats.height)}p${stats.fps}"
+    val mbps = stats.sentBitrateBps / 1_000_000.0
+    val adapting = stats.targetBitrateBps < (stats.maxBitrateBps * 0.9f).toInt()
+    val dotColor = when {
+        stats.congested -> Color(0xFFFF5252)
+        adapting -> Color(0xFFFFC107)
+        else -> Color(0xFF4CAF50)
+    }
+    val healthLabel = when {
+        stats.congested -> "network congested"
+        adapting -> "adapting to network"
+        else -> "stable"
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color.Black.copy(alpha = 0.45f))
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .semantics {
+                contentDescription = "Streaming $quality at ${String.format(Locale.US, "%.1f", mbps)} " +
+                    "megabits per second, $healthLabel"
+            },
+    ) {
+        Box(
+            Modifier
+                .size(7.dp)
+                .clip(CircleShape)
+                .background(dotColor),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = "$quality  ${String.format(Locale.US, "%.1f", mbps)} Mbps",
+            style = AppTypography.bodySmall,
+            color = Color.White,
+        )
+    }
+}
+
 /** Focus lock / Stabilize / Keep-screen-on quick toggles, surfaced next to Go Live (no menu dig). */
 @Composable
 private fun QuickToggles(
@@ -319,24 +369,33 @@ private fun QuickToggles(
     // Hidden while live — stabilization can't change mid-stream, and in the landscape rail
     // the pill + caption were tall enough to push the Go Live/stop shutter off-screen.
     // The caption is also dropped in the vertical rail for the same reason.
+    // Tap cycles the three levels: Off → Standard (EIS+OIS) → Cinematic (max EIS+OIS).
     val stabilize: @Composable () -> Unit = {
         if (!state.streaming) {
+            val level = state.overlayPrefs.stabilizationLevel
+            val levelName = when (level) {
+                StabilizationLevel.CINEMATIC -> "Cinematic"
+                StabilizationLevel.STANDARD -> "Standard"
+                else -> "Off"
+            }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 CameraQuickToggle(
-                    label = "Stabilize",
-                    active = state.overlayPrefs.videoStabilization,
+                    label = if (level == StabilizationLevel.OFF) "Stabilize" else levelName,
+                    active = level > StabilizationLevel.OFF,
                     icon = Icons.Outlined.Vibration,
                     onClick = onToggleStabilization,
                     modifier = Modifier.semantics {
                         contentDescription = buildString {
                             append("Stabilize, ")
-                            append(if (state.overlayPrefs.videoStabilization) "on" else "off")
-                            append(". ")
-                            append(STABILIZATION_FOV_CAPTION)
+                            append(levelName.lowercase())
+                            append(". Tap to change level. ")
+                            if (level == StabilizationLevel.CINEMATIC) {
+                                append(STABILIZATION_FOV_CAPTION)
+                            }
                         }
                     },
                 )
-                if (!vertical) {
+                if (!vertical && level == StabilizationLevel.CINEMATIC) {
                     Text(
                         text = STABILIZATION_FOV_CAPTION,
                         style = AppTypography.bodySmall,
@@ -473,7 +532,13 @@ private fun StudioTopBar(
                 label = "topBarStatus",
             ) { streaming ->
                 if (streaming) {
-                    LiveTimerBadge(state.liveElapsedSeconds, state.paused)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        LiveTimerBadge(state.liveElapsedSeconds, state.paused)
+                        state.streamStats?.let { stats ->
+                            Spacer(Modifier.height(4.dp))
+                            StreamStatsBadge(stats)
+                        }
+                    }
                 } else {
                     DestinationChip(
                         label = state.destinationLabel,

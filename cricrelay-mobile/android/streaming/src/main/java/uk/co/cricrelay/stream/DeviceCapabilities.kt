@@ -32,8 +32,17 @@ object DeviceCapabilities {
     fun maxOverlayCaptureWidth(t: Tier): Int = when (t) {
         Tier.LOW -> 640
         Tier.MID -> 1280
-        Tier.HIGH -> 1280
+        Tier.HIGH -> 1920
     }
+
+    // Default capture/encode size — HIGH-tier phones shoot and stream 1080p so the sensor isn't
+    // wasted at 720p; the encoder fallback tiers still step down if prepare fails. Bitrates track
+    // YouTube's RTMP guidance (1080p30 ≈ 4.5 Mbps, 720p30 ≈ 2.5 Mbps).
+    fun defaultStreamWidth(t: Tier): Int = if (t == Tier.HIGH) 1920 else 1280
+
+    fun defaultStreamHeight(t: Tier): Int = if (t == Tier.HIGH) 1080 else 720
+
+    fun defaultStreamBitrate(t: Tier): Int = if (t == Tier.HIGH) 4_500_000 else 2_500_000
 
     fun suggestedQualityId(t: Tier): String = when (t) {
         Tier.LOW -> "low"

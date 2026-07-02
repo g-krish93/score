@@ -299,13 +299,26 @@ struct OverlaySheet: View {
 
             Divider().overlay(Color.white.opacity(0.1))
 
-            Toggle("Video stabilisation", isOn: $draft.videoStabilization)
-                .tint(CricTheme.primary)
-                .font(.subheadline)
-                .foregroundStyle(.white)
-            Text("Strong stabilization slightly narrows the camera's field of view.")
-                .font(.caption)
-                .foregroundStyle(CricTheme.textDim)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Video stabilisation")
+                    .font(.subheadline)
+                    .foregroundStyle(.white)
+                // Binding goes through withStabilizationLevel so the wire-compat boolean stays in sync.
+                Picker("Video stabilisation", selection: Binding(
+                    get: { draft.stabilizationLevel },
+                    set: { draft = draft.withStabilizationLevel($0) }
+                )) {
+                    Text("Off").tag(StabilizationLevel.off.rawValue)
+                    Text("Standard").tag(StabilizationLevel.standard.rawValue)
+                    Text("Cinematic").tag(StabilizationLevel.cinematic.rawValue)
+                }
+                .pickerStyle(.segmented)
+            }
+            if draft.stabilizationLevel == StabilizationLevel.cinematic.rawValue {
+                Text("Strong stabilization slightly narrows the camera's field of view.")
+                    .font(.caption)
+                    .foregroundStyle(CricTheme.textDim)
+            }
             Toggle("Keep screen on", isOn: $draft.keepScreenOn)
                 .tint(CricTheme.primary)
                 .font(.subheadline)

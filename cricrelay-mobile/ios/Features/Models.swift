@@ -176,6 +176,19 @@ struct RemoteCompanionContext {
     var watchUrl: String
 }
 
+/// Video stabilization strength (parity with shared StabilizationLevel).
+/// `standard` = today's behavior; `cinematic` = `.cinematicExtended`, which narrows the
+/// field of view most, so the operator opts in.
+enum StabilizationLevel: Int, Codable {
+    case off = 0
+    case standard = 1
+    case cinematic = 2
+
+    static func sanitize(_ v: Int?) -> Int {
+        min(max(v ?? StabilizationLevel.standard.rawValue, 0), 2)
+    }
+}
+
 struct OverlayLayoutPrefs: Codable {
     var heightFraction: Double
     var widthFraction: Double
@@ -188,7 +201,9 @@ struct OverlayLayoutPrefs: Codable {
     var bgColor: String
     var textColor: String
     var opacity: Double
+    /// Wire-compat boolean for old clients/servers; `stabilizationLevel` is the source of truth.
     var videoStabilization: Bool
+    var stabilizationLevel: Int
     var keepScreenOn: Bool
     // Brand watermark burned into the stream; admin-configurable.
     var watermarkEnabled: Bool
@@ -222,6 +237,7 @@ struct OverlayLayoutPrefs: Codable {
         textColor = ""
         opacity = 1.0
         videoStabilization = true
+        stabilizationLevel = StabilizationLevel.standard.rawValue
         keepScreenOn = true
         watermarkEnabled = true
         watermarkText = OverlayLayoutPrefs.watermarkDefaultText
@@ -252,6 +268,7 @@ struct OverlayLayoutPrefs: Codable {
         case textColor = "text_color"
         case opacity
         case videoStabilization = "video_stabilization"
+        case stabilizationLevel = "stabilization_level"
         case keepScreenOn = "keep_screen_on"
         case watermarkEnabled = "watermark_enabled"
         case watermarkText = "watermark_text"
@@ -285,7 +302,15 @@ struct OverlayLayoutPrefs: Codable {
         bgColor = try c.decodeIfPresent(String.self, forKey: .bgColor) ?? bgColor
         textColor = try c.decodeIfPresent(String.self, forKey: .textColor) ?? textColor
         opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? opacity
-        videoStabilization = try c.decodeIfPresent(Bool.self, forKey: .videoStabilization) ?? videoStabilization
+        // Prefer the 3-level field; fall back to the legacy boolean from old writers.
+        if let level = try c.decodeIfPresent(Int.self, forKey: .stabilizationLevel) {
+            stabilizationLevel = StabilizationLevel.sanitize(level)
+        } else if let on = try c.decodeIfPresent(Bool.self, forKey: .videoStabilization) {
+            stabilizationLevel = on
+                ? StabilizationLevel.standard.rawValue
+                : StabilizationLevel.off.rawValue
+        }
+        videoStabilization = stabilizationLevel > StabilizationLevel.off.rawValue
         keepScreenOn = try c.decodeIfPresent(Bool.self, forKey: .keepScreenOn) ?? keepScreenOn
         watermarkEnabled = try c.decodeIfPresent(Bool.self, forKey: .watermarkEnabled) ?? watermarkEnabled
         let wm = try c.decodeIfPresent(String.self, forKey: .watermarkText) ?? watermarkText
@@ -337,6 +362,14 @@ struct OverlayLayoutPrefs: Codable {
         var out = self
         out.widthFraction = min(max(Self.refWidthFraction * s, Self.widthMin), Self.widthMax)
         out.heightFraction = min(max(Self.refHeightFraction * s, Self.heightMin), Self.heightMax)
+        return out
+    }
+
+    /// Copy at `level`, keeping the wire-compat boolean in sync.
+    func withStabilizationLevel(_ level: Int) -> OverlayLayoutPrefs {
+        var out = self
+        out.stabilizationLevel = StabilizationLevel.sanitize(level)
+        out.videoStabilization = out.stabilizationLevel > StabilizationLevel.off.rawValue
         return out
     }
 

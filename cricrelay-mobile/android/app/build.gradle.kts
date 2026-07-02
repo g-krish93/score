@@ -47,6 +47,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Inert while minify is off, but keeps the RootEncoder reflection targets
+            // (Camera2Controls) safe the day R8 is enabled.
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             val releaseConfig = signingConfigs.findByName("release")
             signingConfig = if (releaseConfig?.storeFile?.exists() == true) {
                 releaseConfig

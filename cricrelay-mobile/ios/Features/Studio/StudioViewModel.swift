@@ -160,7 +160,15 @@ final class StudioViewModel: ObservableObject {
             async let overlayFetch = api.overlayPrefs(slug: matchSlug)
             async let scoringFetch = api.scoringConfig(slug: matchSlug)
 
-            let (status, prefs, scoring) = try await (matchFetch, overlayFetch, scoringFetch)
+            let (status, serverPrefs, scoring) = try await (matchFetch, overlayFetch, scoringFetch)
+
+            // Local-first: this phone owns its studio setup. The server copy only seeds a
+            // fresh install; camera/device settings are never read from the server at all.
+            let cached = StudioLocalPrefsStore.loadOverlayPrefs(slug: matchSlug)
+            if cached == nil {
+                StudioLocalPrefsStore.saveOverlayPrefs(slug: matchSlug, serverPrefs)
+            }
+            let prefs = StudioLocalPrefsStore.loadDeviceSettings().appliedTo(cached ?? serverPrefs)
 
             overlayPrefs = prefs
             scoringConfig = scoring
@@ -170,7 +178,7 @@ final class StudioViewModel: ObservableObject {
 
             // Bootstrap camera settings from prefs
             StreamCameraEngine.shared.setKeepScreenOnDuringStream(enabled: prefs.keepScreenOn)
-            StreamCameraEngine.shared.setVideoStabilization(enabled: prefs.videoStabilization)
+            StreamCameraEngine.shared.setStabilizationLevel(prefs.stabilizationLevel)
 
             // Resolve the StreamMatch row (for the recap label) and real platform readiness.
             await loadStudioExtras()
@@ -366,9 +374,9 @@ final class StudioViewModel: ObservableObject {
             rtmpUrl: result.rtmpUrl,
             streamKey: result.streamKey,
             overlayUrl: result.overlayEmbedUrl,
-            width: 1280,
-            height: 720,
-            bitrate: 2_500_000,
+            width: StreamCameraEngine.defaultStreamWidth,
+            height: StreamCameraEngine.defaultStreamHeight,
+            bitrate: StreamCameraEngine.defaultStreamBitrate,
             fps: 30,
             layout: overlayPrefs.toEngineLayout(
                 sponsorLogoUrls: overlayPrefs.resolveSponsorLogoUrls(from: sponsors)
@@ -451,9 +459,18 @@ final class StudioViewModel: ObservableObject {
 
     func saveOverlay(_ prefs: OverlayLayoutPrefs) async {
         overlayPrefs = prefs
+        // Local persistence + camera apply first — the studio must work fully offline.
+        StudioLocalPrefsStore.saveOverlayPrefs(slug: matchSlug, prefs)
+        StudioLocalPrefsStore.saveDeviceSettings(
+            DeviceStreamSettings(
+                stabilizationLevel: prefs.stabilizationLevel,
+                keepScreenOn: prefs.keepScreenOn
+            )
+        )
         applyOverlayPreview(prefs)
         StreamCameraEngine.shared.setKeepScreenOnDuringStream(enabled: prefs.keepScreenOn)
-        StreamCameraEngine.shared.setVideoStabilization(enabled: prefs.videoStabilization)
+        StreamCameraEngine.shared.setStabilizationLevel(prefs.stabilizationLevel)
+        // Best-effort mirror so the club dashboard / remote companion stay informed.
         _ = try? await api.saveOverlayPrefs(slug: matchSlug, prefs: prefs)
     }
 
@@ -566,12 +583,12 @@ final class StudioViewModel: ObservableObject {
         UserDefaults.standard.set(true, forKey: Self.precheckDoneKey)
     }
 
-    /// Flip video stabilisation from the on-screen quick toggle, then persist + apply via
-    /// saveOverlay (parity with Android's onToggleStabilization → updateOverlayPrefs).
+    /// Cycle video stabilisation Off → Standard → Cinematic from the on-screen quick toggle,
+    /// then persist + apply via saveOverlay (parity with Android's onToggleStabilization →
+    /// updateOverlayPrefs).
     func toggleStabilization() async {
-        var prefs = overlayPrefs
-        prefs.videoStabilization.toggle()
-        await saveOverlay(prefs)
+        let next = (overlayPrefs.stabilizationLevel + 1) % 3
+        await saveOverlay(overlayPrefs.withStabilizationLevel(next))
     }
 
     /// Flip keep-screen-on from the on-screen quick toggle, then persist + apply via saveOverlay
@@ -708,7 +725,11 @@ final class StudioViewModel: ObservableObject {
     // MARK: - Camera restart
 
     func restartCameraPreview() async {
-        await StreamCameraEngine.shared.preparePreview(width: 1280, height: 720, fps: 30)
+        await StreamCameraEngine.shared.preparePreview(
+            width: StreamCameraEngine.defaultStreamWidth,
+            height: StreamCameraEngine.defaultStreamHeight,
+            fps: 30
+        )
         previewReady = StreamCameraEngine.shared.isPreviewReady
         advancePrecheckIfCameraReady()
     }

@@ -59,16 +59,23 @@ final class StreamCameraEngine: NSObject {
     private var appliedWatermarkText: String?
     private var overlayLayout = OverlayLayout()
     private var overlayUrl = ""
-    private var streamWidth = 1280
-    private var streamHeight = 720
+    // Default capture/encode target — modern iPhones comfortably shoot and encode 1080p30
+    // (parity with Android's HIGH tier; bitrate tracks YouTube's 1080p30 RTMP guidance).
+    static let defaultStreamWidth = 1920
+    static let defaultStreamHeight = 1080
+    static let defaultStreamBitrate = 4_500_000
+
+    private var streamWidth = StreamCameraEngine.defaultStreamWidth
+    private var streamHeight = StreamCameraEngine.defaultStreamHeight
     private var streamFps = 30
-    private var streamBitrate = 2_500_000
+    private var streamBitrate = StreamCameraEngine.defaultStreamBitrate
     private var devicesAttached = false
     private var publishing = false
     private var streamPaused = false
     private var previewReady = false
     private var keepScreenOnDuringStream = false
-    private var videoStabilizationEnabled = true
+    // 0 = off, 1 = standard, 2 = cinematic (parity with shared StabilizationLevel).
+    private var stabilizationLevel = 1
     private var micMuted = false
     private var streamRotation = 0
     /// True when the encoded frame is portrait (w < h) — mirrors Android's streamIsPortrait.
@@ -100,9 +107,25 @@ final class StreamCameraEngine: NSObject {
         UIApplication.shared.isIdleTimerDisabled = enabled && publishing
     }
 
+    /// Back-compat shim for boolean callers (e.g. old remote payloads).
     func setVideoStabilization(enabled: Bool) {
-        videoStabilizationEnabled = enabled
+        setStabilizationLevel(enabled ? 1 : 0)
+    }
+
+    func setStabilizationLevel(_ level: Int) {
+        stabilizationLevel = min(max(level, 0), 2)
         Task { await applyVideoStabilizationSetting() }
+    }
+
+    /// Off / Standard / Cinematic → AVCapture stabilization mode. `.cinematicExtended` is the
+    /// strongest grade (crops the FOV most); unsupported modes fall back per AVFoundation's
+    /// preferred-mode semantics, so no capability check is needed here.
+    private func stabMode(_ level: Int) -> AVCaptureVideoStabilizationMode {
+        switch level {
+        case 0: return .off
+        case 1: return .standard
+        default: return .cinematicExtended
+        }
     }
 
     /// Manual mitigation for the "Lower quality" banner button.
@@ -200,8 +223,8 @@ final class StreamCameraEngine: NSObject {
     /// Re-prepare preview when the operator rotates the phone before Go Live (parity with Android's
     /// OrientationEventListener → updatePreviewRotation).
     func updatePreviewForCurrentOrientation(
-        width: Int = 1280,
-        height: Int = 720,
+        width: Int = StreamCameraEngine.defaultStreamWidth,
+        height: Int = StreamCameraEngine.defaultStreamHeight,
         fps: Int = 30,
         bitrate: Int? = nil
     ) async {
@@ -598,14 +621,17 @@ final class StreamCameraEngine: NSObject {
 
     private func ensureDevices() async throws {
         configureAudioSession()
+        // TODO(verify on Mac): confirm MediaMixer's capture session delivers >=1080p frames.
+        // If the pinned HaishinKit defaults its session preset to .hd1280x720, the 1080p encode
+        // below is an upscale — raise the preset (e.g. mixer session preset .hd1920x1080) here.
         if !devicesAttached {
             if let audio = AVCaptureDevice.default(for: .audio) {
                 try await mixer.attachAudio(audio)
             }
             if let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
-                let stabilizationEnabled = videoStabilizationEnabled
+                let mode = stabMode(stabilizationLevel)
                 try await mixer.attachVideo(camera, track: 0) { unit in
-                    unit.preferredVideoStabilizationMode = stabilizationEnabled ? .cinematicExtended : .off
+                    unit.preferredVideoStabilizationMode = mode
                 }
             }
             var vmSettings = await mixer.videoMixerSettings
@@ -625,10 +651,10 @@ final class StreamCameraEngine: NSObject {
 
     private func applyVideoStabilizationSetting() async {
         guard devicesAttached else { return }
-        let enabled = videoStabilizationEnabled
+        let mode = stabMode(stabilizationLevel)
         // Stabilisation is applied on the capture connection via VideoDeviceUnit, not AVCaptureDevice.
         try? await mixer.configuration(video: 0) { unit in
-            unit.preferredVideoStabilizationMode = enabled ? .cinematicExtended : .off
+            unit.preferredVideoStabilizationMode = mode
         }
     }
 

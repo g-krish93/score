@@ -88,9 +88,19 @@ public final class StreamRtmpPlugin: NSObject, FlutterPlugin, FlutterStreamHandl
             let enabled = (call.arguments as? [String: Any])?["enabled"] as? Bool ?? false
             StreamCameraEngine.shared.setKeepScreenOnDuringStream(enabled: enabled)
             result(nil)
+        case "setStabilizationLevel":
+            let level = (call.arguments as? [String: Any])?["level"] as? Int ?? 1
+            StreamCameraEngine.shared.setStabilizationLevel(level)
+            result(nil)
         case "setVideoStabilization":
-            let enabled = (call.arguments as? [String: Any])?["enabled"] as? Bool ?? true
-            StreamCameraEngine.shared.setVideoStabilization(enabled: enabled)
+            // Legacy boolean form; prefers a "level" arg when present.
+            let args = call.arguments as? [String: Any]
+            if let level = args?["level"] as? Int {
+                StreamCameraEngine.shared.setStabilizationLevel(level)
+            } else {
+                let enabled = args?["enabled"] as? Bool ?? true
+                StreamCameraEngine.shared.setVideoStabilization(enabled: enabled)
+            }
             result(nil)
         case "getDeviceCapabilities":
             result([

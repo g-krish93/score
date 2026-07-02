@@ -338,6 +338,19 @@ object SponsorLayoutMode {
         sanitize(mode) == MULTI || sanitize(mode) == CAROUSEL
 }
 
+/**
+ * Video stabilization strength. `STANDARD` = EIS ON + OIS (today's behavior plus optical),
+ * `CINEMATIC` = the strongest EIS grade (Camera2 PREVIEW_STABILIZATION / iOS cinematicExtended)
+ * + OIS — smoother but narrows the field of view, so the operator opts in.
+ */
+object StabilizationLevel {
+    const val OFF = 0
+    const val STANDARD = 1
+    const val CINEMATIC = 2
+
+    fun sanitize(v: Int?): Int = (v ?: STANDARD).coerceIn(OFF, CINEMATIC)
+}
+
 @Serializable
 data class OverlayLayoutPrefs(
     // Scoreboard is a thin horizontal strip; height is a constant, font size is the
@@ -355,7 +368,9 @@ data class OverlayLayoutPrefs(
     @SerialName("overlay_bg_color") val bgColor: String = "",
     @SerialName("overlay_text_color") val textColor: String = "",
     @SerialName("overlay_opacity") val opacity: Double = 1.0,
+    // Wire-compat boolean for old clients/servers; [stabilizationLevel] is the source of truth.
     @SerialName("video_stabilization") val videoStabilization: Boolean = true,
+    @SerialName("stabilization_level") val stabilizationLevel: Int = StabilizationLevel.STANDARD,
     @SerialName("keep_screen_on") val keepScreenOn: Boolean = true,
     // Brand watermark burned into the stream; admin-configurable.
     @SerialName("watermark_enabled") val watermarkEnabled: Boolean = true,
@@ -409,6 +424,15 @@ data class OverlayLayoutPrefs(
         )
     }
 
+    /** Return a copy at [level], keeping the wire-compat boolean in sync. */
+    fun withStabilizationLevel(level: Int): OverlayLayoutPrefs {
+        val sanitized = StabilizationLevel.sanitize(level)
+        return copy(
+            stabilizationLevel = sanitized,
+            videoStabilization = sanitized > StabilizationLevel.OFF,
+        )
+    }
+
     /** Return a copy re-anchored to a normalized preview point (centre of the board). */
     fun withAnchor(x: Double, y: Double): OverlayLayoutPrefs = copy(
         anchorX = x.coerceIn(0.0, 1.0),
@@ -442,38 +466,50 @@ data class OverlayLayoutPrefs(
             return "barlow"
         }
 
-        fun fromJson(json: JsonObject): OverlayLayoutPrefs = OverlayLayoutPrefs(
-            heightFraction = json.string("overlay_height_fraction")?.toDoubleOrNull() ?: 0.16,
-            widthFraction = json.string("overlay_width_fraction")?.toDoubleOrNull() ?: 1.0,
-            anchorX = json.string("overlay_anchor_x")?.toDoubleOrNull() ?: 0.5,
-            anchorY = json.string("overlay_anchor_y")?.toDoubleOrNull() ?: 0.85,
-            bottomMargin = json.string("overlay_bottom_margin")?.toDoubleOrNull() ?: 0.0,
-            horizontalInset = json.string("overlay_horizontal_inset")?.toDoubleOrNull() ?: 0.0,
-            theme = sanitizeTheme(json.string("theme") ?: json.string("overlay_theme")),
-            fontScale = json.string("overlay_font_scale")?.toDoubleOrNull() ?: 1.0,
-            bgColor = json.string("overlay_bg_color") ?: "",
-            textColor = json.string("overlay_text_color") ?: "",
-            opacity = json.string("overlay_opacity")?.toDoubleOrNull() ?: 1.0,
-            videoStabilization = json.bool("video_stabilization") != false,
-            keepScreenOn = json.bool("keep_screen_on") != false,
-            watermarkEnabled = json.bool("watermark_enabled") != false,
-            watermarkText = json.string("watermark_text")?.takeIf { it.isNotBlank() }
-                ?: WATERMARK_DEFAULT_TEXT,
-            sponsorEnabled = json.bool("sponsor_enabled") == true,
-            activeSponsorId = json.string("active_sponsor_id")?.takeIf { it.isNotBlank() },
-            activeSponsorIds = json.stringList("active_sponsor_ids").ifEmpty {
-                json.string("active_sponsor_id")?.takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
-            },
-            sponsorLayoutMode = SponsorLayoutMode.sanitize(json.string("sponsor_layout_mode")),
-            sponsorCarouselIntervalSec = json.double("sponsor_carousel_interval_sec")?.coerceIn(2.0, 30.0) ?: 6.0,
-            sponsorDisplayMode = SponsorDisplayMode.sanitize(json.string("sponsor_display_mode")),
-            sponsorPositionX = json.double("sponsor_position_x")?.coerceIn(0.0, 1.0) ?: 0.92,
-            sponsorPositionY = json.double("sponsor_position_y")?.coerceIn(0.0, 1.0) ?: 0.88,
-            sponsorSizeScale = json.double("sponsor_size_scale")?.coerceIn(0.3, 3.0) ?: 1.0,
-            sponsorOpacity = json.double("sponsor_opacity")?.coerceIn(0.2, 1.0) ?: 1.0,
-            sponsorScrollSpeed = json.double("sponsor_scroll_speed")?.coerceIn(0.3, 3.0) ?: 1.0,
-            sponsorScrollDirection = SponsorScrollDirection.sanitize(json.string("sponsor_scroll_direction")),
-        )
+        fun fromJson(json: JsonObject): OverlayLayoutPrefs {
+            // Prefer the 3-level field; fall back to the legacy boolean from old writers.
+            val stabilizationLevel = StabilizationLevel.sanitize(
+                json.int("stabilization_level")
+                    ?: if (json.bool("video_stabilization") != false) {
+                        StabilizationLevel.STANDARD
+                    } else {
+                        StabilizationLevel.OFF
+                    },
+            )
+            return OverlayLayoutPrefs(
+                heightFraction = json.string("overlay_height_fraction")?.toDoubleOrNull() ?: 0.16,
+                widthFraction = json.string("overlay_width_fraction")?.toDoubleOrNull() ?: 1.0,
+                anchorX = json.string("overlay_anchor_x")?.toDoubleOrNull() ?: 0.5,
+                anchorY = json.string("overlay_anchor_y")?.toDoubleOrNull() ?: 0.85,
+                bottomMargin = json.string("overlay_bottom_margin")?.toDoubleOrNull() ?: 0.0,
+                horizontalInset = json.string("overlay_horizontal_inset")?.toDoubleOrNull() ?: 0.0,
+                theme = sanitizeTheme(json.string("theme") ?: json.string("overlay_theme")),
+                fontScale = json.string("overlay_font_scale")?.toDoubleOrNull() ?: 1.0,
+                bgColor = json.string("overlay_bg_color") ?: "",
+                textColor = json.string("overlay_text_color") ?: "",
+                opacity = json.string("overlay_opacity")?.toDoubleOrNull() ?: 1.0,
+                videoStabilization = stabilizationLevel > StabilizationLevel.OFF,
+                stabilizationLevel = stabilizationLevel,
+                keepScreenOn = json.bool("keep_screen_on") != false,
+                watermarkEnabled = json.bool("watermark_enabled") != false,
+                watermarkText = json.string("watermark_text")?.takeIf { it.isNotBlank() }
+                    ?: WATERMARK_DEFAULT_TEXT,
+                sponsorEnabled = json.bool("sponsor_enabled") == true,
+                activeSponsorId = json.string("active_sponsor_id")?.takeIf { it.isNotBlank() },
+                activeSponsorIds = json.stringList("active_sponsor_ids").ifEmpty {
+                    json.string("active_sponsor_id")?.takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
+                },
+                sponsorLayoutMode = SponsorLayoutMode.sanitize(json.string("sponsor_layout_mode")),
+                sponsorCarouselIntervalSec = json.double("sponsor_carousel_interval_sec")?.coerceIn(2.0, 30.0) ?: 6.0,
+                sponsorDisplayMode = SponsorDisplayMode.sanitize(json.string("sponsor_display_mode")),
+                sponsorPositionX = json.double("sponsor_position_x")?.coerceIn(0.0, 1.0) ?: 0.92,
+                sponsorPositionY = json.double("sponsor_position_y")?.coerceIn(0.0, 1.0) ?: 0.88,
+                sponsorSizeScale = json.double("sponsor_size_scale")?.coerceIn(0.3, 3.0) ?: 1.0,
+                sponsorOpacity = json.double("sponsor_opacity")?.coerceIn(0.2, 1.0) ?: 1.0,
+                sponsorScrollSpeed = json.double("sponsor_scroll_speed")?.coerceIn(0.3, 3.0) ?: 1.0,
+                sponsorScrollDirection = SponsorScrollDirection.sanitize(json.string("sponsor_scroll_direction")),
+            )
+        }
     }
 
     fun toJson(): JsonObject = buildJsonObject {
@@ -488,7 +524,9 @@ data class OverlayLayoutPrefs(
         put("overlay_bg_color", bgColor)
         put("overlay_text_color", textColor)
         put("overlay_opacity", opacity)
-        put("video_stabilization", videoStabilization)
+        // Both stabilization fields derive from the level so old readers stay consistent.
+        put("video_stabilization", stabilizationLevel > StabilizationLevel.OFF)
+        put("stabilization_level", stabilizationLevel)
         put("keep_screen_on", keepScreenOn)
         put("watermark_enabled", watermarkEnabled)
         put("watermark_text", watermarkText)
@@ -588,6 +626,9 @@ internal fun JsonObject.double(key: String): Double? =
 
 internal fun JsonObject.bool(key: String): Boolean? =
     (this[key] as? JsonPrimitive)?.booleanOrNull
+
+internal fun JsonObject.int(key: String): Int? =
+    (this[key] as? JsonPrimitive)?.content?.let { it.toIntOrNull() ?: it.toDoubleOrNull()?.toInt() }
 
 fun JsonObject.array(key: String): List<JsonElement> =
     this[key]?.let { el ->
