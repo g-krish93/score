@@ -86,19 +86,20 @@ final class OverlayWebViewCapture: NSObject, WKNavigationDelegate {
         }
     }
 
-    func capture(width: Int, height: Int) -> UIImage? {
-        if Thread.isMainThread {
-            return captureOnMain()
+    /// Async snapshot of the scoreboard. WKWebView renders out-of-process, so the only
+    /// reliable rasterization is WebKit's own takeSnapshot — UIView.drawHierarchy on an
+    /// off-screen web view is documented to return blank/white content. Falls back to the
+    /// old layer-tree render if WebKit reports an error.
+    func capture() async -> UIImage? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<UIImage?, Never>) in
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                self.captureOnMain { continuation.resume(returning: $0) }
+            }
         }
-        var result: UIImage?
-        let group = DispatchGroup()
-        group.enter()
-        DispatchQueue.main.async { [weak self] in
-            result = self?.captureOnMain()
-            group.leave()
-        }
-        _ = group.wait(timeout: .now() + 2)
-        return result
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -158,14 +159,33 @@ final class OverlayWebViewCapture: NSObject, WKNavigationDelegate {
         return cssHeight
     }
 
-    private func captureOnMain() -> UIImage? {
-        guard attached, pageLoaded, captureHeightPx > 0 else { return nil }
+    private func captureOnMain(_ completion: @escaping (UIImage?) -> Void) {
+        guard attached, pageLoaded, captureHeightPx > 0 else {
+            completion(nil)
+            return
+        }
         let w = captureWidthPx
         let h = captureHeightPx
         webView.frame = CGRect(x: -10_000, y: -10_000, width: w, height: h)
         webView.setNeedsLayout()
         webView.layoutIfNeeded()
 
+        let config = WKSnapshotConfiguration()
+        config.rect = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
+        // Pixel-exact width regardless of device scale; downstream sizing rescales anyway.
+        config.snapshotWidth = NSNumber(value: w)
+        webView.takeSnapshot(with: config) { [weak self] image, _ in
+            if let image {
+                completion(image)
+            } else {
+                completion(self?.layerTreeFallback(w: w, h: h))
+            }
+        }
+    }
+
+    /// Last-resort capture path (the pre-takeSnapshot behavior); known to render blank for an
+    /// off-screen WKWebView on some OS versions, but better than dropping the frame outright.
+    private func layerTreeFallback(w: Int, h: Int) -> UIImage? {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1.0
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format)

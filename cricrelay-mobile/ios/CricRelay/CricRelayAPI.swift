@@ -1,5 +1,14 @@
 import Foundation
 
+/// Server/transport failure carrying the exact message the server sent (parity with the Kotlin
+/// client, which reads the JSON `error` field and maps 401 to a session-expired hint) — so
+/// failures surface as actionable text instead of "The operation couldn't be completed".
+struct APIError: LocalizedError {
+    let statusCode: Int
+    let message: String
+    var errorDescription: String? { message }
+}
+
 final class CricRelayAPI {
     static let shared = CricRelayAPI()
     private init() {}
@@ -12,6 +21,25 @@ final class CricRelayAPI {
         self.token = token
     }
 
+    /// Drop the in-memory bearer token on sign-out — Keychain deletion alone leaves any
+    /// still-running task authenticated as the signed-out user.
+    func clearToken() {
+        token = ""
+    }
+
+    // Percent-encode a value interpolated into a URL path segment. Slugs reach this client from
+    // scanned QR codes and server data — an unencoded "/", "?" or space must not change the route
+    // (the Kotlin client encodes every slug for the same reason).
+    private static let pathSegmentAllowed: CharacterSet = {
+        var set = CharacterSet.urlPathAllowed
+        set.remove(charactersIn: "/?#")
+        return set
+    }()
+
+    private func enc(_ segment: String) -> String {
+        segment.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed) ?? segment
+    }
+
     // MARK: - Auth
 
     func login(email: String, password: String, baseUrl: String) async throws {
@@ -21,10 +49,10 @@ final class CricRelayAPI {
         token = newToken
     }
 
-    func register(name: String, email: String, password: String, baseUrl: String) async throws {
+    func register(name: String, email: String, password: String, consent: Bool, baseUrl: String) async throws {
         self.baseUrl = baseUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let json = try await postJson("/api/auth/register", body: [
-            "name": name, "email": email, "password": password, "consent": true
+            "name": name, "email": email, "password": password, "consent": consent
         ], auth: false, expectedStatus: 201)
         guard let newToken = json["token"] as? String else { throw URLError(.badServerResponse) }
         token = newToken
@@ -56,25 +84,25 @@ final class CricRelayAPI {
     }
 
     func deleteStream(slug: String) async throws {
-        try await sendDelete("/api/streams/\(slug)")
+        try await sendDelete("/api/streams/\(enc(slug))")
     }
 
     /// PATCH returns only `stream: {slug, label}` — not a full StreamMatch — so don't decode one.
     func renameStream(slug: String, label: String) async throws {
-        let json = try await sendPatch("/api/streams/\(slug)", body: ["label": label])
+        let json = try await sendPatch("/api/streams/\(enc(slug))", body: ["label": label])
         guard json["stream"] is [String: Any] else { throw URLError(.badServerResponse) }
     }
 
     // MARK: - Match day
 
     func matchDay(slug: String) async throws -> MatchDayStatus {
-        let json = try await getJson("/api/match/\(slug)/match-day")
+        let json = try await getJson("/api/match/\(enc(slug))/match-day")
         let data = try JSONSerialization.data(withJSONObject: json)
         return try JSONDecoder().decode(MatchDayStatus.self, from: data)
     }
 
     func scoringConfig(slug: String) async throws -> ScoringConfig {
-        let json = try await getJson("/api/match/\(slug)/scoring")
+        let json = try await getJson("/api/match/\(enc(slug))/scoring")
         let data = try JSONSerialization.data(withJSONObject: json)
         return try JSONDecoder().decode(ScoringConfig.self, from: data)
     }
@@ -82,20 +110,20 @@ final class CricRelayAPI {
     func setScoringMode(slug: String, mode: String, provider: String? = nil) async throws -> ScoringConfig {
         var body: [String: Any] = ["mode": mode]
         if let provider { body["provider"] = provider }
-        let json = try await postJson("/api/match/\(slug)/scoring", body: body)
+        let json = try await postJson("/api/match/\(enc(slug))/scoring", body: body)
         let data = try JSONSerialization.data(withJSONObject: json)
         return try JSONDecoder().decode(ScoringConfig.self, from: data)
     }
 
     func setRelayPaused(slug: String, paused: Bool) async throws {
-        _ = try await postJson("/api/match/\(slug)/relay-pause", body: ["paused": paused])
+        _ = try await postJson("/api/match/\(enc(slug))/relay-pause", body: ["paused": paused])
     }
 
     func updateBroadcastStatus(slug: String, status: String, platform: String? = nil, watchUrl: String? = nil) async throws {
         var body: [String: Any] = ["status": status]
         if let platform { body["platform"] = platform }
         if let watchUrl { body["watch_url"] = watchUrl }
-        _ = try await postJson("/api/match/\(slug)/broadcast-status", body: body)
+        _ = try await postJson("/api/match/\(enc(slug))/broadcast-status", body: body)
     }
 
     // MARK: - Broadcast
@@ -153,7 +181,7 @@ final class CricRelayAPI {
     // MARK: - Overlay
 
     func overlayPrefs(slug: String) async throws -> OverlayLayoutPrefs {
-        let json = try await getJson("/api/match/\(slug)/overlay")
+        let json = try await getJson("/api/match/\(enc(slug))/overlay")
         let data = try JSONSerialization.data(withJSONObject: json)
         return (try? JSONDecoder().decode(OverlayLayoutPrefs.self, from: data)) ?? OverlayLayoutPrefs()
     }
@@ -163,7 +191,7 @@ final class CricRelayAPI {
         encoder.keyEncodingStrategy = .convertToSnakeCase
         let data = try encoder.encode(prefs)
         let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        let json = try await postJson("/api/match/\(slug)/overlay", body: body)
+        let json = try await postJson("/api/match/\(enc(slug))/overlay", body: body)
         let responseData = try JSONSerialization.data(withJSONObject: json)
         return (try? JSONDecoder().decode(OverlayLayoutPrefs.self, from: responseData)) ?? prefs
     }
@@ -180,7 +208,7 @@ final class CricRelayAPI {
     // MARK: - Remote control
 
     func pairRemote(slug: String) async throws -> PairRemoteResult {
-        let json = try await postJson("/api/match/\(slug)/pair", body: [:])
+        let json = try await postJson("/api/match/\(enc(slug))/pair", body: [:])
         guard let token = json["pair_token"] as? String else { throw URLError(.badServerResponse) }
         return PairRemoteResult(
             pairToken: token,
@@ -189,14 +217,14 @@ final class CricRelayAPI {
     }
 
     func pollRemoteCommands(slug: String) async throws -> [RemoteCommand] {
-        let json = try await getJson("/api/match/\(slug)/remote/commands")
+        let json = try await getJson("/api/match/\(enc(slug))/remote/commands")
         guard let rows = json["commands"] as? [[String: Any]] else { return [] }
         return rows.map { RemoteCommand.from($0) }
     }
 
     func redeemPairToken(slug: String, pairToken: String) async throws -> CompanionSession {
         let json = try await postJson(
-            "/stream/\(slug)/pair/redeem",
+            "/stream/\(enc(slug))/pair/redeem",
             body: ["pair_token": pairToken],
             auth: false
         )
@@ -209,7 +237,7 @@ final class CricRelayAPI {
 
     func sendRemoteCommand(slug: String, command: String, companionToken: String) async throws {
         _ = try await postJsonWithToken(
-            "/api/match/\(slug)/remote/command",
+            "/api/match/\(enc(slug))/remote/command",
             body: ["type": "control", "command": command],
             token: companionToken
         )
@@ -217,14 +245,14 @@ final class CricRelayAPI {
 
     func sendRemoteOverlayPrefs(slug: String, prefs: OverlayLayoutPrefs, companionToken: String) async throws {
         _ = try await postJsonWithToken(
-            "/api/match/\(slug)/remote/command",
+            "/api/match/\(enc(slug))/remote/command",
             body: ["type": "overlay", "prefs": prefs.sponsorPatchDictionary()],
             token: companionToken
         )
     }
 
     func getRemoteContext(slug: String, companionToken: String) async throws -> RemoteCompanionContext {
-        let json = try await getJsonWithToken("/api/match/\(slug)/remote/context", token: companionToken)
+        let json = try await getJsonWithToken("/api/match/\(enc(slug))/remote/context", token: companionToken)
         var prefs = OverlayLayoutPrefs()
         if let patch = json["sponsor_prefs"] as? [String: Any] {
             prefs = prefs.mergeSponsorPatch(patch)
@@ -247,12 +275,13 @@ final class CricRelayAPI {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
-              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw URLError(.badServerResponse)
-        }
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        // A companion 401 means the pairing lapsed, not the user session.
+        try checkResponse(response, json: json, unauthorizedHint: Self.pairingExpiredHint)
         return json
     }
+
+    private static let pairingExpiredHint = "Pairing expired — scan the QR code on the broadcast phone again."
 
     @discardableResult
     private func postJsonWithToken(
@@ -268,15 +297,30 @@ final class CricRelayAPI {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let message = json["error"] as? String ?? "Request failed"
-            throw NSError(domain: "CricRelayAPI", code: (response as? HTTPURLResponse)?.statusCode ?? 0,
-                          userInfo: [NSLocalizedDescriptionKey: message])
-        }
+        try checkResponse(response, json: json, unauthorizedHint: Self.pairingExpiredHint)
         return json
     }
 
     // MARK: - Request helpers
+
+    /// Shared success check: 2xx passes; 401 maps to a session-expired hint; anything else
+    /// surfaces the server's own `error` message (the Kotlin client does both, and the server
+    /// sends precise reasons like "YouTube OAuth is not configured…").
+    private func checkResponse(
+        _ response: URLResponse,
+        json: [String: Any],
+        unauthorizedHint: String = "Session expired — sign out and sign back in."
+    ) throws {
+        guard let http = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        guard !(200..<300).contains(http.statusCode) else { return }
+        if http.statusCode == 401 {
+            throw APIError(statusCode: 401, message: unauthorizedHint)
+        }
+        let message = json["error"] as? String ?? "Request failed (\(http.statusCode))"
+        throw APIError(statusCode: http.statusCode, message: message)
+    }
 
     @discardableResult
     private func getJson(_ path: String) async throws -> [String: Any] {
@@ -284,10 +328,9 @@ final class CricRelayAPI {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
-        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        try checkResponse(response, json: json)
+        return json
     }
 
     @discardableResult
@@ -305,12 +348,7 @@ final class CricRelayAPI {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        let target = expectedStatus ?? 200
-        if !(200..<300).contains(http.statusCode) && http.statusCode != target {
-            let message = json["error"] as? String ?? "Request failed (\(http.statusCode))"
-            throw NSError(domain: "CricRelayAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: message])
-        }
+        try checkResponse(response, json: json)
         return json
     }
 
@@ -323,10 +361,9 @@ final class CricRelayAPI {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
-        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        try checkResponse(response, json: json)
+        return json
     }
 
     private func sendDelete(_ path: String) async throws {
@@ -334,9 +371,8 @@ final class CricRelayAPI {
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        try checkResponse(response, json: json)
     }
 }

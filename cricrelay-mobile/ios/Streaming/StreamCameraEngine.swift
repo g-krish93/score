@@ -1,4 +1,5 @@
 import AVFoundation
+import CryptoKit
 import HaishinKit
 import RTMPHaishinKit
 import UIKit
@@ -34,6 +35,8 @@ final class StreamCameraEngine: NSObject {
         var sponsorScrollSpeed: Float = 1.0
         var sponsorScrollDirection: String = "rtl"
         var theme: String = "barlow"
+        // Master switch for the score bar (off for book-scored matches with no data feed).
+        var overlayEnabled: Bool = true
     }
 
     private let mixer = MediaMixer()
@@ -45,7 +48,12 @@ final class StreamCameraEngine: NSObject {
     private weak var streamOutputView: MTHKView?
     private var overlayCapture: OverlayWebViewCapture?
     private var overlayTimer: Timer?
+    // Skip a refresh tick while the previous WKWebView snapshot is still in flight.
+    private var overlayCaptureInFlight = false
     private var overlayRefreshInterval: TimeInterval = 0.5
+    // Long-lived listener on the RTMP connection's status stream while publishing, so a
+    // mid-broadcast socket loss surfaces as a "disconnected" event instead of silence.
+    private var connectionWatchTask: Task<Void, Never>?
     private var lastThermalState: ProcessInfo.ThermalState = .nominal
     private var overlayObject: ImageScreenObject?
     private var watermarkObject: ImageScreenObject?
@@ -174,6 +182,35 @@ final class StreamCameraEngine: NSObject {
         }
     }
 
+    /// Tear the capture pipeline down when Studio is left without a live broadcast (parity with
+    /// Android releaseCamera): camera, mic, overlay web view, and all periodic timers stop, so
+    /// the green indicator goes off and battery stops draining while browsing the rest of the
+    /// app. A live broadcast is left untouched — the background standby slate owns that case.
+    /// attachView + preparePreview rebuild everything on the next Studio entry.
+    func releaseIfIdle() async {
+        guard !publishing else { return }
+        connectionWatchTask?.cancel()
+        connectionWatchTask = nil
+        stopOverlayRefresh()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.sponsorScrollTimer?.invalidate()
+            self.sponsorScrollTimer = nil
+            self.sponsorScrollActiveDir = nil
+            self.sponsorCarouselTimer?.invalidate()
+            self.sponsorCarouselTimer = nil
+        }
+        // Dropping the capture removes its web view and stops the measure loop (deinit).
+        overlayCapture = nil
+        try? await mixer.attachVideo(nil, track: 0)
+        try? await mixer.attachAudio(nil, track: 0)
+        await mixer.stopRunning()
+        devicesAttached = false
+        previewReady = false
+        preparedCaptureOrientation = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
     func preparePreview(width: Int, height: Int, fps: Int, bitrate: Int? = nil, rotation: Int = 0) async {
         streamWidth = width
         streamHeight = height
@@ -279,7 +316,11 @@ final class StreamCameraEngine: NSObject {
             await ensureSponsorObject()
             // When not yet live, drive the preview overlay so the scoreboard shows in the preview
             // (parity with Android). While live, startStream already runs the refresh loop.
-            if !publishing, !overlayUrl.isEmpty {
+            // Toggling the scoreboard off stops the capture loop even mid-broadcast; toggling
+            // it back on restarts it (startOverlayRefresh recreates the timer idempotently).
+            if !overlayLayout.overlayEnabled {
+                stopOverlayRefresh()
+            } else if !overlayUrl.isEmpty {
                 startOverlayRefresh()
             }
         }
@@ -366,10 +407,41 @@ final class StreamCameraEngine: NSObject {
                 UIApplication.shared.isIdleTimerDisabled = true
             }
             emit("connected", "")
+            startConnectionWatch()
         } catch {
             publishing = false
             emit("error", error.localizedDescription)
         }
+    }
+
+    /// HaishinKit closes the connection internally when the socket dies (its recv loop calls
+    /// close(), which yields connectClosed/connectFailed on the status stream and flips
+    /// `connected` to false). Deliberate stops cancel this task first in resetRtmpSession,
+    /// so anything received here is an unexpected mid-broadcast loss.
+    private func startConnectionWatch() {
+        connectionWatchTask?.cancel()
+        let conn = connection
+        connectionWatchTask = Task { [weak self] in
+            for await status in await conn.status {
+                if Task.isCancelled { return }
+                guard let code = RTMPConnection.Code(rawValue: status.code) else { continue }
+                if code == .connectClosed || code == .connectFailed {
+                    guard let self else { return }
+                    // Cleanup runs on a fresh task: stopStream cancels this watch task via
+                    // resetRtmpSession, and the cleanup must not be cancelled mid-flight.
+                    Task { await self.handleConnectionLost(status.description) }
+                    return
+                }
+            }
+        }
+    }
+
+    private func handleConnectionLost(_ detail: String) async {
+        guard publishing else { return }
+        emit("disconnected", detail.isEmpty ? "Connection to the streaming server was lost" : detail)
+        // Full deliberate-stop cleanup: tears down the dead session and restores the preview
+        // so the operator can go live again immediately.
+        await stopStream()
     }
 
     func stopStream() async {
@@ -394,6 +466,10 @@ final class StreamCameraEngine: NSObject {
         streamPaused = true
         stopOverlayRefresh()
         await showPauseBlackOverlay()
+        // Parity with Android pause: black video AND muted audio. Detaching the mic is the only
+        // reliable mute — deactivating the audio session fails while the capture session holds it,
+        // which would keep broadcasting live commentary over the pause slate.
+        try? await mixer.attachAudio(nil)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         emit("paused", "")
     }
@@ -568,6 +644,10 @@ final class StreamCameraEngine: NSObject {
     /// Tear down the RTMP session so the next Go Live starts from a clean connection + stream.
     /// Reusing a closed RTMPStream/RTMPConnection can crash inside HaishinKit on publish.
     private func resetRtmpSession() async {
+        // This close is deliberate — stop watching before it yields connectClosed, and never
+        // leave a watcher suspended on a connection object that is about to be replaced.
+        connectionWatchTask?.cancel()
+        connectionWatchTask = nil
         if let stream = rtmpStream {
             if let view = streamOutputView {
                 await stream.removeOutput(view)
@@ -683,6 +763,12 @@ final class StreamCameraEngine: NSObject {
     }
 
     private func ensureOverlayObject() async {
+        // Scoreboard disabled (e.g. scoring in a book): remove the board sprite entirely so
+        // no empty bar is composited into the preview or stream.
+        guard overlayLayout.overlayEnabled else {
+            await removeOverlayObject()
+            return
+        }
         await Task { @ScreenActor in
             if overlayObject == nil {
                 let obj = ImageScreenObject()
@@ -692,6 +778,15 @@ final class StreamCameraEngine: NSObject {
                 try? await mixer.screen.addChild(obj)
             }
             applyOverlayLayout()
+        }.value
+    }
+
+    private func removeOverlayObject() async {
+        await Task { @ScreenActor in
+            if let obj = overlayObject {
+                try? await mixer.screen.removeChild(obj)
+                overlayObject = nil
+            }
         }.value
     }
 
@@ -822,7 +917,13 @@ final class StreamCameraEngine: NSObject {
             for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true
         ).appendingPathComponent("sponsor_logos", isDirectory: true) else { return nil }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("logo_\(UInt(bitPattern: url.hashValue)).img")
+        // Deterministic key: String.hashValue is SipHash-seeded per launch, which silently broke
+        // cross-session cache hits and leaked one new orphan file per URL per launch.
+        let key = SHA256.hash(data: Data(url.utf8))
+            .prefix(8)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return dir.appendingPathComponent("logo_\(key).img")
     }
 
     private func loadSponsorObject(url: String, index: Int, total: Int) async {
@@ -1020,7 +1121,11 @@ final class StreamCameraEngine: NSObject {
         let padH: CGFloat = 22
         let padV: CGFloat = 12
         let size = CGSize(width: textSize.width + padH * 2, height: textSize.height + padV * 2)
-        let renderer = UIGraphicsImageRenderer(size: size)
+        // scale 1: the canvas works in stream pixels — the default (device scale, 2-3×) would
+        // composite a 2-3× oversized watermark (ImageScreenObject sizes by CGImage pixels).
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
         return renderer.image { ctx in
             let rect = CGRect(origin: .zero, size: size)
             let path = UIBezierPath(roundedRect: rect, cornerRadius: 12)
@@ -1042,11 +1147,20 @@ final class StreamCameraEngine: NSObject {
         // Android GL sprite math. The old anchorY-derived formula left a ~7% gap below the board.
         let bottomPx = streamH * CGFloat(max(0, min(0.6, overlayLayout.bottomMarginFraction)))
         let insetX = streamW * CGFloat(overlayLayout.horizontalInsetFraction)
+        // Horizontal placement mirrors Android OverlaySpriteLayout.computePosition: anchorX is
+        // the board's centre as a fraction of frame width, clamped inside the insets. The range
+        // collapses to flush-left when the board is (near) full width, matching the GL sprite.
+        let boardW = obj.cgImage.map { CGFloat($0.width) }
+            ?? streamW * CGFloat(overlayLayout.widthFraction)
+        let maxLeft = max(streamW - boardW - insetX, 0)
+        let minLeft = min(insetX, maxLeft)
+        let anchoredLeft = CGFloat(overlayLayout.anchorX) * streamW - boardW / 2
+        let leftPx = min(max(anchoredLeft, minLeft), maxLeft)
         obj.layoutMargin = UIEdgeInsets(
             top: 0,
-            left: insetX,
+            left: leftPx,
             bottom: bottomPx,
-            right: insetX
+            right: 0
         )
         obj.horizontalAlignment = .left
         obj.verticalAlignment = .bottom
@@ -1090,6 +1204,7 @@ final class StreamCameraEngine: NSObject {
     // The capture timer touches UIKit/WebKit and must live on the main run loop, so all timer
     // lifecycle goes through the main queue regardless of which executor the caller is on.
     private func startOverlayRefresh() {
+        guard overlayLayout.overlayEnabled else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.overlayTimer?.invalidate()
@@ -1122,23 +1237,36 @@ final class StreamCameraEngine: NSObject {
     }
 
     private func refreshOverlayFrame() {
+        guard overlayLayout.overlayEnabled else { return }
         syncOverlayCaptureWidth()
         let canvasW = encodedCanvasWidth()
         let targetW = CGFloat(canvasW) * CGFloat(overlayLayout.widthFraction)
-        guard let image = overlayCapture?.capture(width: canvasW, height: 200) else { return }
-        let scaled = scaleOverlayImage(image, targetWidth: targetW)
-        let withOpacity = applyImageOpacity(scaled, opacity: overlayLayout.opacity)
-        guard let cg = withOpacity.cgImage else { return }
-        Task { @ScreenActor in
-            overlayObject?.cgImage = cg
-            applyOverlayLayout()
+        guard let capture = overlayCapture, !overlayCaptureInFlight else { return }
+        overlayCaptureInFlight = true
+        Task { [weak self] in
+            defer { self?.overlayCaptureInFlight = false }
+            guard let self, let image = await capture.capture() else { return }
+            let scaled = self.scaleOverlayImage(image, targetWidth: targetW)
+            let withOpacity = self.applyImageOpacity(scaled, opacity: self.overlayLayout.opacity)
+            guard let cg = withOpacity.cgImage else { return }
+            Task { @ScreenActor in
+                self.overlayObject?.cgImage = cg
+                self.applyOverlayLayout()
+            }
         }
     }
 
     private func splitRtmp(_ endpoint: String) -> (String, String) {
-        guard let url = URL(string: endpoint) else { return (endpoint, "") }
-        let name = url.lastPathComponent
-        let base = endpoint.replacingOccurrences(of: "/\(name)", with: "")
+        // Split on the LAST path separator only: base = connect URL (scheme://host[:port]/app),
+        // name = final segment (stream key, keeping any ?query auth). Never strip inner
+        // segments — an app path equal to the key (rtmp://host/live/live) must keep its app.
+        guard let schemeRange = endpoint.range(of: "://"),
+              let lastSlash = endpoint.range(of: "/", options: .backwards),
+              lastSlash.lowerBound > schemeRange.upperBound else {
+            return (endpoint, "")
+        }
+        let base = String(endpoint[..<lastSlash.lowerBound])
+        let name = String(endpoint[lastSlash.upperBound...])
         return (base, name)
     }
 
@@ -1288,7 +1416,9 @@ final class StreamCameraEngine: NSObject {
 
     private func buildPauseBlackImage() -> UIImage? {
         let size = CGSize(width: encodedCanvasWidth(), height: encodedCanvasHeight())
-        let renderer = UIGraphicsImageRenderer(size: size)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
         return renderer.image { ctx in
             UIColor.black.setFill()
             ctx.fill(CGRect(origin: .zero, size: size))
@@ -1310,7 +1440,11 @@ final class StreamCameraEngine: NSObject {
         let size = CGSize(width: encodedCanvasWidth(), height: encodedCanvasHeight())
         let ink = UIColor(red: 0x0A / 255, green: 0x0E / 255, blue: 0x15 / 255, alpha: 1)
         let gold = UIColor(red: 0xFF / 255, green: 0xC2 / 255, blue: 0x33 / 255, alpha: 1)
-        let renderer = UIGraphicsImageRenderer(size: size)
+        // scale 1: full-canvas slate in stream pixels (default device scale would render a
+        // 3× oversized ~5760×3240 transient image whose text crops when composited).
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
         return renderer.image { ctx in
             ink.setFill()
             ctx.fill(CGRect(origin: .zero, size: size))

@@ -11,6 +11,8 @@ final class HomeViewModel: ObservableObject {
     @Published var refreshing = false
     @Published var error: String?
     @Published var fixtures: [FixtureItem] = []
+    @Published var fixturesLoading = false
+    @Published var fixturesError: String?
     @Published var activeMatchIds: [String] = []
 
     private let api = CricRelayAPI.shared
@@ -52,14 +54,22 @@ final class HomeViewModel: ObservableObject {
     }
 
     func loadFixtures() async {
+        fixturesLoading = true
+        fixturesError = nil
+        defer { fixturesLoading = false }
         do {
             let response = try await api.listFixtures()
             fixtures = response.fixtures
             activeMatchIds = response.activeMatchIds
             slotsUsed = response.slotsUsed
             slotsTotal = response.slotsTotal
+            // The server reports scrape failures as fixtures:[] + error — surface it instead of
+            // letting the picker sit on an empty list that reads as "still loading".
+            if fixtures.isEmpty, let serverError = response.error, !serverError.isEmpty {
+                fixturesError = serverError
+            }
         } catch {
-            // fixtures failure is non-fatal
+            fixturesError = error.localizedDescription
         }
     }
 
@@ -78,21 +88,45 @@ final class HomeViewModel: ObservableObject {
     }
 
     func youtubeAuthorizeUrl() async -> String? {
-        try? await api.youtubeAuthorizeUrl()
+        await authorizeUrl(platform: "YouTube") { try await self.api.youtubeAuthorizeUrl() }
     }
 
     func twitchAuthorizeUrl() async -> String? {
-        try? await api.twitchAuthorizeUrl()
+        await authorizeUrl(platform: "Twitch") { try await self.api.twitchAuthorizeUrl() }
+    }
+
+    /// A failed or empty authorize URL must not make the Connect button a silent no-op —
+    /// the server sends precise reasons (e.g. "YouTube OAuth is not configured…").
+    private func authorizeUrl(platform: String, _ fetch: () async throws -> String) async -> String? {
+        do {
+            let url = try await fetch()
+            guard !url.isEmpty else {
+                error = "\(platform) connect isn't available right now — try again later."
+                return nil
+            }
+            return url
+        } catch {
+            self.error = error.localizedDescription
+            return nil
+        }
     }
 
     func disconnectYoutube() async {
-        try? await api.disconnectYoutube()
-        youtube = PlatformStatus()
+        do {
+            try await api.disconnectYoutube()
+            youtube = PlatformStatus()
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     func disconnectTwitch() async {
-        try? await api.disconnectTwitch()
-        twitch = PlatformStatus()
+        do {
+            try await api.disconnectTwitch()
+            twitch = PlatformStatus()
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private func fetchAll() async {
@@ -100,7 +134,14 @@ final class HomeViewModel: ObservableObject {
         async let ytFetch = api.youtubeStatus()
         async let twFetch = api.twitchStatus()
 
-        if let s = try? await streamsFetch { streams = s }
+        do {
+            streams = try await streamsFetch
+        } catch {
+            // Keep whatever is on screen — a failed load must say so, not fake an empty
+            // account ("No streams yet") over a network error or expired session.
+            self.error = error.localizedDescription
+        }
+        // Platform badges are secondary; their failure alone shouldn't banner the home screen.
         if let yt = try? await ytFetch { youtube = yt }
         if let tw = try? await twFetch { twitch = tw }
         slotsUsed = streams.count

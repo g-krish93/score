@@ -201,6 +201,10 @@ struct OverlayLayoutPrefs: Codable {
     var bgColor: String
     var textColor: String
     var opacity: Double
+    /// Master switch for the score bar. Off for book-scored matches with no data feed —
+    /// an empty scoreboard bar would just clutter the stream. Local-only pref (the server
+    /// ignores unknown overlay keys; the per-slug cache is authoritative).
+    var overlayEnabled: Bool
     /// Wire-compat boolean for old clients/servers; `stabilizationLevel` is the source of truth.
     var videoStabilization: Bool
     var stabilizationLevel: Int
@@ -236,6 +240,7 @@ struct OverlayLayoutPrefs: Codable {
         bgColor = ""
         textColor = ""
         opacity = 1.0
+        overlayEnabled = true
         videoStabilization = true
         stabilizationLevel = StabilizationLevel.standard.rawValue
         keepScreenOn = true
@@ -269,6 +274,7 @@ struct OverlayLayoutPrefs: Codable {
         case bgColor = "overlay_bg_color"
         case textColor = "overlay_text_color"
         case opacity = "overlay_opacity"
+        case overlayEnabled = "overlay_enabled"
         case videoStabilization = "video_stabilization"
         case stabilizationLevel = "stabilization_level"
         case keepScreenOn = "keep_screen_on"
@@ -330,6 +336,7 @@ struct OverlayLayoutPrefs: Codable {
             ?? legacy.decodeIfPresent(String.self, forKey: .textColor) ?? textColor
         opacity = try c.decodeIfPresent(Double.self, forKey: .opacity)
             ?? legacy.decodeIfPresent(Double.self, forKey: .opacity) ?? opacity
+        overlayEnabled = try c.decodeIfPresent(Bool.self, forKey: .overlayEnabled) ?? overlayEnabled
         // Prefer the 3-level field; fall back to the legacy boolean from old writers.
         if let level = try c.decodeIfPresent(Int.self, forKey: .stabilizationLevel) {
             stabilizationLevel = StabilizationLevel.sanitize(level)
@@ -462,7 +469,8 @@ struct OverlayLayoutPrefs: Codable {
             sponsorOpacity: Float(max(0.2, min(1, sponsorOpacity))),
             sponsorScrollSpeed: Float(max(0.3, min(3, sponsorScrollSpeed))),
             sponsorScrollDirection: SponsorScrollDirection.sanitize(sponsorScrollDirection),
-            theme: theme.isEmpty ? "barlow" : theme
+            theme: theme.isEmpty ? "barlow" : theme,
+            overlayEnabled: overlayEnabled
         )
     }
 

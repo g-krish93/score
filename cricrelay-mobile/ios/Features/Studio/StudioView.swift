@@ -110,6 +110,10 @@ struct StudioView: View {
                         errorBanner(error)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
+                    if !viewModel.statusMessage.isEmpty {
+                        statusBanner(viewModel.statusMessage)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                     if viewModel.thermalLevel >= 2 {
                         thermalBanner
                             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -157,6 +161,7 @@ struct StudioView: View {
                     viewModel.previewReady = StreamCameraEngine.shared.isPreviewReady
                     viewModel.advancePrecheckIfCameraReady()
                     if event == "connected" { viewModel.streaming = true }
+                    if event == "disconnected" { viewModel.onStreamDisconnected(message) }
                     if event == "thermal" { viewModel.thermalLevel = Int(message) ?? viewModel.thermalLevel }
                     if event == "error" { viewModel.error = "Stream error — tap restart camera." }
                 }
@@ -176,6 +181,9 @@ struct StudioView: View {
             UIDevice.current.endGeneratingDeviceOrientationNotifications()
             // Release the studio's orientation lock so the rest of the app rotates normally.
             Task { await viewModel.resetOrientationLock() }
+            // Off-air only: fully release camera/mic/timers so leaving Studio turns the green
+            // indicator off. A live broadcast keeps running for the background standby slate.
+            Task { await StreamCameraEngine.shared.releaseIfIdle() }
         }
         .onAppear {
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
@@ -551,6 +559,27 @@ struct StudioView: View {
         }
         .padding(12)
         .background(CricTheme.warning.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Status banner
+
+    /// Transient progress/hint line ("Connecting…", orientation-toggle hints) — the view
+    /// model clears it when the action completes.
+    private func statusBanner(_ message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "info.circle.fill")
+                .foregroundStyle(CricTheme.accent)
+                .font(.footnote)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.white)
+                .lineLimit(2)
+            Spacer()
+        }
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
     }

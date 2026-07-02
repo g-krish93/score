@@ -34,10 +34,10 @@ final class SessionViewModel: ObservableObject {
         }
     }
 
-    func register(name: String, email: String, password: String) async {
+    func register(name: String, email: String, password: String, consent: Bool) async {
         errorMessage = nil
         do {
-            try await api.register(name: name, email: email, password: password, baseUrl: baseUrl)
+            try await api.register(name: name, email: email, password: password, consent: consent, baseUrl: baseUrl)
             UserDefaults.standard.set(baseUrl, forKey: "stream_api_base")
             KeychainHelper.saveToken(api.token)
             isLoggedIn = true
@@ -54,6 +54,9 @@ final class SessionViewModel: ObservableObject {
 
     func logout() {
         KeychainHelper.deleteToken()
+        // Also drop the in-memory token — any still-running poll would otherwise keep
+        // making authenticated calls as the signed-out user.
+        api.clearToken()
         isLoggedIn = false
     }
 }

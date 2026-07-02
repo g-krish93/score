@@ -44,10 +44,6 @@ targets:
       - path: CricRelay
       - path: Features
       - path: Streaming
-        excludes:
-          # These two files import Flutter and belong to the Flutter plugin target only
-          - StreamRtmpPlugin.swift
-          - CricrelayCameraPlatformView.swift
 
     dependencies:
       - package: HaishinKit

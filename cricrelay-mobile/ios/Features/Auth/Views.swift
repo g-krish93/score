@@ -213,6 +213,7 @@ struct RegisterView: View {
     @State private var confirmPassword = ""
     @State private var busy = false
     @State private var localError: String?
+    @State private var consent = false
 
     var body: some View {
         StudioBackdrop {
@@ -243,6 +244,15 @@ struct RegisterView: View {
                     SecureField("Confirm password", text: $confirmPassword)
                         .modifier(StudioFieldStyle())
 
+                    // Real consent, recorded as given — registration used to hard-code true.
+                    Toggle(isOn: $consent) {
+                        Text("I agree to the CricRelay terms of use and privacy policy")
+                            .font(.footnote)
+                            .foregroundStyle(CricTheme.textMuted)
+                    }
+                    .tint(CricTheme.primary)
+                    .padding(.top, 4)
+
                     let displayError = localError ?? session.errorMessage
                     if let error = displayError {
                         Text(error)
@@ -259,7 +269,7 @@ struct RegisterView: View {
                         localError = nil
                         Task {
                             busy = true
-                            await session.register(name: name, email: email, password: password)
+                            await session.register(name: name, email: email, password: password, consent: consent)
                             busy = false
                             if session.errorMessage == nil { dismiss() }
                         }
@@ -267,7 +277,7 @@ struct RegisterView: View {
                         if busy { ProgressView().tint(CricTheme.onPrimary) } else { Text("Create account") }
                     }
                     .buttonStyle(PrimaryCtaStyle())
-                    .disabled(busy)
+                    .disabled(busy || !consent)
                     .padding(.top, 8)
 
                     Button("Already have an account? Sign in") { dismiss() }
@@ -282,6 +292,9 @@ struct RegisterView: View {
                 .cricExitAnimation(value: session.errorMessage)
             }
         }
+        // A leftover login failure ("Invalid credentials") must not open this sheet
+        // already showing an error the user never caused here.
+        .onAppear { session.errorMessage = nil }
     }
 }
 

@@ -137,9 +137,12 @@ struct OverlaySheet: View {
             StudioBackdrop {
                 ScrollView {
                     VStack(spacing: 20) {
-                        arrangeOnScreenButton
-                        boardColorSelector
-                        Divider().overlay(Color.white.opacity(0.1))
+                        scoreboardToggle
+                        if draft.overlayEnabled {
+                            arrangeOnScreenButton
+                            boardColorSelector
+                            Divider().overlay(Color.white.opacity(0.1))
+                        }
                         overlaySliders
                     }
                     .padding(24)
@@ -185,6 +188,22 @@ struct OverlaySheet: View {
         }
     }
 
+    /// Master switch for the score bar — off for book-scored matches where there's no data
+    /// feed and an empty scoreboard bar would just clutter the preview and stream.
+    private var scoreboardToggle: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("Show scoreboard", isOn: $draft.overlayEnabled)
+                .tint(CricTheme.primary)
+                .font(.subheadline)
+                .foregroundStyle(.white)
+            Text("Turn off when scoring in a book — removes the score bar from the preview and the stream. Watermark and sponsor logos are unaffected.")
+                .font(.caption)
+                .foregroundStyle(CricTheme.textDim)
+        }
+        .cricEnterAnimation(value: draft.overlayEnabled, duration: CricMotion.sheetEnterDuration)
+        .cricExitAnimation(value: draft.overlayEnabled)
+    }
+
     /// Direct-manipulation entry point: closes the sheet and enters Arrange mode over the live
     /// preview (pinch to resize the board, drag to place board + sponsor).
     private var arrangeOnScreenButton: some View {
@@ -212,6 +231,10 @@ struct OverlaySheet: View {
     private var overlayPreviewToken: String {
         [
             draft.theme,
+            String(draft.overlayEnabled),
+            draft.bgColor,
+            draft.textColor,
+            draft.sponsorScrollDirection,
             String(draft.widthFraction),
             String(draft.heightFraction),
             String(draft.fontScale),
@@ -266,38 +289,42 @@ struct OverlaySheet: View {
 
     private var overlaySliders: some View {
         VStack(spacing: 16) {
-            sliderRow(
-                label: "Board width",
-                value: $draft.widthFraction,
-                range: 0.25...0.98,
-                format: { "\(Int($0 * 100))%" }
-            )
-            sliderRow(
-                label: "Board height",
-                value: $draft.heightFraction,
-                range: 0.10...0.28,
-                format: { "\(Int($0 * 100))%" }
-            )
-            sliderRow(
-                label: "Font scale",
-                value: $draft.fontScale,
-                range: 0.6...2.0,
-                format: { String(format: "%.1f×", $0) }
-            )
-            sliderRow(
-                label: "Opacity",
-                value: $draft.opacity,
-                range: 0.2...1.0,
-                format: { "\(Int($0 * 100))%" }
-            )
-            sliderRow(
-                label: "Position",
-                value: $draft.bottomMargin,
-                range: 0...48,
-                format: { "\(Int($0))" }
-            )
+            if draft.overlayEnabled {
+                sliderRow(
+                    label: "Board width",
+                    value: $draft.widthFraction,
+                    range: 0.25...0.98,
+                    format: { "\(Int($0 * 100))%" }
+                )
+                sliderRow(
+                    label: "Board height",
+                    value: $draft.heightFraction,
+                    range: 0.10...0.28,
+                    format: { "\(Int($0 * 100))%" }
+                )
+                sliderRow(
+                    label: "Font scale",
+                    value: $draft.fontScale,
+                    range: 0.6...2.0,
+                    format: { String(format: "%.1f×", $0) }
+                )
+                sliderRow(
+                    label: "Opacity",
+                    value: $draft.opacity,
+                    range: 0.2...1.0,
+                    format: { "\(Int($0 * 100))%" }
+                )
+                sliderRow(
+                    label: "Position",
+                    value: $draft.bottomMargin,
+                    // Same reach as an Arrange drag (720-canvas px) — a 0…48 cap would snap a
+                    // dragged board back down the moment this slider is touched.
+                    range: 0...400,
+                    format: { "\(Int($0))" }
+                )
 
-            Divider().overlay(Color.white.opacity(0.1))
+                Divider().overlay(Color.white.opacity(0.1))
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Video stabilisation")

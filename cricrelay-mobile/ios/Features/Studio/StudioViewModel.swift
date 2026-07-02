@@ -251,8 +251,13 @@ final class StudioViewModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 if let status = try? await api.matchDay(slug: matchSlug) {
                     await MainActor.run {
-                        streaming = status.broadcast.isStreaming
-                        paused = status.broadcast.isPaused
+                        // Engine truth wins while this phone is publishing: the server only knows
+                        // what our own fire-and-forget status POST told it, so a failed POST must
+                        // not flip the shutter back to "Go Live" mid-broadcast (double-start risk).
+                        if !StreamCameraEngine.shared.isStreaming {
+                            streaming = status.broadcast.isStreaming
+                            paused = status.broadcast.isPaused
+                        }
                         if let url = status.broadcast.watchUrl, !url.isEmpty { watchUrl = url }
                     }
                 }
@@ -317,7 +322,8 @@ final class StudioViewModel: ObservableObject {
         recomputeDestinationReady()
         preflightCameraOk = StreamCameraEngine.shared.isPreviewReady
         preflightDestinationOk = destinationReady
-        preflightOverlayOk = match?.overlayEmbedUrl.isEmpty == false
+        // Scoreboard intentionally off (book scoring) counts as ready — nothing to composite.
+        preflightOverlayOk = !overlayPrefs.overlayEnabled || match?.overlayEmbedUrl.isEmpty == false
         activeSheet = .preflight
     }
 
@@ -401,6 +407,22 @@ final class StudioViewModel: ObservableObject {
         goLiveCountdown = nil
     }
 
+    /// Remote "start_broadcast" must actually start the stream — nobody is standing at the
+    /// tripod phone to tap through a sheet. Goes live directly (no countdown; the companion
+    /// operator already confirmed) when the destination is ready; otherwise falls back to
+    /// surfacing the Destination sheet so setup can be finished on the phone.
+    private func remoteStartBroadcast() async {
+        guard !streaming, StreamCameraEngine.shared.isPreviewReady, !precheckActive else { return }
+        recomputeDestinationReady()
+        guard destinationReady else {
+            activeSheet = .destination
+            return
+        }
+        activeSheet = nil
+        goLiveCountdown = nil
+        await goLive()
+    }
+
     // MARK: - Stop live
 
     func stopLive() async {
@@ -423,6 +445,19 @@ final class StudioViewModel: ObservableObject {
 
     func dismissRecap() {
         recap = nil
+    }
+
+    /// Mid-broadcast connection loss reported by the engine. The RTMP session is already torn
+    /// down and the preview restored — bring the UI and server state back to idle and tell the
+    /// operator, so the badge doesn't keep pulsing ON AIR over a dead stream.
+    func onStreamDisconnected(_ detail: String) {
+        guard streaming else { return }
+        streaming = false
+        paused = false
+        liveStartedAt = nil
+        stopLiveTimer()
+        error = "Stream disconnected — check your connection, then tap Go Live to resume."
+        Task { try? await api.updateBroadcastStatus(slug: matchSlug, status: "idle") }
     }
 
     // MARK: - Pause / resume
@@ -651,7 +686,7 @@ final class StudioViewModel: ObservableObject {
     private func dispatchRemoteCommand(_ command: String) async {
         switch command {
         case "start_broadcast":
-            if !streaming { requestGoLive() }
+            if !streaming { await remoteStartBroadcast() }
         case "stop_broadcast":
             if streaming { await stopLive() }
         case "mute_mic":
@@ -727,6 +762,9 @@ final class StudioViewModel: ObservableObject {
     // MARK: - Camera restart
 
     func restartCameraPreview() async {
+        // Mirror onOrientationChanged: never reconfigure the encoder under an active publish —
+        // re-running orientation/codec setup on the live mixer glitches or drops the stream.
+        guard !streaming else { return }
         await StreamCameraEngine.shared.preparePreview(
             width: StreamCameraEngine.defaultStreamWidth,
             height: StreamCameraEngine.defaultStreamHeight,

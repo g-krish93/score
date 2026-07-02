@@ -71,7 +71,7 @@ struct CreateStreamView: View {
                 .textCase(.uppercase)
                 .tracking(0.8)
 
-            if viewModel.fixtures.isEmpty {
+            if viewModel.fixturesLoading {
                 VStack(spacing: 8) {
                     ProgressView().tint(CricTheme.accent)
                     Text("Loading fixtures…")
@@ -80,6 +80,27 @@ struct CreateStreamView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(24)
+            } else if let fixturesError = viewModel.fixturesError {
+                VStack(spacing: 10) {
+                    Text(fixturesError)
+                        .font(.footnote)
+                        .foregroundStyle(CricTheme.danger)
+                        .multilineTextAlignment(.center)
+                    Button("Retry") {
+                        Task { await viewModel.loadFixtures() }
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(CricTheme.accent)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(24)
+            } else if viewModel.fixtures.isEmpty {
+                Text("No upcoming fixtures found for your club on Play-Cricket.")
+                    .font(.footnote)
+                    .foregroundStyle(CricTheme.textMuted)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(24)
             } else {
                 ForEach(viewModel.fixtures) { fixture in
                     let isActive = viewModel.activeMatchIds.contains(fixture.matchId)
@@ -160,7 +181,10 @@ struct CreateStreamView: View {
         busy = true
         defer { busy = false }
         do {
-            if isPlayCricket, let fixtureId = selectedFixtureId {
+            if isPlayCricket {
+                // Never fall through to the CricHeroes branch with no fixture selected —
+                // that would create a stream with an empty URL.
+                guard let fixtureId = selectedFixtureId else { return }
                 let fixtureTitle = viewModel.fixtures.first { $0.matchId == fixtureId }?.title ?? fixtureId
                 _ = try await viewModel.createPlayCricketStream(matchId: fixtureId, label: fixtureTitle)
             } else {

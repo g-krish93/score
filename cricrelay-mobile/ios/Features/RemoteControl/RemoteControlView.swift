@@ -45,7 +45,7 @@ struct RemoteControlView: View {
                 .padding(.horizontal, 16)
 
             QRScannerView { payload in
-                Task { await handleScan(payload) }
+                await handleScan(payload)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 320)
@@ -319,13 +319,15 @@ struct RemoteControlView: View {
         }
     }
 
-    private func handleScan(_ payload: String) async {
+    /// Returns false when the payload is rejected (bad QR or failed redeem) so the
+    /// scanner resumes and the operator can simply try again.
+    private func handleScan(_ payload: String) async -> Bool {
         error = nil
         guard let components = URLComponents(string: payload),
               components.scheme == "cricrelay",
               components.host == "pair" else {
             error = "Not a CricRelay pairing code"
-            return
+            return false
         }
         // uniquingKeysWith: a scanned QR is external input — a repeated query key must not trap.
         let items = Dictionary(
@@ -335,7 +337,7 @@ struct RemoteControlView: View {
         guard let slug = items["slug"], !slug.isEmpty,
               let token = items["token"], !token.isEmpty else {
             error = "Invalid pairing code"
-            return
+            return false
         }
         do {
             let session = try await api.redeemPairToken(slug: slug, pairToken: token)
@@ -345,8 +347,10 @@ struct RemoteControlView: View {
             phase = .controls
             statusMessage = "Paired successfully"
             await loadContext()
+            return true
         } catch {
             self.error = error.localizedDescription
+            return false
         }
     }
 
@@ -405,7 +409,8 @@ struct RemoteControlView: View {
 // MARK: - QR scanner (AVCaptureMetadataOutput)
 
 struct QRScannerView: UIViewControllerRepresentable {
-    var onScan: (String) -> Void
+    /// Return true when the payload was accepted; false resumes scanning for another attempt.
+    var onScan: (String) async -> Bool
 
     func makeUIViewController(context: Context) -> QRScannerViewController {
         let vc = QRScannerViewController()
@@ -419,8 +424,11 @@ struct QRScannerView: UIViewControllerRepresentable {
 }
 
 final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
-    var onScan: ((String) -> Void)?
+    var onScan: ((String) async -> Bool)?
     private let session = AVCaptureSession()
+    // AVCaptureSession is not thread-safe: every startRunning/stopRunning goes through this
+    // one serial queue (they block, so never on main). didReport stays main-thread-only.
+    private let sessionQueue = DispatchQueue(label: "uk.co.cricrelay.qr-scanner")
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var didReport = false
 
@@ -441,7 +449,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
         layer.frame = view.layer.bounds
         view.layer.addSublayer(layer)
         previewLayer = layer
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        sessionQueue.async { [weak self] in
             self?.session.startRunning()
         }
     }
@@ -453,7 +461,10 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if session.isRunning { session.stopRunning() }
+        sessionQueue.async { [weak self] in
+            guard let self, self.session.isRunning else { return }
+            self.session.stopRunning()
+        }
     }
 
     func metadataOutput(
@@ -464,9 +475,23 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
         guard !didReport,
               let obj = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
               obj.type == .qr,
-              let value = obj.stringValue else { return }
+              let value = obj.stringValue,
+              let onScan else { return }
         didReport = true
-        session.stopRunning()
-        onScan?(value)
+        sessionQueue.async { [weak self] in self?.session.stopRunning() }
+        // Hand the payload to SwiftUI; a rejected scan (bad QR, failed redeem) resumes
+        // scanning so the operator can try again instead of a permanently frozen camera.
+        Task { @MainActor [weak self] in
+            let accepted = await onScan(value)
+            if !accepted { self?.resumeScanning() }
+        }
+    }
+
+    private func resumeScanning() {
+        didReport = false
+        sessionQueue.async { [weak self] in
+            guard let self, !self.session.isRunning else { return }
+            self.session.startRunning()
+        }
     }
 }
