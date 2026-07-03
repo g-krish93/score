@@ -22,9 +22,23 @@ class AuthRepository(
     private val sessionStore: SessionStore,
     private val httpClientFactory: () -> HttpClient = { defaultHttpClient() },
 ) {
+    /**
+     * Fires when any client this repository created gets a main-token 401 — the stored
+     * session expired server-side (14-day TTL, no refresh endpoint). Hosts should clear
+     * persisted credentials and route to their login screen. Never fires from
+     * login/register (a wrong password is a 401 too) or companion-token requests —
+     * see [CricRelayApiClient.onSessionExpired].
+     */
+    var onSessionExpired: (() -> Unit)? = null
+
+    // Read at fire time, so wiring the callback after construction still takes effect.
+    private fun installExpiry(client: CricRelayApiClient): CricRelayApiClient = client.also {
+        it.onSessionExpired = { onSessionExpired?.invoke() }
+    }
+
     suspend fun loadApiClient(): CricRelayApiClient {
         val session = sessionStore.readSession()
-        return CricRelayApiClient(httpClientFactory(), session.baseUrl, session.token)
+        return installExpiry(CricRelayApiClient(httpClientFactory(), session.baseUrl, session.token))
     }
 
     suspend fun login(baseUrl: String, email: String, password: String): CricRelayApiClient {
@@ -32,7 +46,7 @@ class AuthRepository(
         if (!isAllowedApiBaseUrl(normalized)) {
             throw IllegalArgumentException("Use HTTPS for your club server (http only for local testing).")
         }
-        val client = CricRelayApiClient(httpClientFactory(), normalized)
+        val client = installExpiry(CricRelayApiClient(httpClientFactory(), normalized))
         client.login(email, password)
         sessionStore.writeSession(client.baseUrl, client.token.orEmpty())
         return client
@@ -49,7 +63,7 @@ class AuthRepository(
         if (!isAllowedApiBaseUrl(normalized)) {
             throw IllegalArgumentException("Use HTTPS for your club server (http only for local testing).")
         }
-        val client = CricRelayApiClient(httpClientFactory(), normalized)
+        val client = installExpiry(CricRelayApiClient(httpClientFactory(), normalized))
         client.register(name, email, password, consent)
         sessionStore.writeSession(client.baseUrl, client.token.orEmpty())
         return client

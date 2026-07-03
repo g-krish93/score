@@ -100,9 +100,92 @@ current strategy (App Store presence, feature parity shipped June 2026) says the
 
 ## Action Items
 
-1. [ ] Spike: build `shared` as an XCFramework from the existing macOS CI job and link it
+1. [x] Spike: build `shared` as an XCFramework from the existing macOS CI job and link it
        into `CricRelayLive.xcodeproj` via XcodeGen (no code migration yet).
-2. [ ] Migrate `Models.swift` consumers to the shared models; delete duplicated structs.
-3. [ ] Migrate `CricRelayAPI.swift` call sites to `CricRelayApiClient`; delete the Swift client.
-4. [ ] Migrate token storage to the shared `SessionStore` (Keychain actual already exists).
+       *Done 2026-07-03:* static `Shared.xcframework` via `:shared:assembleSharedReleaseXCFramework`;
+       linked (not embedded) in `project.yml` with a pre-build Gradle script for local Mac
+       builds; CI assembles it in both the validate workflow (new macOS job, fails PRs) and
+       the build workflow's iOS job before xcodegen. `SharedKitProbe.swift` exercises a
+       model constructor + `UrlValidatorKt` call at DEBUG bootstrap. Apple-target linking
+       is impossible on the Windows dev box (`compileKotlinIosArm64` SKIPPED) — the CI
+       macOS run is the binding proof.
+2. [x] Migrate `Models.swift` consumers to the shared models; delete duplicated structs.
+       *Done 2026-07-03:* `FixtureItem`, `PlatformStatus`, `StreamMatch`, `BroadcastStatus`,
+       `GoLiveResult`, `FixturesResponse`, `ScoringConfig`, `MatchDayStatus`, `Sponsor`,
+       `PairRemoteResult`, `RemoteCommand`, `RemoteCompanionContext` migrated; Swift structs
+       deleted. `OverlayLayoutPrefs` uses a **boundary-mapping pattern** instead of full
+       replacement: the Kotlin model (now carrying `overlay_enabled` and the legacy
+       unprefixed-key fallback) owns serialization, sanitization, and the sponsor-patch
+       merge; the Swift struct remains as the SwiftUI-editable value type, crossing through
+       `toShared()`/`init(shared:)` — Swift's definite-initialization rule makes a missed
+       field a compile error. Trade-off: the field list exists in both languages, but every
+       semantic that ever drifted (wire keys, clamps, merge key-list) exists once.
+3. [x] Migrate `CricRelayAPI.swift` call sites to `CricRelayApiClient`; delete the Swift client.
+       *Done 2026-07-03:* every endpoint delegates to the shared client; the URLSession
+       request layer is deleted outright. The shared client gained `@Throws` on every public
+       suspend function (without it Kotlin exceptions terminate the iOS process instead of
+       arriving as NSError) and an `onSessionExpired` callback with sessionAuth-aware 401
+       handling. **Android now consumes the same callback** (AuthRepository installs it on
+       every client; SessionEvents → token clear + toast + nav-host bounce to login),
+       closing the parity gap the other way for once. The per-slug prefs cache reads/writes
+       through the Kotlin codec (`toJsonString`/`fromJsonString`), so old caches — including
+       pre-prefix legacy keys — keep their saved arrangement. `SharedKitProbe.swift` retired:
+       real call sites exercise the framework on every screen.
+4. [x] Migrate token storage to the shared `SessionStore` (Keychain actual already exists).
+       *Done 2026-07-03:* SessionViewModel bootstraps/persists via the shared `SessionStore`;
+       `KeychainHelper.swift` deleted. The iOS actual uses the exact NSUserDefaults keys and
+       Keychain service/account the Swift code always used (including the legacy
+       UserDefaults→Keychain migration), so existing installs keep their session.
 5. [ ] Add the shared-module test build-out (P2) so the newly shared layer is guarded.
+
+### Interop notes from the spike (2026-07-03)
+
+- **Default args are lost:** only the full-arg initializer crosses the Obj-C boundary.
+  `PlatformStatus()` was restored with a Swift `convenience init` extension
+  (`ios/Features/SharedModels+App.swift`) rather than editing every call site.
+- **Codable is lost:** shared models can't be `JSONDecoder`-decoded, so migrated endpoints
+  hand-map `[String: Any]` → shared constructor until `CricRelayApiClient` owns the
+  endpoint (item 3). This is interim glue, not the end state.
+- **Swift protocol conformances live in extensions:** `Identifiable` for `ForEach` was
+  added retroactively; works cleanly.
+- **Reference semantics:** shared models arrive as Obj-C classes, not structs. Fine for
+  read-only DTOs; audit any struct that call sites mutate member-wise before migrating it.
+- **Name shadowing during migration:** while a Swift duplicate exists, unqualified names
+  resolve to the app's type — delete the Swift struct in the same change, or qualify
+  `Shared.X`.
+- **Collections bridge fine:** Kotlin `List<FixtureItem>` → Swift `[FixtureItem]` via
+  lightweight generics.
+- **Top-level functions** surface as statics on `<File>Kt` (e.g.
+  `UrlValidatorKt.normalizeApiBaseUrl(raw:)`). Tolerable for the validator; consider
+  `@ObjCName` if the shared API surface grows.
+- **Sealed classes:** not exercised — neither migrated model uses them. Expect flattening
+  when the API client's result types cross (item 3).
+
+### Additional interop notes from the client/session migration (2026-07-03)
+
+- **`@Throws` is mandatory on suspend functions consumed from Swift:** an undeclared Kotlin
+  exception crossing the bridge terminates the process. Every public suspend function on
+  `CricRelayApiClient` now carries `@Throws(Exception::class)`; the messages arrive as
+  `NSError.localizedDescription`, which is exactly what the Swift error paths already show.
+- **Suspend functions box primitive returns:** `suspend fun …): Boolean` reaches Swift as
+  `KotlinBoolean` (unbox with `.boolValue`). Kotlin `Int` *properties* surface as `Int32`
+  (`FixturesResponse.slotsUsed` needs `Int(...)` at the call site).
+- **NSObject already conforms to Identifiable:** declaring `extension SharedModel:
+  Identifiable` is a redundant-conformance compile error, and the inherited
+  ObjectIdentifier id churns on every fetch. List sites use explicit keys instead
+  (`ForEach(streams, id: \.slug)`).
+- **Immutable reference models need Kotlin copy helpers:** Swift can't call data-class
+  `copy` usefully (all-args, no defaults), so targeted helpers live in Kotlin
+  (`StreamMatch.withLabel`) — one line each, reusable from Android.
+- **Opaque types round-trip fine:** `youtubeStatus()` returns a kotlinx `JsonObject` Swift
+  can't inspect, but passing it straight into `PlatformStatus.companion.fromYoutube(json:)`
+  keeps the mapping (including the `live_streaming_enabled` fallback the Swift duplicate
+  had silently dropped) in shared code.
+- **Session wiring:** the Kotlin client owns base/token (constructed per login, mirroring
+  the shared `AuthRepository`); its `onSessionExpired` fires on main-token 401s and the
+  Swift facade translates that into the existing Keychain-clear + notification flow.
+- **The macOS validate job caught a latent bug on its first run:** `KeychainTokenStore.kt`
+  (iosMain) passed Kotlin `Map`s where the Security framework takes `CFDictionaryRef`, and
+  used the wrong out-pointer type for `SecItemCopyMatching` — it had never compiled,
+  because nothing built Apple targets before this ADR's CI wiring. Rewritten with
+  CoreFoundation dictionaries and explicit `CFBridgingRetain`/`Release` ownership.

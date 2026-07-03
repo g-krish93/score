@@ -2,6 +2,7 @@ package uk.co.cricrelay.shared.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -47,6 +48,9 @@ data class StreamMatch(
     val broadcast: BroadcastStatus = BroadcastStatus(),
 ) {
     val paused: Boolean get() = relayPaused
+
+    /** Copy with a new label — Swift can't reach data-class `copy` defaults across the Obj-C boundary. */
+    fun withLabel(label: String): StreamMatch = copy(label = label)
 
     companion object {
         fun fromJson(json: JsonObject, baseUrl: String): StreamMatch {
@@ -368,6 +372,10 @@ data class OverlayLayoutPrefs(
     @SerialName("overlay_bg_color") val bgColor: String = "",
     @SerialName("overlay_text_color") val textColor: String = "",
     @SerialName("overlay_opacity") val opacity: Double = 1.0,
+    // Master switch for the score bar — off for book-scored matches with no data feed.
+    // Local-only pref (the server ignores unknown overlay keys; the per-slug cache is
+    // authoritative). Originated on iOS; shared so the wire format has one owner.
+    @SerialName("overlay_enabled") val overlayEnabled: Boolean = true,
     // Wire-compat boolean for old clients/servers; [stabilizationLevel] is the source of truth.
     @SerialName("video_stabilization") val videoStabilization: Boolean = true,
     @SerialName("stabilization_level") val stabilizationLevel: Int = StabilizationLevel.STANDARD,
@@ -476,18 +484,25 @@ data class OverlayLayoutPrefs(
                         StabilizationLevel.OFF
                     },
             )
+            // Board keys as older iOS builds wrote them into the local overlay_prefs cache
+            // (unprefixed). Read-only fallback so an existing device keeps its arrangement.
+            fun str(primary: String, legacy: String): String? =
+                json.string(primary) ?: json.string(legacy)
+            fun dbl(primary: String, legacy: String): Double? =
+                str(primary, legacy)?.toDoubleOrNull()
             return OverlayLayoutPrefs(
-                heightFraction = json.string("overlay_height_fraction")?.toDoubleOrNull() ?: 0.16,
-                widthFraction = json.string("overlay_width_fraction")?.toDoubleOrNull() ?: 1.0,
-                anchorX = json.string("overlay_anchor_x")?.toDoubleOrNull() ?: 0.5,
-                anchorY = json.string("overlay_anchor_y")?.toDoubleOrNull() ?: 0.85,
-                bottomMargin = json.string("overlay_bottom_margin")?.toDoubleOrNull() ?: 0.0,
-                horizontalInset = json.string("overlay_horizontal_inset")?.toDoubleOrNull() ?: 0.0,
+                heightFraction = dbl("overlay_height_fraction", "height_fraction") ?: 0.16,
+                widthFraction = dbl("overlay_width_fraction", "width_fraction") ?: 1.0,
+                anchorX = dbl("overlay_anchor_x", "anchor_x") ?: 0.5,
+                anchorY = dbl("overlay_anchor_y", "anchor_y") ?: 0.85,
+                bottomMargin = dbl("overlay_bottom_margin", "bottom_margin") ?: 0.0,
+                horizontalInset = dbl("overlay_horizontal_inset", "horizontal_inset") ?: 0.0,
                 theme = sanitizeTheme(json.string("theme") ?: json.string("overlay_theme")),
-                fontScale = json.string("overlay_font_scale")?.toDoubleOrNull() ?: 1.0,
-                bgColor = json.string("overlay_bg_color") ?: "",
-                textColor = json.string("overlay_text_color") ?: "",
-                opacity = json.string("overlay_opacity")?.toDoubleOrNull() ?: 1.0,
+                fontScale = dbl("overlay_font_scale", "font_scale") ?: 1.0,
+                bgColor = str("overlay_bg_color", "bg_color") ?: "",
+                textColor = str("overlay_text_color", "text_color") ?: "",
+                opacity = dbl("overlay_opacity", "opacity") ?: 1.0,
+                overlayEnabled = json.bool("overlay_enabled") != false,
                 videoStabilization = stabilizationLevel > StabilizationLevel.OFF,
                 stabilizationLevel = stabilizationLevel,
                 keepScreenOn = json.bool("keep_screen_on") != false,
@@ -510,6 +525,13 @@ data class OverlayLayoutPrefs(
                 sponsorScrollDirection = SponsorScrollDirection.sanitize(json.string("sponsor_scroll_direction")),
             )
         }
+
+        /** Parse [toJsonString] output (or any prefs JSON); null on malformed input, e.g. a corrupt cache. */
+        fun fromJsonString(raw: String): OverlayLayoutPrefs? = try {
+            (Json.parseToJsonElement(raw) as? JsonObject)?.let { fromJson(it) }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun toJson(): JsonObject = buildJsonObject {
@@ -524,6 +546,7 @@ data class OverlayLayoutPrefs(
         put("overlay_bg_color", bgColor)
         put("overlay_text_color", textColor)
         put("overlay_opacity", opacity)
+        put("overlay_enabled", overlayEnabled)
         // Both stabilization fields derive from the level so old readers stay consistent.
         put("video_stabilization", stabilizationLevel > StabilizationLevel.OFF)
         put("stabilization_level", stabilizationLevel)
@@ -547,6 +570,9 @@ data class OverlayLayoutPrefs(
         put("sponsor_scroll_speed", sponsorScrollSpeed)
         put("sponsor_scroll_direction", sponsorScrollDirection)
     }
+
+    /** Serialized wire/cache form — the one codec both platforms use (iOS caches call this). */
+    fun toJsonString(): String = toJson().toString()
 
     /** Merge sponsor-only fields from a remote companion patch onto existing prefs. */
     fun mergeSponsorPatch(patch: JsonObject): OverlayLayoutPrefs {

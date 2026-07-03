@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
+
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
@@ -13,9 +15,20 @@ kotlin {
         }
     }
 
-    iosX64()
-    iosArm64()
-    iosSimulatorArm64()
+    // Consumed by ios/project.yml as ../shared/build/XCFrameworks/<config>/Shared.xcframework
+    // (assembleShared{Debug,Release}XCFramework). Static so Xcode links without an embed step.
+    val sharedXcf = XCFramework("Shared")
+    listOf(
+        iosX64(),
+        iosArm64(),
+        iosSimulatorArm64(),
+    ).forEach { iosTarget ->
+        iosTarget.binaries.framework {
+            baseName = "Shared"
+            isStatic = true
+            sharedXcf.add(this)
+        }
+    }
 
     sourceSets {
         commonMain.dependencies {

@@ -8,8 +8,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -29,9 +32,19 @@ import uk.co.cricrelay.mobile.feature.studio.StudioViewModel
 @Composable
 fun CricRelayNavHost(
     startDestination: String,
+    sessionExpired: Flow<Unit> = emptyFlow(),
     modifier: Modifier = Modifier,
 ) {
     val navController = rememberNavController()
+    // A dead session can surface from any screen's next API call — drop the whole stack to
+    // login once, wherever the user is (parity with iOS RootView + cricrelaySessionExpired).
+    LaunchedEffect(Unit) {
+        sessionExpired.collect {
+            navController.navigate(LoginRoute) {
+                popUpTo(navController.graph.id) { inclusive = true }
+            }
+        }
+    }
     NavHost(
         navController = navController,
         startDestination = when (startDestination) {

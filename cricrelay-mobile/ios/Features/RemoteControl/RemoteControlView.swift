@@ -1,4 +1,5 @@
 import SwiftUI
+import Shared
 import AVFoundation
 
 // MARK: - Companion remote control (scan QR → send commands + sponsor overlay)
@@ -161,7 +162,7 @@ struct RemoteControlView: View {
                         .foregroundStyle(CricTheme.textDim)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            ForEach(active) { sponsor in
+                            ForEach(active, id: \.id) { sponsor in
                                 Button {
                                     if SponsorLayoutMode.allowsMultiSelect(sponsorPrefs.sponsorLayoutMode) {
                                         if sponsorPrefs.activeSponsorIds.contains(sponsor.id) {
@@ -398,7 +399,7 @@ struct RemoteControlView: View {
         do {
             let ctx = try await api.getRemoteContext(slug: matchSlug, companionToken: companionToken)
             sponsors = ctx.sponsors
-            sponsorPrefs = ctx.sponsorPrefs
+            sponsorPrefs = OverlayLayoutPrefs(shared: ctx.sponsorPrefs)
             watchUrl = ctx.watchUrl
         } catch {
             self.error = error.localizedDescription

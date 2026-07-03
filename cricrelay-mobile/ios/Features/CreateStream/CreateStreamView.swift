@@ -1,4 +1,5 @@
 import SwiftUI
+import Shared
 
 struct CreateStreamView: View {
     let mode: String  // "play_cricket" or "cricheroes"
@@ -102,7 +103,7 @@ struct CreateStreamView: View {
                     .frame(maxWidth: .infinity)
                     .padding(24)
             } else {
-                ForEach(viewModel.fixtures) { fixture in
+                ForEach(viewModel.fixtures, id: \.matchId) { fixture in
                     let isActive = viewModel.activeMatchIds.contains(fixture.matchId)
                     Button {
                         if !isActive { selectedFixtureId = fixture.matchId }

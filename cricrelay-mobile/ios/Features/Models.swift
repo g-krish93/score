@@ -1,148 +1,12 @@
 import Foundation
+import Shared
 
-struct BroadcastStatus: Codable {
-    var status: String
-    var platform: String?
-    var watchUrl: String?
-
-    var isStreaming: Bool { status == "streaming" }
-    var isPaused: Bool { status == "paused" }
-
-    enum CodingKeys: String, CodingKey {
-        case status, platform
-        case watchUrl = "watch_url"
-    }
-}
-
-struct StreamMatch: Identifiable, Codable {
-    var slug: String
-    var label: String
-    var overlayEmbedUrl: String
-    var relaySource: String
-    var relayPaused: Bool
-    var scoringMode: String
-    var scoringActive: Bool
-    var scoringStale: Bool
-    var isLive: Bool
-    var broadcast: BroadcastStatus
-
-    var id: String { slug }
-
-    enum CodingKeys: String, CodingKey {
-        case slug, label
-        case overlayEmbedUrl = "overlay_embed_url"
-        case relaySource = "relay_source"
-        case relayPaused = "relay_paused"
-        case scoringMode = "scoring_mode"
-        case scoringActive = "scoring_active"
-        case scoringStale = "scoring_stale"
-        case isLive = "is_live"
-        case broadcast
-    }
-}
-
-struct GoLiveResult: Codable {
-    var rtmpUrl: String
-    var streamKey: String
-    var watchUrl: String
-    var overlayEmbedUrl: String
-
-    enum CodingKeys: String, CodingKey {
-        case rtmpUrl = "rtmp_url"
-        case streamKey = "stream_key"
-        case watchUrl = "watch_url"
-        case overlayEmbedUrl = "overlay_embed_url"
-    }
-}
-
-struct FixtureItem: Identifiable, Codable {
-    var matchId: String
-    var title: String
-
-    var id: String { matchId }
-
-    enum CodingKeys: String, CodingKey {
-        case matchId = "match_id"
-        case title
-    }
-}
-
-struct FixturesResponse: Codable {
-    var fixtures: [FixtureItem]
-    var activeMatchIds: [String]
-    var error: String?
-    var slotsUsed: Int
-    var slotsTotal: Int
-
-    enum CodingKeys: String, CodingKey {
-        case fixtures
-        case activeMatchIds = "active_match_ids"
-        case error
-        case slotsUsed = "slots_used"
-        case slotsTotal = "slots_total"
-    }
-}
-
-struct ScoringConfig: Codable {
-    var mode: String
-    var manualInputUrl: String
-    var manualScorerUrl: String
-    var pcsIngestUrl: String
-    var pcsIngestToken: String
-    var pcsRelayApkUrl: String
-
-    var scorerUrl: String {
-        manualScorerUrl.isEmpty
-            ? manualInputUrl.replacingOccurrences(of: "/input", with: "/score")
-            : manualScorerUrl
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case mode
-        case manualInputUrl = "manual_input_url"
-        case manualScorerUrl = "manual_scorer_url"
-        case pcsIngestUrl = "pcs_ingest_url"
-        case pcsIngestToken = "pcs_ingest_token"
-        case pcsRelayApkUrl = "pcs_relay_apk_url"
-    }
-}
-
-struct PlatformStatus: Codable {
-    var connected: Bool
-    var ready: Bool
-    var label: String
-
-    init(connected: Bool = false, ready: Bool = false, label: String = "") {
-        self.connected = connected
-        self.ready = ready
-        self.label = label
-    }
-}
-
-struct Sponsor: Identifiable, Codable {
-    var id: String
-    var name: String
-    var logoUrl: String?
-    var linkUrl: String?
-    var isActive: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case id, name
-        case logoUrl = "logo_url"
-        case linkUrl = "link_url"
-        case isActive = "is_active"
-    }
-}
-
-struct PairRemoteResult: Codable {
-    var pairToken: String
-    var expiresAt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case pairToken = "pair_token"
-        case expiresAt = "expires_at"
-    }
-}
+// The data-layer models (StreamMatch, BroadcastStatus, GoLiveResult, FixturesResponse,
+// FixtureItem, ScoringConfig, MatchDayStatus, PlatformStatus, Sponsor, PairRemoteResult)
+// live in the KMP Shared framework now (ADR-001 item 2) — see SharedModels+App.swift for
+// their Swift-side conveniences. What remains here is iOS-only: the companion-session
+// types, OverlayLayoutPrefs (pending migration — it has a local-only field, a legacy cache
+// decoder, and the engine-layout mapping), and pure UI helpers.
 
 struct CompanionSession: Codable {
     var companionToken: String
@@ -154,27 +18,8 @@ struct CompanionSession: Codable {
     }
 }
 
-struct RemoteCommand {
-    var type: String
-    var command: String
-    var ts: Double?
-    var prefs: [String: Any]?
-
-    static func from(_ dict: [String: Any]) -> RemoteCommand {
-        RemoteCommand(
-            type: dict["type"] as? String ?? "",
-            command: dict["command"] as? String ?? "",
-            ts: dict["ts"] as? Double,
-            prefs: dict["prefs"] as? [String: Any]
-        )
-    }
-}
-
-struct RemoteCompanionContext {
-    var sponsorPrefs: OverlayLayoutPrefs
-    var sponsors: [Sponsor]
-    var watchUrl: String
-}
+// RemoteCommand and RemoteCompanionContext come from the KMP Shared framework now —
+// RemoteCommand.mergeSponsorInto(base:) carries the sponsor-patch merge with it.
 
 /// Video stabilization strength (parity with shared StabilizationLevel).
 /// `standard` = today's behavior; `cinematic` = `.cinematicExtended`, which narrows the
@@ -189,7 +34,11 @@ enum StabilizationLevel: Int, Codable {
     }
 }
 
-struct OverlayLayoutPrefs: Codable {
+/// SwiftUI-editable value type for the studio's overlay setup. Serialization, sanitization
+/// and merge semantics live in the KMP `Shared.OverlayLayoutPrefs` (ADR-001 item 2) —
+/// everything crosses through `init(shared:)` / `toShared()` below, so a new field is a
+/// compile error here until both mappings carry it.
+struct OverlayLayoutPrefs {
     var heightFraction: Double
     var widthFraction: Double
     var anchorX: Double
@@ -260,115 +109,71 @@ struct OverlayLayoutPrefs: Codable {
         sponsorScrollDirection = SponsorScrollDirection.rtl
     }
 
-    // Board-geometry keys carry the overlay_ prefix on the wire — the server's
-    // OVERLAY_LAYOUT_STATE_KEYS and the shared KMP model both use these names.
-    enum CodingKeys: String, CodingKey {
-        case heightFraction = "overlay_height_fraction"
-        case widthFraction = "overlay_width_fraction"
-        case anchorX = "overlay_anchor_x"
-        case anchorY = "overlay_anchor_y"
-        case bottomMargin = "overlay_bottom_margin"
-        case horizontalInset = "overlay_horizontal_inset"
-        case theme
-        case fontScale = "overlay_font_scale"
-        case bgColor = "overlay_bg_color"
-        case textColor = "overlay_text_color"
-        case opacity = "overlay_opacity"
-        case overlayEnabled = "overlay_enabled"
-        case videoStabilization = "video_stabilization"
-        case stabilizationLevel = "stabilization_level"
-        case keepScreenOn = "keep_screen_on"
-        case watermarkEnabled = "watermark_enabled"
-        case watermarkText = "watermark_text"
-        case sponsorEnabled = "sponsor_enabled"
-        case activeSponsorId = "active_sponsor_id"
-        case activeSponsorIds = "active_sponsor_ids"
-        case sponsorLayoutMode = "sponsor_layout_mode"
-        case sponsorCarouselIntervalSec = "sponsor_carousel_interval_sec"
-        case sponsorDisplayMode = "sponsor_display_mode"
-        case sponsorPositionX = "sponsor_position_x"
-        case sponsorPositionY = "sponsor_position_y"
-        case sponsorSizeScale = "sponsor_size_scale"
-        case sponsorOpacity = "sponsor_opacity"
-        case sponsorScrollSpeed = "sponsor_scroll_speed"
-        case sponsorScrollDirection = "sponsor_scroll_direction"
+    /// Boundary mapping from the KMP model (which did the tolerant/legacy-key parsing).
+    init(shared: Shared.OverlayLayoutPrefs) {
+        heightFraction = shared.heightFraction
+        widthFraction = shared.widthFraction
+        anchorX = shared.anchorX
+        anchorY = shared.anchorY
+        bottomMargin = shared.bottomMargin
+        horizontalInset = shared.horizontalInset
+        theme = shared.theme
+        fontScale = shared.fontScale
+        bgColor = shared.bgColor
+        textColor = shared.textColor
+        opacity = shared.opacity
+        overlayEnabled = shared.overlayEnabled
+        videoStabilization = shared.videoStabilization
+        stabilizationLevel = Int(shared.stabilizationLevel)
+        keepScreenOn = shared.keepScreenOn
+        watermarkEnabled = shared.watermarkEnabled
+        watermarkText = shared.watermarkText
+        sponsorEnabled = shared.sponsorEnabled
+        activeSponsorId = shared.activeSponsorId
+        activeSponsorIds = shared.activeSponsorIds
+        sponsorLayoutMode = shared.sponsorLayoutMode
+        sponsorCarouselIntervalSec = shared.sponsorCarouselIntervalSec
+        sponsorDisplayMode = shared.sponsorDisplayMode
+        sponsorPositionX = shared.sponsorPositionX
+        sponsorPositionY = shared.sponsorPositionY
+        sponsorSizeScale = shared.sponsorSizeScale
+        sponsorOpacity = shared.sponsorOpacity
+        sponsorScrollSpeed = shared.sponsorScrollSpeed
+        sponsorScrollDirection = shared.sponsorScrollDirection
     }
 
-    /// Board keys as older iOS builds wrote them into the local overlay_prefs cache
-    /// (unprefixed). Read-only fallback so an existing device doesn't lose its arrangement.
-    private enum LegacyBoardKeys: String, CodingKey {
-        case heightFraction = "height_fraction"
-        case widthFraction = "width_fraction"
-        case anchorX = "anchor_x"
-        case anchorY = "anchor_y"
-        case bottomMargin = "bottom_margin"
-        case horizontalInset = "horizontal_inset"
-        case fontScale = "font_scale"
-        case bgColor = "bg_color"
-        case textColor = "text_color"
-        case opacity
-    }
-
-    /// Tolerant decoder: any missing key falls back to its default so an older server
-    /// (which may omit the watermark fields) never wipes the whole prefs object.
-    init(from decoder: Decoder) throws {
-        self.init()
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        let legacy = try decoder.container(keyedBy: LegacyBoardKeys.self)
-        heightFraction = try c.decodeIfPresent(Double.self, forKey: .heightFraction)
-            ?? legacy.decodeIfPresent(Double.self, forKey: .heightFraction) ?? heightFraction
-        widthFraction = try c.decodeIfPresent(Double.self, forKey: .widthFraction)
-            ?? legacy.decodeIfPresent(Double.self, forKey: .widthFraction) ?? widthFraction
-        anchorX = try c.decodeIfPresent(Double.self, forKey: .anchorX)
-            ?? legacy.decodeIfPresent(Double.self, forKey: .anchorX) ?? anchorX
-        anchorY = try c.decodeIfPresent(Double.self, forKey: .anchorY)
-            ?? legacy.decodeIfPresent(Double.self, forKey: .anchorY) ?? anchorY
-        bottomMargin = try c.decodeIfPresent(Double.self, forKey: .bottomMargin)
-            ?? legacy.decodeIfPresent(Double.self, forKey: .bottomMargin) ?? bottomMargin
-        horizontalInset = try c.decodeIfPresent(Double.self, forKey: .horizontalInset)
-            ?? legacy.decodeIfPresent(Double.self, forKey: .horizontalInset) ?? horizontalInset
-        theme = try c.decodeIfPresent(String.self, forKey: .theme) ?? theme
-        fontScale = try c.decodeIfPresent(Double.self, forKey: .fontScale)
-            ?? legacy.decodeIfPresent(Double.self, forKey: .fontScale) ?? fontScale
-        bgColor = try c.decodeIfPresent(String.self, forKey: .bgColor)
-            ?? legacy.decodeIfPresent(String.self, forKey: .bgColor) ?? bgColor
-        textColor = try c.decodeIfPresent(String.self, forKey: .textColor)
-            ?? legacy.decodeIfPresent(String.self, forKey: .textColor) ?? textColor
-        opacity = try c.decodeIfPresent(Double.self, forKey: .opacity)
-            ?? legacy.decodeIfPresent(Double.self, forKey: .opacity) ?? opacity
-        overlayEnabled = try c.decodeIfPresent(Bool.self, forKey: .overlayEnabled) ?? overlayEnabled
-        // Prefer the 3-level field; fall back to the legacy boolean from old writers.
-        if let level = try c.decodeIfPresent(Int.self, forKey: .stabilizationLevel) {
-            stabilizationLevel = StabilizationLevel.sanitize(level)
-        } else if let on = try c.decodeIfPresent(Bool.self, forKey: .videoStabilization) {
-            stabilizationLevel = on
-                ? StabilizationLevel.standard.rawValue
-                : StabilizationLevel.off.rawValue
-        }
-        videoStabilization = stabilizationLevel > StabilizationLevel.off.rawValue
-        keepScreenOn = try c.decodeIfPresent(Bool.self, forKey: .keepScreenOn) ?? keepScreenOn
-        watermarkEnabled = try c.decodeIfPresent(Bool.self, forKey: .watermarkEnabled) ?? watermarkEnabled
-        let wm = try c.decodeIfPresent(String.self, forKey: .watermarkText) ?? watermarkText
-        watermarkText = wm.isEmpty ? OverlayLayoutPrefs.watermarkDefaultText : wm
-        sponsorEnabled = try c.decodeIfPresent(Bool.self, forKey: .sponsorEnabled) ?? sponsorEnabled
-        activeSponsorId = try c.decodeIfPresent(String.self, forKey: .activeSponsorId)
-        activeSponsorIds = try c.decodeIfPresent([String].self, forKey: .activeSponsorIds)
-            ?? activeSponsorId.map { [$0] } ?? []
-        sponsorLayoutMode = SponsorLayoutMode.sanitize(
-            try c.decodeIfPresent(String.self, forKey: .sponsorLayoutMode)
-        )
-        sponsorCarouselIntervalSec = try c.decodeIfPresent(Double.self, forKey: .sponsorCarouselIntervalSec)
-            ?? sponsorCarouselIntervalSec
-        sponsorDisplayMode = SponsorDisplayMode.sanitize(
-            try c.decodeIfPresent(String.self, forKey: .sponsorDisplayMode)
-        )
-        sponsorPositionX = try c.decodeIfPresent(Double.self, forKey: .sponsorPositionX) ?? sponsorPositionX
-        sponsorPositionY = try c.decodeIfPresent(Double.self, forKey: .sponsorPositionY) ?? sponsorPositionY
-        sponsorSizeScale = try c.decodeIfPresent(Double.self, forKey: .sponsorSizeScale) ?? sponsorSizeScale
-        sponsorOpacity = try c.decodeIfPresent(Double.self, forKey: .sponsorOpacity) ?? sponsorOpacity
-        sponsorScrollSpeed = try c.decodeIfPresent(Double.self, forKey: .sponsorScrollSpeed) ?? sponsorScrollSpeed
-        sponsorScrollDirection = SponsorScrollDirection.sanitize(
-            try c.decodeIfPresent(String.self, forKey: .sponsorScrollDirection)
+    /// Boundary mapping to the KMP model — its toJson()/setOverlayPrefs own the wire format.
+    func toShared() -> Shared.OverlayLayoutPrefs {
+        Shared.OverlayLayoutPrefs(
+            heightFraction: heightFraction,
+            widthFraction: widthFraction,
+            anchorX: anchorX,
+            anchorY: anchorY,
+            bottomMargin: bottomMargin,
+            horizontalInset: horizontalInset,
+            theme: theme,
+            fontScale: fontScale,
+            bgColor: bgColor,
+            textColor: textColor,
+            opacity: opacity,
+            overlayEnabled: overlayEnabled,
+            videoStabilization: videoStabilization,
+            stabilizationLevel: Int32(stabilizationLevel),
+            keepScreenOn: keepScreenOn,
+            watermarkEnabled: watermarkEnabled,
+            watermarkText: watermarkText,
+            sponsorEnabled: sponsorEnabled,
+            activeSponsorId: activeSponsorId,
+            activeSponsorIds: activeSponsorIds,
+            sponsorLayoutMode: sponsorLayoutMode,
+            sponsorCarouselIntervalSec: sponsorCarouselIntervalSec,
+            sponsorDisplayMode: sponsorDisplayMode,
+            sponsorPositionX: sponsorPositionX,
+            sponsorPositionY: sponsorPositionY,
+            sponsorSizeScale: sponsorSizeScale,
+            sponsorOpacity: sponsorOpacity,
+            sponsorScrollSpeed: sponsorScrollSpeed,
+            sponsorScrollDirection: sponsorScrollDirection
         )
     }
 
@@ -474,75 +279,9 @@ struct OverlayLayoutPrefs: Codable {
         )
     }
 
-    func mergeSponsorPatch(_ patch: [String: Any]) -> OverlayLayoutPrefs {
-        var merged = self
-        if let v = patch["sponsor_enabled"] as? Bool { merged.sponsorEnabled = v }
-        if let v = patch["active_sponsor_id"] as? String {
-            merged.activeSponsorId = v.isEmpty ? nil : v
-        } else if patch["active_sponsor_id"] is NSNull {
-            merged.activeSponsorId = nil
-        }
-        if let arr = patch["active_sponsor_ids"] as? [String] {
-            merged.activeSponsorIds = arr.filter { !$0.isEmpty }.prefix(6).map { $0 }
-            merged.activeSponsorId = merged.activeSponsorIds.first
-        }
-        if let v = patch["sponsor_layout_mode"] as? String {
-            merged.sponsorLayoutMode = SponsorLayoutMode.sanitize(v)
-        }
-        if let v = patch["sponsor_carousel_interval_sec"] as? Double {
-            merged.sponsorCarouselIntervalSec = max(2, min(30, v))
-        }
-        if let v = patch["sponsor_display_mode"] as? String {
-            merged.sponsorDisplayMode = SponsorDisplayMode.sanitize(v)
-        }
-        if let v = patch["sponsor_position_x"] as? Double {
-            merged.sponsorPositionX = max(0, min(1, v))
-        }
-        if let v = patch["sponsor_position_x"] as? Int {
-            merged.sponsorPositionX = max(0, min(1, Double(v)))
-        }
-        if let v = patch["sponsor_position_y"] as? Double {
-            merged.sponsorPositionY = max(0, min(1, v))
-        }
-        if let v = patch["sponsor_position_y"] as? Int {
-            merged.sponsorPositionY = max(0, min(1, Double(v)))
-        }
-        if let v = patch["sponsor_size_scale"] as? Double {
-            merged.sponsorSizeScale = max(0.3, min(3, v))
-        }
-        if let v = patch["sponsor_opacity"] as? Double {
-            merged.sponsorOpacity = max(0.2, min(1, v))
-        }
-        if let v = patch["sponsor_scroll_speed"] as? Double {
-            merged.sponsorScrollSpeed = max(0.3, min(3, v))
-        }
-        if let v = patch["sponsor_scroll_direction"] as? String {
-            merged.sponsorScrollDirection = SponsorScrollDirection.sanitize(v)
-        }
-        return merged
-    }
-
-    func sponsorPatchDictionary() -> [String: Any] {
-        var out: [String: Any] = [
-            "sponsor_enabled": sponsorEnabled,
-            "sponsor_layout_mode": sponsorLayoutMode,
-            "sponsor_carousel_interval_sec": sponsorCarouselIntervalSec,
-            "sponsor_display_mode": sponsorDisplayMode,
-            "sponsor_position_x": sponsorPositionX,
-            "sponsor_position_y": sponsorPositionY,
-            "sponsor_size_scale": sponsorSizeScale,
-            "sponsor_opacity": sponsorOpacity,
-            "sponsor_scroll_speed": sponsorScrollSpeed,
-            "sponsor_scroll_direction": sponsorScrollDirection,
-        ]
-        if !activeSponsorIds.isEmpty {
-            out["active_sponsor_ids"] = activeSponsorIds
-            if let id = activeSponsorIds.first { out["active_sponsor_id"] = id }
-        } else if let id = activeSponsorId {
-            out["active_sponsor_id"] = id
-        }
-        return out
-    }
+    // Sponsor-patch merge and the patch wire format live on the shared model
+    // (Shared.OverlayLayoutPrefs.mergeSponsorPatch / sponsorPatchJson) — the exact key
+    // list is where the July 2026 overlay_ prefix bug lived, so it exists once now.
 }
 
 enum SponsorLayoutMode {
@@ -620,27 +359,6 @@ enum SponsorDisplayMode {
     static func sanitize(_ raw: String?) -> String {
         let m = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? staticMode
         return modes.contains(where: { $0.id == m }) ? m : staticMode
-    }
-}
-
-struct MatchDayStatus: Codable {
-    var slug: String
-    var label: String
-    var scoringMode: String
-    var scoringActive: Bool
-    var scoringStale: Bool
-    var relayPaused: Bool
-    var broadcast: BroadcastStatus
-    var manualScorerUrl: String
-
-    enum CodingKeys: String, CodingKey {
-        case slug, label
-        case scoringMode = "scoring_mode"
-        case scoringActive = "scoring_active"
-        case scoringStale = "scoring_stale"
-        case relayPaused = "relay_paused"
-        case broadcast
-        case manualScorerUrl = "manual_scorer_url"
     }
 }
 

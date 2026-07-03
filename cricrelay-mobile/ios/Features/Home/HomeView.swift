@@ -1,4 +1,5 @@
 import SwiftUI
+import Shared
 
 struct HomeView: View {
     @ObservedObject var session: SessionViewModel
@@ -236,7 +237,7 @@ struct HomeView: View {
             if viewModel.streams.isEmpty {
                 emptyState
             } else {
-                ForEach(viewModel.streams) { stream in
+                ForEach(viewModel.streams, id: \.slug) { stream in
                     streamTile(stream)
                 }
             }

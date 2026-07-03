@@ -2,10 +2,18 @@ package uk.co.cricrelay.shared.session
 
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
+import kotlinx.cinterop.value
+import platform.CoreFoundation.CFDictionaryAddValue
+import platform.CoreFoundation.CFDictionaryCreateMutable
+import platform.CoreFoundation.CFMutableDictionaryRef
+import platform.CoreFoundation.CFRelease
+import platform.CoreFoundation.CFTypeRefVar
+import platform.CoreFoundation.kCFBooleanTrue
+import platform.Foundation.CFBridgingRelease
+import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSData
 import platform.Foundation.NSString
 import platform.Foundation.NSUTF8StringEncoding
@@ -35,42 +43,63 @@ internal object KeychainTokenStore {
 
     fun read(): String? {
         migrateFromUserDefaultsIfNeeded()
-        val query = mapOf<Any?, Any?>(
-            kSecClass to kSecClassGenericPassword,
-            kSecAttrService to SERVICE,
-            kSecAttrAccount to ACCOUNT,
-            kSecReturnData to true,
-            kSecMatchLimit to kSecMatchLimitOne,
-        )
         memScoped {
-            val result = alloc<ObjCObjectVar<NSData?>>()
-            val status = SecItemCopyMatching(query, result.ptr)
+            val result = alloc<CFTypeRefVar>()
+            val status = withQuery(extraCapacity = 2) { query ->
+                CFDictionaryAddValue(query, kSecReturnData, kCFBooleanTrue)
+                CFDictionaryAddValue(query, kSecMatchLimit, kSecMatchLimitOne)
+                SecItemCopyMatching(query, result.ptr)
+            }
             if (status.toInt() != errSecSuccess.toInt()) return null
-            val data = result.value ?: return null
-            return NSString.create(data, NSUTF8StringEncoding) as String
+            // SecItemCopyMatching hands back a +1 "Copy" ref; CFBridgingRelease moves it to ARC.
+            val data = CFBridgingRelease(result.value) as? NSData ?: return null
+            return NSString.create(data, NSUTF8StringEncoding)?.toString()
         }
     }
 
     fun write(token: String) {
         clear()
-        val payload = (token as NSString).dataUsingEncoding(NSUTF8StringEncoding) ?: return
-        val query = mapOf<Any?, Any?>(
-            kSecClass to kSecClassGenericPassword,
-            kSecAttrService to SERVICE,
-            kSecAttrAccount to ACCOUNT,
-            kSecValueData to payload,
-            kSecAttrAccessible to kSecAttrAccessibleAfterFirstUnlock,
-        )
-        SecItemAdd(query, null)
+        val payload = NSString.create(string = token).dataUsingEncoding(NSUTF8StringEncoding) ?: return
+        val payloadRef = CFBridgingRetain(payload)
+        try {
+            withQuery(extraCapacity = 2) { query ->
+                CFDictionaryAddValue(query, kSecValueData, payloadRef)
+                CFDictionaryAddValue(query, kSecAttrAccessible, kSecAttrAccessibleAfterFirstUnlock)
+                SecItemAdd(query, null)
+            }
+        } finally {
+            CFRelease(payloadRef)
+        }
     }
 
     fun clear() {
-        val query = mapOf<Any?, Any?>(
-            kSecClass to kSecClassGenericPassword,
-            kSecAttrService to SERVICE,
-            kSecAttrAccount to ACCOUNT,
-        )
-        SecItemDelete(query)
+        withQuery(extraCapacity = 0) { query ->
+            SecItemDelete(query)
+        }
+    }
+
+    /**
+     * Build the service/account query as a real CFDictionary — the Security framework takes
+     * CFDictionaryRef, and Kotlin Maps don't bridge across the C boundary (the original
+     * Map-based version of this file never compiled; Apple targets only build on macOS CI).
+     * Created with no retain callbacks, so every bridged ref must outlive the block: the
+     * service/account strings are retained here and released after, the kSec* constants
+     * have process lifetime.
+     */
+    private inline fun <T> withQuery(extraCapacity: Int, block: (CFMutableDictionaryRef?) -> T): T {
+        val service = CFBridgingRetain(SERVICE)
+        val account = CFBridgingRetain(ACCOUNT)
+        val query = CFDictionaryCreateMutable(null, (3 + extraCapacity).toLong(), null, null)
+        try {
+            CFDictionaryAddValue(query, kSecClass, kSecClassGenericPassword)
+            CFDictionaryAddValue(query, kSecAttrService, service)
+            CFDictionaryAddValue(query, kSecAttrAccount, account)
+            return block(query)
+        } finally {
+            CFRelease(query)
+            CFRelease(service)
+            CFRelease(account)
+        }
     }
 
     private fun migrateFromUserDefaultsIfNeeded() {

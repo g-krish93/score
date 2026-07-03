@@ -1,4 +1,5 @@
 import Foundation
+import Shared
 
 @MainActor
 final class HomeViewModel: ObservableObject {
@@ -13,7 +14,8 @@ final class HomeViewModel: ObservableObject {
     @Published var fixtures: [FixtureItem] = []
     @Published var fixturesLoading = false
     @Published var fixturesError: String?
-    @Published var activeMatchIds: [String] = []
+    // Set, not Array — mirrors the shared FixturesResponse (dedup + O(1) contains).
+    @Published var activeMatchIds: Set<String> = []
 
     private let api = CricRelayAPI.shared
 
@@ -46,7 +48,8 @@ final class HomeViewModel: ObservableObject {
         do {
             try await api.renameStream(slug: slug, label: label)
             if let idx = streams.firstIndex(where: { $0.slug == slug }) {
-                streams[idx].label = label
+                // Shared StreamMatch is immutable across the boundary — replace the element.
+                streams[idx] = streams[idx].withLabel(label: label)
             }
         } catch {
             self.error = error.localizedDescription
@@ -61,8 +64,9 @@ final class HomeViewModel: ObservableObject {
             let response = try await api.listFixtures()
             fixtures = response.fixtures
             activeMatchIds = response.activeMatchIds
-            slotsUsed = response.slotsUsed
-            slotsTotal = response.slotsTotal
+            // Kotlin Int surfaces as Int32 in Swift.
+            slotsUsed = Int(response.slotsUsed)
+            slotsTotal = Int(response.slotsTotal)
             // The server reports scrape failures as fixtures:[] + error — surface it instead of
             // letting the picker sit on an empty list that reads as "still loading".
             if fixtures.isEmpty, let serverError = response.error, !serverError.isEmpty {
@@ -74,14 +78,14 @@ final class HomeViewModel: ObservableObject {
     }
 
     func createPlayCricketStream(matchId: String, label: String) async throws -> StreamMatch {
-        let stream = try await api.createStream(type: "play_cricket", matchId: matchId, label: label)
+        let stream = try await api.createPlayCricketStream(matchId: matchId, label: label)
         streams.insert(stream, at: 0)
         slotsUsed = streams.count
         return stream
     }
 
     func createCricHeroesStream(matchUrl: String, label: String) async throws -> StreamMatch {
-        let stream = try await api.createStream(type: "cricheroes", matchUrl: matchUrl, label: label)
+        let stream = try await api.createCricHeroesStream(matchUrl: matchUrl, label: label)
         streams.insert(stream, at: 0)
         slotsUsed = streams.count
         return stream
