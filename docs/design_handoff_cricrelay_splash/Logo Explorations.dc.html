@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="design_doc_mode" content="canvas">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; background: #EDEDE9; font-family: 'DM Sans', sans-serif; }
+    @keyframes seamSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  </style>
+</helmet>
+
+<section style="padding: 48px; display: flex; flex-wrap: wrap; gap: 40px; align-items: flex-start;">
+
+  <!-- 4a — Seam ball set INTO the pitch -->
+  <div id="4a" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">4a</span>
+      <span style="font-size: 13px; color: #888;">ball set into the pitch</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: linear-gradient(160deg, #0E2A1C, #101210); display: flex; align-items: center; justify-content: center;">
+        <div style="position: relative; width: 34px; height: 66px;">
+          <div style="position: absolute; inset: 0; border-radius: 9px; background: #4BE38A; box-shadow: 0 0 24px rgba(75,227,138,0.75), 0 0 55px rgba(75,227,138,0.3);"></div>
+          <div style="position: absolute; top: 7px; left: 6px; right: 6px; height: 2.5px; background: #0E2A1C; border-radius: 2px;"></div>
+          <div style="position: absolute; bottom: 7px; left: 6px; right: 6px; height: 2.5px; background: #0E2A1C; border-radius: 2px;"></div>
+          <div style="position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; border-radius: 50%; background: #0E2A1C; transform: translate(-13px, -13px);"></div>
+          <div style="position: absolute; left: 50%; top: 50%; width: 20px; height: 20px; border-radius: 50%; background: #4BE38A; transform: translate(-10px, -10px); overflow: hidden; box-shadow: 0 0 12px rgba(75,227,138,0.9);">
+            <div style="position: absolute; left: 50%; top: -4px; bottom: -4px; width: 0; border-left: 1.8px dashed #0E2A1C; transform: translateX(-3.5px);"></div>
+            <div style="position: absolute; left: 50%; top: -4px; bottom: -4px; width: 0; border-left: 1.8px dashed #0E2A1C; transform: translateX(1.5px);"></div>
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 26px; color: #0E2A1C; letter-spacing: -1px; text-transform: lowercase;">cricrelay</span>
+        <span style="font-size: 13px; color: #666;">the whole club, one tap</span>
+      </div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Seamed ball inset dead-centre in the glowing pitch — one continuous mark, ball and ground as a single object. Cleanest as an app icon.</p>
+  </div>
+
+  <!-- 4b — Pitch split open by the ball -->
+  <div id="4b" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">4b</span>
+      <span style="font-size: 13px; color: #888;">ball splits the pitch</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: linear-gradient(160deg, #0E2A1C, #101210); display: flex; align-items: center; justify-content: center;">
+        <div style="position: relative; width: 40px; height: 68px;">
+          <div style="position: absolute; top: 0; left: 5px; width: 30px; height: 25px; border-radius: 9px 9px 4px 4px; background: #4BE38A; transform: rotate(-7deg); box-shadow: 0 0 18px rgba(75,227,138,0.65);">
+            <div style="position: absolute; top: 6px; left: 6px; right: 6px; height: 2.5px; background: #0E2A1C; border-radius: 2px;"></div>
+          </div>
+          <div style="position: absolute; bottom: 0; left: 5px; width: 30px; height: 25px; border-radius: 4px 4px 9px 9px; background: #4BE38A; transform: rotate(7deg); box-shadow: 0 0 18px rgba(75,227,138,0.65);">
+            <div style="position: absolute; bottom: 6px; left: 6px; right: 6px; height: 2.5px; background: #0E2A1C; border-radius: 2px;"></div>
+          </div>
+          <div style="position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; border-radius: 50%; background: #4BE38A; transform: translate(-11px, -11px); overflow: hidden; box-shadow: 0 0 16px rgba(75,227,138,1), 0 0 40px rgba(75,227,138,0.5); border: 2px solid #0E2A1C;">
+            <div style="position: absolute; left: 50%; top: -4px; bottom: -4px; width: 0; border-left: 2px dashed #0E2A1C; transform: translateX(-4px) rotate(14deg); transform-origin: center;"></div>
+            <div style="position: absolute; left: 50%; top: -4px; bottom: -4px; width: 0; border-left: 2px dashed #0E2A1C; transform: translateX(2px) rotate(14deg); transform-origin: center;"></div>
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 26px; color: #0E2A1C; letter-spacing: -1px; text-transform: lowercase;">cricrelay</span>
+        <span style="font-size: 13px; color: #666;">the whole club, one tap</span>
+      </div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">The ball lands mid-pitch and knocks the two halves apart — kinetic, tells the "cracking the pitch" story. Brightest glow at the impact.</p>
+  </div>
+
+  <!-- 4c — Ball IS the pitch's heart, seam continues the crease -->
+  <div id="4c" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">4c</span>
+      <span style="font-size: 13px; color: #888;">seam continues the crease</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: linear-gradient(160deg, #0E2A1C, #101210); display: flex; align-items: center; justify-content: center;">
+        <div style="position: relative; width: 34px; height: 66px;">
+          <div style="position: absolute; inset: 0; border-radius: 9px; border: 2.5px solid #4BE38A; box-shadow: 0 0 20px rgba(75,227,138,0.6), inset 0 0 10px rgba(75,227,138,0.2);"></div>
+          <div style="position: absolute; left: 50%; top: 4px; height: 14px; width: 0; border-left: 2px dashed #4BE38A; transform: translateX(-1px);"></div>
+          <div style="position: absolute; left: 50%; bottom: 4px; height: 14px; width: 0; border-left: 2px dashed #4BE38A; transform: translateX(-1px);"></div>
+          <div style="position: absolute; left: 50%; top: 50%; width: 24px; height: 24px; border-radius: 50%; background: #4BE38A; transform: translate(-12px, -12px); overflow: hidden; box-shadow: 0 0 18px rgba(75,227,138,0.9), 0 0 44px rgba(75,227,138,0.4);">
+            <div style="position: absolute; left: 50%; top: -4px; bottom: -4px; width: 0; border-left: 2px dashed #0E2A1C; transform: translateX(-4.5px);"></div>
+            <div style="position: absolute; left: 50%; top: -4px; bottom: -4px; width: 0; border-left: 2px dashed #0E2A1C; transform: translateX(2.5px);"></div>
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 26px; color: #0E2A1C; letter-spacing: -1px; text-transform: lowercase;">cricrelay</span>
+        <span style="font-size: 13px; color: #666;">the whole club, one tap</span>
+      </div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Outline pitch with a solid glowing ball at its heart — the ball's seam lines flow straight into the pitch's centre line, so ball and pitch read as one drawn stroke.</p>
+  </div>
+
+</section>
+
+<section style="padding: 0 48px 48px; display: flex; flex-wrap: wrap; gap: 40px; align-items: flex-start; opacity: 0.75;">
+
+  <!-- 3a — Glow · electric cyan -->
+  <div id="3a" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">3a</span>
+      <span style="font-size: 13px; color: #888;">2d glow · electric cyan</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: linear-gradient(160deg, #0A1E2E, #0B0F14); display: flex; align-items: center; justify-content: center;">
+        <div style="width: 30px; height: 62px; border-radius: 8px; border: 2.5px solid #3EE6FF; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 0; box-shadow: 0 0 18px rgba(62,230,255,0.55), inset 0 0 10px rgba(62,230,255,0.25);">
+          <div style="height: 3px; background: #3EE6FF; margin: 0 5px; border-radius: 2px;"></div>
+          <div style="height: 3px; background: #3EE6FF; margin: 0 5px; border-radius: 2px;"></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 26px; color: #0A1E2E; letter-spacing: -1px; text-transform: lowercase;">cricrelay</span>
+        <span style="font-size: 13px; color: #666;">the whole club, one tap</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #0A1E2E;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #3EE6FF;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #0B0F14;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Same neon pitch, cool cyan on midnight blue — broadcast/streaming feel.</p>
+  </div>
+
+  <!-- 3b — Glow · magenta pulse -->
+  <div id="3b" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">3b</span>
+      <span style="font-size: 13px; color: #888;">2d glow · magenta</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: linear-gradient(160deg, #241028, #0F0B14); display: flex; align-items: center; justify-content: center;">
+        <div style="width: 30px; height: 62px; border-radius: 8px; border: 2.5px solid #FF4FD8; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 0; box-shadow: 0 0 18px rgba(255,79,216,0.55), inset 0 0 10px rgba(255,79,216,0.25);">
+          <div style="height: 3px; background: #FF4FD8; margin: 0 5px; border-radius: 2px;"></div>
+          <div style="height: 3px; background: #FF4FD8; margin: 0 5px; border-radius: 2px;"></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 26px; color: #241028; letter-spacing: -1px; text-transform: lowercase;">cricrelay</span>
+        <span style="font-size: 13px; color: #666;">the whole club, one tap</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #241028;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #FF4FD8;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #0F0B14;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Hot magenta — furthest from cricket tradition, max social-app energy.</p>
+  </div>
+
+  <!-- 3c — Glow · dual-tone lime→cyan -->
+  <div id="3c" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">3c</span>
+      <span style="font-size: 13px; color: #888;">2d glow · dual-tone</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: linear-gradient(160deg, #0E2A1C, #0A1E2E); display: flex; align-items: center; justify-content: center;">
+        <div style="width: 30px; height: 62px; border-radius: 8px; border: 2.5px solid transparent; background: linear-gradient(#0C2013, #0C2013) padding-box, linear-gradient(180deg, #C8F542, #3EE6FF) border-box; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 0; box-shadow: 0 0 20px rgba(120,235,150,0.5);">
+          <div style="height: 3px; background: #C8F542; margin: 0 5px; border-radius: 2px;"></div>
+          <div style="height: 3px; background: #3EE6FF; margin: 0 5px; border-radius: 2px;"></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 26px; color: #0E2A1C; letter-spacing: -1px; text-transform: lowercase;">cricrelay</span>
+        <span style="font-size: 13px; color: #666;">the whole club, one tap</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #C8F542;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #3EE6FF;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #0E2A1C;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Lime-to-cyan gradient stroke — the pitch reads like a live signal bar.</p>
+  </div>
+
+  <!-- 3d — Glow · filled beacon -->
+  <div id="3d" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">3d</span>
+      <span style="font-size: 13px; color: #888;">2d glow · filled beacon</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: linear-gradient(160deg, #0E2A1C, #101210); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;">
+        <div style="width: 30px; height: 62px; border-radius: 8px; background: #4BE38A; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 0; box-shadow: 0 0 26px rgba(75,227,138,0.8), 0 0 60px rgba(75,227,138,0.35); position: relative;">
+          <div style="height: 3px; background: #0E2A1C; margin: 0 5px; border-radius: 2px;"></div>
+          <div style="height: 3px; background: #0E2A1C; margin: 0 5px; border-radius: 2px;"></div>
+          <div style="position: absolute; left: 50%; top: 58%; width: 14px; height: 2px; background: #0E2A1C; transform: translateX(-2px) rotate(28deg); border-radius: 2px;"></div>
+          <div style="position: absolute; left: 50%; top: 64%; width: 10px; height: 2px; background: #0E2A1C; transform: translateX(-11px) rotate(-24deg); border-radius: 2px;"></div>
+        </div>
+        <div style="position: absolute; left: 50%; top: 60%; width: 18px; height: 18px; border-radius: 50%; background: #FF5A3C; transform: translate(-9px, -9px); box-shadow: 0 0 14px rgba(255,90,60,0.9), 0 0 34px rgba(255,90,60,0.5); border: 1.5px solid rgba(255,255,255,0.35);"></div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 26px; color: #0E2A1C; letter-spacing: -1px; text-transform: lowercase;">cricrelay</span>
+        <span style="font-size: 13px; color: #666;">the whole club, one tap</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #4BE38A;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #0E2A1C;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #101210;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Solid green pitch radiating a strong halo — a lit-up ground at night. Boldest glow of the set.</p>
+  </div>
+
+</section>
+
+<section style="padding: 0 48px 48px; display: flex; flex-wrap: wrap; gap: 40px; align-items: flex-start; opacity: 0.75;">
+
+  <!-- 2a — Seam Mark, Gen-Z remix: hyper lime on black -->
+  <div id="2a" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">2a</span>
+      <span style="font-size: 13px; color: #888;">1a remix · hyper lime</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: #101210; display: flex; align-items: center; justify-content: center;">
+        <div style="width: 56px; height: 56px; border-radius: 50%; background: #C8F542; position: relative; overflow: hidden;">
+          <div style="position: absolute; left: 50%; top: -8px; bottom: -8px; width: 0; border-left: 3px dashed #101210; transform: translateX(-7px) rotate(12deg); transform-origin: center;"></div>
+          <div style="position: absolute; left: 50%; top: -8px; bottom: -8px; width: 0; border-left: 3px dashed #101210; transform: translateX(5px) rotate(12deg); transform-origin: center;"></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 26px; color: #101210; letter-spacing: -1px; text-transform: lowercase;">cricrelay</span>
+        <span style="font-size: 13px; color: #666;">your club, live rn</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #101210;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #C8F542;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #F2F5EC; border: 1px solid #ddd;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Same seam mark as <a href="#1a" style="color: #1B5E3A;">1a</a>, recoloured hyper-lime on near-black. Loud on a home screen.</p>
+  </div>
+
+  <!-- 2b — Seam Mark remix: purple haze -->
+  <div id="2b" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">2b</span>
+      <span style="font-size: 13px; color: #888;">1a remix · purple haze</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: #5B2EDB; display: flex; align-items: center; justify-content: center;">
+        <div style="width: 56px; height: 56px; border-radius: 50%; background: #F0EAFE; position: relative; overflow: hidden;">
+          <div style="position: absolute; left: 50%; top: -8px; bottom: -8px; width: 0; border-left: 3px dashed #5B2EDB; transform: translateX(-7px) rotate(12deg); transform-origin: center;"></div>
+          <div style="position: absolute; left: 50%; top: -8px; bottom: -8px; width: 0; border-left: 3px dashed #5B2EDB; transform: translateX(5px) rotate(12deg); transform-origin: center;"></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 26px; color: #5B2EDB; letter-spacing: -1px; text-transform: lowercase;">cricrelay</span>
+        <span style="font-size: 13px; color: #666;">no scorecard left behind</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #5B2EDB;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #C8F542;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #F0EAFE; border: 1px solid #ddd;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Breaks from cricket green entirely — electric violet says social app first, sport second.</p>
+  </div>
+
+  <!-- 2c — Pitch Mark remix: sticker energy -->
+  <div id="2c" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">2c</span>
+      <span style="font-size: 13px; color: #888;">1e remix · sticker energy</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: #C8F542; display: flex; align-items: center; justify-content: center;">
+        <div style="width: 30px; height: 62px; border-radius: 8px; background: #101210; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 0; transform: rotate(-8deg); box-shadow: 4px 4px 0 rgba(16,18,16,0.25);">
+          <div style="height: 3px; background: #C8F542; margin: 0 6px; border-radius: 2px;"></div>
+          <div style="height: 3px; background: #C8F542; margin: 0 6px; border-radius: 2px;"></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 26px; color: #101210; letter-spacing: -1px; text-transform: lowercase;">cricrelay</span>
+        <span style="font-size: 13px; color: #666;">pitch up. lock in.</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #C8F542;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #101210;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #FAFBF5; border: 1px solid #ddd;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">The pitch from <a href="#1e" style="color: #2E5E32;">1e</a>, tilted like a sticker with a hard offset shadow. Playful, streetwear-adjacent.</p>
+  </div>
+
+  <!-- 2d — Pitch Mark remix: gradient glow -->
+  <div id="2d" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">2d</span>
+      <span style="font-size: 13px; color: #888;">1e remix · midnight glow</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: linear-gradient(160deg, #0E2A1C, #101210); display: flex; align-items: center; justify-content: center;">
+        <div style="width: 30px; height: 62px; border-radius: 8px; border: 2.5px solid #4BE38A; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 0; box-shadow: 0 0 18px rgba(75,227,138,0.5);">
+          <div style="height: 3px; background: #4BE38A; margin: 0 5px; border-radius: 2px;"></div>
+          <div style="height: 3px; background: #4BE38A; margin: 0 5px; border-radius: 2px;"></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 26px; color: #0E2A1C; letter-spacing: -1px; text-transform: lowercase;">cricrelay</span>
+        <span style="font-size: 13px; color: #666;">the whole club, one tap</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #0E2A1C;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #4BE38A;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #101210;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Neon-outline pitch glowing on midnight green — gamer/live-stream energy, great in dark mode.</p>
+  </div>
+
+</section>
+
+<section style="padding: 0 48px 48px; display: flex; flex-wrap: wrap; gap: 40px; align-items: flex-start; opacity: 0.75;">
+
+  <!-- 1a — Seam Mark · cricket green -->
+  <div id="1a" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">1a</span>
+      <span style="font-size: 13px; color: #888;">Seam Mark · cricket green</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: #1B5E3A; display: flex; align-items: center; justify-content: center;">
+        <div style="width: 56px; height: 56px; border-radius: 50%; background: #F4F1EA; position: relative; overflow: hidden;">
+          <div style="position: absolute; left: 50%; top: -8px; bottom: -8px; width: 0; border-left: 3px dashed #1B5E3A; transform: translateX(-7px) rotate(12deg); transform-origin: center;"></div>
+          <div style="position: absolute; left: 50%; top: -8px; bottom: -8px; width: 0; border-left: 3px dashed #1B5E3A; transform: translateX(5px) rotate(12deg); transform-origin: center;"></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 30px; color: #1B5E3A; letter-spacing: -0.5px;">CricRelay</span>
+        <span style="font-size: 13px; color: #666;">Every club. One app.</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #1B5E3A;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #F4F1EA; border: 1px solid #ddd;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #2E7D4F;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Classic ball seam, reduced to two dashed lines. Timeless, reads at any size.</p>
+  </div>
+
+  <!-- 1b — Club Crest · navy + gold -->
+  <div id="1b" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">1b</span>
+      <span style="font-size: 13px; color: #888;">Club Crest · navy + gold</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: #14213D; display: flex; align-items: center; justify-content: center;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+          <div style="display: flex; gap: 7px;">
+            <div style="width: 12px; height: 5px; border-radius: 3px; background: #E0B94B;"></div>
+            <div style="width: 12px; height: 5px; border-radius: 3px; background: #E0B94B;"></div>
+          </div>
+          <div style="display: flex; gap: 7px;">
+            <div style="width: 6px; height: 44px; border-radius: 3px; background: #E0B94B;"></div>
+            <div style="width: 6px; height: 44px; border-radius: 3px; background: #E0B94B;"></div>
+            <div style="width: 6px; height: 44px; border-radius: 3px; background: #E0B94B;"></div>
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 800; font-size: 28px; color: #14213D; letter-spacing: 2px; text-transform: uppercase;">CricRelay</span>
+        <span style="font-size: 13px; color: #666; letter-spacing: 1px;">EST. FOR EVERY CLUB</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #14213D;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #E0B94B;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #F7F5F0; border: 1px solid #ddd;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Stumps and bails as a crest. Premium, trustworthy — feels like a proper club institution.</p>
+  </div>
+
+  <!-- 1c — Lettermark C · teal tech -->
+  <div id="1c" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">1c</span>
+      <span style="font-size: 13px; color: #888;">Lettermark · teal tech</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: #0C3B3B; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 60px; color: #7BE3A6; line-height: 1;">C</span>
+        <div style="position: absolute; left: -10px; right: -10px; top: 50%; height: 3px; background: #0C3B3B; transform: rotate(-18deg);"></div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 700; font-size: 30px; color: #0C3B3B; letter-spacing: -1px;">cricrelay</span>
+        <span style="font-size: 13px; color: #666;">cricket, connected</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #0C3B3B;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #7BE3A6;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #EFF7F1; border: 1px solid #ddd;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Bold C sliced by a crease line. Modern app-first feel, no literal cricket kit needed.</p>
+  </div>
+
+  <!-- 1d — Stream Play · red energy -->
+  <div id="1d" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">1d</span>
+      <span style="font-size: 13px; color: #888;">Stream Play · red energy</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: #B3261E; display: flex; align-items: center; justify-content: center;">
+        <div style="width: 54px; height: 54px; border-radius: 50%; background: #FFF6F2; display: flex; align-items: center; justify-content: center;">
+          <div style="width: 0; height: 0; border-top: 12px solid transparent; border-bottom: 12px solid transparent; border-left: 20px solid #B3261E; margin-left: 5px;"></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 900; font-size: 30px; color: #1A1A1A; letter-spacing: -0.5px;">CricRelay<span style="color: #B3261E;">.</span></span>
+        <span style="font-size: 13px; color: #666;">Watch. Play. Belong.</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #B3261E;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #1A1A1A;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #FFF6F2; border: 1px solid #ddd;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Cricket ball doubling as a play button — leads with the live-streaming story.</p>
+  </div>
+
+  <!-- 1e — Pitch Mark · turf green -->
+  <div id="1e" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">1e</span>
+      <span style="font-size: 13px; color: #888;">Pitch Mark · turf green</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: #2E5E32; display: flex; align-items: center; justify-content: center;">
+        <div style="width: 30px; height: 62px; border-radius: 8px; background: #D8C9A3; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 0;">
+          <div style="height: 3px; background: #2E5E32; margin: 0 6px; border-radius: 2px;"></div>
+          <div style="height: 3px; background: #2E5E32; margin: 0 6px; border-radius: 2px;"></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 800; font-size: 30px; color: #2E5E32;">CricRelay</span>
+        <span style="font-size: 13px; color: #666;">Your club's home ground</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #2E5E32;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #D8C9A3;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #F5F3EC; border: 1px solid #ddd;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">The 22-yard strip with crease lines — the literal namesake, quietly distinctive.</p>
+  </div>
+
+  <!-- 1f — Community Circles · warm -->
+  <div id="1f" style="width: 380px; background: #FFFFFF; border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: 'Archivo'; font-weight: 800; font-size: 13px; background: #1A1A1A; color: #fff; padding: 4px 10px; border-radius: 99px;">1f</span>
+      <span style="font-size: 13px; color: #888;">Community Circles · warm</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <div style="width: 96px; height: 96px; border-radius: 22px; background: #F3EBDD; display: flex; align-items: center; justify-content: center;">
+        <div style="position: relative; width: 60px; height: 44px;">
+          <div style="position: absolute; left: 0; top: 0; width: 40px; height: 40px; border-radius: 50%; background: #C4502F;"></div>
+          <div style="position: absolute; right: 0; bottom: 0; width: 40px; height: 40px; border-radius: 50%; background: #2F5D46; mix-blend-mode: multiply;"></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-family: 'Archivo'; font-weight: 700; font-size: 30px; color: #2F2A24;">cricrelay</span>
+        <span style="font-size: 13px; color: #666;">Where clubs come together</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #C4502F;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #2F5D46;"></div>
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #F3EBDD; border: 1px solid #ddd;"></div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #555;">Ball + green overlapping — community and the game as one. Friendly, non-corporate.</p>
+  </div>
+
+</section>
+</x-dc>
+</body>
+</html>

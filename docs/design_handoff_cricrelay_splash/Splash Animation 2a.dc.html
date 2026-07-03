@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; background: #1A1C1A; font-family: 'DM Sans', sans-serif; }
+  </style>
+</helmet>
+
+<section style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; gap: 28px; padding: 40px 24px 64px; box-sizing: border-box;">
+  <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+    <span style="font-family: 'Archivo'; font-weight: 900; font-size: 22px; color: #C8F542; letter-spacing: -0.5px;">cricrelay — opening splash</span>
+    <span style="font-size: 14px; color: #9BA39B;">Top-of-pitch camera → umpire view → ball swings in → stumps · tap a screen to replay</span>
+  </div>
+  <div style="display: flex; gap: 48px; flex-wrap: wrap; justify-content: center; align-items: flex-start;">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" dark="{{ true }}" hint-size="380px,780px">
+        <canvas ref="{{ androidRef }}" onClick="{{ replay }}" style="width: 100%; height: 100%; display: block; background: #101210; cursor: pointer;"></canvas>
+      </x-import>
+      <span style="font-size: 13px; color: #9BA39B;">Android</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="380px,780px">
+        <canvas ref="{{ iosRef }}" onClick="{{ replay }}" style="width: 100%; height: 100%; display: block; background: #101210; cursor: pointer;"></canvas>
+      </x-import>
+      <span style="font-size: 13px; color: #9BA39B;">iOS</span>
+    </div>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;tagline&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;your club, live rn&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;$preview&quot;: {&quot;width&quot;: 1000, &quot;height&quot;: 900}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.androidRef = React.createRef();
+    this.iosRef = React.createRef();
+    this.t = 0;
+    this.last = null;
+    this.raf = null;
+    this.saveAt = 0;
+  }
+
+  componentDidMount() {
+    const saved = parseFloat(localStorage.getItem('cricrelay_splash_t'));
+    if (!isNaN(saved)) this.t = Math.min(saved, this.DUR);
+    const loop = (ts) => {
+      if (this.last == null) this.last = ts;
+      const dt = Math.min(0.05, (ts - this.last) / 1000);
+      this.last = ts;
+      if (this.t < this.DUR) this.t = Math.min(this.DUR, this.t + dt);
+      if (ts - this.saveAt > 250) { this.saveAt = ts; try { localStorage.setItem('cricrelay_splash_t', String(this.t)); } catch (e) {} }
+      this.draw(this.androidRef.current);
+      this.draw(this.iosRef.current);
+      this.raf = requestAnimationFrame(loop);
+    };
+    this.raf = requestAnimationFrame(loop);
+  }
+
+  componentWillUnmount() { cancelAnimationFrame(this.raf); }
+
+  get DUR() { return 5.2; }
+
+  // ---- helpers ----
+  ease(x) { return x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x); }
+
+  camera(t) {
+    // extreme close-up on the ball -> pull back to umpire view between 0.9 and 2.6
+    const k = this.ease((t - 0.6) / 1.1);
+    const lerp = (a, b) => a + (b - a) * k;
+    let cam = { x: lerp(0, -0.30), y: lerp(0.55, 1.9), z: lerp(0.6, -2.6), tilt: lerp(0, 0.10) };
+    // tracking shot: camera chases the ball down the pitch, settling ~3/4 of the way when it hits
+    if (t > this.T_REL) {
+      const kd = this.ease(Math.min(1, (t - this.T_REL) / (this.T_HIT - this.T_REL)));
+      const p = Math.min(1, (t - this.T_REL) / (this.T_HIT - this.T_REL));
+      // blend from wherever the pull-back currently is — no hitch between the two moves
+      cam.z += (14.6 - cam.z) * kd;
+      cam.y += (1.35 - cam.y) * kd;
+      cam.tilt += (0.13 - cam.tilt) * kd;
+      cam.x += (this.ballAt(this.pMap(p)).x * 0.5 - cam.x) * kd;
+    }
+    // handheld drift — subtle organic float on top of everything
+    cam.x += Math.sin(t * 1.7) * 0.014 + Math.sin(t * 3.9 + 1.2) * 0.007;
+    cam.y += Math.sin(t * 2.3 + 0.5) * 0.010;
+    // impact shake
+    const imp = t - this.T_HIT;
+    if (imp > 0 && imp < 0.45) {
+      const s = (0.45 - imp) * 0.14;
+      cam.x += Math.sin(t * 90) * s;
+      cam.y += Math.cos(t * 77) * s;
+    }
+    return cam;
+  }
+
+  get T_REL() { return 1.45; }  // ball release — overlaps the tail of the pull-back, no dead beat
+  get T_HIT() { return 2.8; }   // stump impact
+  get T_LOGO() { return 3.5; }
+
+  // broadcast-style speed ramp: quick off the hand, slow-mo through the swing, snap at the stumps
+  pMap(u) {
+    if (u < 0.55) return u * (0.75 / 0.55);
+    if (u < 0.9) return 0.75 + (u - 0.55) * (0.15 / 0.35);
+    return 0.9 + (u - 0.9);
+  }
+
+  ballAt(p) {
+    // p 0..1 across delivery; returns world pos
+    const pitchP = 0.66;
+    const z = 0.6 + p * 19.5;
+    let y, x;
+    if (p < pitchP) {
+      const q = p / pitchP;
+      y = 0.05 + 1.95 * (1 - q * q);
+      x = -0.38 * (1 - Math.sin(q * Math.PI / 2)); // smooth inswing curve
+    } else {
+      const q = (p - pitchP) / (1 - pitchP);
+      y = 0.05 + 1.35 * q * (1.25 - q); // bounce up toward stump height
+      x = 0.0 - 0.04 * q; // slight jag after pitching
+    }
+    return { x, y, z };
+  }
+
+  project(px, py, pz, cam, W, H, f) {
+    const dx = px - cam.x, dy = py - cam.y, dz = pz - cam.z;
+    const c = Math.cos(cam.tilt), s = Math.sin(cam.tilt);
+    const zv = -dy * s + dz * c;
+    const yv = dy * c + dz * s;
+    if (zv < 0.12) return null;
+    return { x: W / 2 + f * dx / zv, y: H / 2 - f * yv / zv, d: zv };
+  }
+
+  draw(canvas) {
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    let cw = canvas.clientWidth, ch = canvas.clientHeight;
+    if (ch < 120) ch = 700;
+    if (cw < 120) cw = 360;
+    if (canvas.width !== cw * dpr) { canvas.width = cw * dpr; canvas.height = ch * dpr; }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const W = cw, H = ch, t = this.t;
+    const LIME = '#C8F542', DARK = '#101210', INK = '#0E100D';
+    const f = H * 0.95;
+    const cam = this.camera(t);
+    const P = (x, y, z) => this.project(x, y, z, cam, W, H, f);
+
+    ctx.fillStyle = DARK;
+    ctx.fillRect(0, 0, W, H);
+
+    // ---- night-stadium floodlights ----
+    [[-9, 6.5, 26], [9, 6.5, 26], [-11, 5.5, 4], [11, 5.5, 4]].forEach((fp) => {
+      const lp = P(fp[0], fp[1], fp[2]);
+      if (!lp) return;
+      const lr = Math.max(20, f * 3.2 / lp.d);
+      const g = ctx.createRadialGradient(lp.x, lp.y, 0, lp.x, lp.y, lr);
+      g.addColorStop(0, 'rgba(220,240,190,0.22)');
+      g.addColorStop(0.35, 'rgba(200,245,66,0.08)');
+      g.addColorStop(1, 'rgba(200,245,66,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(lp.x, lp.y, lr, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(235,250,215,0.85)';
+      const bw = Math.max(4, f * 0.5 / lp.d);
+      ctx.fillRect(lp.x - bw / 2, lp.y - bw / 8, bw, bw / 4);
+    });
+
+    // ---- pitch strip ----
+    const corners = [P(-1.55, 0, -1), P(1.55, 0, -1), P(1.55, 0, 21.2), P(-1.55, 0, 21.2)];
+    if (corners.every(Boolean)) {
+      ctx.beginPath();
+      ctx.moveTo(corners[0].x, corners[0].y);
+      for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x, corners[i].y);
+      ctx.closePath();
+      ctx.fillStyle = '#161d15';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(200,245,66,0.28)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // mowing stripes
+      for (let z0 = 0; z0 < 20.4; z0 += 2.55) {
+        if (Math.round(z0 / 2.55) % 2) continue;
+        const q = [P(-1.55, 0, z0), P(1.55, 0, z0), P(1.55, 0, Math.min(21.2, z0 + 2.55)), P(-1.55, 0, Math.min(21.2, z0 + 2.55))];
+        if (!q.every(Boolean)) continue;
+        ctx.beginPath();
+        ctx.moveTo(q[0].x, q[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(q[i].x, q[i].y);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(200,245,66,0.045)';
+        ctx.fill();
+      }
+    }
+    // crease lines (both ends) + centre guide
+    const line = (a, b, alpha, w) => {
+      const p1 = P(a[0], a[1], a[2]), p2 = P(b[0], b[1], b[2]);
+      if (!p1 || !p2) return;
+      ctx.strokeStyle = 'rgba(200,245,66,' + alpha + ')';
+      ctx.lineWidth = w;
+      ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+    };
+    line([-1.3, 0, 18.9], [1.3, 0, 18.9], 0.55, 2);   // popping crease (batting end)
+    line([-1.3, 0, 20.1], [1.3, 0, 20.1], 0.35, 1.5); // bowling crease far
+    line([-1.3, 0, 1.2], [1.3, 0, 1.2], 0.55, 2);     // near crease
+    ctx.setLineDash([6, 8]);
+    line([0, 0, 1.4], [0, 0, 18.7], 0.14, 1.2);
+    ctx.setLineDash([]);
+
+    // ---- stumps at far end ----
+    const hitP = Math.max(0, Math.min(1, (t - this.T_HIT) * 2.6));
+    ctx.shadowColor = LIME; ctx.shadowBlur = 14;
+    for (let i = -1; i <= 1; i++) {
+      const sx = i * 0.14;
+      let topX = sx, topY = 0.72, topZ = 20.1;
+      if (i === 0 && hitP > 0) { // middle stump knocked back
+        const ang = hitP * 1.1;
+        topY = 0.72 * Math.cos(ang);
+        topZ = 20.1 + 0.72 * Math.sin(ang);
+      }
+      const b = P(sx, 0, 20.1), tp = P(topX, topY, topZ);
+      if (b && tp) {
+        ctx.strokeStyle = LIME;
+        ctx.lineWidth = Math.max(2, f * 0.045 / b.d);
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(tp.x, tp.y); ctx.stroke();
+      }
+    }
+    // bails
+    if (hitP <= 0) {
+      const b1 = P(-0.07, 0.745, 20.1), b2 = P(0.07, 0.745, 20.1);
+      if (b1 && b2) {
+        ctx.strokeStyle = LIME; ctx.lineWidth = Math.max(1.5, f * 0.03 / b1.d);
+        ctx.beginPath(); ctx.moveTo(b1.x - 4, b1.y); ctx.lineTo(b1.x + 4, b1.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(b2.x - 4, b2.y); ctx.lineTo(b2.x + 4, b2.y); ctx.stroke();
+      }
+    } else {
+      // flying bails
+      const bt = (t - this.T_HIT);
+      [[-0.07, -0.9, 2.4, 1.6], [0.07, 0.7, 3.1, 2.0]].forEach((b) => {
+        let bx = b[0] + b[1] * bt * 0.4;
+        let by = 0.745 + b[2] * bt - 4.9 * bt * bt;
+        let bz = 20.1 + b[3] * bt * 0.5;
+        if (by < 0.02) by = 0.02;
+        const pp = P(bx, by, bz);
+        if (pp) {
+          ctx.save();
+          ctx.translate(pp.x, pp.y);
+          ctx.rotate(bt * 9 * (b[0] < 0 ? -1 : 1));
+          ctx.strokeStyle = LIME; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(5, 0); ctx.stroke();
+          ctx.restore();
+        }
+      });
+    }
+    ctx.shadowBlur = 0;
+
+    // ---- ball ----
+    let ball = null;
+    const spin = t < 1.3 ? 3.6 * t : 3.6 * 1.3 + 16 * (t - 1.3); // slow, readable spin up close, then rips
+    if (t < this.T_REL) {
+      // one continuous ball: close-up pos glides into the release point as the camera pulls back
+      const k2 = this.ease((t - 0.5) / 0.95);
+      ball = {
+        x: -0.38 * k2,
+        y: 0.55 + Math.sin(t * 2.2) * 0.012 * (1 - k2) + 1.45 * k2,
+        z: 1.0 - 0.4 * k2,
+      };
+    } else if (t < this.T_HIT) {
+      const p = this.pMap((t - this.T_REL) / (this.T_HIT - this.T_REL));
+      ball = this.ballAt(p);
+      // trail
+      for (let k = 1; k <= 7; k++) {
+        const tp2 = p - k * 0.035;
+        if (tp2 <= 0) break;
+        const w = this.ballAt(tp2);
+        const sp = P(w.x, w.y, w.z);
+        if (sp) {
+          const r = Math.max(1, f * 0.075 / sp.d) * (1 - k * 0.11);
+          ctx.fillStyle = 'rgba(200,245,66,' + (0.22 * (1 - k / 8)) + ')';
+          ctx.beginPath(); ctx.arc(sp.x, sp.y, r, 0, 7); ctx.fill();
+        }
+      }
+      // bounce flash on the deck
+      const pitchT = this.T_REL + 0.66 * (this.T_HIT - this.T_REL);
+      const bf = t - pitchT;
+      if (bf > 0 && bf < 0.35) {
+        const w = this.ballAt(0.66);
+        const sp = P(w.x, 0, w.z);
+        if (sp) {
+          ctx.strokeStyle = 'rgba(200,245,66,' + (0.7 * (1 - bf / 0.35)) + ')';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(sp.x, sp.y, 30 * bf / 0.35 * (f * 0.02 / sp.d) * 30, 10 * bf / 0.35 * (f * 0.02 / sp.d) * 12, 0, 0, 7);
+          ctx.stroke();
+        }
+      }
+    }
+    if (ball) {
+      const sp = P(ball.x, ball.y, ball.z);
+      if (sp) {
+        const r = Math.max(3, f * 0.075 / sp.d);
+        ctx.shadowColor = LIME; ctx.shadowBlur = r * 1.6;
+        ctx.fillStyle = LIME;
+        ctx.beginPath(); ctx.arc(sp.x, sp.y, r, 0, 7); ctx.fill();
+        ctx.shadowBlur = 0;
+        // rotating seam: two dashed chords, like the logo
+        ctx.save();
+        ctx.beginPath(); ctx.arc(sp.x, sp.y, r, 0, 7); ctx.clip();
+        ctx.translate(sp.x, sp.y); ctx.rotate(spin % (Math.PI * 2));
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = Math.max(1.2, r * 0.14);
+        ctx.setLineDash([r * 0.35, r * 0.28]);
+        ctx.beginPath(); ctx.moveTo(-r * 0.22, -r * 1.2); ctx.lineTo(-r * 0.22, r * 1.2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(r * 0.22, -r * 1.2); ctx.lineTo(r * 0.22, r * 1.2); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+    }
+
+    // ---- impact flash ----
+    const fl = t - this.T_HIT;
+    if (fl > 0 && fl < 0.09) {
+      ctx.fillStyle = 'rgba(230,250,190,' + (0.5 * (1 - fl / 0.09)) + ')';
+      ctx.fillRect(0, 0, W, H);
+    }
+    if (fl > 0 && fl < 0.5) {
+      const sp = P(0, 0.45, 20.0);
+      if (sp) {
+        const a = 1 - fl / 0.5;
+        const g = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, 90);
+        g.addColorStop(0, 'rgba(200,245,66,' + 0.75 * a + ')');
+        g.addColorStop(1, 'rgba(200,245,66,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(sp.x, sp.y, 90, 0, 7); ctx.fill();
+      }
+    }
+
+    // ---- cinematic grade: vignette + letterbox + fade-in ----
+    const laPre = this.ease((t - this.T_LOGO) / 0.8);
+    const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.72);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+    const barH = H * 0.08 * (1 - laPre);
+    if (barH > 0.5) {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, barH);
+      ctx.fillRect(0, H - barH, W, barH);
+    }
+    if (t < 0.4) {
+      ctx.fillStyle = 'rgba(0,0,0,' + (1 - t / 0.4) + ')';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // ---- wordmark ----
+    const la = this.ease((t - this.T_LOGO) / 0.8);
+    if (la > 0) {
+      ctx.save();
+      ctx.globalAlpha = la * 0.88;
+      ctx.fillStyle = DARK;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = la;
+      const cy = H * 0.44;
+      // logo ball
+      const r = 30;
+      ctx.shadowColor = LIME; ctx.shadowBlur = 26;
+      ctx.fillStyle = LIME;
+      ctx.beginPath(); ctx.arc(W / 2, cy - 78, r, 0, 7); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.save();
+      ctx.beginPath(); ctx.arc(W / 2, cy - 78, r, 0, 7); ctx.clip();
+      ctx.translate(W / 2, cy - 78); ctx.rotate(0.21);
+      ctx.strokeStyle = INK; ctx.lineWidth = 3.2; ctx.setLineDash([9, 7]);
+      ctx.beginPath(); ctx.moveTo(-7, -r * 1.3); ctx.lineTo(-7, r * 1.3); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(6, -r * 1.3); ctx.lineTo(6, r * 1.3); ctx.stroke();
+      ctx.restore();
+      // name
+      ctx.fillStyle = LIME;
+      ctx.textAlign = 'center';
+      ctx.font = '900 42px Archivo, sans-serif';
+      ctx.fillText('cricrelay', W / 2, cy + 12);
+      ctx.font = '500 16px "DM Sans", sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.fillText(this.props.tagline ?? 'your club, live rn', W / 2, cy + 44);
+      if (t > this.DUR - 0.6) {
+        ctx.font = '500 13px "DM Sans", sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.fillText('tap to replay', W / 2, H - 36);
+      }
+      ctx.restore();
+    }
+  }
+
+  renderVals() {
+    return {
+      androidRef: this.androidRef,
+      iosRef: this.iosRef,
+      replay: () => { this.t = 0; try { localStorage.setItem('cricrelay_splash_t', '0'); } catch (e) {} },
+    };
+  }
+}
+</script>
+</body>
+</html>
