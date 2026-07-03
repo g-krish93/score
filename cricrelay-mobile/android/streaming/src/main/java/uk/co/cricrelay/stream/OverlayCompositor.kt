@@ -106,10 +106,17 @@ internal class OverlayCompositor(
      */
     fun applyOverlayConfig() {
         val l = layout()
-        val themedUrl = OverlayThemeBridge.urlWithTheme(overlayUrl(), l.theme)
+        val themedUrl = OverlayThemeBridge.urlWithTheme(overlayUrl(), l.theme, l.bowlingIslandEnabled)
         ensureOverlayCapture()?.apply {
             loadUrl(themedUrl)
-            setStyle(l.fontScale, l.bgColor, l.textColor, l.theme)
+            setStyle(
+                l.fontScale,
+                l.bgColor,
+                l.textColor,
+                l.theme,
+                l.heightFraction,
+                l.bowlingIslandEnabled,
+            )
         }
         stopPreviewOverlayRefresh()
         val refreshMode = StreamOverlayPolicy.refreshMode(
@@ -140,12 +147,14 @@ internal class OverlayCompositor(
         syncOverlayCaptureWidth()
         val l = layout()
         ensureOverlayCapture()?.apply {
-            loadUrl(OverlayThemeBridge.urlWithTheme(overlayUrl(), l.theme))
+            loadUrl(OverlayThemeBridge.urlWithTheme(overlayUrl(), l.theme, l.bowlingIslandEnabled))
             setStyle(
                 l.fontScale,
                 l.bgColor,
                 l.textColor,
                 l.theme,
+                l.heightFraction,
+                l.bowlingIslandEnabled,
             )
         }
         when (
@@ -314,7 +323,10 @@ internal class OverlayCompositor(
         if (camera()?.isStreaming == true || pausedForMemory()) return
         stopPreviewOverlayRefresh()
         if (overlayUrl().isEmpty()) return
-        ensureOverlayCapture()?.loadUrl(OverlayThemeBridge.urlWithTheme(overlayUrl(), layout().theme))
+        val l = layout()
+        ensureOverlayCapture()?.loadUrl(
+            OverlayThemeBridge.urlWithTheme(overlayUrl(), l.theme, l.bowlingIslandEnabled),
+        )
         val interval = (refreshMs() * 2).coerceIn(800L, 2500L)
         val runnable = object : Runnable {
             override fun run() {

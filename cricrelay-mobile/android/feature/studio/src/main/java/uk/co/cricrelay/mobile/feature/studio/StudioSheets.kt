@@ -7,7 +7,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,8 +27,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.SmartDisplay
 import androidx.compose.material.icons.outlined.SportsEsports
@@ -57,17 +54,18 @@ import uk.co.cricrelay.mobile.ui.AppColors
 import uk.co.cricrelay.mobile.ui.AppMotion
 import uk.co.cricrelay.mobile.ui.AppSpacing
 import uk.co.cricrelay.mobile.ui.AppTypography
-import uk.co.cricrelay.mobile.ui.GhostButton
 import uk.co.cricrelay.mobile.ui.LabeledSlider
 import uk.co.cricrelay.mobile.ui.PrimaryButton
 import uk.co.cricrelay.mobile.ui.SecondaryButton
 import uk.co.cricrelay.mobile.ui.SelectableOptionCard
 import uk.co.cricrelay.mobile.ui.SheetHeader
 import uk.co.cricrelay.mobile.ui.StudioTextField
+import uk.co.cricrelay.shared.model.BoardPreset
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.shared.model.Sponsor
 import uk.co.cricrelay.shared.model.SponsorDisplayMode
 import uk.co.cricrelay.shared.model.SponsorLayoutMode
+import uk.co.cricrelay.shared.model.StabilizationLevel
 
 @Composable
 fun DestinationSheet(
@@ -175,16 +173,27 @@ fun DestinationSheet(
     }
 }
 
-/** Named scoreboard colour preset (maps to overlay bg/text CSS variables). */
-private data class BoardTheme(val name: String, val bg: String, val text: String, val swatch: Color)
-
-private val boardThemes = listOf(
-    BoardTheme("Default", "", "", Color(0xFF16294D)),
-    BoardTheme("Dark", "#0E1A24", "#FFFFFF", Color(0xFF0E1A24)),
-    BoardTheme("Black", "#000000", "#FFFFFF", Color(0xFF000000)),
-    BoardTheme("Light", "#FFFFFF", "#16294D", Color(0xFFFFFFFF)),
-    BoardTheme("Teal", "#0B3D3A", "#7CF6D6", Color(0xFF0B3D3A)),
-)
+/**
+ * Parse a [BoardPreset] swatch value — either `#RRGGBB` hex or the CSS `rgba(r,g,b,a)`
+ * strings the overlay page paints with — into a Compose [Color] for the preset chips.
+ */
+private fun parseSwatchColor(value: String): Color {
+    val v = value.trim()
+    if (v.startsWith("#")) {
+        val hex = v.removePrefix("#")
+        val rgb = hex.toLongOrNull(16) ?: return Color.White
+        return if (hex.length == 6) Color(0xFF000000L or rgb) else Color(rgb)
+    }
+    if (v.startsWith("rgba(") || v.startsWith("rgb(")) {
+        val parts = v.substringAfter('(').substringBefore(')').split(',').map { it.trim() }
+        val r = parts.getOrNull(0)?.toIntOrNull() ?: return Color.White
+        val g = parts.getOrNull(1)?.toIntOrNull() ?: return Color.White
+        val b = parts.getOrNull(2)?.toIntOrNull() ?: return Color.White
+        val a = ((parts.getOrNull(3)?.toFloatOrNull() ?: 1f) * 255).toInt().coerceIn(0, 255)
+        return Color(r, g, b, a)
+    }
+    return Color.White
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -203,7 +212,8 @@ fun OverlaySheet(
     var bottomMargin by remember { mutableStateOf(prefs.bottomMargin.toFloat()) }
     var bg by remember { mutableStateOf(prefs.bgColor) }
     var text by remember { mutableStateOf(prefs.textColor) }
-    var overlayTheme by remember { mutableStateOf("barlow") }
+    var themeId by remember { mutableStateOf(OverlayLayoutPrefs.sanitizeTheme(prefs.theme)) }
+    var bowlingIsland by remember { mutableStateOf(prefs.bowlingIslandEnabled) }
     var watermarkEnabled by remember { mutableStateOf(prefs.watermarkEnabled) }
     var watermarkText by remember { mutableStateOf(prefs.watermarkText) }
     var sponsorEnabled by remember { mutableStateOf(prefs.sponsorEnabled) }
@@ -233,7 +243,8 @@ fun OverlaySheet(
         bottomMargin = bottomMargin.toDouble(),
         bgColor = bg,
         textColor = text,
-        theme = "barlow",
+        theme = themeId,
+        bowlingIslandEnabled = bowlingIsland,
         watermarkEnabled = watermarkEnabled,
         watermarkText = watermarkText.trim().ifBlank { OverlayLayoutPrefs.WATERMARK_DEFAULT_TEXT },
         sponsorEnabled = sponsorEnabled,
@@ -256,7 +267,8 @@ fun OverlaySheet(
         heightFraction,
         opacity,
         bottomMargin,
-        overlayTheme,
+        themeId,
+        bowlingIsland,
         bg,
         text,
         watermarkEnabled,
@@ -561,7 +573,7 @@ fun OverlaySheet(
     Spacer(Modifier.height(AppSpacing.md))
 
     Text(
-        "Board colour",
+        "Board preset",
         style = AppTypography.titleSmall,
         modifier = Modifier.padding(horizontal = AppSpacing.lg),
     )
@@ -571,46 +583,86 @@ fun OverlaySheet(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = AppSpacing.lg),
         horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
     ) {
-        items(boardThemes) { preset ->
-            val selected = bg == preset.bg && text == preset.text
+        items(BoardPreset.ALL) { preset ->
+            val selected = themeId == preset.id
             Column(
                 modifier = Modifier
                     .width(76.dp)
                     .clip(RoundedCornerShape(AppSpacing.radiusSm))
                     .background(
-                        if (selected) AppColors.Accent.copy(alpha = 0.12f) else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                        if (selected) AppColors.Primary.copy(alpha = 0.12f) else AppColors.SurfaceElevated.copy(alpha = 0.7f),
                     )
                     .border(
                         width = if (selected) 1.5.dp else 1.dp,
-                        color = if (selected) AppColors.Accent.copy(alpha = 0.8f) else AppColors.Border,
+                        color = if (selected) AppColors.Primary else AppColors.Border,
                         shape = RoundedCornerShape(AppSpacing.radiusSm),
                     )
                     .clickable {
-                        bg = preset.bg
-                        text = preset.text
+                        // Preset selection owns the board look: clear the legacy custom
+                        // colours so the page's preset CSS paints unmodified (D3).
+                        themeId = preset.id
+                        bg = ""
+                        text = ""
                     }
                     .padding(vertical = 10.dp, horizontal = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                // Two-tone chip: row-1 background fill with the preset's accent as a dot.
                 Box(
                     modifier = Modifier
                         .size(34.dp)
-                        .background(preset.swatch, CircleShape)
+                        .background(parseSwatchColor(preset.row1Bg), CircleShape)
                         .border(
                             width = if (selected) 1.5.dp else 1.dp,
-                            color = if (selected) AppColors.Accent else Color.White.copy(alpha = 0.20f),
+                            color = if (selected) AppColors.Primary else Color.White.copy(alpha = 0.20f),
                             shape = CircleShape,
                         ),
-                )
+                    contentAlignment = Alignment.BottomEnd,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .background(parseSwatchColor(preset.accent), CircleShape)
+                            .border(1.dp, Color.Black.copy(alpha = 0.35f), CircleShape),
+                    )
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    preset.name,
+                    preset.displayName,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (selected) AppColors.OnBackground else AppColors.OnBackgroundMuted,
                     maxLines = 1,
                 )
             }
+        }
+    }
+
+    Spacer(Modifier.height(AppSpacing.md))
+
+    // Bowling island: the separate bowler box (figures + THIS OVER strip) beside the board.
+    Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Bowler island", style = AppTypography.titleSmall)
+                Text(
+                    "Bowler figures and THIS OVER beside the board",
+                    style = AppTypography.bodySmall,
+                )
+            }
+            Switch(
+                checked = bowlingIsland,
+                onCheckedChange = { bowlingIsland = it },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = AppColors.OnPrimary,
+                    checkedTrackColor = AppColors.Primary,
+                    uncheckedThumbColor = AppColors.OnBackgroundDim,
+                    uncheckedTrackColor = AppColors.SurfaceElevated,
+                ),
+            )
         }
     }
 
@@ -634,6 +686,13 @@ fun OverlaySheet(
             onValueChange = { heightFraction = it },
             valueRange = 0.10f..0.28f,
         )
+        if (heightFraction <= 0.105f) {
+            Text(
+                "Hides batsmen strip",
+                style = AppTypography.bodySmall,
+                color = AppColors.OnBackgroundDim,
+            )
+        }
         LabeledSlider(
             label = "Font size",
             valueText = "${(fontScale * 100).toInt()}%",
@@ -648,6 +707,13 @@ fun OverlaySheet(
             onValueChange = { opacity = it },
             valueRange = 0.2f..1.0f,
         )
+        if (opacity < 0.6f) {
+            Text(
+                "May be hard to read in sunlight",
+                style = AppTypography.bodySmall,
+                color = AppColors.Warning,
+            )
+        }
         LabeledSlider(
             label = "Position",
             valueText = "${bottomMargin.toInt()}",
@@ -709,6 +775,7 @@ fun ScoringSheet(
     scoring: uk.co.cricrelay.shared.model.ScoringConfig?,
     onSelectMode: (String) -> Unit,
     onOpenScorer: () -> Unit,
+    onShowScorerQr: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -761,6 +828,14 @@ fun ScoringSheet(
             Text("Active mode: ${it.mode}", style = AppTypography.bodySmall)
         }
         Spacer(Modifier.height(AppSpacing.sm))
+        if (current.equals("manual", ignoreCase = true)) {
+            SecondaryButton(
+                text = "Show scorer QR",
+                onClick = onShowScorerQr,
+                modifier = Modifier.padding(horizontal = AppSpacing.lg),
+            )
+            Spacer(Modifier.height(AppSpacing.sm))
+        }
         SecondaryButton(
             text = "Open scorer in browser",
             onClick = {
@@ -772,97 +847,147 @@ fun ScoringSheet(
     }
 }
 
-/** One row of the pre-flight checklist: pass/fail icon, label, hint when failing. */
-@Composable
-private fun PreflightRow(label: String, ok: Boolean, index: Int, hint: String? = null) {
-    var shown by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(index * 90L)
-        shown = true
-    }
-    AnimatedVisibility(
-        visible = shown,
-        enter = fadeIn(AppMotion.enterSpec(AppMotion.SheetEnterMs)) +
-            slideInVertically(
-                animationSpec = tween(AppMotion.SheetEnterMs, easing = AppMotion.EaseOut),
-            ) { it / 4 },
-    ) {
-        PreflightRowContent(label = label, ok = ok, hint = hint)
-    }
-}
+private const val STABILIZATION_FOV_CAPTION =
+    "Strong stabilization slightly narrows the camera's field of view."
 
+/**
+ * Camera settings sheet — the camera checklist row's destination. Stabilization, orientation,
+ * and keep-screen-on moved here from the old quick-toggle rail. Pre-live only: everything is
+ * locked while streaming (stabilization and orientation can't change mid-RTMP).
+ */
 @Composable
-private fun PreflightRowContent(label: String, ok: Boolean, hint: String? = null) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(AppSpacing.radiusMd))
-            .background(
-                (if (ok) AppColors.Success else AppColors.Warning).copy(alpha = 0.08f),
-            )
-            .padding(horizontal = AppSpacing.md, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            if (ok) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-            contentDescription = null,
-            tint = if (ok) AppColors.Success else AppColors.Warning,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(AppSpacing.md))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(label, style = AppTypography.titleSmall)
-            if (!ok && hint != null) {
-                Text(hint, style = AppTypography.bodySmall)
-            }
-        }
-    }
-}
-
-@Composable
-fun PreflightSheet(
+fun CameraSettingsSheet(
     state: StudioUiState,
-    onConfirm: () -> Unit,
+    onSetStabilization: (Int) -> Unit,
+    onToggleOrientation: () -> Unit,
+    onToggleKeepScreenOn: (Boolean) -> Unit,
+    onRestartPreview: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val locked = state.streaming
     SheetHeader(
-        title = "Ready to go live?",
-        subtitle = "The scoreboard appears at the bottom of your stream.",
+        title = "Camera",
+        subtitle = if (locked) {
+            "Camera settings are locked while you're live."
+        } else {
+            "Stabilization, orientation, and screen settings for this phone."
+        },
     )
-    Column(
-        modifier = Modifier.padding(horizontal = AppSpacing.lg),
-        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
-    ) {
-        PreflightRow(
-            label = "Camera ready",
-            ok = state.previewReady,
-            index = 0,
-            hint = "Wait for the preview, or restart it from the menu",
-        )
-        PreflightRow(
-            label = state.destinationLabel,
-            ok = state.destinationReady,
-            index = 1,
-            hint = "Set a destination or paste a stream key first",
-        )
-        PreflightRow(
-            label = "Scoreboard on stream",
-            ok = state.match?.overlayEmbedUrl?.isNotBlank() == true,
-            index = 2,
-            hint = "Overlay URL missing — check the stream setup",
-        )
+
+    // Stabilization: the same three levels the old quick toggle cycled through.
+    Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
+        Text("Stabilization", style = AppTypography.titleSmall)
+        Spacer(Modifier.height(AppSpacing.xs))
+        Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+            listOf(
+                StabilizationLevel.OFF to "Off",
+                StabilizationLevel.STANDARD to "Standard",
+                StabilizationLevel.CINEMATIC to "Cinematic",
+            ).forEach { (level, label) ->
+                val selected = state.overlayPrefs.stabilizationLevel == level
+                Text(
+                    label,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                        .background(
+                            if (selected) AppColors.Primary.copy(alpha = 0.25f)
+                            else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                        )
+                        .border(
+                            width = if (selected) 1.5.dp else 1.dp,
+                            color = if (selected) AppColors.Primary else AppColors.Border,
+                            shape = RoundedCornerShape(AppSpacing.radiusSm),
+                        )
+                        .clickable(enabled = !locked) { onSetStabilization(level) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    style = AppTypography.bodySmall,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                    color = if (selected) AppColors.OnBackground else AppColors.OnBackgroundMuted,
+                )
+            }
+        }
+        if (state.overlayPrefs.stabilizationLevel == StabilizationLevel.CINEMATIC) {
+            Spacer(Modifier.height(AppSpacing.xs))
+            Text(
+                STABILIZATION_FOV_CAPTION,
+                style = AppTypography.bodySmall,
+                color = AppColors.OnBackgroundDim,
+            )
+        }
     }
-    Spacer(Modifier.height(AppSpacing.lg))
-    PrimaryButton(
-        text = "Go Live",
-        enabled = state.previewReady && state.destinationReady,
-        onClick = onConfirm,
-        modifier = Modifier.padding(horizontal = AppSpacing.lg),
-    )
-    Spacer(Modifier.height(AppSpacing.xs))
-    GhostButton(
-        text = "Cancel",
-        onClick = onDismiss,
+
+    Spacer(Modifier.height(AppSpacing.md))
+
+    // Orientation: one-tap flip to the opposite of what's on screen (same VM contract as the
+    // old top-bar button — Auto simply follows the sensor until the first tap).
+    Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Orientation", style = AppTypography.titleSmall)
+                Text(
+                    when (state.orientationMode) {
+                        OrientationMode.Auto -> "Follows the phone until you lock it"
+                        OrientationMode.Landscape -> "Locked to landscape"
+                        OrientationMode.Portrait -> "Locked to portrait"
+                    },
+                    style = AppTypography.bodySmall,
+                )
+            }
+            Text(
+                "Flip",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                    .background(AppColors.Accent.copy(alpha = 0.15f))
+                    .border(1.dp, AppColors.Accent.copy(alpha = 0.5f), RoundedCornerShape(AppSpacing.radiusSm))
+                    .clickable(enabled = !locked, onClick = onToggleOrientation)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                style = AppTypography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                color = AppColors.Accent,
+            )
+        }
+    }
+
+    Spacer(Modifier.height(AppSpacing.md))
+
+    // Keep screen on while broadcasting.
+    Column(modifier = Modifier.padding(horizontal = AppSpacing.lg)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Keep screen on", style = AppTypography.titleSmall)
+                Text(
+                    "Stops the display sleeping mid-broadcast",
+                    style = AppTypography.bodySmall,
+                )
+            }
+            Switch(
+                checked = state.overlayPrefs.keepScreenOn,
+                onCheckedChange = onToggleKeepScreenOn,
+                enabled = !locked,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = AppColors.OnPrimary,
+                    checkedTrackColor = AppColors.Primary,
+                    uncheckedThumbColor = AppColors.OnBackgroundDim,
+                    uncheckedTrackColor = AppColors.SurfaceElevated,
+                ),
+            )
+        }
+    }
+
+    Spacer(Modifier.height(AppSpacing.md))
+    SecondaryButton(
+        text = "Restart camera preview",
+        enabled = !locked,
+        onClick = {
+            onRestartPreview()
+            onDismiss()
+        },
         modifier = Modifier.padding(horizontal = AppSpacing.lg),
     )
 }

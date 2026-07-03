@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct CreateStreamView: View {
-    let mode: String  // "play_cricket" or "cricheroes"
+    let mode: String  // "play_cricket", "cricheroes", or "manual"
     @ObservedObject var viewModel: HomeViewModel
+    var onManualCreated: ((String) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedFixtureId: String?
@@ -11,11 +12,20 @@ struct CreateStreamView: View {
     @State private var error: String?
     @State private var busy = false
 
-    private var isPlayCricket: Bool { mode == "play_cricket" }
-
     private var canCreate: Bool {
-        if isPlayCricket { return selectedFixtureId != nil }
-        return !cricheroesUrl.trimmingCharacters(in: .whitespaces).isEmpty
+        switch mode {
+        case "play_cricket": return selectedFixtureId != nil
+        case "manual": return true
+        default: return !cricheroesUrl.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+    }
+
+    private var navTitle: String {
+        switch mode {
+        case "play_cricket": return "Play-Cricket stream"
+        case "manual": return "Manual stream"
+        default: return "CricHeroes stream"
+        }
     }
 
     var body: some View {
@@ -23,10 +33,10 @@ struct CreateStreamView: View {
             StudioBackdrop {
                 ScrollView {
                     VStack(spacing: 16) {
-                        if isPlayCricket {
-                            playCricketContent
-                        } else {
-                            cricheroesContent
+                        switch mode {
+                        case "play_cricket": playCricketContent
+                        case "manual": manualContent
+                        default: cricheroesContent
                         }
 
                         if let error {
@@ -51,7 +61,7 @@ struct CreateStreamView: View {
                     .padding(24)
                 }
             }
-            .navigationTitle(isPlayCricket ? "Play-Cricket stream" : "CricHeroes stream")
+            .navigationTitle(navTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -153,6 +163,24 @@ struct CreateStreamView: View {
         }
     }
 
+    private var manualContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Stream label")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(CricTheme.textDim)
+                .textCase(.uppercase)
+                .tracking(0.8)
+
+            TextField("e.g. 3rd XI friendly", text: $label)
+                .modifier(StudioFieldStyle())
+
+            Text("Team names and overs are entered on the scorer page — you only name the stream here. You'll get a QR code for the scorer's phone next.")
+                .font(.footnote)
+                .foregroundStyle(CricTheme.textDim)
+                .padding(.top, 4)
+        }
+    }
+
     private var cricheroesContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("CricHeroes scorecard URL")
@@ -181,19 +209,27 @@ struct CreateStreamView: View {
         busy = true
         defer { busy = false }
         do {
-            if isPlayCricket {
-                // Never fall through to the CricHeroes branch with no fixture selected —
-                // that would create a stream with an empty URL.
+            switch mode {
+            case "play_cricket":
+                // Never fall through with no fixture selected — that would create
+                // a stream with an empty URL.
                 guard let fixtureId = selectedFixtureId else { return }
                 let fixtureTitle = viewModel.fixtures.first { $0.matchId == fixtureId }?.title ?? fixtureId
                 _ = try await viewModel.createPlayCricketStream(matchId: fixtureId, label: fixtureTitle)
-            } else {
+                dismiss()
+            case "manual":
+                let stream = try await viewModel.createManualStream(
+                    label: label.isEmpty ? "Manual stream" : label
+                )
+                dismiss()
+                onManualCreated?(stream.slug)
+            default:
                 _ = try await viewModel.createCricHeroesStream(
                     matchUrl: cricheroesUrl.trimmingCharacters(in: .whitespaces),
                     label: label.isEmpty ? "CricHeroes stream" : label
                 )
+                dismiss()
             }
-            dismiss()
         } catch {
             self.error = error.localizedDescription
         }

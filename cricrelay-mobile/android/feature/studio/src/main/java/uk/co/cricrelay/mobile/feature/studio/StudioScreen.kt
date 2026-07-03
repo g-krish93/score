@@ -44,6 +44,7 @@ fun StudioScreen(
     onOpenScoring: (String) -> Unit,
     onPairRemote: () -> Unit,
     modifier: Modifier = Modifier,
+    onShowScorerQr: () -> Unit = {},
     viewModel: StudioViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -211,33 +212,12 @@ fun StudioScreen(
                         if (state.streaming) viewModel.stopLive() else viewModel.requestGoLive()
                     },
                     onPause = viewModel::togglePause,
-                    onDestination = { viewModel.openSheet(StudioSheet.Destination) },
-                    onOverlay = { viewModel.openSheet(StudioSheet.Overlay) },
-                    onScoring = { viewModel.openSheet(StudioSheet.Scoring) },
+                    onCheckTap = viewModel::openCheckSheet,
+                    onBoard = { viewModel.openSheet(StudioSheet.Overlay) },
+                    onCameraSettings = { viewModel.openSheet(StudioSheet.Camera) },
                     onMenu = { viewModel.openSheet(StudioSheet.Menu) },
-                    onToggleStabilization = {
-                        // Cycle Off → Standard → Cinematic (least invasive fit for the toggle rail).
-                        viewModel.updateOverlayPrefs(
-                            state.overlayPrefs.withStabilizationLevel(
-                                (state.overlayPrefs.stabilizationLevel + 1) % 3,
-                            ),
-                        )
-                    },
-                    onToggleKeepScreenOn = {
-                        viewModel.updateOverlayPrefs(
-                            state.overlayPrefs.copy(
-                                keepScreenOn = !state.overlayPrefs.keepScreenOn,
-                            ),
-                        )
-                    },
                     onToggleFocusLock = viewModel::onToggleFocusLock,
                     onToggleMicMuted = viewModel::onToggleMicMuted,
-                    onToggleOrientation = {
-                        viewModel.toggleOrientation(
-                            currentlyLandscape = configuration.orientation ==
-                                android.content.res.Configuration.ORIENTATION_LANDSCAPE,
-                        )
-                    },
                     onLowerQuality = viewModel::onLowerQuality,
                     onShare = state.watchUrl.takeIf { it.isNotBlank() }?.let { url ->
                         {
@@ -261,18 +241,11 @@ fun StudioScreen(
                 state = state,
                 onPinch = viewModel::pinchBoard,
                 onDrag = viewModel::dragArrange,
+                onResizeBoard = viewModel::resizeBoardHandle,
+                onDragEnded = viewModel::arrangeDragEnded,
                 onTarget = viewModel::setArrangeTarget,
                 onDone = viewModel::commitArrangeMode,
                 onCancel = viewModel::cancelArrangeMode,
-            )
-        }
-
-        // First-run guided precheck (Camera → Arrange → Ready)
-        if (state.precheckActive && !state.arrangeMode && state.goLiveCountdown == null) {
-            PrecheckCard(
-                state = state,
-                onStartArrange = viewModel::precheckStartArrange,
-                onFinish = viewModel::finishPrecheck,
             )
         }
     }
@@ -320,17 +293,33 @@ fun StudioScreen(
             scoring = state.scoring,
             onSelectMode = viewModel::setScoringMode,
             onOpenScorer = { state.match?.slug?.let(onOpenScoring) },
+            onShowScorerQr = {
+                viewModel.closeSheet()
+                onShowScorerQr()
+            },
             onDismiss = viewModel::closeSheet,
         )
     }
 
     CricRelayBottomSheet(
-        visible = state.activeSheet == StudioSheet.Preflight,
+        visible = state.activeSheet == StudioSheet.Camera,
         onDismiss = viewModel::closeSheet,
     ) {
-        PreflightSheet(
+        CameraSettingsSheet(
             state = state,
-            onConfirm = viewModel::confirmGoLive,
+            onSetStabilization = { level ->
+                viewModel.updateOverlayPrefs(state.overlayPrefs.withStabilizationLevel(level))
+            },
+            onToggleOrientation = {
+                viewModel.toggleOrientation(
+                    currentlyLandscape = configuration.orientation ==
+                        android.content.res.Configuration.ORIENTATION_LANDSCAPE,
+                )
+            },
+            onToggleKeepScreenOn = { enabled ->
+                viewModel.updateOverlayPrefs(state.overlayPrefs.copy(keepScreenOn = enabled))
+            },
+            onRestartPreview = viewModel::prepareCamera,
             onDismiss = viewModel::closeSheet,
         )
     }

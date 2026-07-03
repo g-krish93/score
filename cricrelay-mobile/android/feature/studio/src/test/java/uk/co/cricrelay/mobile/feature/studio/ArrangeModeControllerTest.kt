@@ -69,26 +69,6 @@ class ArrangeModeControllerTest {
         verify(exactly = 0) { overlaySync.updateOverlayPrefs(any()) }
     }
 
-    @Test
-    fun `commit advances the first-run precheck from arrange to ready`() {
-        state.value = state.value.copy(precheckActive = true, precheckStep = PrecheckStep.Arrange)
-        arrange.enterArrangeMode()
-
-        arrange.commitArrangeMode()
-
-        assertEquals(PrecheckStep.Ready, state.value.precheckStep)
-    }
-
-    @Test
-    fun `commit outside the precheck leaves the step alone`() {
-        state.value = state.value.copy(precheckActive = false, precheckStep = PrecheckStep.Camera)
-        arrange.enterArrangeMode()
-
-        arrange.commitArrangeMode()
-
-        assertEquals(PrecheckStep.Camera, state.value.precheckStep)
-    }
-
     // ── pinch ───────────────────────────────────────────────────────────────
 
     @Test
@@ -183,5 +163,138 @@ class ArrangeModeControllerTest {
         arrange.dragArrange(dxFraction = 0.1f, dyFraction = 0f)
 
         assertEquals(0.5, state.value.arrangeDraft!!.anchorX, 1e-6)
+    }
+
+    // ── snapping + guides + readout ─────────────────────────────────────────
+
+    private val previewW = 1000f
+    private val previewH = 2000f
+
+    /** Half-width board (scale 0.5 → width 0.5, height clamps to 0.10) with room to move. */
+    private fun enterWithHalfBoard() {
+        state.value = state.value.copy(overlayPrefs = OverlayLayoutPrefs().withBoardScale(0.5))
+        arrange.enterArrangeMode()
+    }
+
+    @Test
+    fun `board drag in open space neither snaps nor shows guides`() {
+        enterWithHalfBoard()
+
+        arrange.dragArrange(0.1f, 0f, previewW, previewH)
+
+        val s = state.value
+        assertEquals(0.6, s.arrangeDraft!!.anchorX, 1e-6)
+        assertFalse(s.arrangeGuideV)
+        assertFalse(s.arrangeGuideH)
+        assertEquals("BOARD 60% · 0%", s.arrangeReadout)
+    }
+
+    @Test
+    fun `board snaps to the vertical centre line within 7px`() {
+        enterWithHalfBoard()
+
+        // 0.505 · 1000px = 5px off centre — inside the 7px catch.
+        arrange.dragArrange(0.005f, 0f, previewW, previewH)
+
+        val s = state.value
+        assertEquals(0.5, s.arrangeDraft!!.anchorX, 1e-9)
+        assertTrue(s.arrangeGuideV)
+        assertFalse(s.arrangeGuideH)
+    }
+
+    @Test
+    fun `board left edge snaps to the 16px safe margin within 8px`() {
+        enterWithHalfBoard()
+        state.value = state.value.copy(
+            arrangeDraft = state.value.arrangeDraft!!.copy(anchorX = 0.30),
+        )
+
+        // Left edge lands at 20px — 4px from the 16px margin, inside the 8px catch.
+        arrange.dragArrange(-0.03f, 0f, previewW, previewH)
+
+        val draft = state.value.arrangeDraft!!
+        // anchorX = safe(16/1000) + half width(0.25).
+        assertEquals(0.266, draft.anchorX, 1e-6)
+        assertFalse(state.value.arrangeGuideV)
+    }
+
+    @Test
+    fun `board snaps to the horizontal centre line via its mid-height`() {
+        enterWithHalfBoard()
+
+        // margin 324/720 + height 0.10/2 = exactly 0.5 of the frame height.
+        arrange.dragArrange(0f, -0.81f, previewW, previewH)
+
+        val s = state.value
+        assertEquals(324.0, s.arrangeDraft!!.bottomMargin, 1e-4)
+        assertTrue(s.arrangeGuideH)
+    }
+
+    @Test
+    fun `sponsor drag snaps to centre and publishes its readout`() {
+        enterWithHalfBoard()
+        arrange.setArrangeTarget(ArrangeTarget.Sponsor)
+
+        // 0.92 - 0.417 = 0.503 → 3px from centre → snaps to 0.5.
+        arrange.dragArrange(-0.417f, 0f, previewW, previewH)
+
+        val s = state.value
+        assertEquals(0.5, s.arrangeDraft!!.sponsorPositionX, 1e-9)
+        assertTrue(s.arrangeGuideV)
+        assertEquals("SPONSOR 50% · 88%", s.arrangeReadout)
+    }
+
+    @Test
+    fun `dragEnded clears the guides and the readout`() {
+        enterWithHalfBoard()
+        arrange.dragArrange(0.005f, 0f, previewW, previewH)
+        assertTrue(state.value.arrangeGuideV)
+
+        arrange.dragEnded()
+
+        val s = state.value
+        assertFalse(s.arrangeGuideV)
+        assertFalse(s.arrangeGuideH)
+        assertNull(s.arrangeReadout)
+        // The draft itself survives — only the feedback clears.
+        assertEquals(0.5, s.arrangeDraft!!.anchorX, 1e-9)
+    }
+
+    // ── corner-handle resize ────────────────────────────────────────────────
+
+    @Test
+    fun `handle resize scales from the gesture-start scale`() {
+        arrange.enterArrangeMode()
+
+        // Default board scale is 0.98 (WIDTH_MAX); -70px → ×0.5.
+        arrange.resizeBoardHandle(-70f)
+
+        val draft = state.value.arrangeDraft!!
+        assertEquals(0.49, draft.boardScale(), 1e-6)
+        assertEquals("BOARD WIDTH 49%", state.value.arrangeReadout)
+    }
+
+    @Test
+    fun `handle resize keeps one baseline across a gesture and clamps at the bounds`() {
+        arrange.enterArrangeMode()
+
+        // Both calls in one gesture scale from the same 0.98 start, clamped to the minimum.
+        arrange.resizeBoardHandle(-70f)
+        arrange.resizeBoardHandle(-140f)
+        assertEquals(OverlayLayoutPrefs.BOARD_SCALE_MIN, state.value.arrangeDraft!!.boardScale(), 1e-6)
+
+        // A new gesture re-baselines from the clamped scale and clamps at the maximum.
+        arrange.dragEnded()
+        arrange.resizeBoardHandle(1400f)
+        assertEquals(OverlayLayoutPrefs.WIDTH_MAX, state.value.arrangeDraft!!.boardScale(), 1e-6)
+    }
+
+    @Test
+    fun `pinch publishes the width readout`() {
+        arrange.enterArrangeMode()
+
+        arrange.pinchBoard(0.5f)
+
+        assertEquals("BOARD WIDTH 49%", state.value.arrangeReadout)
     }
 }

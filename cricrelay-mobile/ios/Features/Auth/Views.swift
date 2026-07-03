@@ -8,14 +8,24 @@ enum CricTheme {
     static let surface           = Color(red: 0.078, green: 0.102, blue: 0.149)   // #141A26
     static let surfaceElevated   = Color(red: 0.110, green: 0.141, blue: 0.200)   // #1C2433
     static let primary           = Color(red: 1.0,   green: 0.761, blue: 0.2)     // #FFC233
+    static let primaryBright     = Color(red: 1.0,   green: 0.820, blue: 0.361)   // #FFD15C
     static let primaryDeep       = Color(red: 0.910, green: 0.663, blue: 0.071)   // #E8A912
     static let onPrimary         = Color(red: 0.102, green: 0.075, blue: 0.020)   // #1A1305
     static let accent            = Color(red: 0.341, green: 0.780, blue: 1.0)     // #57C7FF
     static let accentBlue        = Color(red: 0.302, green: 0.639, blue: 1.0)     // #4DA3FF
     static let danger            = Color(red: 1.0,   green: 0.361, blue: 0.478)   // #FF5C7A
-    static let warning           = Color(red: 1.0,   green: 0.647, blue: 0.0)     // #FFA500
+    static let warning           = Color(red: 1.0,   green: 0.580, blue: 0.400)   // #FF9466 coral
     static let textMuted         = Color(red: 0.780, green: 0.804, blue: 0.851)   // #C7CDD9
     static let textDim           = Color(red: 0.596, green: 0.631, blue: 0.702)   // #98A1B3
+    static let border            = Color(red: 0.196, green: 0.231, blue: 0.302)   // #323B4D
+    static let borderSubtle      = Color(red: 0.133, green: 0.165, blue: 0.227)   // #222A3A
+
+    // Surfaces over live video (SPEC glass pill / dock / readiness ring)
+    static let glassPillBg       = Color(red: 0.035, green: 0.051, blue: 0.078).opacity(0.78)  // rgba(9,13,20,0.78)
+    static let glassBorder       = Color.white.opacity(0.20)
+    static let dockBg            = Color(red: 0.027, green: 0.039, blue: 0.063).opacity(0.85)  // rgba(7,10,16,0.85)
+    static let dockBorder        = Color.white.opacity(0.14)
+    static let ringTrack         = Color.white.opacity(0.18)
 
     static var ctaGradient: LinearGradient {
         LinearGradient(colors: [primary, primaryDeep], startPoint: .topLeading, endPoint: .bottomTrailing)

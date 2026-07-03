@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B0F16;font-family:"DM Sans",system-ui,sans-serif}
+.dv-turn{padding:40px 44px 36px;scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 8px}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(255,255,255,0.92);color:#0B0F16;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13px/1.2 "DM Sans",system-ui,sans-serif;color:#E8ECF4}
+.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(255,255,255,0.1);color:#E8ECF4;border-radius:5px;text-decoration:none}
+.blk{margin:30px 0 0}
+.blk-t{font:700 11px "DM Sans",system-ui,sans-serif;color:#E8ECF4;letter-spacing:1.4px;margin:0 0 12px}
+.cap{font:500 10px ui-monospace,Menlo,monospace;color:#98A1B3}
+.row{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
+.itm{display:flex;flex-direction:column;gap:7px;scroll-margin-top:16px}
+.itm:target .dv-oid{background:#57C7FF;color:#071018}
+@media (prefers-reduced-motion:reduce){*{animation:none !important}}
+</style>
+</helmet>
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">S</a><span class="dv-tname">Scoreboard overlay — standalone spec (composited into the stream; integrate if wanted)</span></div>
+<div style="max-width:960px;font:11px/1.7 'DM Sans';color:#98A1B3">The board is the only broadcast-grade text in the frame: Archivo 800 for team + score, DM Sans for support data. One accent element per preset (the score). Sized by the Board Edit sliders — width 25–98%, height 10–28%, font 60–200%, opacity 20–100%. Placement is Arrange-mode drag only (sponsor too — it is never fixed).</div>
+
+<div class="blk">
+<div class="blk-t">ANATOMY</div>
+<div class="row">
+<div class="itm">
+<div style="position:relative;width:660px;height:180px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;left:0;right:0;top:56%;height:34%;clip-path:polygon(44% 0,56% 0,63% 100%,37% 100%);background:linear-gradient(180deg,#4d4836,#3f3b2b);opacity:0.7"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:14px;bottom:14px;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(10,14,21,0.88);padding:9px 15px;gap:13px"><span style="font:800 16px Archivo;color:#FFFFFF;letter-spacing:0.3px">ASHCOMBE CC</span><span style="font:800 19px Archivo;color:#FFC233">142/3</span><span style="font:700 13.5px 'DM Sans';color:#C7CDD9">28.4 OV</span></div>
+<div style="display:flex;background:rgba(7,10,16,0.82);padding:5px 15px;gap:13px"><span style="font:500 12px 'DM Sans';color:#C7CDD9">R Patel 61*</span><span style="font:500 12px 'DM Sans';color:#98A1B3">J Whitely 24*</span><span style="font:500 12px 'DM Sans';color:#98A1B3">Target 219</span></div>
+</div>
+</div>
+<div style="display:flex;flex-wrap:wrap;gap:14px;max-width:660px">
+<div style="display:flex;align-items:center;gap:6px"><div style="width:9px;height:9px;border-radius:2px;background:#FFFFFF"></div><span class="cap">TEAM — Archivo 800, white/ink per preset</span></div>
+<div style="display:flex;align-items:center;gap:6px"><div style="width:9px;height:9px;border-radius:2px;background:#FFC233"></div><span class="cap">SCORE — the one accent element</span></div>
+<div style="display:flex;align-items:center;gap:6px"><div style="width:9px;height:9px;border-radius:2px;background:#C7CDD9"></div><span class="cap">OVERS — muted tier</span></div>
+<div style="display:flex;align-items:center;gap:6px"><div style="width:9px;height:9px;border-radius:2px;background:#98A1B3"></div><span class="cap">STRIP — batsmen + context, dimmer, auto-hides at min height</span></div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="blk">
+<div class="blk-t">ISLAND PAIR — BATTING + BOWLING</div>
+<div class="row">
+<div class="itm" id="i1">
+<div style="display:flex;align-items:baseline;gap:8px"><a class="dv-oid" href="#i1">I1</a><span class="cap">PAIR — bowling island takes the preset's CONTRAST surface (P1: gold on dark); drags with the board, toggles Bowler / Off</span></div>
+<div style="position:relative;width:660px;height:180px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;left:0;right:0;top:56%;height:34%;clip-path:polygon(44% 0,56% 0,63% 100%,37% 100%);background:linear-gradient(180deg,#4d4836,#3f3b2b);opacity:0.7"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:14px;bottom:14px;display:flex;align-items:flex-end;gap:10px">
+<div style="border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(10,14,21,0.88);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#FFFFFF">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#FFC233">142/3</span><span style="font:700 11px 'DM Sans';color:#C7CDD9">28.4 OV</span></div>
+<div style="display:flex;background:rgba(7,10,16,0.82);padding:4px 12px;gap:10px"><span style="font:500 10px 'DM Sans';color:#C7CDD9">R Patel 61*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">J Whitely 24*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">Target 219</span></div>
+</div>
+<div style="border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:linear-gradient(180deg,#FFD15C,#E8A912);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#1A1305">T HALE</span><span style="font:800 15px Archivo;color:#1A1305">2-34</span><span style="font:700 11px 'DM Sans';color:rgba(26,19,5,0.65)">7.4 OV</span></div>
+<div style="display:flex;align-items:center;background:rgba(7,10,16,0.82);padding:4px 12px;gap:8px"><span style="font:700 8.5px 'DM Sans';color:#98A1B3;letter-spacing:0.8px">THIS OVER</span><span style="font:700 10px 'DM Sans';color:#C7CDD9">·</span><span style="font:700 10px 'DM Sans';color:#C7CDD9">1</span><span style="font:800 10px 'DM Sans';color:#FFC233">4</span><span style="font:800 10px 'DM Sans';color:#FF9466">W</span><span style="font:700 10px 'DM Sans';color:#C7CDD9">2</span></div>
+</div>
+</div>
+</div>
+</div>
+<div class="itm" id="i2">
+<div style="display:flex;align-items:baseline;gap:8px"><a class="dv-oid" href="#i2">I2</a><span class="cap">PAIR IN P2 — contrast pairing per preset (cream batting / club-green bowling)</span></div>
+<div style="position:relative;width:460px;height:110px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;display:flex;align-items:flex-end;gap:8px">
+<div style="border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(242,237,226,0.95);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#1A1305">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#2E5E32">142/3</span><span style="font:700 11px 'DM Sans';color:rgba(26,19,5,0.62)">28.4 OV</span></div>
+</div>
+<div style="border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(46,94,50,0.95);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#FFFFFF">T HALE</span><span style="font:800 15px Archivo;color:#FFC233">2-34</span><span style="font:700 11px 'DM Sans';color:#D8C9A3">7.4</span></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="blk">
+<div class="blk-t">COLOUR PRESETS — Board Edit's 5</div>
+<div class="row">
+<div class="itm" id="p1">
+<div style="display:flex;align-items:baseline;gap:8px"><a class="dv-oid" href="#p1">P1</a><span class="cap">FLOODLIGHT — default, matches app</span></div>
+<div style="position:relative;width:460px;height:120px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(10,14,21,0.88);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#FFFFFF">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#FFC233">142/3</span><span style="font:700 11px 'DM Sans';color:#C7CDD9">28.4 OV</span></div>
+<div style="display:flex;background:rgba(7,10,16,0.82);padding:4px 12px;gap:10px"><span style="font:500 10px 'DM Sans';color:#C7CDD9">R Patel 61*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">J Whitely 24*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">Target 219</span></div>
+</div>
+</div>
+</div>
+<div class="itm" id="p2">
+<div style="display:flex;align-items:baseline;gap:8px"><a class="dv-oid" href="#p2">P2</a><span class="cap">CHALK — cream + club green score</span></div>
+<div style="position:relative;width:460px;height:120px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(242,237,226,0.95);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#1A1305">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#2E5E32">142/3</span><span style="font:700 11px 'DM Sans';color:rgba(26,19,5,0.62)">28.4 OV</span></div>
+<div style="display:flex;background:rgba(230,224,209,0.95);padding:4px 12px;gap:10px"><span style="font:500 10px 'DM Sans';color:rgba(26,19,5,0.75)">R Patel 61*</span><span style="font:500 10px 'DM Sans';color:rgba(26,19,5,0.55)">J Whitely 24*</span><span style="font:500 10px 'DM Sans';color:rgba(26,19,5,0.55)">Target 219</span></div>
+</div>
+</div>
+</div>
+<div class="itm" id="p3">
+<div style="display:flex;align-items:baseline;gap:8px"><a class="dv-oid" href="#p3">P3</a><span class="cap">CLUB GREEN — 1e brand green + gold</span></div>
+<div style="position:relative;width:460px;height:120px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(30,61,34,0.92);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#FFFFFF">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#FFC233">142/3</span><span style="font:700 11px 'DM Sans';color:#D8C9A3">28.4 OV</span></div>
+<div style="display:flex;background:rgba(21,45,24,0.92);padding:4px 12px;gap:10px"><span style="font:500 10px 'DM Sans';color:#D8C9A3">R Patel 61*</span><span style="font:500 10px 'DM Sans';color:rgba(216,201,163,0.7)">J Whitely 24*</span><span style="font:500 10px 'DM Sans';color:rgba(216,201,163,0.7)">Target 219</span></div>
+</div>
+</div>
+</div>
+<div class="itm" id="p4">
+<div style="display:flex;align-items:baseline;gap:8px"><a class="dv-oid" href="#p4">P4</a><span class="cap">BROADCAST BLUE — deep blue + sky score</span></div>
+<div style="position:relative;width:460px;height:120px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(14,42,74,0.92);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#FFFFFF">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#57C7FF">142/3</span><span style="font:700 11px 'DM Sans';color:#C7CDD9">28.4 OV</span></div>
+<div style="display:flex;background:rgba(10,32,58,0.92);padding:4px 12px;gap:10px"><span style="font:500 10px 'DM Sans';color:#C7CDD9">R Patel 61*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">J Whitely 24*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">Target 219</span></div>
+</div>
+</div>
+</div>
+<div class="itm" id="p5">
+<div style="display:flex;align-items:baseline;gap:8px"><a class="dv-oid" href="#p5">P5</a><span class="cap">MONO — max legibility, no accent</span></div>
+<div style="position:relative;width:460px;height:120px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(0,0,0,0.92);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#FFFFFF">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#FFFFFF">142/3</span><span style="font:700 11px 'DM Sans';color:rgba(255,255,255,0.72)">28.4 OV</span></div>
+<div style="display:flex;background:rgba(0,0,0,0.85);padding:4px 12px;gap:10px"><span style="font:500 10px 'DM Sans';color:rgba(255,255,255,0.72)">R Patel 61*</span><span style="font:500 10px 'DM Sans';color:rgba(255,255,255,0.55)">J Whitely 24*</span><span style="font:500 10px 'DM Sans';color:rgba(255,255,255,0.55)">Target 219</span></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="blk">
+<div class="blk-t">SUNLIGHT TEST — bright afternoon frame</div>
+<div class="row">
+<div class="itm">
+<div style="position:relative;width:460px;height:120px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#a9c2dd 0%,#8fadd0 32%,#7fa0c4 40%,#55823f 42%,#47702f 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 60%,rgba(15,25,10,0.3) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.35)">
+<div style="display:flex;align-items:center;background:rgba(10,14,21,0.88);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#FFFFFF">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#FFC233">142/3</span><span style="font:700 11px 'DM Sans';color:#C7CDD9">28.4 OV</span></div>
+<div style="display:flex;background:rgba(7,10,16,0.82);padding:4px 12px;gap:10px"><span style="font:500 10px 'DM Sans';color:#C7CDD9">R Patel 61*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">J Whitely 24*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">Target 219</span></div>
+</div>
+</div>
+<span class="cap">P1 over bright grass — holds ≈10:1</span>
+</div>
+<div class="itm">
+<div style="position:relative;width:460px;height:120px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#a9c2dd 0%,#8fadd0 32%,#7fa0c4 40%,#55823f 42%,#47702f 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 60%,rgba(15,25,10,0.3) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.35)">
+<div style="display:flex;align-items:center;background:rgba(242,237,226,0.95);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#1A1305">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#2E5E32">142/3</span><span style="font:700 11px 'DM Sans';color:rgba(26,19,5,0.62)">28.4 OV</span></div>
+<div style="display:flex;background:rgba(230,224,209,0.95);padding:4px 12px;gap:10px"><span style="font:500 10px 'DM Sans';color:rgba(26,19,5,0.75)">R Patel 61*</span><span style="font:500 10px 'DM Sans';color:rgba(26,19,5,0.55)">J Whitely 24*</span><span style="font:500 10px 'DM Sans';color:rgba(26,19,5,0.55)">Target 219</span></div>
+</div>
+</div>
+<span class="cap">P2 over bright grass — needs its edge shadow</span>
+</div>
+</div>
+</div>
+
+<div class="blk">
+<div class="blk-t">DATA STATES</div>
+<div class="row">
+<div class="itm" id="d1">
+<div style="display:flex;align-items:baseline;gap:8px"><a class="dv-oid" href="#d1">D1</a><span class="cap">1ST INNINGS — CRR instead of target</span></div>
+<div style="position:relative;width:460px;height:110px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(10,14,21,0.88);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#FFFFFF">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#FFC233">142/3</span><span style="font:700 11px 'DM Sans';color:#C7CDD9">28.4 OV</span></div>
+<div style="display:flex;background:rgba(7,10,16,0.82);padding:4px 12px;gap:10px"><span style="font:500 10px 'DM Sans';color:#C7CDD9">R Patel 61*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">J Whitely 24*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">CRR 4.97</span></div>
+</div>
+</div>
+</div>
+<div class="itm" id="d2">
+<div style="display:flex;align-items:baseline;gap:8px"><a class="dv-oid" href="#d2">D2</a><span class="cap">CHASE — target + requirement</span></div>
+<div style="position:relative;width:460px;height:110px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(10,14,21,0.88);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#FFFFFF">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#FFC233">142/3</span><span style="font:700 11px 'DM Sans';color:#C7CDD9">28.4 OV</span></div>
+<div style="display:flex;background:rgba(7,10,16,0.82);padding:4px 12px;gap:10px"><span style="font:500 10px 'DM Sans';color:#C7CDD9">R Patel 61*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">J Whitely 24*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">Target 219 · need 77 (33)</span></div>
+</div>
+</div>
+</div>
+<div class="itm" id="d3">
+<div style="display:flex;align-items:baseline;gap:8px"><a class="dv-oid" href="#d3">D3</a><span class="cap">WICKET — coral flash, auto-clears ~4s</span></div>
+<div style="position:relative;width:460px;height:110px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(10,14,21,0.88);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#FFFFFF">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#FF9466">142/4</span><span style="font:700 11px 'DM Sans';color:#C7CDD9">28.5 OV</span><span style="display:flex;align-items:center;gap:5px;background:rgba(255,148,102,0.16);border:1px solid rgba(255,148,102,0.6);border-radius:6px;padding:2px 7px"><span style="font:800 10px Archivo;color:#FF9466">W</span><span style="font:500 9.5px 'DM Sans';color:#FF9466">Patel c Wood 61</span></span></div>
+<div style="display:flex;background:rgba(7,10,16,0.82);padding:4px 12px;gap:10px"><span style="font:500 10px 'DM Sans';color:#C7CDD9">J Whitely 24*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">A Cole 0*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">Target 219</span></div>
+</div>
+</div>
+</div>
+<div class="itm" id="d4">
+<div style="display:flex;align-items:baseline;gap:8px"><a class="dv-oid" href="#d4">D4</a><span class="cap">MANUAL SCORER — score only, one row</span></div>
+<div style="position:relative;width:460px;height:110px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(10,14,21,0.88);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#FFFFFF">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#FFC233">142/3</span><span style="font:700 11px 'DM Sans';color:#C7CDD9">28.4 OV</span></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="blk">
+<div class="blk-t">SCALE &amp; OPACITY — slider extremes</div>
+<div class="row">
+<div class="itm">
+<div style="position:relative;width:460px;height:110px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:7px;overflow:hidden;box-shadow:0 3px 10px rgba(0,0,0,0.4)">
+<div style="display:flex;align-items:center;background:rgba(10,14,21,0.88);padding:4px 8px;gap:6px"><span style="font:800 8px Archivo;color:#FFFFFF">ASHCOMBE CC</span><span style="font:800 9px Archivo;color:#FFC233">142/3</span><span style="font:700 7px 'DM Sans';color:#C7CDD9">28.4 OV</span></div>
+<div style="display:flex;background:rgba(7,10,16,0.82);padding:2.5px 8px;gap:6px"><span style="font:500 6.5px 'DM Sans';color:#C7CDD9">R Patel 61*</span><span style="font:500 6.5px 'DM Sans';color:#98A1B3">J Whitely 24*</span><span style="font:500 6.5px 'DM Sans';color:#98A1B3">Target 219</span></div>
+</div>
+</div>
+<span class="cap">FONT 60% (min)</span>
+</div>
+<div class="itm">
+<div style="position:relative;width:460px;height:140px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:14px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,0.45)">
+<div style="display:flex;align-items:center;background:rgba(10,14,21,0.88);padding:11px 18px;gap:16px"><span style="font:800 26px Archivo;color:#FFFFFF">ASHCOMBE CC</span><span style="font:800 30px Archivo;color:#FFC233">142/3</span><span style="font:700 22px 'DM Sans';color:#C7CDD9">28.4 OV</span></div>
+</div>
+</div>
+<span class="cap">FONT 200% (max) — strip auto-hidden at min board height</span>
+</div>
+<div class="itm">
+<div style="position:relative;width:460px;height:110px;border-radius:14px;overflow:hidden;border:1px solid #222A3A;flex:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2a3b 30%,#17222f 42%,#1f2b21 44%,#18231b 100%)"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(120% 160% at 50% 40%,rgba(0,0,0,0) 50%,rgba(3,5,9,0.55) 100%)"></div>
+<div style="position:absolute;left:12px;bottom:12px;border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4);opacity:0.5">
+<div style="display:flex;align-items:center;background:rgba(10,14,21,0.88);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#FFFFFF">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#FFC233">142/3</span><span style="font:700 11px 'DM Sans';color:#C7CDD9">28.4 OV</span></div>
+<div style="display:flex;background:rgba(7,10,16,0.82);padding:4px 12px;gap:10px"><span style="font:500 10px 'DM Sans';color:#C7CDD9">R Patel 61*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">J Whitely 24*</span><span style="font:500 10px 'DM Sans';color:#98A1B3">Target 219</span></div>
+</div>
+</div>
+<span class="cap">OPACITY 50% — floor is 20% but warn below 60% (sunlight)</span>
+</div>
+</div>
+</div>
+
+<div class="blk">
+<div class="blk-t">MOTION</div>
+<div style="max-width:700px;padding:13px 16px;border:1px solid rgba(255,255,255,0.12);border-radius:14px;background:rgba(255,255,255,0.03);font:10.5px/1.9 ui-monospace,Menlo,monospace;color:#98A1B3">SCORE CHANGE — digit ticks up 160ms ease-out, no slide &nbsp;·&nbsp; WICKET — chip enters 240ms ease-out from 95% scale, holds ~4s, exits 160ms; score turns coral then back with the chip &nbsp;·&nbsp; STYLE EDITS — apply live with ~80ms debounce, no transition (broadcast never "animates" a settings change) &nbsp;·&nbsp; POSITION — never animates; board is dragged in Arrange only, sponsor likewise (draggable, not fixed)</div>
+</div>
+
+</section>
+<template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" rx="16" fill="#1E3D22"/><rect x="28" y="46" width="64" height="28" rx="6" fill="#0A0E15"/><text x="60" y="66" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="800" fill="#FFC233">142</text></svg></template></x-dc>
+</body>
+</html>

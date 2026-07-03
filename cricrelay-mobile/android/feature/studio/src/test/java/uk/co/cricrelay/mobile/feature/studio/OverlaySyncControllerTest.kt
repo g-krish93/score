@@ -59,6 +59,23 @@ class OverlaySyncControllerTest {
     }
 
     @Test
+    fun `board preset and bowler island survive the local-first flow`() = runTest {
+        val state = MutableStateFlow(StudioUiState(match = match, loading = false))
+        val sync = controller(state, this)
+        val prefs = OverlayLayoutPrefs(theme = "club-green", bowlingIslandEnabled = false)
+
+        sync.updateOverlayPrefs(prefs)
+
+        // Committed state and the local cache both carry the preset id + island flag.
+        assertEquals("club-green", state.value.overlayPrefs.theme)
+        assertEquals(false, state.value.overlayPrefs.bowlingIslandEnabled)
+        verify { localPrefs.saveOverlayPrefs(match.slug, prefs) }
+
+        advanceUntilIdle()
+        coVerify { streamRepository.setOverlayPrefs(match.slug, prefs) }
+    }
+
+    @Test
     fun `server mirror failure never reverts the local studio`() = runTest {
         coEvery { streamRepository.setOverlayPrefs(any(), any()) } throws RuntimeException("offline")
         val state = MutableStateFlow(StudioUiState(match = match, loading = false))

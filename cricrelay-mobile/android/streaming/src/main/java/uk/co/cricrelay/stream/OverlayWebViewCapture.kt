@@ -62,6 +62,8 @@ class OverlayWebViewCapture(private val activity: Activity) {
     @Volatile private var bgColor: String = ""
     @Volatile private var textColor: String = ""
     @Volatile private var overlayTheme: String = "barlow"
+    @Volatile private var bowlingIslandEnabled: Boolean = true
+    @Volatile private var compactBoard: Boolean = false
     @Volatile private var lastLoadedUrl: String = ""
 
     /** Physical bitmap width — tracks the encoded RTMP frame width (varies by phone tier / orientation). */
@@ -83,6 +85,16 @@ class OverlayWebViewCapture(private val activity: Activity) {
         private const val MIN_CAPTURE_HEIGHT_PX = 40
         private const val MAX_CAPTURE_HEIGHT_PX = 640
         private const val MEASURE_INTERVAL_MS = 2000L
+
+        /** Board height fractions at or below this hide the batsmen strip (body.fl-compact). */
+        private const val COMPACT_HEIGHT_FRACTION_MAX = 0.11f
+
+        /**
+         * Fonts-ready soft gate (D5): don't latch a capture height until the page's web fonts
+         * have loaded OR this long has passed since navigation start, so offline/no-fonts
+         * sessions still stream with fallback faces instead of never measuring.
+         */
+        private const val FONTS_READY_TIMEOUT_MS = 5000
 
         /**
          * Extra CSS px added below the measured widget height. Now 0: the injected capture CSS
@@ -123,16 +135,32 @@ class OverlayWebViewCapture(private val activity: Activity) {
 
     private fun initialScalePercent(): Int = captureWidthPx * 100 / DESIGN_WIDTH_PX
 
-    fun setStyle(fontScale: Float, bgColor: String, textColor: String, theme: String = "barlow") {
+    fun setStyle(
+        fontScale: Float,
+        bgColor: String,
+        textColor: String,
+        theme: String = "barlow",
+        heightFraction: Float = 0.16f,
+        bowlingIslandEnabled: Boolean = true,
+    ) {
         this.fontScale = fontScale.coerceIn(0.6f, 2.0f)
         this.bgColor = bgColor.trim()
         this.textColor = textColor.trim()
         val nextTheme = theme.trim().lowercase().ifBlank { "barlow" }
         val themeChanged = nextTheme != overlayTheme
         overlayTheme = nextTheme
+        // Strip auto-hide (D7): at the lowest board heights the page drops its second row, and
+        // the island toggles a whole extra box — both change the widget's true height, so treat
+        // them like a theme change and re-latch immediately (else up to 2s of stretched sprite).
+        val nextCompact = heightFraction <= COMPACT_HEIGHT_FRACTION_MAX
+        val compactChanged = nextCompact != compactBoard
+        compactBoard = nextCompact
+        val islandChanged = bowlingIslandEnabled != this.bowlingIslandEnabled
+        this.bowlingIslandEnabled = bowlingIslandEnabled
+        val boardChanged = themeChanged || compactChanged || islandChanged
         runOnMain {
-            if (themeChanged) captureHeightPx = 0
-            applyMeasureScript(triggerCapture = pageLoaded, themeChanged = themeChanged)
+            if (boardChanged) captureHeightPx = 0
+            applyMeasureScript(triggerCapture = pageLoaded, themeChanged = boardChanged)
         }
     }
 
@@ -192,12 +220,21 @@ class OverlayWebViewCapture(private val activity: Activity) {
         // frame's bottom edge by the height of the transparent band (the "not sticking" bug).
         css.append("body.board-barlow .sb-wrap{padding-bottom:0 !important;}")
         css.append("body.board-barlow .sb-bar{box-shadow:none !important;}")
+        // Floodlight-family equivalents (preset boards). Scoped under body.board-floodlight so
+        // they are inert on the legacy barlow board and on old server HTML without the new DOM.
+        css.append("body.board-floodlight .fl-wrap{padding-bottom:0 !important;}")
+        css.append(
+            "body.board-floodlight .fl-board,body.board-floodlight .fl-island" +
+                "{box-shadow:none !important;}",
+        )
         // Mobile composites the sponsor NATIVELY on the GL layer. The HTML page also renders its own
         // sponsor (#sponsor-root, for the web/OBS path) — hide it in the capture so it isn't baked
         // into the board bitmap as a duplicate logo that ignores the native placement.
         css.append("#sponsor-root,#sponsor-wrap{display:none !important;}")
         // Map the operator's box / text colour prefs onto the overlay's theme variables.
-        if (bg.isNotEmpty() || fg.isNotEmpty()) {
+        // Barlow-only (D3): the new presets are exact surfaces — free-colour overrides must
+        // not leak into them, so the legacy --bg/--sb-navy remap stays gated on barlow.
+        if (overlayTheme == "barlow" && (bg.isNotEmpty() || fg.isNotEmpty())) {
             css.append("body.board-barlow{")
             if (bg.isNotEmpty()) {
                 css.append("--sb-navy:$bg !important;--sb-dot-dark:$bg !important;")
@@ -214,7 +251,8 @@ class OverlayWebViewCapture(private val activity: Activity) {
         return css.toString()
     }
 
-    private fun themeClassScript(): String = OverlayThemeBridge.applyThemeScript(overlayTheme)
+    private fun themeClassScript(): String =
+        OverlayThemeBridge.applyThemeScript(overlayTheme, bowlingIslandEnabled, compactBoard)
 
     /**
      * Ensure the persistent style tag exists (head survives content rebuilds, but be
@@ -246,6 +284,8 @@ class OverlayWebViewCapture(private val activity: Activity) {
       return JSON.stringify({ready:false,why:'loading'});}
     var r=o.getBoundingClientRect();
     if(r.height<8){return JSON.stringify({ready:false,why:'zero-rect'});}
+    if(document.fonts&&document.fonts.status!=='loaded'&&performance.now()<$FONTS_READY_TIMEOUT_MS){
+      return JSON.stringify({ready:false,why:'fonts'});}
     return JSON.stringify({ready:true,h:Math.ceil(r.bottom)+$CAPTURE_BOTTOM_PAD_CSS});
   }catch(e){return JSON.stringify({ready:false,why:String(e)});}
 })();

@@ -40,15 +40,12 @@ enum class StudioSheet {
     Destination,
     Overlay,
     Scoring,
-    Preflight,
+    Camera,
     Menu,
 }
 
 /** What the Arrange-mode drag gesture moves (pinch always scales the board). */
 enum class ArrangeTarget { Board, Sponsor }
-
-/** Steps of the first-run guided precheck shown before the first Go Live. */
-enum class PrecheckStep { Camera, Arrange, Ready }
 
 /**
  * Studio orientation control. Auto follows the physical sensor (system auto-rotate willing);
@@ -69,6 +66,8 @@ data class StudioUiState(
     val busy: Boolean = false,
     val match: StreamMatch? = null,
     val previewReady: Boolean = false,
+    // Device tier default: true when this phone captures + streams 1080p (checklist sublabel).
+    val supports1080p: Boolean = false,
     val streaming: Boolean = false,
     val paused: Boolean = false,
     // Mid-broadcast connection drop; the engine is retrying on its own (amber banner, still live).
@@ -100,9 +99,10 @@ data class StudioUiState(
     val arrangeMode: Boolean = false,
     val arrangeTarget: ArrangeTarget = ArrangeTarget.Board,
     val arrangeDraft: OverlayLayoutPrefs? = null,
-    // First-run guided precheck (Camera → Arrange → Ready), gating the first Go Live.
-    val precheckActive: Boolean = false,
-    val precheckStep: PrecheckStep = PrecheckStep.Camera,
+    // Arrange-mode snap feedback: gold centre guides + the live monospace readout pill.
+    val arrangeGuideV: Boolean = false,
+    val arrangeGuideH: Boolean = false,
+    val arrangeReadout: String? = null,
     val orientationMode: OrientationMode = OrientationMode.Auto,
     // Broadcast health for the on-screen HUD (~1/sec while live; null when not streaming).
     val streamStats: uk.co.cricrelay.stream.StreamCameraEngine.StreamStats? = null,
@@ -163,13 +163,6 @@ class StudioViewModel @Inject constructor(
             streamController.status.collect { status ->
                 _uiState.update {
                     it.copy(
-                        // Camera step of the first-run precheck auto-completes when the preview
-                        // comes up; an already-live broadcast dismisses the precheck entirely.
-                        precheckActive = it.precheckActive && !status.streaming,
-                        precheckStep = if (
-                            it.precheckActive && it.precheckStep == PrecheckStep.Camera &&
-                            status.previewReady
-                        ) PrecheckStep.Arrange else it.precheckStep,
                         previewReady = status.previewReady,
                         streaming = status.streaming,
                         paused = status.paused,
@@ -277,9 +270,6 @@ class StudioViewModel @Inject constructor(
                 customRtmpUrl = creds.rtmpUrl,
                 customStreamKey = creds.streamKey,
                 customWatchUrl = creds.watchUrl,
-                // Guided first-run precheck (Camera → Arrange → Ready) — never mid-broadcast.
-                precheckActive = !it.streaming && !rtmpStore.isPrecheckDone(),
-                precheckStep = if (it.previewReady) PrecheckStep.Arrange else PrecheckStep.Camera,
             )
         }
         // Start overlay WebView load immediately; don't wait for overlay prefs API.
@@ -345,6 +335,10 @@ class StudioViewModel @Inject constructor(
             when (cmd.type) {
                 "control" -> when (cmd.command) {
                     "start_broadcast" -> {
+                        // Intentional asymmetry with the on-screen checklist gate: the remote
+                        // companion is gated on destination only. It can't open sheets on this
+                        // phone, and camera/scoring problems surface in-stream — a remote
+                        // operator would rather go live imperfect than not at all.
                         if (!_uiState.value.streaming && _uiState.value.destinationReady) {
                             goLive()
                         }
@@ -436,6 +430,7 @@ class StudioViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 previewReady = ready,
+                supports1080p = streamController.supports1080p(),
                 statusMessage = if (ready) "Camera ready" else "Starting camera…",
             )
         }
@@ -462,20 +457,15 @@ class StudioViewModel @Inject constructor(
     /** Pinch: [zoom] is the incremental scale ratio (~1.0) from the transform gesture. */
     fun pinchBoard(zoom: Float) = arrange.pinchBoard(zoom)
 
-    /** Drag the active target by a fraction of the preview (dy<0 = up). */
-    fun dragArrange(dxFraction: Float, dyFraction: Float) = arrange.dragArrange(dxFraction, dyFraction)
+    /** Drag the active target by a fraction of the preview (dy<0 = up); px sizes drive snapping. */
+    fun dragArrange(dxFraction: Float, dyFraction: Float, previewWidthPx: Float, previewHeightPx: Float) =
+        arrange.dragArrange(dxFraction, dyFraction, previewWidthPx, previewHeightPx)
 
-    // ── First-run precheck ──────────────────────────────────────────────────────
+    /** Corner-handle resize: [totalDxPx] is the cumulative drag from the gesture start. */
+    fun resizeBoardHandle(totalDxPx: Float) = arrange.resizeBoardHandle(totalDxPx)
 
-    fun precheckStartArrange() {
-        _uiState.update { it.copy(precheckStep = PrecheckStep.Arrange) }
-        enterArrangeMode()
-    }
-
-    fun finishPrecheck() {
-        rtmpStore.setPrecheckDone()
-        _uiState.update { it.copy(precheckActive = false) }
-    }
+    /** Arrange gesture lifted — clear snap guides, the readout, and the resize baseline. */
+    fun arrangeDragEnded() = arrange.dragEnded()
 
     private fun startMatchDayPolling(slug: String) {
         matchDayJob?.cancel()
@@ -612,16 +602,31 @@ class StudioViewModel @Inject constructor(
         setZoom(base * scale)
     }
 
+    /** Open the sheet a checklist row points at (also where a blocked Go Live tap lands). */
+    fun openCheckSheet(kind: CheckKind) = openSheet(
+        when (kind) {
+            CheckKind.Camera -> StudioSheet.Camera
+            CheckKind.Destination -> StudioSheet.Destination
+            CheckKind.Scoring -> StudioSheet.Scoring
+        },
+    )
+
+    /**
+     * Checklist gate: all three checks green → straight into the 3-2-1 countdown; otherwise
+     * the blocked ring is still tappable and routes to the first incomplete check's sheet
+     * (blocked-as-guidance, never a dead button).
+     */
     fun requestGoLive() {
         val state = _uiState.value
-        if (!state.previewReady) return
-        // First session: finish the guided precheck before going live.
-        if (state.precheckActive) return
-        if (!state.streaming && !state.destinationReady) {
-            openSheet(StudioSheet.Destination)
-            return
+        // Already connecting (ring shows the spinner) or live — never double-fire.
+        if (state.streaming || state.busy) return
+        val checks = StudioChecklist.deriveChecks(state)
+        val firstIncomplete = StudioChecklist.firstIncomplete(checks)
+        if (firstIncomplete == null) {
+            confirmGoLive()
+        } else {
+            openCheckSheet(firstIncomplete.kind)
         }
-        openSheet(StudioSheet.Preflight)
     }
 
     /** Go Live cinema: 3-2-1 countdown takeover, then connect. Tap anywhere cancels. */

@@ -26,12 +26,14 @@ import uk.co.cricrelay.shared.model.PairRemoteResult
 import uk.co.cricrelay.shared.model.RemoteCommand
 import uk.co.cricrelay.shared.model.RemoteCompanionContext
 import uk.co.cricrelay.shared.model.Sponsor
+import uk.co.cricrelay.shared.model.ScorerLink
 import uk.co.cricrelay.shared.model.ScoringConfig
 import uk.co.cricrelay.shared.model.StreamMatch
 import uk.co.cricrelay.shared.model.array
 import uk.co.cricrelay.shared.model.string
 import uk.co.cricrelay.shared.util.isAllowedApiBaseUrl
 import uk.co.cricrelay.shared.util.normalizeApiBaseUrl
+import uk.co.cricrelay.shared.util.resolveAbsoluteUrl
 
 class ApiException(message: String) : Exception(message)
 
@@ -227,6 +229,46 @@ class CricRelayApiClient(
         val stream = body["stream"] as? JsonObject
             ?: throw ApiException("Could not create stream")
         return StreamMatch.fromJson(stream, baseUrl)
+    }
+
+    suspend fun createManualStream(label: String = ""): StreamMatch {
+        val response = httpClient.post("$baseUrl/api/streams") {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+            setBody(buildJsonObject {
+                put("type", "manual")
+                put("label", label)
+            })
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Could not create stream")
+        val stream = body["stream"] as? JsonObject
+            ?: throw ApiException("Could not create stream")
+        return StreamMatch.fromJson(stream, baseUrl)
+    }
+
+    suspend fun getScorerLink(matchSlug: String): ScorerLink {
+        return try {
+            val response = httpClient.post(matchUri(matchSlug, "scorer-link")) {
+                authHeaders().forEach { (k, v) -> header(k, v) }
+            }
+            val body = parseJsonObject(response)
+            requireSuccess(response, body, "Failed to create scorer link")
+            val url = body.string("scorer_url").orEmpty()
+            if (url.isBlank()) throw ApiException("Scorer link missing from server response")
+            ScorerLink(
+                scorerUrl = resolveAbsoluteUrl(baseUrl, url),
+                expiresAt = body.string("expires_at").orEmpty(),
+            )
+        } catch (e: ApiException) {
+            // Servers without the mint endpoint 404 with an HTML page — fall
+            // back to the static legacy scorer URL (blank expiry hides the
+            // expiry caption in the QR UI).
+            val msg = e.message.orEmpty()
+            val fallbackable = msg.contains("(404)") ||
+                msg.contains("web page instead of JSON") ||
+                msg.contains("Invalid server response")
+            if (fallbackable) ScorerLink(scorerUrl = getScoring(matchSlug).scorerUrl) else throw e
+        }
     }
 
     suspend fun getScoring(matchSlug: String): ScoringConfig {

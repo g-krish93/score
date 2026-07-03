@@ -1,6 +1,7 @@
 package uk.co.cricrelay.shared
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
@@ -13,6 +14,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import uk.co.cricrelay.shared.model.BoardPreset
 import uk.co.cricrelay.shared.model.BroadcastStatus
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.shared.model.SponsorDisplayMode
@@ -103,6 +105,22 @@ class ModelsJsonTest {
     }
 
     @Test
+    fun `stream match parses a manual stream payload`() {
+        val match = StreamMatch.fromJson(
+            buildJsonObject {
+                put("slug", "club-man-ab12")
+                put("label", "3rd XI friendly")
+                put("relay_source", "manual")
+                put("scoring_mode", "manual")
+            },
+            baseUrl = "https://club.example.com",
+        )
+        assertEquals("manual", match.relaySource)
+        assertEquals("manual", match.scoringMode)
+        assertEquals("3rd XI friendly", match.label)
+    }
+
+    @Test
     fun `stream match accepts legacy field aliases`() {
         // Old servers write "paused" and "live" instead of relay_paused / is_live.
         val match = StreamMatch.fromJson(
@@ -169,6 +187,7 @@ class ModelsJsonTest {
         bgColor = "#102030",
         textColor = "#F0F0F0",
         opacity = 0.9,
+        bowlingIslandEnabled = false,
         videoStabilization = true,
         stabilizationLevel = StabilizationLevel.CINEMATIC,
         keepScreenOn = false,
@@ -243,7 +262,47 @@ class ModelsJsonTest {
         assertEquals(SponsorDisplayMode.STATIC, prefs.sponsorDisplayMode)
         assertEquals(SponsorLayoutMode.SINGLE, prefs.sponsorLayoutMode)
         assertEquals(SponsorScrollDirection.RTL, prefs.sponsorScrollDirection)
+        // Unknown theme ids sanitize to the Floodlight default.
+        assertEquals("floodlight", prefs.theme)
+    }
+
+    @Test
+    fun `every board preset id survives a wire round-trip`() {
+        for (preset in BoardPreset.ALL) {
+            val decoded = OverlayLayoutPrefs.fromJson(OverlayLayoutPrefs(theme = preset.id).toJson())
+            assertEquals(preset.id, decoded.theme)
+        }
+    }
+
+    @Test
+    fun `stored barlow theme is preserved for existing users`() {
+        val prefs = OverlayLayoutPrefs.fromJson(buildJsonObject { put("theme", "barlow") })
         assertEquals("barlow", prefs.theme)
+    }
+
+    @Test
+    fun `missing theme falls back to floodlight`() {
+        // Only non-app writers can omit theme — toJson always writes it explicitly.
+        val prefs = OverlayLayoutPrefs.fromJson(buildJsonObject { })
+        assertEquals("floodlight", prefs.theme)
+    }
+
+    @Test
+    fun `bowling island flag round-trips on the wire`() {
+        val offJson = OverlayLayoutPrefs(bowlingIslandEnabled = false).toJson()
+        assertEquals(JsonPrimitive(false), offJson["bowling_island_enabled"])
+        assertFalse(OverlayLayoutPrefs.fromJson(offJson).bowlingIslandEnabled)
+
+        val onJson = OverlayLayoutPrefs(bowlingIslandEnabled = true).toJson()
+        assertEquals(JsonPrimitive(true), onJson["bowling_island_enabled"])
+        assertTrue(OverlayLayoutPrefs.fromJson(onJson).bowlingIslandEnabled)
+    }
+
+    @Test
+    fun `bowling island defaults on when the key is missing from old json`() {
+        // Old caches/servers predate the field; the island must appear by default.
+        val prefs = OverlayLayoutPrefs.fromJson(buildJsonObject { put("theme", "barlow") })
+        assertTrue(prefs.bowlingIslandEnabled)
     }
 
     @Test

@@ -234,6 +234,20 @@ class CreateStreamViewModel @Inject constructor(
             }
         }
     }
+
+    fun createManual(onCreated: (StreamMatch) -> Unit) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(loading = true, error = null) }
+            try {
+                val match = streamRepository.createManualStream(
+                    label = _uiState.value.label.trim().ifBlank { "Manual stream" },
+                )
+                onCreated(match)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = e.message, loading = false) }
+            }
+        }
+    }
 }
 
 fun streamStatusChips(stream: StreamMatch): List<uk.co.cricrelay.mobile.ui.StreamStatusChip> {

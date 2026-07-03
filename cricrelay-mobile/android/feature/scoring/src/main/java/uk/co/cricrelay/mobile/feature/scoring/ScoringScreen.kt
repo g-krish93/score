@@ -45,6 +45,7 @@ fun ScoringScreen(
     matchSlug: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    onShowQr: () -> Unit = {},
     viewModel: ScoringViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -89,6 +90,13 @@ fun ScoringScreen(
                         Spacer(Modifier.height(AppSpacing.md))
                         StatusChip(label = "Mode: ${state.mode}", ok = true)
                         Spacer(Modifier.height(AppSpacing.md))
+                        if (state.mode.equals("manual", ignoreCase = true)) {
+                            PrimaryButton(
+                                text = "Show scorer QR",
+                                onClick = onShowQr,
+                            )
+                            Spacer(Modifier.height(AppSpacing.sm))
+                        }
                         PrimaryButton(
                             text = "Open scorer in browser",
                             enabled = state.scorerUrl.isNotBlank(),

@@ -281,6 +281,12 @@ data class PairRemoteResult(
     val expiresAt: String,
 )
 
+/** Tokenized QR link for the manual scorer webpage. Blank expiresAt = static legacy URL. */
+data class ScorerLink(
+    val scorerUrl: String,
+    val expiresAt: String = "",
+)
+
 object SponsorDisplayMode {
     const val STATIC = "static"
     const val SCROLL_TOP = "scroll_top"
@@ -362,12 +368,15 @@ data class OverlayLayoutPrefs(
     // 0 = board sits flush to the frame's bottom edge (operator can lift it by dragging in Arrange).
     @SerialName("overlay_bottom_margin") val bottomMargin: Double = 0.0,
     @SerialName("overlay_horizontal_inset") val horizontalInset: Double = 0.0,
-    @SerialName("theme") val theme: String = "barlow",
+    /** Board preset id — see [BoardPreset]. Fresh installs get the Floodlight board. */
+    @SerialName("theme") val theme: String = "floodlight",
     // Configurable scoreboard appearance (Board Edit sheet).
     @SerialName("overlay_font_scale") val fontScale: Double = 1.0,
     @SerialName("overlay_bg_color") val bgColor: String = "",
     @SerialName("overlay_text_color") val textColor: String = "",
     @SerialName("overlay_opacity") val opacity: Double = 1.0,
+    // Bowling island: the separate bowler box (figures + THIS OVER strip) beside the board.
+    @SerialName("bowling_island_enabled") val bowlingIslandEnabled: Boolean = true,
     // Wire-compat boolean for old clients/servers; [stabilizationLevel] is the source of truth.
     @SerialName("video_stabilization") val videoStabilization: Boolean = true,
     @SerialName("stabilization_level") val stabilizationLevel: Int = StabilizationLevel.STANDARD,
@@ -458,12 +467,17 @@ data class OverlayLayoutPrefs(
         const val ANCHOR_Y_MAX = 0.97
         const val WATERMARK_DEFAULT_TEXT = "Visit cricrelay.co.uk"
 
-        private val validThemes = setOf("barlow")
+        private val validThemes =
+            setOf("barlow", "floodlight", "chalk", "club-green", "broadcast-blue", "mono")
 
+        /**
+         * Unknown/blank ids fall back to the Floodlight default. Existing caches are safe:
+         * [toJson] has always written `theme` explicitly, so stored barlow boards stay barlow.
+         */
         fun sanitizeTheme(raw: String?): String {
             val t = raw?.trim()?.lowercase().orEmpty()
             if (t in validThemes) return t
-            return "barlow"
+            return "floodlight"
         }
 
         fun fromJson(json: JsonObject): OverlayLayoutPrefs {
@@ -488,6 +502,7 @@ data class OverlayLayoutPrefs(
                 bgColor = json.string("overlay_bg_color") ?: "",
                 textColor = json.string("overlay_text_color") ?: "",
                 opacity = json.string("overlay_opacity")?.toDoubleOrNull() ?: 1.0,
+                bowlingIslandEnabled = json.bool("bowling_island_enabled") != false,
                 videoStabilization = stabilizationLevel > StabilizationLevel.OFF,
                 stabilizationLevel = stabilizationLevel,
                 keepScreenOn = json.bool("keep_screen_on") != false,
@@ -524,6 +539,7 @@ data class OverlayLayoutPrefs(
         put("overlay_bg_color", bgColor)
         put("overlay_text_color", textColor)
         put("overlay_opacity", opacity)
+        put("bowling_island_enabled", bowlingIslandEnabled)
         // Both stabilization fields derive from the level so old readers stay consistent.
         put("video_stabilization", stabilizationLevel > StabilizationLevel.OFF)
         put("stabilization_level", stabilizationLevel)
@@ -596,6 +612,45 @@ data class OverlayLayoutPrefs(
                     ?: emptyList()
             else ->
                 sponsors.filter { it.isActive }.mapNotNull { it.logoUrl?.takeIf { u -> u.isNotBlank() } }.take(6)
+        }
+    }
+}
+
+/**
+ * Scoreboard preset catalogue — the single source of truth for the ids stored in
+ * [OverlayLayoutPrefs.theme], their display names, and the swatch colours the preset
+ * pickers render. Swatches come straight from the Floodlight SPEC: row-1 background
+ * (CSS rgba, as the overlay page paints it) plus the accent used for the score digits.
+ */
+data class BoardPreset(
+    val id: String,
+    val displayName: String,
+    /** Row-1 background as a CSS `rgba()` string (matches the overlay page's preset CSS). */
+    val row1Bg: String,
+    /** Accent colour (score digits / highlights) as a hex string. */
+    val accent: String,
+    /** Pre-Floodlight board kept for existing users; pickers may list it last or hide it. */
+    val legacy: Boolean = false,
+) {
+    companion object {
+        val FLOODLIGHT = BoardPreset("floodlight", "Floodlight", "rgba(10,14,21,0.88)", "#FFC233")
+        val CHALK = BoardPreset("chalk", "Chalk", "rgba(242,237,226,0.95)", "#2E5E32")
+        val CLUB_GREEN = BoardPreset("club-green", "Club Green", "rgba(30,61,34,0.92)", "#FFC233")
+        val BROADCAST_BLUE =
+            BoardPreset("broadcast-blue", "Broadcast Blue", "rgba(14,42,74,0.92)", "#57C7FF")
+        val MONO = BoardPreset("mono", "Mono", "rgba(0,0,0,0.92)", "#FFFFFF")
+
+        /** Legacy Barlow board; swatch mirrors its --sb-navy / --sb-gold CSS variables. */
+        val CLASSIC =
+            BoardPreset("barlow", "Classic", "rgba(22,41,77,1.0)", "#D4A017", legacy = true)
+
+        /** Picker order: the five Floodlight-era presets first, legacy Classic last. */
+        val ALL = listOf(FLOODLIGHT, CHALK, CLUB_GREEN, BROADCAST_BLUE, MONO, CLASSIC)
+
+        /** Resolve a stored theme id (sanitized) to its preset; unknown ids get Floodlight. */
+        fun byId(id: String?): BoardPreset {
+            val sanitized = OverlayLayoutPrefs.sanitizeTheme(id)
+            return ALL.firstOrNull { it.id == sanitized } ?: FLOODLIGHT
         }
     }
 }

@@ -1,16 +1,5 @@
 package uk.co.cricrelay.mobile.feature.studio
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -20,39 +9,17 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Cast
-import androidx.compose.material.icons.outlined.IosShare
-import androidx.compose.material.icons.outlined.Layers
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.MoreHoriz
-import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.MicOff
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Scoreboard
-import androidx.compose.material.icons.outlined.ScreenLockLandscape
-import androidx.compose.material.icons.outlined.ScreenLockPortrait
-import androidx.compose.material.icons.outlined.ScreenRotation
-import androidx.compose.material.icons.outlined.Vibration
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Whatshot
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -62,57 +29,40 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import android.os.PowerManager
-import java.util.Locale
-import kotlin.math.roundToInt
-import uk.co.cricrelay.stream.StreamCameraEngine
-import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
-import uk.co.cricrelay.shared.model.StabilizationLevel
 import uk.co.cricrelay.mobile.ui.AppColors
-import uk.co.cricrelay.mobile.ui.AppMotion
+import uk.co.cricrelay.mobile.ui.AppFonts
+import uk.co.cricrelay.mobile.ui.AppTypography
 import uk.co.cricrelay.mobile.ui.BroadcastGradientScrim
 import uk.co.cricrelay.mobile.ui.CameraCircleButton
-import uk.co.cricrelay.mobile.ui.CameraQuickToggle
-import uk.co.cricrelay.mobile.ui.CameraShutterButton
-import uk.co.cricrelay.mobile.ui.CameraToolButton
-import uk.co.cricrelay.mobile.ui.DestinationChip
 import uk.co.cricrelay.mobile.ui.ErrorBanner
-import uk.co.cricrelay.mobile.ui.AppTypography
-import uk.co.cricrelay.mobile.ui.LiveTimerBadge
+import uk.co.cricrelay.mobile.ui.glassPill
 
-private const val STABILIZATION_FOV_CAPTION =
-    "Strong stabilization slightly narrows the camera's field of view."
-
+/**
+ * The studio surface (1b Checklist gate). Idle: top bar + glance rail + the checklist panel
+ * feeding the segmented Go Live ring. Live: everything collapses to one broadcast bug and one
+ * transport strip. PiP renders the bare camera only.
+ */
 @Composable
 fun BroadcastCameraUi(
     state: StudioUiState,
     onBack: () -> Unit,
     onShutter: () -> Unit,
     onPause: () -> Unit,
-    onDestination: () -> Unit,
-    onOverlay: () -> Unit,
-    onScoring: () -> Unit,
+    onCheckTap: (CheckKind) -> Unit,
+    onBoard: () -> Unit,
+    onCameraSettings: () -> Unit,
     onMenu: () -> Unit,
     onShare: (() -> Unit)?,
-    onToggleStabilization: () -> Unit,
-    onToggleKeepScreenOn: () -> Unit,
     onToggleFocusLock: () -> Unit,
     onToggleMicMuted: () -> Unit,
-    onToggleOrientation: () -> Unit,
     onLowerQuality: () -> Unit,
     onPreviewTap: (Float, Float, Int, Int) -> Unit,
     onPinchZoom: (Float) -> Unit,
@@ -146,10 +96,8 @@ fun BroadcastCameraUi(
             return@BoxWithConstraints
         }
 
-        // Scoreboard is burned into the camera GL surface during preview and stream (parity with iOS).
-
-        // Watermark is burned into the camera GL surface (see StreamCameraEngine), so it's
-        // already visible on this preview — no separate Compose overlay needed.
+        // Scoreboard + watermark are burned into the camera GL surface during preview and
+        // stream (parity with iOS) — no separate Compose overlay needed.
 
         Box(
             modifier = Modifier
@@ -164,40 +112,42 @@ fun BroadcastCameraUi(
             BroadcastGradientScrim(top = true, modifier = Modifier.align(Alignment.TopCenter))
             BroadcastGradientScrim(top = false, modifier = Modifier.align(Alignment.BottomCenter))
 
-            if (landscape) {
-                LandscapeControls(
+            if (state.streaming) {
+                LiveChrome(
                     state = state,
-                    onBack = onBack,
-                    onShutter = onShutter,
+                    landscape = landscape,
                     onPause = onPause,
-                    onDestination = onDestination,
-                    onOverlay = onOverlay,
-                    onScoring = onScoring,
-                    onMenu = onMenu,
-                    onShare = onShare,
-                    onToggleStabilization = onToggleStabilization,
-                    onToggleKeepScreenOn = onToggleKeepScreenOn,
+                    onBoard = onBoard,
                     onToggleFocusLock = onToggleFocusLock,
                     onToggleMicMuted = onToggleMicMuted,
-                    onToggleOrientation = onToggleOrientation,
+                    onShare = onShare,
+                    onStop = onShutter,
+                    onLowerQuality = onLowerQuality,
+                )
+            } else if (landscape) {
+                IdleLandscapeChrome(
+                    state = state,
+                    onBack = onBack,
+                    onCameraSettings = onCameraSettings,
+                    onMenu = onMenu,
+                    onCheckTap = onCheckTap,
+                    onBoard = onBoard,
+                    onToggleFocusLock = onToggleFocusLock,
+                    onToggleMicMuted = onToggleMicMuted,
+                    onGoLive = onShutter,
                     onLowerQuality = onLowerQuality,
                 )
             } else {
-                PortraitControls(
+                IdlePortraitChrome(
                     state = state,
                     onBack = onBack,
-                    onShutter = onShutter,
-                    onPause = onPause,
-                    onDestination = onDestination,
-                    onOverlay = onOverlay,
-                    onScoring = onScoring,
+                    onCameraSettings = onCameraSettings,
                     onMenu = onMenu,
-                    onShare = onShare,
-                    onToggleStabilization = onToggleStabilization,
-                    onToggleKeepScreenOn = onToggleKeepScreenOn,
+                    onCheckTap = onCheckTap,
+                    onBoard = onBoard,
                     onToggleFocusLock = onToggleFocusLock,
                     onToggleMicMuted = onToggleMicMuted,
-                    onToggleOrientation = onToggleOrientation,
+                    onGoLive = onShutter,
                     onLowerQuality = onLowerQuality,
                 )
             }
@@ -205,7 +155,7 @@ fun BroadcastCameraUi(
             // Drawn last so a low tap's reticle sits above the scrim + controls, never behind them.
             state.focusX?.let { fx ->
                 state.focusY?.let { fy ->
-                    FocusReticle(xPx = fx, yPx = fy, locked = state.focusLocked)
+                    StudioFocusReticle(xPx = fx, yPx = fy, locked = state.focusLocked)
                 }
             }
         }
@@ -219,268 +169,12 @@ fun BroadcastCameraUi(
     }
 }
 
-/**
- * Pause/resume button that scales + fades in when streaming starts. Extracted to its own
- * composable so the call sites' Row/Column scope doesn't shadow the plain AnimatedVisibility
- * overload (the scoped overloads would otherwise win and fail to resolve).
- */
-@Composable
-private fun PauseReveal(
-    visible: Boolean,
-    paused: Boolean,
-    size: Int,
-    onPause: () -> Unit,
-    modifier: Modifier = Modifier,
-    belowSpacing: Dp = 0.dp,
-) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(AppMotion.enterSpec()) +
-            scaleIn(initialScale = AppMotion.EnterScale, animationSpec = AppMotion.enterSpec()),
-        exit = fadeOut(AppMotion.exitSpec()) +
-            scaleOut(targetScale = AppMotion.ExitScale, animationSpec = AppMotion.exitSpec()),
-        modifier = modifier,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CameraCircleButton(onClick = onPause, size = size) {
-                Icon(
-                    if (paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
-                    contentDescription = "Pause",
-                    tint = Color.White,
-                )
-            }
-            if (belowSpacing > 0.dp) Spacer(Modifier.height(belowSpacing))
-        }
-    }
-}
-
-/** Dest / Style / Score tool buttons, laid out as a Row (portrait) or Column (landscape). */
-@Composable
-private fun ToolButtons(
-    state: StudioUiState,
-    onDestination: () -> Unit,
-    onOverlay: () -> Unit,
-    onScoring: () -> Unit,
-    vertical: Boolean,
-) {
-    val dest: @Composable () -> Unit = {
-        CameraToolButton(label = "Dest", active = state.destinationReady, onClick = onDestination) {
-            Icon(Icons.Outlined.Cast, contentDescription = null, tint = Color.White)
-        }
-    }
-    val style: @Composable () -> Unit = {
-        CameraToolButton(
-            label = "Board",
-            active = state.overlayPrefs.sponsorEnabled,
-            onClick = onOverlay,
-        ) {
-            Icon(Icons.Outlined.Layers, contentDescription = null, tint = Color.White)
-        }
-    }
-    val score: @Composable () -> Unit = {
-        CameraToolButton(label = "Score", active = false, onClick = onScoring) {
-            Icon(Icons.Outlined.Scoreboard, contentDescription = null, tint = Color.White)
-        }
-    }
-    if (vertical) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            dest(); style(); score()
-        }
-    } else {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 28.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            dest(); style(); score()
-        }
-    }
-}
-
-/**
- * Broadcast-health HUD under the LIVE badge (professional-camera style): encoded quality, the
- * bitrate actually leaving the phone, and a status dot — green when tracking the prepared
- * maximum, amber while the adaptive encoder has stepped the bitrate down for the network,
- * red while the uplink is congested (RTMP send cache backing up).
- */
-@Composable
-private fun StreamStatsBadge(stats: StreamCameraEngine.StreamStats) {
-    val quality = "${minOf(stats.width, stats.height)}p${stats.fps}"
-    val mbps = stats.sentBitrateBps / 1_000_000.0
-    val adapting = stats.targetBitrateBps < (stats.maxBitrateBps * 0.9f).toInt()
-    val dotColor = when {
-        stats.congested -> Color(0xFFFF5252)
-        adapting -> Color(0xFFFFC107)
-        else -> Color(0xFF4CAF50)
-    }
-    val healthLabel = when {
-        stats.congested -> "network congested"
-        adapting -> "adapting to network"
-        else -> "stable"
-    }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(Color.Black.copy(alpha = 0.45f))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-            .semantics {
-                contentDescription = "Streaming $quality at ${String.format(Locale.US, "%.1f", mbps)} " +
-                    "megabits per second, $healthLabel"
-            },
-    ) {
-        Box(
-            Modifier
-                .size(7.dp)
-                .clip(CircleShape)
-                .background(dotColor),
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = "$quality  ${String.format(Locale.US, "%.1f", mbps)} Mbps",
-            style = AppTypography.bodySmall,
-            color = Color.White,
-        )
-    }
-}
-
-/** Focus lock / Stabilize / Keep-screen-on quick toggles, surfaced next to Go Live (no menu dig). */
-@Composable
-private fun QuickToggles(
-    state: StudioUiState,
-    onToggleStabilization: () -> Unit,
-    onToggleKeepScreenOn: () -> Unit,
-    onToggleFocusLock: () -> Unit,
-    onToggleMicMuted: () -> Unit,
-    modifier: Modifier = Modifier,
-    vertical: Boolean = false,
-) {
-    val focusLock: @Composable () -> Unit = {
-        CameraQuickToggle(
-            label = if (state.focusLocked) "Locked" else "Focus",
-            active = state.focusLocked,
-            icon = if (state.focusLocked) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
-            onClick = onToggleFocusLock,
-        )
-    }
-    // Hidden while live — stabilization can't change mid-stream, and in the landscape rail
-    // the pill + caption were tall enough to push the Go Live/stop shutter off-screen.
-    // The caption is also dropped in the vertical rail for the same reason.
-    // Tap cycles the three levels: Off → Standard (EIS+OIS) → Cinematic (max EIS+OIS).
-    val stabilize: @Composable () -> Unit = {
-        if (!state.streaming) {
-            val level = state.overlayPrefs.stabilizationLevel
-            val levelName = when (level) {
-                StabilizationLevel.CINEMATIC -> "Cinematic"
-                StabilizationLevel.STANDARD -> "Standard"
-                else -> "Off"
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CameraQuickToggle(
-                    label = if (level == StabilizationLevel.OFF) "Stabilize" else levelName,
-                    active = level > StabilizationLevel.OFF,
-                    icon = Icons.Outlined.Vibration,
-                    onClick = onToggleStabilization,
-                    modifier = Modifier.semantics {
-                        contentDescription = buildString {
-                            append("Stabilize, ")
-                            append(levelName.lowercase())
-                            append(". Tap to change level. ")
-                            if (level == StabilizationLevel.CINEMATIC) {
-                                append(STABILIZATION_FOV_CAPTION)
-                            }
-                        }
-                    },
-                )
-                if (!vertical && level == StabilizationLevel.CINEMATIC) {
-                    Text(
-                        text = STABILIZATION_FOV_CAPTION,
-                        style = AppTypography.bodySmall,
-                        color = AppColors.OnBackgroundDim,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .padding(top = 4.dp)
-                            .widthIn(max = 120.dp),
-                    )
-                }
-            }
-        }
-    }
-    val screenOn: @Composable () -> Unit = {
-        CameraQuickToggle(
-            label = "Screen on",
-            active = state.overlayPrefs.keepScreenOn,
-            icon = Icons.Outlined.LightMode,
-            onClick = onToggleKeepScreenOn,
-        )
-    }
-    val micMute: @Composable () -> Unit = {
-        CameraQuickToggle(
-            label = if (state.micMuted) "Muted" else "Mic",
-            active = state.micMuted,
-            icon = if (state.micMuted) Icons.Outlined.MicOff else Icons.Outlined.Mic,
-            onClick = onToggleMicMuted,
-        )
-    }
-    if (vertical) {
-        Column(
-            modifier = modifier,
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            focusLock(); stabilize(); screenOn(); micMute()
-        }
-    } else {
-        Row(
-            modifier = modifier,
-            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.Top,
-        ) {
-            focusLock(); stabilize(); screenOn(); micMute()
-        }
-    }
-}
-
-/**
- * Square focus reticle drawn at the tapped point. Turns gold with a padlock badge when the
- * pitch focus is locked, so the operator can see at a glance that AF is held on the strip.
- */
-@Composable
-private fun FocusReticle(xPx: Float, yPx: Float, locked: Boolean) {
-    val density = LocalDensity.current
-    val ringSize = 76.dp
-    val halfPx = with(density) { ringSize.toPx() / 2f }
-    val color = if (locked) AppColors.Accent else Color.White
-    Box(
-        modifier = Modifier
-            .offset { IntOffset((xPx - halfPx).roundToInt(), (yPx - halfPx).roundToInt()) }
-            .size(ringSize)
-            .border(1.5.dp, color, RoundedCornerShape(8.dp)),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (locked) {
-            Icon(
-                Icons.Outlined.Lock,
-                contentDescription = "Focus locked",
-                tint = color,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-    }
-}
-
+/** Idle top bar: back, the Studio wordmark, camera settings, and the broadcast menu. */
 @Composable
 private fun StudioTopBar(
-    state: StudioUiState,
     onBack: () -> Unit,
-    onDestination: () -> Unit,
+    onCameraSettings: () -> Unit,
     onMenu: () -> Unit,
-    onShare: (() -> Unit)?,
-    onToggleOrientation: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -492,90 +186,224 @@ private fun StudioTopBar(
         CameraCircleButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Color.White)
         }
-        // Orientation lock cycle (Auto → Landscape → Portrait). Lives in the top bar so it
-        // never competes with the Go Live rail for vertical space in landscape. Hidden while
-        // live — the RTMP orientation is fixed once streaming starts.
-        if (!state.streaming) {
-            Spacer(Modifier.width(8.dp))
-            CameraCircleButton(onClick = onToggleOrientation) {
-                Icon(
-                    imageVector = when (state.orientationMode) {
-                        OrientationMode.Auto -> Icons.Outlined.ScreenRotation
-                        OrientationMode.Landscape -> Icons.Outlined.ScreenLockLandscape
-                        OrientationMode.Portrait -> Icons.Outlined.ScreenLockPortrait
-                    },
-                    contentDescription = when (state.orientationMode) {
-                        OrientationMode.Auto -> "Switch orientation"
-                        OrientationMode.Landscape -> "Landscape — tap for portrait"
-                        OrientationMode.Portrait -> "Portrait — tap for landscape"
-                    },
-                    tint = if (state.orientationMode != OrientationMode.Auto) {
-                        AppColors.Accent
-                    } else {
-                        Color.White
-                    },
-                )
-            }
+        Spacer(Modifier.width(10.dp))
+        Text(
+            "Studio",
+            fontFamily = AppFonts.Archivo,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 15.sp,
+            letterSpacing = (-0.2).sp,
+            color = Color.White,
+        )
+        Spacer(Modifier.weight(1f))
+        CameraCircleButton(onClick = onCameraSettings) {
+            Icon(Icons.Outlined.Tune, contentDescription = "Camera settings", tint = Color.White)
         }
-        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            AnimatedContent(
-                targetState = state.streaming,
-                transitionSpec = {
-                    (fadeIn(AppMotion.enterSpec()) + scaleIn(
-                        initialScale = AppMotion.EnterScale,
-                        animationSpec = AppMotion.enterSpec(),
-                    )) togetherWith
-                        (fadeOut(AppMotion.exitSpec()) + scaleOut(
-                            targetScale = AppMotion.ExitScale,
-                            animationSpec = AppMotion.exitSpec(),
-                        ))
-                },
-                label = "topBarStatus",
-            ) { streaming ->
-                if (streaming) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        LiveTimerBadge(state.liveElapsedSeconds, state.paused)
-                        state.streamStats?.let { stats ->
-                            Spacer(Modifier.height(4.dp))
-                            StreamStatsBadge(stats)
-                        }
-                    }
-                } else {
-                    DestinationChip(
-                        label = state.destinationLabel,
-                        ready = state.destinationReady,
-                        onClick = onDestination,
-                    )
-                }
-            }
+        Spacer(Modifier.width(8.dp))
+        CameraCircleButton(onClick = onMenu) {
+            Icon(Icons.Outlined.MoreHoriz, contentDescription = "Menu", tint = Color.White)
         }
-        AnimatedContent(
-            targetState = state.streaming && onShare != null,
-            transitionSpec = {
-                (fadeIn(AppMotion.enterSpec()) + scaleIn(
-                    initialScale = AppMotion.EnterScale,
-                    animationSpec = AppMotion.enterSpec(),
-                )) togetherWith
-                    (fadeOut(AppMotion.exitSpec()) + scaleOut(
-                        targetScale = AppMotion.ExitScale,
-                        animationSpec = AppMotion.exitSpec(),
-                    ))
-            },
-            label = "topBarAction",
-        ) { shareMode ->
-            if (shareMode && onShare != null) {
-                CameraCircleButton(onClick = onShare) {
-                    Icon(Icons.Outlined.IosShare, contentDescription = "Share", tint = Color.White)
-                }
-            } else {
-                CameraCircleButton(onClick = onMenu) {
-                    Icon(Icons.Outlined.MoreHoriz, contentDescription = "Menu", tint = Color.White)
-                }
+    }
+}
+
+@Composable
+private fun IdlePortraitChrome(
+    state: StudioUiState,
+    onBack: () -> Unit,
+    onCameraSettings: () -> Unit,
+    onMenu: () -> Unit,
+    onCheckTap: (CheckKind) -> Unit,
+    onBoard: () -> Unit,
+    onToggleFocusLock: () -> Unit,
+    onToggleMicMuted: () -> Unit,
+    onGoLive: () -> Unit,
+    onLowerQuality: () -> Unit,
+) {
+    val checks = StudioChecklist.deriveChecks(state)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding(),
+    ) {
+        StudioTopBar(onBack = onBack, onCameraSettings = onCameraSettings, onMenu = onMenu)
+
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            GlanceRail(
+                focusLocked = state.focusLocked,
+                micMuted = state.micMuted,
+                onToggleFocusLock = onToggleFocusLock,
+                onToggleMicMuted = onToggleMicMuted,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 12.dp),
+            )
+        }
+
+        // Bottom stack sits over the BroadcastGradientScrim for the SPEC contrast floor.
+        Column(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
+            StudioStatusMessages(state, onLowerQuality)
+            if (state.zoomLevel > 1.1f) {
+                ZoomPill(state.zoomLevel)
+                Spacer(Modifier.height(8.dp))
+            }
+            BoardChip(onClick = onBoard)
+            Spacer(Modifier.height(10.dp))
+            ChecklistPanel(
+                checks = checks,
+                onCheckTap = onCheckTap,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(12.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                SegmentedGoLiveRing(checks = checks, busy = state.busy, onClick = onGoLive)
+                Spacer(Modifier.height(8.dp))
+                GoLiveRingCaption(checks)
             }
         }
     }
 }
 
+@Composable
+private fun IdleLandscapeChrome(
+    state: StudioUiState,
+    onBack: () -> Unit,
+    onCameraSettings: () -> Unit,
+    onMenu: () -> Unit,
+    onCheckTap: (CheckKind) -> Unit,
+    onBoard: () -> Unit,
+    onToggleFocusLock: () -> Unit,
+    onToggleMicMuted: () -> Unit,
+    onGoLive: () -> Unit,
+    onLowerQuality: () -> Unit,
+) {
+    val checks = StudioChecklist.deriveChecks(state)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding(),
+    ) {
+        StudioTopBar(
+            onBack = onBack,
+            onCameraSettings = onCameraSettings,
+            onMenu = onMenu,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+
+        // Status / error column at the top-start, narrow so it doesn't cover the board
+        // or the right-docked checklist.
+        StudioStatusMessages(
+            state = state,
+            onLowerQuality = onLowerQuality,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(top = 56.dp, start = 16.dp)
+                .fillMaxWidth(0.45f),
+        )
+
+        // Glance pills hug the left edge, vertically centred.
+        GlanceRail(
+            focusLocked = state.focusLocked,
+            micMuted = state.micMuted,
+            onToggleFocusLock = onToggleFocusLock,
+            onToggleMicMuted = onToggleMicMuted,
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 12.dp),
+        )
+
+        // Zoom + board affordances stay bottom-start, clear of the checklist dock.
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (state.zoomLevel > 1.1f) ZoomPill(state.zoomLevel)
+            BoardChip(onClick = onBoard)
+        }
+
+        // Checklist right-docked with the ring beneath it.
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 12.dp, top = 48.dp, bottom = 8.dp)
+                .width(340.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            ChecklistPanel(
+                checks = checks,
+                onCheckTap = onCheckTap,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(10.dp))
+            SegmentedGoLiveRing(checks = checks, busy = state.busy, onClick = onGoLive)
+            Spacer(Modifier.height(6.dp))
+            GoLiveRingCaption(checks)
+        }
+    }
+}
+
+/** Live chrome, both orientations: broadcast bug top-left, one transport strip at the bottom. */
+@Composable
+private fun LiveChrome(
+    state: StudioUiState,
+    landscape: Boolean,
+    onPause: () -> Unit,
+    onBoard: () -> Unit,
+    onToggleFocusLock: () -> Unit,
+    onToggleMicMuted: () -> Unit,
+    onShare: (() -> Unit)?,
+    onStop: () -> Unit,
+    onLowerQuality: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding(),
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 16.dp, top = 14.dp, end = 16.dp),
+        ) {
+            BroadcastBug(
+                elapsedSeconds = state.liveElapsedSeconds,
+                paused = state.paused,
+                stats = state.streamStats,
+            )
+            Spacer(Modifier.height(8.dp))
+            StudioStatusMessages(
+                state = state,
+                onLowerQuality = onLowerQuality,
+                modifier = if (landscape) Modifier.fillMaxWidth(0.55f) else Modifier.fillMaxWidth(),
+            )
+        }
+
+        LiveTransportStrip(
+            focusLocked = state.focusLocked,
+            micMuted = state.micMuted,
+            paused = state.paused,
+            onBoard = onBoard,
+            onToggleFocusLock = onToggleFocusLock,
+            onToggleMicMuted = onToggleMicMuted,
+            onPause = onPause,
+            onShare = onShare,
+            onStop = onStop,
+            compact = !landscape,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = if (landscape) 16.dp else 20.dp),
+        )
+    }
+}
+
+/** Transient status, reconnect, error, and thermal banners — glass surfaces per SPEC. */
 @Composable
 private fun StudioStatusMessages(
     state: StudioUiState,
@@ -587,10 +415,11 @@ private fun StudioStatusMessages(
             Text(
                 msg,
                 color = Color.White,
+                style = AppTypography.bodyMedium.copy(color = Color.White),
                 modifier = Modifier
-                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                    .padding(vertical = 6.dp)
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                    .glassPill(14.dp)
                     .padding(12.dp),
             )
         }
@@ -598,10 +427,10 @@ private fun StudioStatusMessages(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
-                    .padding(horizontal = 20.dp, vertical = 6.dp)
+                    .padding(vertical = 6.dp)
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .glassPill(14.dp)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
             ) {
                 CircularProgressIndicator(
                     color = AppColors.Warning,
@@ -617,16 +446,16 @@ private fun StudioStatusMessages(
             }
         }
         state.error?.let {
-            ErrorBanner(it, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            ErrorBanner(it, Modifier.padding(vertical = 4.dp))
         }
         if (state.thermalStatus >= PowerManager.THERMAL_STATUS_SEVERE) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
-                    .padding(horizontal = 20.dp, vertical = 6.dp)
+                    .padding(vertical = 6.dp)
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .glassPill(14.dp)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
             ) {
                 Icon(
                     Icons.Outlined.Whatshot,
@@ -647,226 +476,6 @@ private fun StudioStatusMessages(
                     }
                 }
             }
-        }
-        if (!state.streaming && !state.destinationReady) {
-            Text(
-                text = "Tap Dest to set YouTube, Twitch, or a stream key before Go Live",
-                color = AppColors.Warning,
-                modifier = Modifier
-                    .padding(horizontal = 20.dp, vertical = 6.dp)
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.45f), CircleShape)
-                    .padding(12.dp),
-            )
-        } else if (!state.streaming && !state.previewReady) {
-            Text(
-                text = "Preparing camera…",
-                color = AppColors.Warning,
-                modifier = Modifier
-                    .padding(horizontal = 20.dp, vertical = 6.dp)
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.35f), CircleShape)
-                    .padding(12.dp),
-            )
-        }
-    }
-}
-
-/** Shutter caption that crossfades between states instead of snapping. */
-@Composable
-private fun ShutterLabel(state: StudioUiState) {
-    AnimatedContent(
-        targetState = shutterLabel(state),
-        transitionSpec = {
-            fadeIn(AppMotion.enterSpec(250)) togetherWith fadeOut(AppMotion.exitSpec(150))
-        },
-        label = "shutterLabel",
-    ) { label ->
-        Text(
-            label,
-            color = shutterLabelColor(state),
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-@Composable
-private fun shutterLabel(state: StudioUiState): String = when {
-    state.streaming -> "STOP"
-    state.busy -> "CONNECTING…"
-    state.previewReady -> "GO LIVE"
-    else -> "PREPARING…"
-}
-
-@Composable
-private fun shutterLabelColor(state: StudioUiState): Color = when {
-    state.streaming -> AppColors.Live
-    state.previewReady && state.destinationReady -> Color.White
-    else -> Color.White.copy(alpha = 0.5f)
-}
-
-@Composable
-private fun PortraitControls(
-    state: StudioUiState,
-    onBack: () -> Unit,
-    onShutter: () -> Unit,
-    onPause: () -> Unit,
-    onDestination: () -> Unit,
-    onOverlay: () -> Unit,
-    onScoring: () -> Unit,
-    onMenu: () -> Unit,
-    onShare: (() -> Unit)?,
-    onToggleStabilization: () -> Unit,
-    onToggleKeepScreenOn: () -> Unit,
-    onToggleFocusLock: () -> Unit,
-    onToggleMicMuted: () -> Unit,
-    onToggleOrientation: () -> Unit,
-    onLowerQuality: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    ) {
-        StudioTopBar(state, onBack, onDestination, onMenu, onShare, onToggleOrientation)
-
-        Spacer(Modifier.weight(1f))
-
-        Column(modifier = Modifier.padding(bottom = 12.dp)) {
-            StudioStatusMessages(state, onLowerQuality)
-            ToolButtons(state, onDestination, onOverlay, onScoring, vertical = false)
-            Spacer(Modifier.height(14.dp))
-            QuickToggles(
-                state = state,
-                onToggleStabilization = onToggleStabilization,
-                onToggleKeepScreenOn = onToggleKeepScreenOn,
-                onToggleFocusLock = onToggleFocusLock,
-                onToggleMicMuted = onToggleMicMuted,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(14.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                Box(modifier = Modifier.size(72.dp)) {
-                    PauseReveal(
-                        visible = state.streaming,
-                        paused = state.paused,
-                        size = 48,
-                        onPause = onPause,
-                        modifier = Modifier.align(Alignment.Center),
-                    )
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CameraShutterButton(
-                        live = state.streaming,
-                        busy = state.busy,
-                        enabled = state.previewReady || state.streaming,
-                        onClick = onShutter,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    ShutterLabel(state)
-                }
-                Spacer(Modifier.size(72.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun LandscapeControls(
-    state: StudioUiState,
-    onBack: () -> Unit,
-    onShutter: () -> Unit,
-    onPause: () -> Unit,
-    onDestination: () -> Unit,
-    onOverlay: () -> Unit,
-    onScoring: () -> Unit,
-    onMenu: () -> Unit,
-    onShare: (() -> Unit)?,
-    onToggleStabilization: () -> Unit,
-    onToggleKeepScreenOn: () -> Unit,
-    onToggleFocusLock: () -> Unit,
-    onToggleMicMuted: () -> Unit,
-    onToggleOrientation: () -> Unit,
-    onLowerQuality: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    ) {
-        // Top bar across the top.
-        StudioTopBar(
-            state = state,
-            onBack = onBack,
-            onDestination = onDestination,
-            onMenu = onMenu,
-            onShare = onShare,
-            onToggleOrientation = onToggleOrientation,
-            modifier = Modifier.align(Alignment.TopCenter),
-        )
-
-        // Status / error column at the top-start, narrow so it doesn't cover the board
-        // or the side rails.
-        StudioStatusMessages(
-            state = state,
-            onLowerQuality = onLowerQuality,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(top = 56.dp, start = 88.dp)
-                .fillMaxWidth(0.5f),
-        )
-
-        // Left rail: Dest / Style / Score tools, vertically centered so they never push
-        // the Go Live button off-screen.
-        Column(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxHeight()
-                .padding(start = 10.dp, top = 56.dp, bottom = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            ToolButtons(state, onDestination, onOverlay, onScoring, vertical = true)
-        }
-
-        // Right rail: quick toggles directly above the Go Live shutter, the whole group
-        // vertically centered on the right edge — Go Live is always visible and reachable.
-        Column(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .padding(end = 10.dp, top = 56.dp, bottom = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            QuickToggles(
-                state = state,
-                onToggleStabilization = onToggleStabilization,
-                onToggleKeepScreenOn = onToggleKeepScreenOn,
-                onToggleFocusLock = onToggleFocusLock,
-                onToggleMicMuted = onToggleMicMuted,
-                vertical = true,
-            )
-            Spacer(Modifier.height(16.dp))
-            PauseReveal(
-                visible = state.streaming,
-                paused = state.paused,
-                size = 44,
-                onPause = onPause,
-                belowSpacing = 12.dp,
-            )
-            CameraShutterButton(
-                live = state.streaming,
-                busy = state.busy,
-                enabled = state.previewReady || state.streaming,
-                onClick = onShutter,
-            )
-            Spacer(Modifier.height(6.dp))
-            ShutterLabel(state)
         }
     }
 }

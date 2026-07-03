@@ -100,7 +100,6 @@ class StudioViewModelTest {
         apiClientProvider = mockk(relaxed = true)
         rtmpStore = mockk(relaxed = true) {
             every { load(any()) } returns RtmpCredentials()
-            every { isPrecheckDone() } returns true
         }
         localPrefs = mockk(relaxed = true) {
             every { loadOverlayPrefs(any()) } returns null
@@ -326,6 +325,17 @@ class StudioViewModelTest {
         assertEquals("https://youtu.be/live-1", state.watchUrl)
     }
 
+    // ── checklist gate ──────────────────────────────────────────────────────
+
+    private val scoringConfig = uk.co.cricrelay.shared.model.ScoringConfig(
+        mode = "manual",
+        manualInputUrl = "https://club.example.com/m/$SLUG/input",
+        manualScorerUrl = "https://club.example.com/m/$SLUG/score",
+        pcsIngestUrl = "",
+        pcsIngestToken = "",
+        pcsRelayApkUrl = "",
+    )
+
     @Test
     fun `requestGoLive without a ready destination opens the destination sheet`() = runStudioTest {
         val vm = loadedViewModel()
@@ -334,6 +344,45 @@ class StudioViewModelTest {
         vm.requestGoLive()
 
         assertEquals(StudioSheet.Destination, vm.uiState.value.activeSheet)
+    }
+
+    @Test
+    fun `requestGoLive with the camera pending opens the camera sheet`() = runStudioTest {
+        coEvery { streamRepository.getScoring(any()) } returns scoringConfig
+        val vm = loadedViewModel()
+        vm.updateCustomRtmp("rtmp://a.rtmp.example.com/live2", "key-1", "")
+        // previewReady stays false — camera is the first incomplete check.
+
+        vm.requestGoLive()
+
+        assertEquals(StudioSheet.Camera, vm.uiState.value.activeSheet)
+    }
+
+    @Test
+    fun `requestGoLive without a scoring source opens the scoring sheet`() = runStudioTest {
+        val vm = loadedViewModel()
+        vm.updateCustomRtmp("rtmp://a.rtmp.example.com/live2", "key-1", "")
+        statusFlow.value = StreamStatus(previewReady = true)
+
+        vm.requestGoLive()
+
+        assertEquals(StudioSheet.Scoring, vm.uiState.value.activeSheet)
+    }
+
+    @Test
+    fun `requestGoLive with all three checks green starts the countdown`() = runStudioTest {
+        coEvery { streamRepository.getScoring(any()) } returns scoringConfig
+        val vm = loadedViewModel()
+        vm.updateCustomRtmp("rtmp://a.rtmp.example.com/live2", "key-1", "")
+        statusFlow.value = StreamStatus(previewReady = true)
+
+        vm.requestGoLive()
+
+        // Straight into the 3-2-1 cinema, no intermediate sheet.
+        assertEquals(3, vm.uiState.value.goLiveCountdown)
+        assertEquals(StudioSheet.None, vm.uiState.value.activeSheet)
+        vm.cancelGoLiveCountdown()
+        assertNull(vm.uiState.value.goLiveCountdown)
     }
 
     // ── load / local-first extras ───────────────────────────────────────────
@@ -363,6 +412,26 @@ class StudioViewModelTest {
         assertEquals(1.3, vm.uiState.value.overlayPrefs.fontScale, 0.0)
         coVerify { streamRepository.getOverlayPrefs(SLUG) }
         verify { localPrefs.saveOverlayPrefs(SLUG, serverPrefs) }
+    }
+
+    @Test
+    fun `cached barlow board keeps its legacy theme`() = runStudioTest {
+        every { localPrefs.loadOverlayPrefs(SLUG) } returns OverlayLayoutPrefs(theme = "barlow")
+
+        val vm = loadedViewModel()
+
+        assertEquals("barlow", vm.uiState.value.overlayPrefs.theme)
+    }
+
+    @Test
+    fun `fresh install defaults to the floodlight preset`() = runStudioTest {
+        every { localPrefs.loadOverlayPrefs(SLUG) } returns null
+        coEvery { streamRepository.getOverlayPrefs(SLUG) } returns OverlayLayoutPrefs()
+
+        val vm = loadedViewModel()
+
+        assertEquals("floodlight", vm.uiState.value.overlayPrefs.theme)
+        assertTrue(vm.uiState.value.overlayPrefs.bowlingIslandEnabled)
     }
 
     @Test

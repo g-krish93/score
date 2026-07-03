@@ -25,6 +25,12 @@ final class OverlayWebViewCapture: NSObject, WKNavigationDelegate {
     private var bgColor: String = ""
     private var textColor: String = ""
     private var overlayTheme: String = "barlow"
+    private var islandEnabled = true
+    private var compact = false
+
+    /// Board height at (or below) this fraction hides the batsmen strip (body.fl-compact) —
+    /// same threshold the overlay sheet's "hides batsmen strip" hint uses.
+    private static let compactHeightFraction: Float = 0.11
 
     /// Fired after measure/style JS has been applied (safe to capture).
     var onStyleApplied: (() -> Void)?
@@ -40,17 +46,32 @@ final class OverlayWebViewCapture: NSObject, WKNavigationDelegate {
         webView.scrollView.backgroundColor = .clear
     }
 
-    func setStyle(fontScale: Float, bgColor: String, textColor: String, theme: String = "barlow") {
+    func setStyle(
+        fontScale: Float,
+        bgColor: String,
+        textColor: String,
+        theme: String = "barlow",
+        heightFraction: Float = 0.16,
+        bowlingIslandEnabled: Bool = true
+    ) {
         self.fontScale = min(max(fontScale, 0.6), 2.0)
         self.bgColor = bgColor.trimmingCharacters(in: .whitespaces)
         self.textColor = textColor.trimmingCharacters(in: .whitespaces)
         let nextTheme = theme.trimmingCharacters(in: .whitespaces).lowercased().isEmpty ? "barlow" : theme.lowercased()
-        let themeChanged = nextTheme != overlayTheme
+        let nextCompact = heightFraction <= Self.compactHeightFraction
+        // Island/compact flips change the page's rendered height just like a theme swap —
+        // reset the latched capture height too, or the sprite renders stretched for up to
+        // one measure interval (~2 s).
+        let geometryChanged = nextTheme != overlayTheme
+            || nextCompact != compact
+            || bowlingIslandEnabled != islandEnabled
         overlayTheme = nextTheme
+        compact = nextCompact
+        islandEnabled = bowlingIslandEnabled
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            if themeChanged { self.captureHeightPx = 0 }
-            self.applyMeasureScript(triggerCapture: true, themeChanged: themeChanged)
+            if geometryChanged { self.captureHeightPx = 0 }
+            self.applyMeasureScript(triggerCapture: true, themeChanged: geometryChanged)
         }
     }
 
@@ -207,10 +228,15 @@ final class OverlayWebViewCapture: NSObject, WKNavigationDelegate {
         // "board not sticking to the bottom" gap seen only in the stream, not the web overlay).
         css += "body.board-barlow .sb-wrap{padding-bottom:0 !important;}"
         css += "body.board-barlow .sb-bar{box-shadow:none !important;}"
+        // Floodlight equivalents of the flush-bottom rules above.
+        css += "body.board-floodlight .fl-wrap{padding-bottom:0 !important;}"
+        css += "body.board-floodlight .fl-board,body.board-floodlight .fl-island{box-shadow:none !important;}"
         // Mobile composites the sponsor natively on the GL layer; hide the HTML page's own sponsor
         // (#sponsor-root, web/OBS path) so it isn't baked into the board bitmap as a duplicate.
         css += "#sponsor-root,#sponsor-wrap{display:none !important;}"
-        if !bg.isEmpty || !fg.isEmpty {
+        // Legacy bg/text overrides only style the Classic Barlow board — preset boards carry
+        // their own palette and must not inherit a stale colour override.
+        if overlayTheme == "barlow", !bg.isEmpty || !fg.isEmpty {
             css += "body.board-barlow{"
             if !bg.isEmpty { css += "--sb-navy:\(bg) !important;--sb-dot-dark:\(bg) !important;" }
             if !fg.isEmpty { css += "--sb-ink:\(fg) !important;" }
@@ -224,7 +250,11 @@ final class OverlayWebViewCapture: NSObject, WKNavigationDelegate {
     }
 
     private func themeClassScript() -> String {
-        OverlayThemeBridge.applyThemeScript(mobileTheme: overlayTheme)
+        OverlayThemeBridge.applyThemeScript(
+            mobileTheme: overlayTheme,
+            islandEnabled: islandEnabled,
+            compact: compact
+        )
     }
 
     private func measureScript() -> String {
@@ -245,6 +275,11 @@ final class OverlayWebViewCapture: NSObject, WKNavigationDelegate {
               (document.head||document.documentElement).appendChild(s);}
             var css='\(cssLiteral)';
             if(s.textContent!==css){s.textContent=css;}
+            // Fonts-ready soft gate: don't measure (or capture) against fallback-font metrics.
+            // Gives web fonts ~5s, then proceeds anyway so a blocked font CDN can't stall the board.
+            window.__crFontT0=window.__crFontT0||Date.now();
+            if(document.fonts&&document.fonts.status!=='loaded'&&(Date.now()-window.__crFontT0)<5000){
+              return JSON.stringify({ready:false,why:'fonts'});}
             var o=document.getElementById('overlay');
             if(!o){return JSON.stringify({ready:false,why:'no-overlay'});}
             var label=(o.textContent||'').replace(/\\s+/g,' ').trim();

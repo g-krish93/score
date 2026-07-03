@@ -25,6 +25,7 @@ from flask import (
     jsonify,
     redirect,
     render_template,
+    render_template_string,
     request,
     Response,
     send_file,
@@ -68,6 +69,7 @@ from .stream_api import (
     bearer_org_from_request,
     companion_token_required,
     issue_stream_token,
+    manual_scorer_token_required,
     issue_twitch_oauth_state,
     issue_youtube_oauth_state,
     match_day_status,
@@ -301,6 +303,9 @@ def blank_state():
         "relay_wrapper": None,
         "relay_last_ok_at": None,
         "relay_last_error": None,
+        # QR scorer-page totals (manual streams): full payload from the scorer phone,
+        # guarded by a monotonic seq. None until the scorer completes setup.
+        "manual_totals": None,
         "pcs_ingest_token": "",
         "pcs_ble_state": None,
         "sponsor_enabled": False,
@@ -324,6 +329,10 @@ def blank_state():
         "overlay_bg_color": "",
         "overlay_text_color": "",
         "overlay_opacity": 1.0,
+        # Floodlight bowling island — default ON; merge_missing_state_keys back-fills
+        # True onto pre-existing states (unlike stabilization_level, that's the intent:
+        # the island is new, so nobody has ever turned it off).
+        "bowling_island_enabled": True,
         "video_stabilization": True,
         "keep_screen_on": True,
         "watermark_enabled": True,
@@ -820,6 +829,17 @@ def apply_pcs_ble_to_score_match(match_slug: str, ingest_token: str, label: str 
         save_state()
 
 
+def apply_manual_to_score_match(match_slug: str):
+    with match_context(match_slug):
+        merge_missing_state_keys(state)
+        state["relay_mode"] = "manual"
+        state["relay_play_cricket_url"] = ""
+        state["relay_wrapper"] = None
+        state["relay_last_error"] = None
+        state["manual_totals"] = None
+        save_state()
+
+
 def _public_base_url() -> str:
     env_base = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
     if env_base:
@@ -950,6 +970,18 @@ def manual_scoring_blocked_response():
             ),
             400,
         )
+    if mode == "manual":
+        # QR-scored streams (relay_source="manual") own their state via the scorer
+        # page; the legacy unauthenticated endpoints must not clobber it.
+        try:
+            row = RelayMatch.query.filter_by(score_match_slug=current_match_id).first()
+        except Exception:
+            row = None
+        if row is not None and (row.relay_source or "") == "manual":
+            return (
+                jsonify({"error": "This stream is scored from the QR scorer page."}),
+                400,
+            )
     return None
 
 
@@ -1211,7 +1243,9 @@ def normalize_overlay_size(value, fallback_scale=None) -> int:
     return 3
 
 
-VALID_OVERLAY_THEMES = {"barlow"}
+# "barlow" = legacy board; the rest are Floodlight-board presets (SPEC P1–P5).
+# Unknown ids sanitize to "barlow" so old clients degrade gracefully.
+VALID_OVERLAY_THEMES = {"barlow", "floodlight", "chalk", "club-green", "broadcast-blue", "mono"}
 
 def _sanitize_overlay_theme(raw) -> str:
     t = str(raw or "barlow").strip().lower()
@@ -1871,6 +1905,37 @@ def _create_cricheroes_stream_org(
     return row, None
 
 
+def _create_manual_stream_org(org: Organization, label: str = "") -> tuple[RelayMatch | None, str | None]:
+    slot_err = _stream_slot_error(org)
+    if slot_err:
+        return None, slot_err
+    stream_label = (label or "").strip()[:120] or "Manual scoring"
+    mid = f"man-{secrets.token_hex(4)}"
+    base_slug = sanitize_match_id(f"{org.slug}-{mid}")
+    score_slug = base_slug
+    for _ in range(16):
+        if not RelayMatch.query.filter_by(score_match_slug=score_slug).first():
+            break
+        score_slug = sanitize_match_id(f"{org.slug}-{mid}-{secrets.token_hex(2)}")
+    row = RelayMatch(
+        organization_id=org.id,
+        play_cricket_match_id=mid,
+        full_scrape_url="",
+        score_match_slug=score_slug,
+        label=stream_label,
+        paused=False,
+        relay_source="manual",
+    )
+    db.session.add(row)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return None, "Could not create that stream (duplicate or conflict)."
+    apply_manual_to_score_match(score_slug)
+    return row, None
+
+
 @app.post("/dashboard/matches")
 @login_required
 def dashboard_add_match():
@@ -2519,6 +2584,8 @@ def relay_overlay_data(match_id):
 
     slug = sanitize_match_id(match_id)
     data = _live_snapshot(slug)
+    row = RelayMatch.query.filter_by(score_match_slug=slug).first()
+    is_manual_stream = (getattr(row, "relay_source", None) or "") == "manual"
     mode = (data.get("relay_mode") or "manual").strip().lower()
     bundle = data.get("relay_bundle") or {}
     snapshot = bundle.get("snapshot") if isinstance(bundle.get("snapshot"), dict) else None
@@ -2532,23 +2599,41 @@ def relay_overlay_data(match_id):
         from .play_cricket_mapper import snapshot_to_overlay
         payload = snapshot_to_overlay(snapshot, stale=stale, last_ok_at=last_ok)
     else:
-        # Manual mode or no relay configured — return minimal pre-match shell
-        payload = {
-            "home_team": data.get("team1", ""),
-            "away_team": data.get("team2", ""),
-            "total_overs": data.get("total_overs", 0),
-            "batting_team": "",
-            "match": {"date": "", "competition": "", "status": "NOT STARTED", "toss": ""},
-            "innings": [],
-            "striker": {"name": "", "runs": 0, "balls": 0, "sr": None},
-            "non_striker": {"name": "", "runs": 0, "balls": 0},
-            "current_bowler": {"name": "", "overs": "0", "runs": 0, "wickets": 0, "econ": 0.0},
-            "current_partnership": {"runs": 0, "balls": 0},
-            "recent_over": [],
-            "target": None,
-            "stale": stale,
-            "last_updated": last_ok,
-        }
+        totals = data.get("manual_totals") if isinstance(data.get("manual_totals"), dict) else None
+        if is_manual_stream and totals:
+            from .overlay_mapping_common import manual_totals_to_overlay
+
+            last_manual = data.get("last_manual_at")
+            payload = manual_totals_to_overlay(
+                totals,
+                label=(row.label or ""),
+                stale=_manual_totals_stale(last_manual),
+                last_ok_at=last_manual,
+            )
+        else:
+            # No relay configured, or manual stream awaiting scorer setup —
+            # return a minimal pre-match shell (labelled for manual streams).
+            payload = {
+                "home_team": data.get("team1", ""),
+                "away_team": data.get("team2", ""),
+                "total_overs": data.get("total_overs", 0),
+                "batting_team": "",
+                "match": {
+                    "date": "",
+                    "competition": (row.label or "") if is_manual_stream and row else "",
+                    "status": "NOT STARTED",
+                    "toss": "",
+                },
+                "innings": [],
+                "striker": {"name": "", "runs": 0, "balls": 0, "sr": None},
+                "non_striker": {"name": "", "runs": 0, "balls": 0},
+                "current_bowler": {"name": "", "overs": "0", "runs": 0, "wickets": 0, "econ": 0.0},
+                "current_partnership": {"runs": 0, "balls": 0},
+                "recent_over": [],
+                "target": None,
+                "stale": stale,
+                "last_updated": last_ok,
+            }
 
     sponsor_enabled = bool(data.get("sponsor_enabled", False))
     sponsor_ids = _resolved_active_sponsor_ids(data)
@@ -2588,7 +2673,6 @@ def relay_overlay_data(match_id):
             }
     payload["sponsor"] = sponsor_payload
 
-    row = RelayMatch.query.filter_by(score_match_slug=slug).first()
     relay_src = (getattr(row, "relay_source", None) or "scraper").strip().lower()
     payload["relay_source"] = relay_src
     payload["relay_mode"] = mode
@@ -2634,6 +2718,185 @@ def _render_scorer_page(slug: str):
     if row and row.label:
         label = row.label
     return render_template("input_scorer.html", match_id=slug, match_label=label)
+
+
+def _manual_totals_stale(last_manual_at) -> bool:
+    from .stream_api import MANUAL_STALE_AFTER_SEC, _parse_iso_ts
+
+    ts = _parse_iso_ts(last_manual_at)
+    if ts is None:
+        return True
+    return (datetime.now(timezone.utc) - ts).total_seconds() > MANUAL_STALE_AFTER_SEC
+
+
+def _validated_manual_scorer_payload(payload) -> tuple[dict | None, str | None]:
+    if not isinstance(payload, dict):
+        return None, "invalid payload"
+    try:
+        seq = int(payload.get("seq"))
+    except (TypeError, ValueError):
+        return None, "seq must be a positive integer"
+    if seq < 1:
+        return None, "seq must be a positive integer"
+    team_a = str(payload.get("team_a") or "").strip()[:60]
+    team_b = str(payload.get("team_b") or "").strip()[:60]
+    if not team_a or not team_b:
+        return None, "team_a and team_b are required"
+    try:
+        total_overs = int(payload.get("total_overs"))
+    except (TypeError, ValueError):
+        return None, "total_overs must be a number"
+    if not 1 <= total_overs <= 90:
+        return None, "total_overs must be between 1 and 90"
+    batting_first = str(payload.get("batting_first") or "").strip()
+    if batting_first not in {"team_a", "team_b"}:
+        return None, "batting_first must be team_a or team_b"
+    current_innings = payload.get("current_innings")
+    if current_innings not in (1, 2):
+        return None, "current_innings must be 1 or 2"
+    raw_innings = payload.get("innings")
+    if not isinstance(raw_innings, list) or len(raw_innings) != current_innings:
+        return None, "innings must list one entry per innings played"
+    innings = []
+    for idx, entry in enumerate(raw_innings, start=1):
+        if not isinstance(entry, dict):
+            return None, "innings entries must be objects"
+        try:
+            runs = int(entry.get("runs"))
+            wickets = int(entry.get("wickets"))
+            overs = int(entry.get("overs"))
+            balls = int(entry.get("balls"))
+        except (TypeError, ValueError):
+            return None, "innings totals must be numbers"
+        if not 0 <= runs <= 999:
+            return None, "runs must be between 0 and 999"
+        if not 0 <= wickets <= 10:
+            return None, "wickets must be between 0 and 10"
+        if not 0 <= overs <= total_overs:
+            return None, "overs must be between 0 and total overs"
+        if not 0 <= balls <= 5:
+            return None, "balls must be between 0 and 5"
+        # Batting side is derived, not trusted: innings 1 = batting_first.
+        batting = "team_a" if (batting_first == "team_a") == (idx == 1) else "team_b"
+        innings.append({
+            "innings": idx,
+            "batting": batting,
+            "runs": runs,
+            "wickets": wickets,
+            "overs": overs,
+            "balls": balls,
+        })
+    return {
+        "seq": seq,
+        "team_a": team_a,
+        "team_b": team_b,
+        "total_overs": total_overs,
+        "batting_first": batting_first,
+        "current_innings": current_innings,
+        "innings": innings,
+        "match_over": bool(payload.get("match_over")),
+        "result_text": str(payload.get("result_text") or "").strip()[:120],
+    }, None
+
+
+def apply_manual_scorer_state(match_slug: str, payload):
+    """Store validated QR-scorer totals; returns (result, error_body, error_status).
+
+    State-based protocol: the scorer page owns undo and posts the full totals
+    with a monotonic seq; anything <= the stored seq is rejected with the
+    current state so a reloaded/second phone can resync. NOTE: relies on the
+    single-worker gunicorn deploy — the in-memory state for the active slug is
+    authoritative (see _live_snapshot).
+    """
+    clean, verr = _validated_manual_scorer_payload(payload)
+    if verr:
+        return None, {"error": verr}, 400
+    with match_context(match_slug):
+        merge_missing_state_keys(state)
+        current = state.get("manual_totals") if isinstance(state.get("manual_totals"), dict) else None
+        cur_seq = int((current or {}).get("seq") or 0)
+        if clean["seq"] <= cur_seq:
+            return None, {"error": "stale_seq", "seq": cur_seq, "state": current}, 409
+        state["manual_totals"] = {
+            **clean,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        # Mirror into the legacy scoreboard keys so /live/<slug>,
+        # with_calculated_values (CRR/RRR) and match-day status work unchanged.
+        names = {"team_a": clean["team_a"], "team_b": clean["team_b"]}
+        cur = clean["innings"][clean["current_innings"] - 1]
+        bowling_key = "team_b" if cur["batting"] == "team_a" else "team_a"
+        target = clean["innings"][0]["runs"] + 1 if clean["current_innings"] == 2 else None
+        state["team1"] = clean["team_a"]
+        state["team2"] = clean["team_b"]
+        state["total_overs"] = clean["total_overs"]
+        state["innings"] = clean["current_innings"]
+        state["batting_team"] = names[cur["batting"]]
+        state["bowling_team"] = names[bowling_key]
+        state["runs"] = cur["runs"]
+        state["wickets"] = cur["wickets"]
+        state["overs"] = cur["overs"]
+        state["balls"] = cur["balls"]
+        state["target"] = target
+        state["match_started"] = True
+        state["match_ended"] = clean["match_over"]
+        save_state_with_manual_touch()
+    return {"ok": True, "seq": clean["seq"], "target": target, "stale": False}, None, None
+
+
+@app.get("/m/<match_slug>/scorer")
+def manual_scorer_page(match_slug):
+    from .stream_api import manual_scorer_match_for_token
+
+    slug = sanitize_match_id(match_slug)
+    token = (request.args.get("token") or "").strip()
+    row = manual_scorer_match_for_token(token, slug) if token else None
+    if row is None:
+        return (
+            render_template_string(
+                "<!doctype html><meta name='viewport' content='width=device-width, initial-scale=1'>"
+                "<title>Scoring link expired</title>"
+                "<body style='font-family:system-ui,sans-serif;background:#0c1222;color:#e2e8f0;margin:0;"
+                "min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px'>"
+                "<div><h2 style='margin:0 0 8px'>Scoring link expired</h2>"
+                "<p style='color:#94a3b8;margin:0'>Ask the streamer to open the Scorer QR screen "
+                "in CricRelay and scan the fresh code.</p></div></body>"
+            ),
+            403,
+        )
+    return render_template(
+        "manual_scorer.html",
+        match_id=slug,
+        match_label=row.label or "Manual scoring",
+        scorer_token=token,
+    )
+
+
+@app.get("/m/<match_slug>/scorer/state")
+@manual_scorer_token_required
+def manual_scorer_get_state(row: RelayMatch, match_slug: str):
+    with match_context(match_slug):
+        merge_missing_state_keys(state)
+        totals = state.get("manual_totals") if isinstance(state.get("manual_totals"), dict) else None
+    return jsonify(
+        {
+            "ok": True,
+            "setup_complete": bool(totals),
+            "label": row.label or "Manual scoring",
+            "seq": int((totals or {}).get("seq") or 0),
+            "state": totals,
+            "server_time": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+
+
+@app.post("/m/<match_slug>/scorer/state")
+@manual_scorer_token_required
+def manual_scorer_post_state(row: RelayMatch, match_slug: str):
+    result, err_body, err_status = apply_manual_scorer_state(match_slug, request.get_json(silent=True))
+    if err_body:
+        return jsonify(err_body), err_status
+    return jsonify(result)
 
 
 def _relay_ingest_authorized() -> bool:
@@ -3826,6 +4089,8 @@ def api_create_stream(org: Organization):
             str(data.get("match_url") or data.get("cricheroes_url") or ""),
             str(data.get("label") or ""),
         )
+    elif kind == "manual":
+        row, err = _create_manual_stream_org(org, str(data.get("label") or ""))
     else:
         row, err = _create_play_cricket_stream_org(
             org,
@@ -3941,6 +4206,7 @@ OVERLAY_LAYOUT_STATE_KEYS = (
     "overlay_bg_color",
     "overlay_text_color",
     "overlay_opacity",
+    "bowling_island_enabled",
     "video_stabilization",
     "stabilization_level",
     "keep_screen_on",
@@ -4013,7 +4279,7 @@ def _apply_overlay_layout_to_state(data: dict) -> None:
         val = data[key]
         if key == "sponsor_display_mode":
             state[key] = _sanitize_sponsor_display_mode(val)
-        elif key in {"sponsor_enabled", "video_stabilization", "keep_screen_on", "watermark_enabled"}:
+        elif key in {"sponsor_enabled", "video_stabilization", "keep_screen_on", "watermark_enabled", "bowling_island_enabled"}:
             state[key] = bool(val)
         elif key == "stabilization_level":
             try:
@@ -4196,6 +4462,26 @@ def api_pair_remote(org: Organization, match_slug: str):
     return jsonify({"ok": True, "pair_token": token, "expires_at": expires_at})
 
 
+@app.post("/api/match/<match_slug>/scorer-link")
+@stream_api_auth_required
+def api_manual_scorer_link(org: Organization, match_slug: str):
+    from .stream_api import MANUAL_SCORER_TOKEN_MAX_AGE, issue_manual_scorer_token
+
+    slug = sanitize_match_id(match_slug)
+    row = relay_match_for_org(org, slug)
+    if not row:
+        return jsonify({"error": "unknown stream"}), 404
+    if (row.relay_source or "") != "manual":
+        return jsonify({"error": "Scorer links are only available for manual streams."}), 400
+    token = issue_manual_scorer_token(org, slug)
+    base = _public_base_url()
+    scorer_url = f"{base}/m/{slug}/scorer?token={token}"
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(seconds=MANUAL_SCORER_TOKEN_MAX_AGE)
+    ).isoformat()
+    return jsonify({"ok": True, "scorer_url": scorer_url, "expires_at": expires_at})
+
+
 @app.post("/stream/<match_slug>/pair/redeem")
 def public_pair_redeem(match_slug: str):
     from .stream_api import redeem_remote_pair_token
@@ -4365,6 +4651,12 @@ def api_set_scoring(org: Organization, match_slug: str):
             return pcs_ble_retired_response()
         if mode not in {"auto", "manual"}:
             return jsonify({"error": "mode must be auto or manual"}), 400
+        if (row.relay_source or "") == "manual":
+            # QR-scored streams are permanently manual: never rewrite their
+            # relay_source (the poller/UI would treat them as scrapers).
+            if mode == "manual":
+                return api_get_scoring.__wrapped__(org, slug)
+            return jsonify({"error": "Manual streams have no auto-scoring source."}), 400
         provider = str(data.get("provider") or "play_cricket").strip().lower()
         if provider not in {"play_cricket", "cricheroes"}:
             provider = "play_cricket"
@@ -4380,9 +4672,11 @@ def api_set_scoring(org: Organization, match_slug: str):
                 save_state()
             row.relay_source = "scraper"
         db.session.commit()
-        return api_get_scoring(org, slug)
+        # __wrapped__ skips the auth decorator, which would otherwise re-read
+        # the bearer header and shift the positional args.
+        return api_get_scoring.__wrapped__(org, slug)
     except Exception as exc:
-        current_app.logger.exception("api_set_scoring failed for %s", match_slug)
+        app.logger.exception("api_set_scoring failed for %s", match_slug)
         db.session.rollback()
         return jsonify({"error": str(exc) or "scoring update failed"}), 500
 

@@ -4,6 +4,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestData
 import io.ktor.client.request.HttpResponseData
@@ -280,5 +281,63 @@ class CricRelayApiClientTest {
         assertNull(api.token)
         api.listStreams()
         assertNull(authHeader)
+    }
+
+    // ── manual streams / scorer link ────────────────────────────────────────
+
+    @Test
+    fun `createManualStream posts type manual with the label`() = runTest {
+        var sentBody = ""
+        val api = client(token = "t") { request ->
+            sentBody = String(request.body.toByteArray())
+            jsonResponse(
+                """{"ok":true,"stream":{"slug":"club-man-ab12","label":"3rd XI friendly",
+                    "relay_source":"manual","scoring_mode":"manual"}}"""
+            )
+        }
+
+        val stream = api.createManualStream("3rd XI friendly")
+
+        assertTrue(sentBody.contains("\"type\":\"manual\""))
+        assertTrue(sentBody.contains("\"label\":\"3rd XI friendly\""))
+        assertEquals("club-man-ab12", stream.slug)
+        assertEquals("manual", stream.relaySource)
+    }
+
+    @Test
+    fun `getScorerLink mints from the scorer-link endpoint and encodes the slug`() = runTest {
+        var requestedUrl = ""
+        val api = client(token = "t") { request ->
+            requestedUrl = request.url.toString()
+            jsonResponse(
+                """{"ok":true,"scorer_url":"$BASE/m/club-man-ab12/scorer?token=xyz",
+                    "expires_at":"2026-07-03T22:00:00+00:00"}"""
+            )
+        }
+
+        val link = api.getScorerLink("club man#1")
+
+        assertEquals("$BASE/api/match/club%20man%231/scorer-link", requestedUrl)
+        assertEquals("$BASE/m/club-man-ab12/scorer?token=xyz", link.scorerUrl)
+        assertEquals("2026-07-03T22:00:00+00:00", link.expiresAt)
+    }
+
+    @Test
+    fun `getScorerLink falls back to the scoring config url on an html 404`() = runTest {
+        val api = client(token = "t") { request ->
+            if (request.url.toString().endsWith("/scorer-link")) {
+                htmlResponse(HttpStatusCode.NotFound)
+            } else {
+                jsonResponse(
+                    """{"ok":true,"mode":"manual",
+                        "manual_scorer_url":"/m/club-man-ab12/score"}"""
+                )
+            }
+        }
+
+        val link = api.getScorerLink("club-man-ab12")
+
+        assertEquals("$BASE/m/club-man-ab12/score", link.scorerUrl)
+        assertEquals("", link.expiresAt)
     }
 }

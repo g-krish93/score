@@ -281,3 +281,64 @@ def snapshot_to_overlay(
         "stale": stale,
         "last_updated": last_ok_at,
     }
+
+
+def manual_totals_to_overlay(
+    totals: dict,
+    label: str = "",
+    stale: bool = False,
+    last_ok_at: Any = None,
+) -> dict:
+    """Convert QR scorer-page totals into cricket_overlay.html JSON.
+
+    Manual streams track totals only — no batters, bowlers, or ball-by-ball —
+    so the live-detail fields are emitted empty and the overlay's fl-manual
+    layout hides those panels. total_overs is the scorer's configured value,
+    never inferred.
+    """
+    names = {
+        "team_a": str(totals.get("team_a") or ""),
+        "team_b": str(totals.get("team_b") or ""),
+    }
+    _empty_extras = {"total": 0, "byes": 0, "leg_byes": 0, "wides": 0, "no_balls": 0}
+
+    innings: list = []
+    for entry in totals.get("innings") or []:
+        if not isinstance(entry, dict):
+            continue
+        overs = int(entry.get("overs") or 0)
+        balls = int(entry.get("balls") or 0)
+        innings.append({
+            "number": int(entry.get("innings") or len(innings) + 1),
+            "batting_team": names.get(str(entry.get("batting") or ""), ""),
+            "runs": int(entry.get("runs") or 0),
+            "wickets": int(entry.get("wickets") or 0),
+            "overs": f"{overs}.{balls}",
+            "extras": dict(_empty_extras),
+            "batters": [],
+            "bowlers": [],
+        })
+
+    current = int(totals.get("current_innings") or 1)
+    target = (innings[0]["runs"] + 1) if (current == 2 and innings) else None
+    batting_team = innings[current - 1]["batting_team"] if len(innings) >= current else ""
+    match_over = bool(totals.get("match_over"))
+    result_text = str(totals.get("result_text") or "").strip()
+    status = (result_text or "COMPLETE") if match_over else "IN PROGRESS"
+
+    return {
+        "home_team": names["team_a"],
+        "away_team": names["team_b"],
+        "total_overs": int(totals.get("total_overs") or 0),
+        "batting_team": batting_team,
+        "match": {"date": "", "competition": label, "status": status, "toss": ""},
+        "innings": innings,
+        "striker": empty_batter(),
+        "non_striker": empty_batter(),
+        "current_bowler": empty_bowler(),
+        "current_partnership": {"runs": 0, "balls": 0},
+        "recent_over": [],
+        "target": target,
+        "stale": stale,
+        "last_updated": last_ok_at,
+    }

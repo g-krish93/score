@@ -82,6 +82,12 @@ class StreamRepository(
     suspend fun createCricHeroesStream(matchUrl: String, label: String): StreamMatch =
         apiClientProvider.get().createCricHeroesStream(matchUrl = matchUrl, label = label)
 
+    suspend fun createManualStream(label: String): StreamMatch =
+        apiClientProvider.get().createManualStream(label = label)
+
+    suspend fun getScorerLink(matchSlug: String): uk.co.cricrelay.shared.model.ScorerLink =
+        apiClientProvider.get().getScorerLink(matchSlug)
+
     suspend fun deleteStream(matchSlug: String) = apiClientProvider.get().deleteStream(matchSlug)
 
     suspend fun renameStream(matchSlug: String, label: String) =

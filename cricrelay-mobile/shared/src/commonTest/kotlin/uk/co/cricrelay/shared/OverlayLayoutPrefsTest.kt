@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import uk.co.cricrelay.shared.model.BoardPreset
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.shared.model.StabilizationLevel
 
@@ -89,5 +90,54 @@ class OverlayLayoutPrefsTest {
         )
         assertFalse(OverlayLayoutPrefs().withStabilizationLevel(0).videoStabilization)
         assertTrue(OverlayLayoutPrefs().withStabilizationLevel(1).videoStabilization)
+    }
+
+    @Test
+    fun `fresh prefs default to the floodlight board with the island on`() {
+        val prefs = OverlayLayoutPrefs()
+        assertEquals("floodlight", prefs.theme)
+        assertTrue(prefs.bowlingIslandEnabled)
+    }
+
+    @Test
+    fun `sanitizeTheme accepts every preset id`() {
+        for (id in listOf("barlow", "floodlight", "chalk", "club-green", "broadcast-blue", "mono")) {
+            assertEquals(id, OverlayLayoutPrefs.sanitizeTheme(id))
+        }
+        // Case/whitespace tolerant, like the other string sanitizers.
+        assertEquals("club-green", OverlayLayoutPrefs.sanitizeTheme("  Club-Green "))
+    }
+
+    @Test
+    fun `sanitizeTheme falls back to floodlight for unknown null or blank ids`() {
+        assertEquals("floodlight", OverlayLayoutPrefs.sanitizeTheme("comic-sans"))
+        assertEquals("floodlight", OverlayLayoutPrefs.sanitizeTheme(null))
+        assertEquals("floodlight", OverlayLayoutPrefs.sanitizeTheme("   "))
+        // The legacy id is still explicitly valid — stored barlow boards keep their look.
+        assertEquals("barlow", OverlayLayoutPrefs.sanitizeTheme("barlow"))
+    }
+
+    @Test
+    fun `board preset catalogue matches the sanitizer and names the presets`() {
+        // Every catalogued id must survive sanitization unchanged (single source of truth).
+        for (preset in BoardPreset.ALL) {
+            assertEquals(preset.id, OverlayLayoutPrefs.sanitizeTheme(preset.id))
+        }
+        assertEquals(
+            listOf("Floodlight", "Chalk", "Club Green", "Broadcast Blue", "Mono", "Classic"),
+            BoardPreset.ALL.map { it.displayName },
+        )
+        // Only the legacy Classic entry is flagged legacy, and it keeps the old wire id.
+        val classic = BoardPreset.ALL.single { it.legacy }
+        assertEquals("barlow", classic.id)
+        assertEquals(BoardPreset.CLASSIC, classic)
+    }
+
+    @Test
+    fun `board preset lookup resolves ids and defaults unknowns to floodlight`() {
+        assertEquals(BoardPreset.CHALK, BoardPreset.byId("chalk"))
+        assertEquals(BoardPreset.CLASSIC, BoardPreset.byId("barlow"))
+        assertEquals(BoardPreset.FLOODLIGHT, BoardPreset.byId("comic-sans"))
+        assertEquals(BoardPreset.FLOODLIGHT, BoardPreset.byId(null))
     }
 }

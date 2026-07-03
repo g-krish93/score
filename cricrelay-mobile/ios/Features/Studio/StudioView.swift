@@ -120,18 +120,23 @@ struct StudioView: View {
                     }
                     bottomControls
                 }
-                .ignoresSafeArea(edges: .bottom)
+
+                // Idle glance rail (AF / MIC): right edge in portrait, left edge in landscape
+                // so it never collides with the right-docked checklist.
+                if cameraPermissionGranted && !viewModel.streaming {
+                    glanceRail
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: .infinity,
+                            alignment: verticalSizeClass == .compact ? .leading : .trailing
+                        )
+                        .padding(.horizontal, 12)
+                }
             }
 
             // Pre-live Arrange mode: pinch/drag the board + sponsor over the live preview.
             if viewModel.arrangeMode {
                 ArrangeOverlayView(viewModel: viewModel)
-                    .transition(.opacity)
-            }
-
-            // First-run guided precheck (Camera → Arrange → Ready)
-            if viewModel.precheckActive && !viewModel.arrangeMode && viewModel.goLiveCountdown == nil {
-                PrecheckCard(viewModel: viewModel)
                     .transition(.opacity)
             }
         }
@@ -145,12 +150,13 @@ struct StudioView: View {
         .navigationBarHidden(true)
         .sheet(item: $viewModel.activeSheet) { sheet in
             switch sheet {
-            case .destination: DestinationSheet(viewModel: viewModel)
-            case .overlay:     OverlaySheet(viewModel: viewModel)
-            case .scoring:     ScoringSheet(viewModel: viewModel)
-            case .preflight:   PreflightSheet(viewModel: viewModel)
-            case .menu:        StudioMenuSheet(viewModel: viewModel)
-            case .pairRemote:  PairRemoteSheet(viewModel: viewModel)
+            case .destination:    DestinationSheet(viewModel: viewModel)
+            case .overlay:        OverlaySheet(viewModel: viewModel)
+            case .scoring:        ScoringSheet(viewModel: viewModel)
+            case .cameraSettings: CameraSettingsSheet(viewModel: viewModel)
+            case .menu:           StudioMenuSheet(viewModel: viewModel)
+            case .pairRemote:     PairRemoteSheet(viewModel: viewModel)
+            case .scorerQr:       ScorerQrSheet(slug: viewModel.matchSlug)
             }
         }
         .task {
@@ -159,7 +165,6 @@ struct StudioView: View {
             StreamCameraEngine.shared.setStatusHandler { event, message in
                 Task { @MainActor in
                     viewModel.previewReady = StreamCameraEngine.shared.isPreviewReady
-                    viewModel.advancePrecheckIfCameraReady()
                     if event == "connected" { viewModel.streaming = true }
                     if event == "disconnected" { viewModel.onStreamDisconnected(message) }
                     if event == "thermal" { viewModel.thermalLevel = Int(message) ?? viewModel.thermalLevel }
@@ -172,7 +177,6 @@ struct StudioView: View {
                 fps: 30
             )
             viewModel.previewReady = StreamCameraEngine.shared.isPreviewReady
-            viewModel.advancePrecheckIfCameraReady()
         }
         .onDisappear {
             viewModel.stopPolling()
@@ -209,72 +213,56 @@ struct StudioView: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial, in: Circle())
+                    .frame(width: 40, height: 40)
+                    .glassPillSurface(cornerRadius: 20)
             }
             .buttonStyle(PressableScaleStyle())
 
-            Spacer()
-
             if viewModel.streaming {
-                let badgeTint = viewModel.paused ? Color.orange : CricTheme.primary
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(badgeTint)
-                        .frame(width: 7, height: 7)
-                        .pulseOpacity(active: !viewModel.paused, min: 0.35)
-                    Text(viewModel.paused ? "PAUSED" : "ON AIR")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(badgeTint)
-                        .tracking(1)
-                    if !viewModel.paused {
-                        Text(elapsedTimeText)
-                            .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                            .foregroundStyle(.white)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Color.black.opacity(0.55), in: Capsule())
-                .overlay(Capsule().stroke(badgeTint.opacity(0.5), lineWidth: 1))
+                // Live: single broadcast bug top-left (ON AIR | timer | health).
+                BroadcastBug(
+                    paused: viewModel.paused,
+                    elapsedText: elapsedTimeText,
+                    qualityText: StudioViewModel.streamQualityLabel,
+                    healthDot: healthDotColor
+                )
                 .transition(CricMotion.asymmetricReveal)
+            } else {
+                Text("Studio")
+                    .font(CricFont.archivo(15))
+                    .foregroundStyle(.white)
             }
 
             Spacer()
 
-            // Orientation lock cycle (Auto → Landscape → Portrait) in the top bar so it never
-            // competes with the Go Live controls for space (parity with Android). Hidden while
-            // live — the RTMP orientation is fixed once streaming starts.
-            if viewModel.streaming {
-                // Placeholder for symmetry
-                Color.clear.frame(width: 36, height: 36)
-            } else {
+            if !viewModel.streaming {
                 Button {
-                    Task { await viewModel.toggleOrientation() }
+                    viewModel.activeSheet = .menu
                 } label: {
-                    Image(systemName: viewModel.orientationMode == .auto ? "rotate.right" : "lock.rotation")
+                    Image(systemName: "ellipsis")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(viewModel.orientationMode == .auto ? Color.white : CricTheme.primary)
-                        .frame(width: 36, height: 36)
-                        .background(.ultraThinMaterial, in: Circle())
+                        .foregroundStyle(.white)
+                        .frame(width: 40, height: 40)
+                        .glassPillSurface(cornerRadius: 20)
                 }
                 .buttonStyle(PressableScaleStyle())
-                .accessibilityLabel(orientationAccessibilityLabel)
+                .accessibilityLabel("Studio options")
             }
         }
         .padding(.horizontal, 16)
         .padding(.top, 56)
     }
 
-    private var orientationAccessibilityLabel: String {
-        switch viewModel.orientationMode {
-        case .auto: return "Switch orientation"
-        case .landscape: return "Landscape — tap for portrait"
-        case .portrait: return "Portrait — tap for landscape"
-        }
+    /// Health dot beside the configured quality: coral once thermals bite (level ≥ 2),
+    /// error red on a surfaced stream error, sky otherwise. The iOS engine publishes no
+    /// live bitrate stats, so connection quality can't be graded finer than this.
+    private var healthDotColor: Color {
+        if viewModel.error != nil { return CricTheme.danger }
+        if viewModel.thermalLevel >= 2 || viewModel.paused { return CricTheme.warning }
+        return CricTheme.accent
     }
 
-    /// mm:ss elapsed broadcast time for the ON AIR badge (matches Android's "%02d:%02d").
+    /// mm:ss elapsed broadcast time for the broadcast bug (matches Android's "%02d:%02d").
     private var elapsedTimeText: String {
         let s = viewModel.liveElapsedSeconds
         return String(format: "%02d:%02d", s / 60, s % 60)
@@ -285,202 +273,120 @@ struct StudioView: View {
     @ViewBuilder
     private var focusReticle: some View {
         if let point = viewModel.focusIndicator {
-            let color = viewModel.focusLocked ? CricTheme.primary : Color.white
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(color, lineWidth: 1.5)
-                .frame(width: 76, height: 76)
-                .overlay {
-                    if viewModel.focusLocked {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(color)
-                    }
-                }
+            FocusReticle(locked: viewModel.focusLocked)
                 .position(point)
                 .allowsHitTesting(false)
                 .transition(.opacity)
         }
     }
 
-    // MARK: - Quick toggles
+    // MARK: - Glance rail (idle AF / MIC pills)
 
-    private var quickToggleRow: some View {
-        HStack(spacing: 10) {
-            quickTogglePill(
-                label: viewModel.focusLocked ? "Locked" : "Focus",
+    private var glanceRail: some View {
+        VStack(spacing: 10) {
+            GlancePill(
+                label: "AF",
                 systemImage: viewModel.focusLocked ? "lock.fill" : "lock.open",
-                active: viewModel.focusLocked
+                state: viewModel.focusLocked ? .gold : .idle
             ) { Task { await viewModel.toggleFocusLock() } }
-
-            // Cycles Off → Standard → Cinematic (parity with Android's quick-toggle rail).
-            quickTogglePill(
-                label: stabilizationPillLabel,
-                systemImage: "gyroscope",
-                active: viewModel.overlayPrefs.stabilizationLevel > StabilizationLevel.off.rawValue
-            ) { Task { await viewModel.toggleStabilization() } }
-
-            quickTogglePill(
-                label: "Screen on",
-                systemImage: "sun.max.fill",
-                active: viewModel.overlayPrefs.keepScreenOn
-            ) { Task { await viewModel.toggleKeepScreenOn() } }
-
-            quickTogglePill(
-                label: viewModel.micMuted ? "Muted" : "Mic",
+            GlancePill(
+                label: "MIC",
                 systemImage: viewModel.micMuted ? "mic.slash.fill" : "mic.fill",
-                active: viewModel.micMuted
+                state: viewModel.micMuted ? .error : .idle
             ) { Task { await viewModel.toggleMicMuted() } }
         }
     }
 
-    private var stabilizationPillLabel: String {
-        switch viewModel.overlayPrefs.stabilizationLevel {
-        case StabilizationLevel.cinematic.rawValue: return "Cinematic"
-        case StabilizationLevel.standard.rawValue: return "Standard"
-        default: return "Stabilize"
-        }
-    }
+    // MARK: - Bottom controls (idle checklist gate / live transport strip)
 
-    private func quickTogglePill(
-        label: String,
-        systemImage: String,
-        active: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .semibold))
-                Text(label)
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .foregroundStyle(active ? CricTheme.onPrimary : .white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(
-                active ? AnyShapeStyle(CricTheme.primary) : AnyShapeStyle(.ultraThinMaterial),
-                in: Capsule()
-            )
-        }
-        .buttonStyle(PressableScaleStyle())
-        .animation(CricMotion.enter(), value: active)
-    }
-
-    // MARK: - Bottom controls
-
+    @ViewBuilder
     private var bottomControls: some View {
-        VStack(spacing: 0) {
-            // Quick toggles — focus lock, stabilisation, keep-screen-on — surfaced on the camera
-            // screen (parity with Android's QuickToggles row) so each is one tap instead of being
-            // buried in the overlay sheet. Focus lock still frames + locks the pitch so a fielder
-            // crossing the frame can't pull focus or exposure off the strip.
-            quickToggleRow
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 12)
-
-            // Tool row
-            HStack(spacing: 0) {
-                toolButton("Destination", icon: "arrow.triangle.branch") {
-                    viewModel.activeSheet = .destination
-                }
-                toolButton("Overlay", icon: "rectangle.on.rectangle") {
-                    viewModel.activeSheet = .overlay
-                }
-                toolButton("Scoring", icon: "pencil.and.list.clipboard") {
-                    viewModel.activeSheet = .scoring
-                }
-                toolButton("Menu", icon: "ellipsis") {
-                    viewModel.activeSheet = .menu
-                }
-            }
-            .background(.ultraThinMaterial)
-
-            // Shutter row
-            HStack(spacing: 32) {
-                // Pause button (only visible when streaming)
-                if viewModel.streaming {
-                    Button {
-                        Task { await viewModel.togglePause() }
-                    } label: {
-                        Image(systemName: viewModel.paused ? "play.fill" : "pause.fill")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 52, height: 52)
-                            .background(.ultraThinMaterial, in: Circle())
-                    }
-                    .buttonStyle(PressableScaleStyle())
-                    .transition(CricMotion.asymmetricReveal)
-                } else {
-                    Color.clear.frame(width: 52, height: 52)
-                }
-
-                // Main shutter
-                shutterButton
-
-                // Zoom indicator
-                if zoom > 1.1 {
-                    Text(String(format: "%.1fx", zoom))
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 52, height: 52)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-                } else {
-                    Color.clear.frame(width: 52, height: 52)
-                }
-            }
-            .padding(.vertical, 20)
-            .padding(.bottom, 24)
-            .background(.ultraThinMaterial)
+        if viewModel.streaming {
+            liveControls
+        } else {
+            idleControls
         }
     }
 
-    private var shutterButton: some View {
-        Button {
-            if viewModel.streaming {
-                Task { await viewModel.stopLive() }
-            } else {
+    private var liveControls: some View {
+        LiveTransportStrip(
+            focusLocked: viewModel.focusLocked,
+            micMuted: viewModel.micMuted,
+            paused: viewModel.paused,
+            watchUrl: viewModel.watchUrl,
+            // The full six-control row only fits a landscape frame — split it in portrait.
+            twoRow: verticalSizeClass != .compact,
+            onBoard: { viewModel.activeSheet = .overlay },
+            onFocusLock: { Task { await viewModel.toggleFocusLock() } },
+            onMic: { Task { await viewModel.toggleMicMuted() } },
+            onPause: { Task { await viewModel.togglePause() } },
+            onStop: { Task { await viewModel.stopLive() } }
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+        .transition(CricMotion.asymmetricReveal)
+    }
+
+    @ViewBuilder
+    private var idleControls: some View {
+        if verticalSizeClass == .compact {
+            landscapeIdleControls
+        } else {
+            portraitIdleControls
+        }
+    }
+
+    private var portraitIdleControls: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                if zoom > 1.1 { ZoomPill(zoom: zoom) }
+                BoardChip { viewModel.activeSheet = .overlay }
+            }
+            ChecklistPanel(checks: viewModel.checks) { kind in
+                viewModel.openSheet(for: kind)
+            }
+            goLiveRingStack
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 16)
+    }
+
+    /// Landscape idle: checklist right-docked (~340pt) with the ring beneath it, so the
+    /// framing stays clear (glance pills sit on the left edge — see glanceRail).
+    private var landscapeIdleControls: some View {
+        HStack(alignment: .bottom) {
+            HStack(spacing: 10) {
+                if zoom > 1.1 { ZoomPill(zoom: zoom) }
+                BoardChip { viewModel.activeSheet = .overlay }
+            }
+            Spacer()
+            VStack(spacing: 10) {
+                ChecklistPanel(checks: viewModel.checks) { kind in
+                    viewModel.openSheet(for: kind)
+                }
+                goLiveRingStack
+            }
+            .frame(width: 340)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
+    }
+
+    private var goLiveRingStack: some View {
+        VStack(spacing: 10) {
+            SegmentedGoLiveRing(
+                completedCount: viewModel.completedChecksCount,
+                ready: viewModel.firstIncompleteCheck == nil,
+                busy: viewModel.goLiveBusy,
+                fixLabel: viewModel.goLiveFixLabel
+            ) {
                 viewModel.requestGoLive()
             }
-        } label: {
-            ZStack {
-                Circle()
-                    .fill(viewModel.streaming ? CricTheme.danger : CricTheme.primary)
-                    .frame(width: 72, height: 72)
-                    .shadow(
-                        color: (viewModel.streaming ? CricTheme.danger : CricTheme.primary).opacity(0.5),
-                        radius: 16
-                    )
-
-                if viewModel.streaming {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(.white)
-                        .frame(width: 24, height: 24)
-                } else {
-                    Image(systemName: "dot.radiowaves.left.and.right")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(CricTheme.onPrimary)
-                }
-            }
+            Text(viewModel.ringCaption)
+                .font(CricFont.dmSans(11.5, weight: .medium))
+                .foregroundStyle(CricTheme.textMuted)
+                .lineLimit(1)
         }
-        .buttonStyle(PressableScaleStyle())
-        .scaleEffect(viewModel.goLiveCountdown != nil ? CricMotion.pressScale : 1)
-        .animation(CricMotion.press, value: viewModel.goLiveCountdown != nil)
-        .animation(CricMotion.enter(), value: viewModel.streaming)
-    }
-
-    private func toolButton(_ label: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 18, weight: .regular))
-                Text(label)
-                    .font(.system(size: 9))
-            }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-        }
-        .buttonStyle(PressableScaleStyle())
     }
 
     // MARK: - Countdown
@@ -657,9 +563,10 @@ struct StudioView: View {
 // MARK: - Arrange overlay
 
 /// Full-screen direct-manipulation layer shown in Arrange mode over the live composited preview.
-/// Pinch always scales the board (aspect-locked); one-finger drag moves the selected target
-/// (Board or Sponsor). Transparent so the real camera + scoreboard sprite show through.
-/// Mirrors Android's ArrangeOverlay.
+/// Pinch (or the gold corner handle) scales the board (aspect-locked); one-finger drag moves the
+/// selected target (Board or Sponsor) with snap-to-centre/safe-margin guides and a live readout.
+/// Transparent so the real camera + scoreboard sprite show through. Mirrors Android's
+/// ArrangeOverlay + the arrange prototype's guides/handle.
 struct ArrangeOverlayView: View {
     @ObservedObject var viewModel: StudioViewModel
     @State private var lastPinchScale: CGFloat = 1.0
@@ -674,6 +581,10 @@ struct ArrangeOverlayView: View {
                     .gesture(dragGesture(in: geo.size))
                     .simultaneousGesture(pinchGesture())
 
+                guides(in: geo.size)
+                boardOutline(in: geo.size)
+                sponsorOutline(in: geo.size)
+
                 // Controls live at the TOP so the lower area (where the board sits) stays grabbable.
                 VStack(spacing: 12) {
                     HStack(spacing: 12) {
@@ -681,27 +592,23 @@ struct ArrangeOverlayView: View {
                             viewModel.cancelArrangeMode()
                         } label: {
                             Text("Cancel")
-                                .font(.headline)
-                                .foregroundColor(.white)
+                                .font(CricFont.dmSans(15, weight: .bold))
+                                .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity, minHeight: 48)
-                                .background(Color.black.opacity(0.5))
-                                .cornerRadius(10)
+                                .glassPillSurface(cornerRadius: 12)
                         }
+                        .buttonStyle(PressableScaleStyle())
                         Button {
                             viewModel.commitArrangeMode()
                         } label: {
                             Text("Done")
-                                .font(.headline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.black)
+                                .font(CricFont.dmSans(15, weight: .bold))
+                                .foregroundStyle(CricTheme.onPrimary)
                                 .frame(maxWidth: .infinity, minHeight: 48)
-                                .background(Color.yellow)
-                                .cornerRadius(10)
+                                .background(CricTheme.ctaGradient, in: RoundedRectangle(cornerRadius: 12))
                         }
+                        .buttonStyle(PressableScaleStyle())
                     }
-                    Text("Move:")
-                        .font(.caption)
-                        .foregroundColor(.white)
                     HStack(spacing: 8) {
                         arrangeChip("Scoreboard", selected: viewModel.arrangeTarget == .board) {
                             viewModel.arrangeTarget = .board
@@ -710,26 +617,36 @@ struct ArrangeOverlayView: View {
                             viewModel.arrangeTarget = .sponsor
                         }
                     }
+                    if let readout = viewModel.arrangeReadout {
+                        Text(readout)
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(CricTheme.primary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .glassPillSurface(cornerRadius: 8)
+                            .transition(.opacity)
+                    }
                     Spacer()
                 }
                 .padding(16)
+                .padding(.top, 40)
 
                 // Persistent hint near the bottom, above the board it describes.
                 VStack {
                     Spacer()
-                    Text("Drag anywhere to move the \(targetLabel) · pinch with two fingers to resize the scoreboard")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
+                    Text("Drag anywhere to move the \(targetLabel) · pinch or pull the gold handle to resize the scoreboard")
+                        .font(CricFont.dmSans(12, weight: .bold))
+                        .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Color.black.opacity(0.5))
-                        .cornerRadius(8)
+                        .glassPillSurface(cornerRadius: 10)
                         .padding(.bottom, 140)
                         .padding(.horizontal, 24)
                         .allowsHitTesting(false)
                 }
+
+                cornerHandle(in: geo.size)
             }
         }
         .ignoresSafeArea()
@@ -738,6 +655,123 @@ struct ArrangeOverlayView: View {
     private var targetLabel: String {
         viewModel.arrangeTarget == .board ? "scoreboard" : "sponsor"
     }
+
+    /// The prefs being manipulated right now (draft while a gesture is in flight).
+    private var draftPrefs: OverlayLayoutPrefs {
+        viewModel.arrangeDraft ?? viewModel.overlayPrefs
+    }
+
+    // MARK: Outlines, guides, handle
+
+    /// Board rect in view coordinates — mirrors the engine's sprite placement math
+    /// (StreamCameraEngine.applyOverlayLayout): width/height fractions of the frame,
+    /// anchorX-centred with inset clamping, lifted off the bottom by bottomMargin/720.
+    private func boardRect(in size: CGSize) -> CGRect {
+        let prefs = draftPrefs
+        let w = size.width
+        let h = size.height
+        let boardW = w * prefs.widthFraction
+        let boardH = h * prefs.heightFraction
+        let insetX = w * (prefs.horizontalInset / 400.0)
+        let maxLeft = max(w - boardW - insetX, 0)
+        let minLeft = min(insetX, maxLeft)
+        let left = min(max(prefs.anchorX * w - boardW / 2, minLeft), maxLeft)
+        let bottom = h * (prefs.bottomMargin / 720.0)
+        return CGRect(x: left, y: h - bottom - boardH, width: boardW, height: boardH)
+    }
+
+    /// Approximate sponsor rect: the engine sizes the logo at 18% of frame width × sizeScale;
+    /// height uses a ~2:1 aspect as a placement aid (the real bitmap's aspect varies).
+    private func sponsorRect(in size: CGSize) -> CGRect {
+        let prefs = draftPrefs
+        let scale = min(max(prefs.sponsorSizeScale, 0.3), 3.0)
+        let w = size.width * 0.18 * scale
+        let h = w / 2
+        return CGRect(
+            x: prefs.sponsorPositionX * size.width - w / 2,
+            y: prefs.sponsorPositionY * size.height - h / 2,
+            width: w,
+            height: h
+        )
+    }
+
+    @ViewBuilder
+    private func boardOutline(in size: CGSize) -> some View {
+        if draftPrefs.overlayEnabled {
+            let rect = boardRect(in: size)
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(
+                    CricTheme.primary.opacity(0.6),
+                    style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+                )
+                .frame(width: rect.width, height: rect.height)
+                .position(x: rect.midX, y: rect.midY)
+                .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder
+    private func sponsorOutline(in size: CGSize) -> some View {
+        // Only meaningful for the positionable (non-scroll) sponsor placement.
+        if draftPrefs.sponsorEnabled && !SponsorDisplayMode.isScroll(draftPrefs.sponsorDisplayMode) {
+            let rect = sponsorRect(in: size)
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(
+                    CricTheme.accent.opacity(0.6),
+                    style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])
+                )
+                .frame(width: rect.width, height: rect.height)
+                .position(x: rect.midX, y: rect.midY)
+                .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder
+    private func guides(in size: CGSize) -> some View {
+        if viewModel.arrangeGuideV {
+            Rectangle()
+                .fill(CricTheme.primary.opacity(0.6))
+                .frame(width: 1, height: size.height)
+                .position(x: size.width / 2, y: size.height / 2)
+                .allowsHitTesting(false)
+        }
+        if viewModel.arrangeGuideH {
+            Rectangle()
+                .fill(CricTheme.primary.opacity(0.6))
+                .frame(width: size.width, height: 1)
+                .position(x: size.width / 2, y: size.height / 2)
+                .allowsHitTesting(false)
+        }
+    }
+
+    /// 24pt gold corner handle on the board's bottom-right corner — dragging right grows the
+    /// board (scale = s0·(1+dx/140)), through the same clamps as pinch.
+    @ViewBuilder
+    private func cornerHandle(in size: CGSize) -> some View {
+        if draftPrefs.overlayEnabled {
+            let rect = boardRect(in: size)
+            Circle()
+                .fill(CricTheme.primary)
+                .frame(width: 24, height: 24)
+                .overlay(
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(CricTheme.onPrimary)
+                )
+                .position(x: rect.maxX, y: rect.maxY)
+                .gesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                            viewModel.resizeBoardHandle(dxPx: Double(value.translation.width))
+                        }
+                        .onEnded { _ in
+                            viewModel.dragEnded()
+                        }
+                )
+        }
+    }
+
+    // MARK: Gestures
 
     /// MagnificationGesture reports cumulative scale — convert to incremental ratios for pinchBoard.
     private func pinchGesture() -> some Gesture {
@@ -749,6 +783,7 @@ struct ArrangeOverlayView: View {
             }
             .onEnded { _ in
                 lastPinchScale = 1.0
+                viewModel.dragEnded()
             }
     }
 
@@ -761,124 +796,35 @@ struct ArrangeOverlayView: View {
                 lastDragTranslation = value.translation
                 let w = max(size.width, 1)
                 let h = max(size.height, 1)
-                viewModel.dragArrange(dxFraction: Double(dx / w), dyFraction: Double(dy / h))
+                viewModel.dragArrange(
+                    dxFraction: Double(dx / w),
+                    dyFraction: Double(dy / h),
+                    previewWidth: Double(w),
+                    previewHeight: Double(h)
+                )
             }
             .onEnded { _ in
                 lastDragTranslation = .zero
+                viewModel.dragEnded()
             }
     }
 
     private func arrangeChip(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.caption)
-                .fontWeight(selected ? .bold : .regular)
-                .foregroundColor(selected ? .white : .white.opacity(0.7))
+                .font(CricFont.dmSans(12, weight: selected ? .bold : .medium))
+                .foregroundStyle(selected ? CricTheme.primary : .white.opacity(0.7))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(selected ? Color.yellow.opacity(0.35) : Color.black.opacity(0.4))
-                .cornerRadius(8)
-        }
-    }
-}
-
-// MARK: - First-run precheck
-
-/// Guided first-run stepper (Camera → Arrange → Ready) gating the first Go Live.
-/// Mirrors the Android precheck card.
-struct PrecheckCard: View {
-    @ObservedObject var viewModel: StudioViewModel
-
-    var body: some View {
-        VStack {
-            Spacer()
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Quick setup before you go live")
-                    .font(.headline)
-                    .foregroundColor(.white)
-
-                precheckRow(
-                    index: 1,
-                    title: "Camera",
-                    done: viewModel.previewReady,
-                    active: viewModel.precheckStep == .camera,
-                    subtitle: viewModel.previewReady ? "Preview is running" : "Waiting for the camera…"
+                .background(
+                    selected ? CricTheme.primary.opacity(0.14) : CricTheme.glassPillBg,
+                    in: RoundedRectangle(cornerRadius: 10)
                 )
-                precheckRow(
-                    index: 2,
-                    title: "Arrange board & sponsor",
-                    done: viewModel.precheckStep == .ready,
-                    active: viewModel.precheckStep == .arrange,
-                    subtitle: "Pinch to resize, drag to place them on the frame"
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(selected ? CricTheme.primary : CricTheme.glassBorder, lineWidth: 1)
                 )
-                precheckRow(
-                    index: 3,
-                    title: "Ready",
-                    done: false,
-                    active: viewModel.precheckStep == .ready,
-                    subtitle: "You can rearrange any time from the Board menu"
-                )
-
-                HStack(spacing: 12) {
-                    Button("Skip") {
-                        viewModel.finishPrecheck()
-                    }
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.7))
-
-                    Spacer()
-
-                    switch viewModel.precheckStep {
-                    case .camera:
-                        EmptyView()
-                    case .arrange:
-                        Button {
-                            viewModel.precheckStartArrange()
-                        } label: {
-                            Text("Arrange now")
-                                .font(.subheadline).bold()
-                                .foregroundColor(.black)
-                                .padding(.horizontal, 18)
-                                .padding(.vertical, 10)
-                                .background(Color.yellow)
-                                .cornerRadius(8)
-                        }
-                    case .ready:
-                        Button {
-                            viewModel.finishPrecheck()
-                        } label: {
-                            Text("All set")
-                                .font(.subheadline).bold()
-                                .foregroundColor(.black)
-                                .padding(.horizontal, 18)
-                                .padding(.vertical, 10)
-                                .background(Color.yellow)
-                                .cornerRadius(8)
-                        }
-                    }
-                }
-            }
-            .padding(18)
-            .background(Color.black.opacity(0.75))
-            .cornerRadius(14)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 120)
         }
-    }
-
-    private func precheckRow(index: Int, title: String, done: Bool, active: Bool, subtitle: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: done ? "checkmark.circle.fill" : "\(index).circle")
-                .foregroundColor(done ? .green : active ? .yellow : .white.opacity(0.5))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(active || done ? .bold : .regular)
-                    .foregroundColor(.white)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.6))
-            }
-        }
+        .buttonStyle(PressableScaleStyle())
     }
 }

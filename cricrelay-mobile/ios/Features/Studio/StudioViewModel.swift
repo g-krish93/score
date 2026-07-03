@@ -9,13 +9,6 @@ enum ArrangeTarget {
     case sponsor
 }
 
-/// Steps of the first-run guided precheck shown before the first Go Live.
-enum PrecheckStep {
-    case camera
-    case arrange
-    case ready
-}
-
 /// Studio orientation control (parity with Android's OrientationMode). Auto follows the physical
 /// sensor; the lock modes force the interface orientation so an operator with the system rotation
 /// lock on can still get a landscape studio + landscape stream.
@@ -31,6 +24,9 @@ final class StudioViewModel: ObservableObject {
     @Published var match: StreamMatch?
     @Published var matchSlug: String
     @Published var statusMessage = ""
+    /// Latest MatchDayStatus from the ~5 s poll — feeds the scoreboard check's sublabel
+    /// ("Play-Cricket · live" / "Manual scorer" / "feed stale").
+    @Published var matchDay: MatchDayStatus?
 
     // Camera / stream state
     @Published var previewReady = false
@@ -77,22 +73,20 @@ final class StudioViewModel: ObservableObject {
     @Published var overlayPrefs = OverlayLayoutPrefs()
 
     // Pre-live "Arrange" mode: direct pinch/drag of the board + sponsor over the live preview.
+    // The draft is published so ArrangeOverlayView can draw the board/sponsor outlines live.
     @Published var arrangeMode = false
     @Published var arrangeTarget: ArrangeTarget = .board
-    private var arrangeDraft: OverlayLayoutPrefs?
+    @Published private(set) var arrangeDraft: OverlayLayoutPrefs?
 
-    // First-run guided precheck (Camera → Arrange → Ready), gating the first Go Live.
-    @Published var precheckActive = false
-    @Published var precheckStep: PrecheckStep = .camera
-    private static let precheckDoneKey = "cricrelay.studio.precheck_done"
+    // Arrange snap feedback: gold guide lines + a live percentage readout while dragging.
+    @Published var arrangeGuideV = false
+    @Published var arrangeGuideH = false
+    @Published var arrangeReadout: String?
+    /// Board scale at the moment the corner resize handle was grabbed (prototype: s0·(1+dx/140)).
+    private var boardHandleStartScale: Double?
 
     // Scoring
     @Published var scoringConfig: ScoringConfig?
-
-    // Preflight
-    @Published var preflightCameraOk = false
-    @Published var preflightDestinationOk = false
-    @Published var preflightOverlayOk = false
 
     // Countdown
     @Published var goLiveCountdown: Int?
@@ -188,6 +182,7 @@ final class StudioViewModel: ObservableObject {
         overlayPrefs = prefs
         if let scoring { scoringConfig = scoring }
         if let status {
+            matchDay = status
             streaming = status.broadcast.isStreaming
             paused = status.broadcast.isPaused
             if let url = status.broadcast.watchUrl { watchUrl = url }
@@ -204,9 +199,6 @@ final class StudioViewModel: ObservableObject {
         startPolling()
         startRemoteCommandPolling()
         sponsors = (try? await api.listSponsors()) ?? []
-
-        // Guided first-run precheck (Camera → Arrange → Ready) — never mid-broadcast.
-        if !streaming { startPrecheckIfNeeded() }
     }
 
     /// Resolve the StreamMatch row plus live YouTube/Twitch connection state, and pick a sensible
@@ -265,6 +257,7 @@ final class StudioViewModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 if let status = try? await api.matchDay(slug: matchSlug) {
                     await MainActor.run {
+                        matchDay = status
                         // Engine truth wins while this phone is publishing: the server only knows
                         // what our own fire-and-forget status POST told it, so a failed POST must
                         // not flip the shutter back to "Go Live" mid-broadcast (double-start risk).
@@ -317,28 +310,24 @@ final class StudioViewModel: ObservableObject {
 
     // MARK: - Go live flow
 
-    /// Entry point from the shutter: if the destination isn't actually ready, send the operator to
-    /// the Destination sheet first (parity with Android's requestGoLive) instead of a preflight that
-    /// would fail. Otherwise go straight to the preflight check.
-    func requestGoLive() {
-        guard StreamCameraEngine.shared.isPreviewReady else { return }
-        // First session: finish the guided precheck before going live.
-        if precheckActive { return }
-        recomputeDestinationReady()
-        if !streaming && !destinationReady {
-            activeSheet = .destination
-            return
-        }
-        openPreflight()
+    /// True while the countdown or the RTMP connect is in flight — drives the ring's
+    /// spinner and blocks a second tap from double-starting the broadcast.
+    var goLiveBusy: Bool {
+        goLiveCountdown != nil || statusMessage == "Connecting…"
     }
 
-    func openPreflight() {
+    /// Entry point from the Go Live ring (1b Checklist gate). All three checks complete →
+    /// straight into the 3-2-1 countdown confirmation. A blocked ring is guidance, never
+    /// dead: it opens the sheet that fixes the first incomplete check (preserves the old
+    /// "no destination → Destination sheet" behaviour).
+    func requestGoLive() {
+        guard !streaming, !goLiveBusy else { return }
         recomputeDestinationReady()
-        preflightCameraOk = StreamCameraEngine.shared.isPreviewReady
-        preflightDestinationOk = destinationReady
-        // Scoreboard intentionally off (book scoring) counts as ready — nothing to composite.
-        preflightOverlayOk = !overlayPrefs.overlayEnabled || match?.overlayEmbedUrl.isEmpty == false
-        activeSheet = .preflight
+        if let incomplete = firstIncompleteCheck {
+            openSheet(for: incomplete.kind)
+            return
+        }
+        Task { await confirmGoLive() }
     }
 
     func confirmGoLive() async {
@@ -425,8 +414,13 @@ final class StudioViewModel: ObservableObject {
     /// tripod phone to tap through a sheet. Goes live directly (no countdown; the companion
     /// operator already confirmed) when the destination is ready; otherwise falls back to
     /// surfacing the Destination sheet so setup can be finished on the phone.
+    ///
+    /// Deliberate asymmetry with the checklist ring: the remote path stays destination-only
+    /// gated (plus a live camera preview) — it does NOT require the scoreboard-source check,
+    /// because the companion operator may intentionally start a board-less broadcast and
+    /// can't see this phone's checklist to fix it.
     private func remoteStartBroadcast() async {
-        guard !streaming, StreamCameraEngine.shared.isPreviewReady, !precheckActive else { return }
+        guard !streaming, StreamCameraEngine.shared.isPreviewReady else { return }
         recomputeDestinationReady()
         guard destinationReady else {
             activeSheet = .destination
@@ -557,24 +551,23 @@ final class StudioViewModel: ObservableObject {
         arrangeDraft = overlayPrefs
         arrangeMode = true
         activeSheet = nil
+        dragEnded()
     }
 
     func cancelArrangeMode() {
         revertOverlayPreview()
         arrangeMode = false
         arrangeDraft = nil
+        dragEnded()
     }
 
     func commitArrangeMode() {
         let draft = arrangeDraft
         arrangeMode = false
         arrangeDraft = nil
+        dragEnded()
         if let draft {
             Task { await saveOverlay(draft) }
-        }
-        // Completing Arrange advances the first-run precheck to its final step.
-        if precheckActive, precheckStep == .arrange {
-            precheckStep = .ready
         }
     }
 
@@ -591,58 +584,109 @@ final class StudioViewModel: ObservableObject {
         mutateArrangeDraft { $0.withBoardScale($0.boardScale() * zoom) }
     }
 
+    /// Snap distance to the preview's centre lines (px, from the arrange prototype).
+    private static let snapCentrePx = 7.0
+    /// Safe-margin distance from the preview edges the board edges snap to.
+    private static let snapMarginPx = 16.0
+    /// How close (px) a board edge must get to a safe margin before it snaps.
+    private static let snapMarginThresholdPx = 8.0
+
     /// Drag the active target by a fraction of the preview (dy<0 = up). Board vertical drag maps
-    /// to bottomMargin (px, /720 in the engine) — parity with Android's dragArrange.
-    func dragArrange(dxFraction: Double, dyFraction: Double) {
+    /// to bottomMargin (px, /720 in the engine) — parity with Android's dragArrange. Snapping is
+    /// mapped onto the existing anchorX/bottomMargin/sponsorPosition fractions: centre lines at
+    /// 7 px, 16 px safe margins at 8 px on the board's edges (anchorX ± widthFraction/2).
+    func dragArrange(dxFraction: Double, dyFraction: Double, previewWidth: Double, previewHeight: Double) {
+        let w = max(previewWidth, 1.0)
+        let h = max(previewHeight, 1.0)
+        var guideV = false
+        var guideH = false
+        var readout: String?
         mutateArrangeDraft { p in
             var next = p
             switch arrangeTarget {
             case .board:
-                next.anchorX = min(1.0, max(0.0, p.anchorX + dxFraction))
-                next.bottomMargin = min(400.0, max(0.0, p.bottomMargin - dyFraction * 400.0))
+                var anchorX = min(1.0, max(0.0, p.anchorX + dxFraction))
+                var bottomMargin = min(400.0, max(0.0, p.bottomMargin - dyFraction * 400.0))
+                let boardWpx = p.widthFraction * w
+                // Vertical centre line wins; otherwise try the 16 px safe margins on each edge.
+                if abs(anchorX - 0.5) * w < Self.snapCentrePx {
+                    anchorX = 0.5
+                    guideV = true
+                } else {
+                    let leftEdge = anchorX * w - boardWpx / 2
+                    let rightEdge = anchorX * w + boardWpx / 2
+                    if abs(leftEdge - Self.snapMarginPx) < Self.snapMarginThresholdPx {
+                        anchorX = (Self.snapMarginPx + boardWpx / 2) / w
+                    } else if abs((w - Self.snapMarginPx) - rightEdge) < Self.snapMarginThresholdPx {
+                        anchorX = (w - Self.snapMarginPx - boardWpx / 2) / w
+                    }
+                    anchorX = min(1.0, max(0.0, anchorX))
+                }
+                // Horizontal centre line via the board's vertical centre: bottomMargin is in
+                // 720-canvas px, so /720 is its fraction of the frame height.
+                let centreFromBottomPx = (bottomMargin / 720.0 + p.heightFraction / 2) * h
+                if abs(centreFromBottomPx - h / 2) < Self.snapCentrePx {
+                    bottomMargin = min(400.0, max(0.0, (0.5 - p.heightFraction / 2) * 720.0))
+                    guideH = true
+                }
+                next.anchorX = anchorX
+                next.bottomMargin = bottomMargin
+                readout = String(
+                    format: "BOARD %d%% · %d%%",
+                    Int((anchorX * 100).rounded()),
+                    Int((bottomMargin / 720.0 * 100).rounded())
+                )
             case .sponsor:
-                next.sponsorPositionX = min(1.0, max(0.0, p.sponsorPositionX + dxFraction))
-                next.sponsorPositionY = min(1.0, max(0.0, p.sponsorPositionY + dyFraction))
+                // Sponsor is drag-only; its rendered size depends on the logo's aspect (engine
+                // sizes by bitmap), so it snaps its centre to the centre lines only.
+                var x = min(1.0, max(0.0, p.sponsorPositionX + dxFraction))
+                var y = min(1.0, max(0.0, p.sponsorPositionY + dyFraction))
+                if abs(x - 0.5) * w < Self.snapCentrePx {
+                    x = 0.5
+                    guideV = true
+                }
+                if abs(y - 0.5) * h < Self.snapCentrePx {
+                    y = 0.5
+                    guideH = true
+                }
+                next.sponsorPositionX = x
+                next.sponsorPositionY = y
+                readout = String(
+                    format: "SPONSOR %d%% · %d%%",
+                    Int((x * 100).rounded()),
+                    Int((y * 100).rounded())
+                )
             }
             return next
         }
+        arrangeGuideV = guideV
+        arrangeGuideH = guideH
+        arrangeReadout = readout
     }
 
-    // MARK: - First-run precheck
-
-    /// Show the guided precheck the first time the studio opens (before any Go Live).
-    func startPrecheckIfNeeded() {
-        guard !UserDefaults.standard.bool(forKey: Self.precheckDoneKey) else { return }
-        precheckActive = true
-        precheckStep = previewReady ? .arrange : .camera
+    /// Corner-handle resize (prototype: scale = s0 · (1 + dx/140)). `dxPx` is the gesture's
+    /// cumulative horizontal translation; the start scale latches on the first change and
+    /// clears in [dragEnded]. Goes through the same withBoardScale path as pinch, so the
+    /// existing clamps stay authoritative.
+    func resizeBoardHandle(dxPx: Double) {
+        let start = boardHandleStartScale ?? (arrangeDraft ?? overlayPrefs).boardScale()
+        boardHandleStartScale = start
+        mutateArrangeDraft { $0.withBoardScale(start * (1.0 + dxPx / 140.0)) }
+        let widthPercent = Int(((arrangeDraft ?? overlayPrefs).widthFraction * 100).rounded())
+        arrangeGuideV = false
+        arrangeGuideH = false
+        arrangeReadout = "BOARD WIDTH \(widthPercent)%"
     }
 
-    /// Camera step auto-completes once the preview is live.
-    func advancePrecheckIfCameraReady() {
-        if precheckActive, precheckStep == .camera, previewReady {
-            precheckStep = .arrange
-        }
+    /// Gesture finished: clear guides, readout, and the resize handle's latched start scale.
+    func dragEnded() {
+        boardHandleStartScale = nil
+        arrangeGuideV = false
+        arrangeGuideH = false
+        arrangeReadout = nil
     }
 
-    func precheckStartArrange() {
-        precheckStep = .arrange
-        enterArrangeMode()
-    }
-
-    func finishPrecheck() {
-        precheckActive = false
-        UserDefaults.standard.set(true, forKey: Self.precheckDoneKey)
-    }
-
-    /// Cycle video stabilisation Off → Standard → Cinematic from the on-screen quick toggle,
-    /// then persist + apply via saveOverlay (parity with Android's onToggleStabilization →
-    /// updateOverlayPrefs).
-    func toggleStabilization() async {
-        let next = (overlayPrefs.stabilizationLevel + 1) % 3
-        await saveOverlay(overlayPrefs.withStabilizationLevel(next))
-    }
-
-    /// Flip keep-screen-on from the on-screen quick toggle, then persist + apply via saveOverlay
+    /// Flip keep-screen-on from the Camera settings sheet, then persist + apply via saveOverlay
     /// (parity with Android's onToggleKeepScreenOn → updateOverlayPrefs).
     func toggleKeepScreenOn() async {
         var prefs = overlayPrefs
@@ -785,7 +829,6 @@ final class StudioViewModel: ObservableObject {
             fps: 30
         )
         previewReady = StreamCameraEngine.shared.isPreviewReady
-        advancePrecheckIfCameraReady()
     }
 
     /// Re-prepare the camera when the operator rotates the phone before Go Live.
@@ -839,6 +882,6 @@ final class StudioViewModel: ObservableObject {
 }
 
 enum StudioSheet: Identifiable {
-    case destination, overlay, scoring, preflight, menu, pairRemote
+    case destination, overlay, scoring, cameraSettings, menu, pairRemote, scorerQr
     var id: String { "\(self)" }
 }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -50,8 +51,34 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+/**
+ * Glass pill surface — the SPEC "surface over live video" treatment for standalone pills:
+ * translucent ink fill with a hairline glass border (~10:1 contrast floor over footage).
+ * Radius runs 14–18dp depending on the pill's context.
+ */
+fun Modifier.glassPill(radius: Dp = 16.dp): Modifier {
+    val shape = RoundedCornerShape(radius)
+    return this
+        .clip(shape)
+        .background(AppColors.GlassPillBg)
+        .border(1.dp, AppColors.GlassBorder, shape)
+}
+
+/**
+ * Dock/panel surface — deeper, more opaque ink for grouped controls (checklist panel,
+ * transport strip) with a softer border than a lone glass pill, per SPEC surfaces.
+ */
+fun Modifier.dockSurface(radius: Dp = 24.dp): Modifier {
+    val shape = RoundedCornerShape(radius)
+    return this
+        .clip(shape)
+        .background(AppColors.DockBg)
+        .border(1.dp, AppColors.DockBorder, shape)
+}
 
 @Composable
 fun PressableScale(
@@ -678,4 +705,108 @@ fun BroadcastGradientScrim(
                 ),
             ),
     )
+}
+
+/**
+ * Vertical at-a-glance pill for the studio edge rail (AF lock, mic). Default is glass +
+ * white; active swaps to an [activeColor] border over a translucent fill of the same hue —
+ * gold for AF-lock, [AppColors.Error] with [activeFillAlpha] 0.16f for a muted mic.
+ */
+@Composable
+fun GlancePill(
+    icon: ImageVector,
+    label: String,
+    active: Boolean,
+    activeColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    activeFillAlpha: Float = 0.14f,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) AppMotion.PressScale else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "glancePillScale",
+    )
+    val shape = RoundedCornerShape(16.dp)
+    val tint = if (active) activeColor else Color.White
+    Column(
+        modifier = modifier
+            .scale(scale)
+            .width(64.dp)
+            .heightIn(min = 64.dp)
+            .clip(shape)
+            .background(if (active) activeColor.copy(alpha = activeFillAlpha) else AppColors.GlassPillBg)
+            .border(1.dp, if (active) activeColor else AppColors.GlassBorder, shape)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.height(4.dp))
+        Text(
+            label.uppercase(),
+            color = tint,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.5.sp,
+            maxLines = 1,
+        )
+    }
+}
+
+/** Visual treatments for [TransportPill] — glass default, gold latched toggle, error-tinted STOP. */
+enum class TransportPillStyle { Default, GoldActive, ErrorTint }
+
+/**
+ * Horizontal control pill for the live transport strip — 48dp tall (full touch target),
+ * radius 14 per SPEC control-pill states.
+ */
+@Composable
+fun TransportPill(
+    icon: ImageVector,
+    label: String,
+    style: TransportPillStyle = TransportPillStyle.Default,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) AppMotion.PressScale else 1f,
+        animationSpec = AppMotion.pressFloatSpec(),
+        label = "transportPillScale",
+    )
+    val shape = RoundedCornerShape(14.dp)
+    val (bg, borderColor, tint) = when (style) {
+        TransportPillStyle.Default ->
+            Triple(AppColors.GlassPillBg, AppColors.GlassBorder, Color.White)
+        TransportPillStyle.GoldActive ->
+            Triple(AppColors.Primary.copy(alpha = 0.14f), AppColors.Primary, AppColors.Primary)
+        TransportPillStyle.ErrorTint ->
+            Triple(AppColors.Error.copy(alpha = 0.16f), AppColors.Error, AppColors.Error)
+    }
+    Row(
+        modifier = modifier
+            .scale(scale)
+            .height(48.dp)
+            .clip(shape)
+            .background(bg)
+            .border(1.dp, borderColor, shape)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(7.dp))
+        Text(
+            label,
+            color = tint,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+    }
 }

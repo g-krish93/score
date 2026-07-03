@@ -223,6 +223,21 @@ final class CricRelayAPI {
         )
     }
 
+    func scorerLink(slug: String) async throws -> ScorerLink {
+        do {
+            let json = try await postJson("/api/match/\(enc(slug))/scorer-link", body: [:])
+            guard let url = json["scorer_url"] as? String, !url.isEmpty else {
+                throw URLError(.badServerResponse)
+            }
+            return ScorerLink(scorerUrl: url, expiresAt: json["expires_at"] as? String)
+        } catch let e as APIError where e.statusCode == 404 {
+            // Older server without the mint endpoint — fall back to the static
+            // legacy scorer URL (nil expiry hides the expiry caption).
+            let config = try await scoringConfig(slug: slug)
+            return ScorerLink(scorerUrl: config.scorerUrl, expiresAt: nil)
+        }
+    }
+
     func pollRemoteCommands(slug: String) async throws -> [RemoteCommand] {
         let json = try await getJson("/api/match/\(enc(slug))/remote/commands")
         guard let rows = json["commands"] as? [[String: Any]] else { return [] }

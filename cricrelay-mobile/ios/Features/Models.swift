@@ -144,6 +144,17 @@ struct PairRemoteResult: Codable {
     }
 }
 
+/// Tokenized QR link for the manual scorer webpage. Nil expiresAt = static legacy URL.
+struct ScorerLink: Codable {
+    var scorerUrl: String
+    var expiresAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case scorerUrl = "scorer_url"
+        case expiresAt = "expires_at"
+    }
+}
+
 struct CompanionSession: Codable {
     var companionToken: String
     var matchSlug: String
@@ -196,11 +207,14 @@ struct OverlayLayoutPrefs: Codable {
     var anchorY: Double
     var bottomMargin: Double
     var horizontalInset: Double
+    /// Board preset id — see `BoardPreset`. Fresh installs get the Floodlight board.
     var theme: String
     var fontScale: Double
     var bgColor: String
     var textColor: String
     var opacity: Double
+    /// Bowling island: the separate bowler box (figures + THIS OVER strip) beside the board.
+    var bowlingIslandEnabled: Bool
     /// Master switch for the score bar. Off for book-scored matches with no data feed —
     /// an empty scoreboard bar would just clutter the stream. Local-only pref (the server
     /// ignores unknown overlay keys; the per-slug cache is authoritative).
@@ -227,6 +241,18 @@ struct OverlayLayoutPrefs: Codable {
 
     static let watermarkDefaultText = "Visit cricrelay.co.uk"
 
+    /// Preset ids accepted on the wire (parity with the shared KMP sanitizer).
+    static let validThemes: Set<String> = [
+        "barlow", "floodlight", "chalk", "club-green", "broadcast-blue", "mono",
+    ]
+
+    /// Unknown/blank ids fall back to the Floodlight default. Existing caches are safe:
+    /// encoding has always written `theme` explicitly, so stored barlow boards stay barlow.
+    static func sanitizeTheme(_ raw: String?) -> String {
+        let t = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return validThemes.contains(t) ? t : "floodlight"
+    }
+
     init() {
         heightFraction = 0.16
         widthFraction = 1.0
@@ -235,11 +261,12 @@ struct OverlayLayoutPrefs: Codable {
         // 0 = board sits flush to the frame's bottom edge (operator can lift it in Arrange).
         bottomMargin = 0.0
         horizontalInset = 0.0
-        theme = "barlow"
+        theme = "floodlight"
         fontScale = 1.0
         bgColor = ""
         textColor = ""
         opacity = 1.0
+        bowlingIslandEnabled = true
         overlayEnabled = true
         videoStabilization = true
         stabilizationLevel = StabilizationLevel.standard.rawValue
@@ -274,6 +301,7 @@ struct OverlayLayoutPrefs: Codable {
         case bgColor = "overlay_bg_color"
         case textColor = "overlay_text_color"
         case opacity = "overlay_opacity"
+        case bowlingIslandEnabled = "bowling_island_enabled"
         case overlayEnabled = "overlay_enabled"
         case videoStabilization = "video_stabilization"
         case stabilizationLevel = "stabilization_level"
@@ -327,7 +355,9 @@ struct OverlayLayoutPrefs: Codable {
             ?? legacy.decodeIfPresent(Double.self, forKey: .bottomMargin) ?? bottomMargin
         horizontalInset = try c.decodeIfPresent(Double.self, forKey: .horizontalInset)
             ?? legacy.decodeIfPresent(Double.self, forKey: .horizontalInset) ?? horizontalInset
-        theme = try c.decodeIfPresent(String.self, forKey: .theme) ?? theme
+        theme = OverlayLayoutPrefs.sanitizeTheme(
+            try c.decodeIfPresent(String.self, forKey: .theme) ?? theme
+        )
         fontScale = try c.decodeIfPresent(Double.self, forKey: .fontScale)
             ?? legacy.decodeIfPresent(Double.self, forKey: .fontScale) ?? fontScale
         bgColor = try c.decodeIfPresent(String.self, forKey: .bgColor)
@@ -336,6 +366,8 @@ struct OverlayLayoutPrefs: Codable {
             ?? legacy.decodeIfPresent(String.self, forKey: .textColor) ?? textColor
         opacity = try c.decodeIfPresent(Double.self, forKey: .opacity)
             ?? legacy.decodeIfPresent(Double.self, forKey: .opacity) ?? opacity
+        bowlingIslandEnabled = try c.decodeIfPresent(Bool.self, forKey: .bowlingIslandEnabled)
+            ?? bowlingIslandEnabled
         overlayEnabled = try c.decodeIfPresent(Bool.self, forKey: .overlayEnabled) ?? overlayEnabled
         // Prefer the 3-level field; fall back to the legacy boolean from old writers.
         if let level = try c.decodeIfPresent(Int.self, forKey: .stabilizationLevel) {
@@ -470,7 +502,8 @@ struct OverlayLayoutPrefs: Codable {
             sponsorScrollSpeed: Float(max(0.3, min(3, sponsorScrollSpeed))),
             sponsorScrollDirection: SponsorScrollDirection.sanitize(sponsorScrollDirection),
             theme: theme.isEmpty ? "barlow" : theme,
-            overlayEnabled: overlayEnabled
+            overlayEnabled: overlayEnabled,
+            bowlingIslandEnabled: bowlingIslandEnabled
         )
     }
 
@@ -542,6 +575,56 @@ struct OverlayLayoutPrefs: Codable {
             out["active_sponsor_id"] = id
         }
         return out
+    }
+}
+
+/// Scoreboard preset catalogue (parity with the shared KMP `BoardPreset`) — the single
+/// source of truth for the ids stored in `OverlayLayoutPrefs.theme`, their display names,
+/// and the swatch colours the preset picker renders: row-1 background (CSS rgba, as the
+/// overlay page paints it) plus the accent used for the score digits.
+struct BoardPreset: Identifiable, Equatable {
+    let id: String
+    let displayName: String
+    /// Row-1 background as a CSS `rgba()` string (matches the overlay page's preset CSS).
+    let row1Bg: String
+    /// Accent colour (score digits / highlights) as a hex string.
+    let accent: String
+    /// Pre-Floodlight board kept for existing users; pickers may list it last or hide it.
+    var legacy: Bool = false
+
+    static let floodlight = BoardPreset(
+        id: "floodlight", displayName: "Floodlight",
+        row1Bg: "rgba(10,14,21,0.88)", accent: "#FFC233"
+    )
+    static let chalk = BoardPreset(
+        id: "chalk", displayName: "Chalk",
+        row1Bg: "rgba(242,237,226,0.95)", accent: "#2E5E32"
+    )
+    static let clubGreen = BoardPreset(
+        id: "club-green", displayName: "Club Green",
+        row1Bg: "rgba(30,61,34,0.92)", accent: "#FFC233"
+    )
+    static let broadcastBlue = BoardPreset(
+        id: "broadcast-blue", displayName: "Broadcast Blue",
+        row1Bg: "rgba(14,42,74,0.92)", accent: "#57C7FF"
+    )
+    static let mono = BoardPreset(
+        id: "mono", displayName: "Mono",
+        row1Bg: "rgba(0,0,0,0.92)", accent: "#FFFFFF"
+    )
+    /// Legacy Barlow board; swatch mirrors its --sb-navy / --sb-gold CSS variables.
+    static let classic = BoardPreset(
+        id: "barlow", displayName: "Classic",
+        row1Bg: "rgba(22,41,77,1.0)", accent: "#D4A017", legacy: true
+    )
+
+    /// Picker order: the five Floodlight-era presets first, legacy Classic last.
+    static let all: [BoardPreset] = [floodlight, chalk, clubGreen, broadcastBlue, mono, classic]
+
+    /// Resolve a stored theme id (sanitized) to its preset; unknown ids get Floodlight.
+    static func byId(_ id: String?) -> BoardPreset {
+        let sanitized = OverlayLayoutPrefs.sanitizeTheme(id)
+        return all.first(where: { $0.id == sanitized }) ?? .floodlight
     }
 }
 

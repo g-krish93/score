@@ -171,6 +171,77 @@ def companion_token_required(view: Callable):
     return wrapped
 
 
+def _manual_scorer_serializer():
+    from flask import current_app
+
+    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="cricrelay-manual-scorer")
+
+
+def _manual_scorer_default_ttl() -> int:
+    try:
+        return int(os.getenv("MANUAL_SCORER_TOKEN_TTL_SEC", str(12 * 60 * 60)))
+    except ValueError:
+        return 12 * 60 * 60
+
+
+# Long enough for a full match day; the app re-mints a fresh link every time
+# the QR screen opens, so expiry only has to bound how long a leaked URL lives.
+MANUAL_SCORER_TOKEN_MAX_AGE = _manual_scorer_default_ttl()
+
+# Scorers legitimately pause between overs and at drinks; 10 minutes balances
+# that against detecting a dead scorer page.
+MANUAL_STALE_AFTER_SEC = int(os.getenv("MANUAL_STALE_AFTER_SEC", "600"))
+
+
+def issue_manual_scorer_token(org: Organization, match_slug: str) -> str:
+    return _manual_scorer_serializer().dumps({"oid": org.id, "slug": match_slug, "v": 1})
+
+
+def manual_scorer_org_id(token: str, match_slug: str) -> str | None:
+    try:
+        payload = _manual_scorer_serializer().loads(token, max_age=MANUAL_SCORER_TOKEN_MAX_AGE)
+    except (SignatureExpired, BadSignature):
+        return None
+    oid = str((payload or {}).get("oid") or "").strip()
+    slug = str((payload or {}).get("slug") or "").strip()
+    if not oid or not slug or slug != (match_slug or "").strip():
+        return None
+    return oid
+
+
+def manual_scorer_match_for_token(token: str, match_slug: str) -> RelayMatch | None:
+    """Resolve the manual-stream RelayMatch a scorer token grants access to."""
+    oid = manual_scorer_org_id(token, match_slug) if token else None
+    if not oid:
+        return None
+    row = RelayMatch.query.filter_by(organization_id=oid, score_match_slug=match_slug).first()
+    if row is None or (row.relay_source or "") != "manual":
+        return None
+    return row
+
+
+def manual_scorer_token_required(view: Callable):
+    """Auth for the QR scorer state endpoints. Token from Bearer header or ?token=.
+
+    Stateless by design (no Redis jti): match-day resilience beats
+    single-active-scorer enforcement; the seq guard handles two-phone races.
+    """
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        match_slug = str(kwargs.pop("match_slug", "") or "")
+        auth = (request.headers.get("Authorization") or "").strip()
+        token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+        if not token:
+            token = (request.args.get("token") or "").strip()
+        row = manual_scorer_match_for_token(token, match_slug)
+        if row is None:
+            return jsonify({"error": "unauthorized"}), 403
+        return view(row, match_slug, *args, **kwargs)
+
+    return wrapped
+
+
 def _twitch_oauth_serializer():
     from flask import current_app
 
@@ -275,6 +346,12 @@ def scoring_status_for_slug(slug: str) -> dict[str, Any]:
             scoring_stale = True
         else:
             scoring_stale = now - relay_ts > timedelta(minutes=3)
+    elif relay_mode == "manual" and state.get("manual_totals"):
+        # Only QR-scored streams carry manual_totals; before setup there is
+        # nothing to be stale relative to.
+        scoring_stale = manual_ts is None or now - manual_ts > timedelta(
+            seconds=MANUAL_STALE_AFTER_SEC
+        )
 
     return {
         "scoring_mode": app_mode,

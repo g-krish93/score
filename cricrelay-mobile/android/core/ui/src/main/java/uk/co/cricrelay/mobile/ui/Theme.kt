@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,8 +43,30 @@ object AppColors {
     val Success = Color(0xFF57C7FF)
     val Warning = Color(0xFFFF9466)
     val GlassBorder = Color(0x33FFFFFF)
+    val GlassPillBg = Color(0xC7090D14)
+    val DockBg = Color(0xD9070A10)
+    val DockBorder = Color(0x24FFFFFF)
+    val RingTrack = Color(0x2EFFFFFF)
     val YouTube = Color(0xFFFF0033)
     val Twitch = Color(0xFF9146FF)
+}
+
+/**
+ * Bundled brand type. Archivo ExtraBold is broadcast display only — wordmark, ON AIR,
+ * timers, GO LIVE, scoreboard team+score; DM Sans carries every other piece of UI text.
+ * Archivo ships one cut, registered at 800/900 so Black requests stay on-brand instead
+ * of falling back to a synthetic system bold.
+ */
+object AppFonts {
+    val Archivo = FontFamily(
+        Font(R.font.archivo_extrabold, FontWeight.ExtraBold),
+        Font(R.font.archivo_extrabold, FontWeight.Black),
+    )
+    val DmSans = FontFamily(
+        Font(R.font.dm_sans_regular, FontWeight.Normal),
+        Font(R.font.dm_sans_medium, FontWeight.Medium),
+        Font(R.font.dm_sans_bold, FontWeight.Bold),
+    )
 }
 
 /** Shared brand gradients so every screen lights CTAs and heroes the same way. */
@@ -134,55 +157,64 @@ val AppTypography = androidx.compose.material3.Typography(
         fontWeight = FontWeight.Bold,
         letterSpacing = (-0.5).sp,
         color = AppColors.OnBackground,
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = AppFonts.DmSans,
     ),
     headlineMedium = TextStyle(
         fontSize = 22.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = (-0.3).sp,
         color = AppColors.OnBackground,
+        fontFamily = AppFonts.DmSans,
     ),
     titleLarge = TextStyle(
         fontSize = 20.sp,
         fontWeight = FontWeight.SemiBold,
         color = AppColors.OnBackground,
+        fontFamily = AppFonts.DmSans,
     ),
     titleMedium = TextStyle(
         fontSize = 18.sp,
         fontWeight = FontWeight.SemiBold,
         color = AppColors.OnBackground,
+        fontFamily = AppFonts.DmSans,
     ),
     titleSmall = TextStyle(
         fontSize = 15.sp,
         fontWeight = FontWeight.SemiBold,
         color = AppColors.OnBackground,
+        fontFamily = AppFonts.DmSans,
     ),
     bodyMedium = TextStyle(
         fontSize = 15.sp,
         color = AppColors.OnBackgroundMuted,
         lineHeight = 22.sp,
+        fontFamily = AppFonts.DmSans,
     ),
     bodySmall = TextStyle(
         fontSize = 13.sp,
         color = AppColors.OnBackgroundDim,
         lineHeight = 18.sp,
+        fontFamily = AppFonts.DmSans,
     ),
     labelLarge = TextStyle(
         fontSize = 16.sp,
         fontWeight = FontWeight.SemiBold,
         color = AppColors.OnBackground,
+        fontFamily = AppFonts.DmSans,
     ),
     labelMedium = TextStyle(
         fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
         letterSpacing = 0.4.sp,
         color = AppColors.OnBackgroundMuted,
+        fontFamily = AppFonts.DmSans,
     ),
     labelSmall = TextStyle(
         fontSize = 11.sp,
         fontWeight = FontWeight.SemiBold,
         letterSpacing = 1.sp,
         color = AppColors.OnBackgroundDim,
+        fontFamily = AppFonts.DmSans,
     ),
 )
 

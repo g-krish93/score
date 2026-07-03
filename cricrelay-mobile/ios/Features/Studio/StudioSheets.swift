@@ -124,14 +124,6 @@ struct OverlaySheet: View {
     @State private var draft = OverlayLayoutPrefs()
     @State private var savedOnDismiss = false
 
-    private let boardColors: [(name: String, bg: String, text: String, color: Color)] = [
-        ("Default", "", "", Color(red: 0.09, green: 0.16, blue: 0.30)),
-        ("Dark", "#0E1A24", "#FFFFFF", Color(red: 0.05, green: 0.10, blue: 0.14)),
-        ("Black", "#000000", "#FFFFFF", Color.black),
-        ("Light", "#FFFFFF", "#16294D", Color.white),
-        ("Teal", "#0B3D3A", "#7CF6D6", Color(red: 0.04, green: 0.24, blue: 0.23)),
-    ]
-
     var body: some View {
         NavigationStack {
             StudioBackdrop {
@@ -140,7 +132,8 @@ struct OverlaySheet: View {
                         scoreboardToggle
                         if draft.overlayEnabled {
                             arrangeOnScreenButton
-                            boardColorSelector
+                            boardPresetSelector
+                            bowlerIslandToggle
                             Divider().overlay(Color.white.opacity(0.1))
                         }
                         overlaySliders
@@ -169,7 +162,6 @@ struct OverlaySheet: View {
         .onAppear {
             savedOnDismiss = false
             draft = viewModel.overlayPrefs
-            draft.theme = "barlow"
             Task { await viewModel.loadSponsors() }
             if draft.activeSponsorIds.isEmpty, draft.activeSponsorId == nil,
                let first = viewModel.sponsors.first(where: { $0.isActive }) {
@@ -231,6 +223,7 @@ struct OverlaySheet: View {
     private var overlayPreviewToken: String {
         [
             draft.theme,
+            String(draft.bowlingIslandEnabled),
             String(draft.overlayEnabled),
             draft.bgColor,
             draft.textColor,
@@ -256,34 +249,66 @@ struct OverlaySheet: View {
         ].joined(separator: "|")
     }
 
-    private var boardColorSelector: some View {
+    /// Preset picker: two-tone swatches (row-1 background + accent dot) driven by the shared
+    /// BoardPreset catalogue. Selecting a preset writes theme=id and clears the legacy
+    /// bgColor/textColor overrides (they only ever applied to the Classic Barlow board).
+    private var boardPresetSelector: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sheetSectionLabel("Board colour")
+            sheetSectionLabel("Board style")
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(boardColors, id: \.name) { preset in
-                        let selected = draft.bgColor == preset.bg && draft.textColor == preset.text
+                    ForEach(BoardPreset.all) { preset in
+                        let selected = OverlayLayoutPrefs.sanitizeTheme(draft.theme) == preset.id
                         Button {
-                            draft.bgColor = preset.bg
-                            draft.textColor = preset.text
-                            draft.theme = "barlow"
+                            draft.theme = preset.id
+                            draft.bgColor = ""
+                            draft.textColor = ""
                         } label: {
                             VStack(spacing: 6) {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(preset.color)
-                                    .frame(width: 52, height: 52)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .stroke(selected ? CricTheme.accent : Color.clear, lineWidth: 2)
-                                    )
-                                Text(preset.name)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(selected ? CricTheme.accent : CricTheme.textDim)
+                                ZStack(alignment: .bottomTrailing) {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Color(cssColor: preset.row1Bg) ?? CricTheme.surface)
+                                        .frame(width: 52, height: 52)
+                                    Circle()
+                                        .fill(Color(cssColor: preset.accent) ?? CricTheme.primary)
+                                        .frame(width: 14, height: 14)
+                                        .padding(6)
+                                }
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(
+                                            selected ? CricTheme.primary : Color.white.opacity(0.1),
+                                            lineWidth: selected ? 2 : 1
+                                        )
+                                )
+                                Text(preset.displayName)
+                                    .font(CricFont.dmSans(10, weight: .medium))
+                                    .foregroundStyle(selected ? CricTheme.primary : CricTheme.textDim)
                             }
                         }
+                        .buttonStyle(PressableScaleStyle())
                     }
                 }
             }
+        }
+    }
+
+    /// Bowling island (bowler figures + THIS OVER strip) — floodlight-era boards only;
+    /// the legacy Classic board has no island to toggle.
+    private var bowlerIslandToggle: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("Bowler island", isOn: $draft.bowlingIslandEnabled)
+                .tint(CricTheme.primary)
+                .font(.subheadline)
+                .foregroundStyle(.white)
+                .disabled(OverlayLayoutPrefs.sanitizeTheme(draft.theme) == "barlow")
+            Text(
+                OverlayLayoutPrefs.sanitizeTheme(draft.theme) == "barlow"
+                    ? "The Classic board has no bowler island — pick a newer style to use it."
+                    : "Separate bowler box (figures + this-over balls) beside the scoreboard."
+            )
+            .font(.caption)
+            .foregroundStyle(CricTheme.textDim)
         }
     }
 
@@ -302,6 +327,12 @@ struct OverlaySheet: View {
                     range: 0.10...0.28,
                     format: { "\(Int($0 * 100))%" }
                 )
+                if draft.heightFraction <= 0.11 {
+                    Text("At the smallest height the batsmen strip is hidden.")
+                        .font(.caption)
+                        .foregroundStyle(CricTheme.textDim)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 sliderRow(
                     label: "Font scale",
                     value: $draft.fontScale,
@@ -314,6 +345,12 @@ struct OverlaySheet: View {
                     range: 0.2...1.0,
                     format: { "\(Int($0 * 100))%" }
                 )
+                if draft.opacity < 0.6 {
+                    Text("Below 60% the board is hard to read in sunlight.")
+                        .font(.caption)
+                        .foregroundStyle(CricTheme.warning)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 sliderRow(
                     label: "Position",
                     value: $draft.bottomMargin,
@@ -326,32 +363,8 @@ struct OverlaySheet: View {
                 Divider().overlay(Color.white.opacity(0.1))
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Video stabilisation")
-                    .font(.subheadline)
-                    .foregroundStyle(.white)
-                // Binding goes through withStabilizationLevel so the wire-compat boolean stays in sync.
-                Picker("Video stabilisation", selection: Binding(
-                    get: { draft.stabilizationLevel },
-                    set: { draft = draft.withStabilizationLevel($0) }
-                )) {
-                    Text("Off").tag(StabilizationLevel.off.rawValue)
-                    Text("Standard").tag(StabilizationLevel.standard.rawValue)
-                    Text("Cinematic").tag(StabilizationLevel.cinematic.rawValue)
-                }
-                .pickerStyle(.segmented)
-            }
-            if draft.stabilizationLevel == StabilizationLevel.cinematic.rawValue {
-                Text("Strong stabilization slightly narrows the camera's field of view.")
-                    .font(.caption)
-                    .foregroundStyle(CricTheme.textDim)
-            }
-            Toggle("Keep screen on", isOn: $draft.keepScreenOn)
-                .tint(CricTheme.primary)
-                .font(.subheadline)
-                .foregroundStyle(.white)
-
-            Divider().overlay(Color.white.opacity(0.1))
+            // Stabilisation / keep-screen-on moved to the Camera settings sheet (SPEC
+            // hierarchy: device settings live behind the camera check, style stays here).
 
             // Watermark (admin): burned into the encoded stream, top-right.
             VStack(alignment: .leading, spacing: 10) {
@@ -638,6 +651,24 @@ struct ScoringSheet: View {
                             }
                         }
 
+                        if viewModel.scoringConfig?.mode == "manual" {
+                            Button {
+                                dismiss()
+                                viewModel.activeSheet = .scorerQr
+                            } label: {
+                                HStack {
+                                    Image(systemName: "qrcode")
+                                    Text("Show scorer QR")
+                                }
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(CricTheme.primary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(CricTheme.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+                            }
+                            .padding(.top, 6)
+                        }
+
                         if let config = viewModel.scoringConfig, let scorerUrl = URL(string: config.scorerUrl) {
                             Link(destination: scorerUrl) {
                                 HStack {
@@ -668,84 +699,148 @@ struct ScoringSheet: View {
     }
 }
 
-// MARK: - Preflight sheet
+// MARK: - Camera settings sheet
 
-struct PreflightSheet: View {
+/// Device-scoped camera controls behind checklist row 1 (SPEC hierarchy: stabilization /
+/// orientation / keep-screen-on live here, pre-live only — the encoder must not be
+/// reconfigured under an active publish).
+struct CameraSettingsSheet: View {
     @ObservedObject var viewModel: StudioViewModel
     @Environment(\.dismiss) private var dismiss
 
-    var allGood: Bool {
-        viewModel.preflightCameraOk && viewModel.preflightDestinationOk
-    }
+    private var locked: Bool { viewModel.streaming }
 
     var body: some View {
         NavigationStack {
             StudioBackdrop {
-                VStack(spacing: 20) {
-                    VStack(spacing: 10) {
-                        checkRow(
-                            label: "Camera ready",
-                            passed: viewModel.preflightCameraOk,
-                            hint: "Tap ⋯ → Restart camera preview"
-                        )
-                        checkRow(
-                            label: "Destination configured",
-                            passed: viewModel.preflightDestinationOk,
-                            hint: "Select YouTube, Twitch, or enter custom RTMP"
-                        )
-                        checkRow(
-                            label: "Scoreboard on stream",
-                            passed: viewModel.preflightOverlayOk,
-                            hint: "Overlay will render once live — optional"
-                        )
-                    }
-                    .padding(16)
-                    .background(CricTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        if locked {
+                            HStack(spacing: 10) {
+                                Image(systemName: "lock.fill")
+                                    .foregroundStyle(CricTheme.warning)
+                                    .font(.footnote)
+                                Text("Camera settings are locked while you're live.")
+                                    .font(.footnote)
+                                    .foregroundStyle(CricTheme.warning)
+                            }
+                            .padding(12)
+                            .background(CricTheme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                        }
 
-                    Button {
-                        dismiss()
-                        Task { await viewModel.confirmGoLive() }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                            Text("Go Live")
+                        HStack {
+                            Text("Stream quality")
+                                .font(.subheadline)
+                                .foregroundStyle(.white)
+                            Spacer()
+                            Text(StudioViewModel.streamQualityLabel)
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(CricTheme.textMuted)
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Video stabilisation")
+                                .font(.subheadline)
+                                .foregroundStyle(.white)
+                            // Persists via saveOverlay → device settings store + live engine apply.
+                            Picker("Video stabilisation", selection: Binding(
+                                get: { viewModel.overlayPrefs.stabilizationLevel },
+                                set: { level in
+                                    Task {
+                                        await viewModel.saveOverlay(
+                                            viewModel.overlayPrefs.withStabilizationLevel(level)
+                                        )
+                                    }
+                                }
+                            )) {
+                                Text("Off").tag(StabilizationLevel.off.rawValue)
+                                Text("Standard").tag(StabilizationLevel.standard.rawValue)
+                                Text("Cinematic").tag(StabilizationLevel.cinematic.rawValue)
+                            }
+                            .pickerStyle(.segmented)
+                            if viewModel.overlayPrefs.stabilizationLevel == StabilizationLevel.cinematic.rawValue {
+                                Text("Strong stabilization slightly narrows the camera's field of view.")
+                                    .font(.caption)
+                                    .foregroundStyle(CricTheme.textDim)
+                            }
+                        }
+
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Orientation")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white)
+                                Text(orientationValueLabel)
+                                    .font(.caption)
+                                    .foregroundStyle(CricTheme.textDim)
+                            }
+                            Spacer()
+                            Button {
+                                Task { await viewModel.toggleOrientation() }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "rotate.right")
+                                    Text("Rotate")
+                                }
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(CricTheme.accent)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(CricTheme.accent.opacity(0.12), in: Capsule())
+                            }
+                        }
+
+                        Toggle("Keep screen on", isOn: Binding(
+                            get: { viewModel.overlayPrefs.keepScreenOn },
+                            set: { _ in Task { await viewModel.toggleKeepScreenOn() } }
+                        ))
+                        .tint(CricTheme.primary)
+                        .font(.subheadline)
+                        .foregroundStyle(.white)
+
+                        Divider().overlay(Color.white.opacity(0.1))
+
+                        Button {
+                            dismiss()
+                            Task { await viewModel.restartCameraPreview() }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "camera.rotate")
+                                    .font(.system(size: 17))
+                                    .foregroundStyle(CricTheme.accent)
+                                    .frame(width: 36, height: 36)
+                                    .background(CricTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+                                Text("Restart camera preview")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white)
+                                Spacer()
+                            }
+                            .padding(14)
+                            .background(CricTheme.surface, in: RoundedRectangle(cornerRadius: 14))
                         }
                     }
-                    .buttonStyle(PrimaryCtaStyle())
-                    .disabled(!allGood)
-
-                    Button("Cancel") { dismiss() }
-                        .font(.subheadline)
-                        .foregroundStyle(CricTheme.textMuted)
+                    .padding(24)
+                    .disabled(locked)
                 }
-                .padding(24)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .navigationTitle("Pre-flight check")
+            .navigationTitle("Camera")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }.foregroundStyle(CricTheme.textMuted)
+                }
+            }
         }
         .preferredColorScheme(.dark)
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
     }
 
-    private func checkRow(label: String, passed: Bool, hint: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: passed ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(passed ? CricTheme.accent : CricTheme.danger)
-                .font(.system(size: 20))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.subheadline.bold())
-                    .foregroundStyle(.white)
-                if !passed {
-                    Text(hint)
-                        .font(.caption)
-                        .foregroundStyle(CricTheme.textMuted)
-                }
-            }
-            Spacer()
+    private var orientationValueLabel: String {
+        switch viewModel.orientationMode {
+        case .auto: return "Auto — follows how you hold the phone"
+        case .landscape: return "Locked to landscape"
+        case .portrait: return "Locked to portrait"
         }
-        .padding(.vertical, 4)
     }
 }
 
@@ -828,5 +923,47 @@ struct StudioMenuSheet: View {
         }
         .preferredColorScheme(.dark)
         .presentationDetents([.medium])
+    }
+}
+
+// MARK: - CSS colour parsing (BoardPreset swatches)
+
+extension Color {
+    /// Parse the CSS colour strings BoardPreset carries ("#RRGGBB" or "rgba(r,g,b,a)")
+    /// into a SwiftUI Color for the preset swatches. Returns nil on anything unexpected.
+    init?(cssColor: String) {
+        let s = cssColor.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if s.hasPrefix("#") {
+            let hex = String(s.dropFirst())
+            guard hex.count == 6, let value = UInt64(hex, radix: 16) else { return nil }
+            self.init(
+                red: Double((value >> 16) & 0xFF) / 255.0,
+                green: Double((value >> 8) & 0xFF) / 255.0,
+                blue: Double(value & 0xFF) / 255.0
+            )
+            return
+        }
+        if s.hasPrefix("rgba(") || s.hasPrefix("rgb(") {
+            let inner = s
+                .replacingOccurrences(of: "rgba(", with: "")
+                .replacingOccurrences(of: "rgb(", with: "")
+                .replacingOccurrences(of: ")", with: "")
+            let parts = inner.split(separator: ",").map {
+                $0.trimmingCharacters(in: .whitespaces)
+            }
+            guard parts.count >= 3,
+                  let r = Double(parts[0]),
+                  let g = Double(parts[1]),
+                  let b = Double(parts[2]) else { return nil }
+            let a = parts.count >= 4 ? (Double(parts[3]) ?? 1.0) : 1.0
+            self.init(
+                red: min(max(r / 255.0, 0), 1),
+                green: min(max(g / 255.0, 0), 1),
+                blue: min(max(b / 255.0, 0), 1),
+                opacity: min(max(a, 0), 1)
+            )
+            return
+        }
+        return nil
     }
 }

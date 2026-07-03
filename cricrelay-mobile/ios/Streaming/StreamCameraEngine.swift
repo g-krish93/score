@@ -37,6 +37,8 @@ final class StreamCameraEngine: NSObject {
         var theme: String = "barlow"
         // Master switch for the score bar (off for book-scored matches with no data feed).
         var overlayEnabled: Bool = true
+        // Bowling island (bowler figures + THIS OVER strip) beside the Floodlight-era boards.
+        var bowlingIslandEnabled: Bool = true
     }
 
     private let mixer = MediaMixer()
@@ -117,7 +119,17 @@ final class StreamCameraEngine: NSObject {
 
     func setKeepScreenOnDuringStream(enabled: Bool) {
         keepScreenOnDuringStream = enabled
-        UIApplication.shared.isIdleTimerDisabled = enabled && publishing
+        setIdleTimerDisabled(enabled && publishing)
+    }
+
+    /// UIApplication.isIdleTimerDisabled must be set on the main thread: the scene
+    /// client-settings update behind it hard-asserts on iOS 26 (BSServiceMainRunLoopQueue
+    /// assertBarrierOnQueue → SIGTRAP) when called from a background queue — which is where
+    /// startStream/stopStream run. Confirmed by on-device crash logs (2026-07-03, iOS 26.5).
+    private func setIdleTimerDisabled(_ disabled: Bool) {
+        DispatchQueue.main.async {
+            UIApplication.shared.isIdleTimerDisabled = disabled
+        }
     }
 
     /// Back-compat shim for boolean callers (e.g. old remote payloads).
@@ -260,10 +272,16 @@ final class StreamCameraEngine: NSObject {
                     fontScale: overlayLayout.fontScale,
                     bgColor: overlayLayout.bgColor,
                     textColor: overlayLayout.textColor,
-                    theme: overlayLayout.theme
+                    theme: overlayLayout.theme,
+                    heightFraction: overlayLayout.heightFraction,
+                    bowlingIslandEnabled: overlayLayout.bowlingIslandEnabled
                 )
                 overlayCapture?.loadUrl(
-                    OverlayThemeBridge.urlWithTheme(baseUrl: overlayUrl, mobileTheme: overlayLayout.theme)
+                    OverlayThemeBridge.urlWithTheme(
+                        baseUrl: overlayUrl,
+                        mobileTheme: overlayLayout.theme,
+                        islandEnabled: overlayLayout.bowlingIslandEnabled
+                    )
                 )
             }
             await ensureWatermarkObject()
@@ -315,17 +333,25 @@ final class StreamCameraEngine: NSObject {
                 fontScale: layout.fontScale,
                 bgColor: layout.bgColor,
                 textColor: layout.textColor,
-                theme: layout.theme
+                theme: layout.theme,
+                heightFraction: layout.heightFraction,
+                bowlingIslandEnabled: layout.bowlingIslandEnabled
             )
             overlayCapture?.loadUrl(
-                OverlayThemeBridge.urlWithTheme(baseUrl: url, mobileTheme: layout.theme)
+                OverlayThemeBridge.urlWithTheme(
+                    baseUrl: url,
+                    mobileTheme: layout.theme,
+                    islandEnabled: layout.bowlingIslandEnabled
+                )
             )
         } else {
             overlayCapture?.setStyle(
                 fontScale: layout.fontScale,
                 bgColor: layout.bgColor,
                 textColor: layout.textColor,
-                theme: layout.theme
+                theme: layout.theme,
+                heightFraction: layout.heightFraction,
+                bowlingIslandEnabled: layout.bowlingIslandEnabled
             )
         }
         overlayLayout = layout
@@ -403,10 +429,16 @@ final class StreamCameraEngine: NSObject {
                     fontScale: layout.fontScale,
                     bgColor: layout.bgColor,
                     textColor: layout.textColor,
-                    theme: layout.theme
+                    theme: layout.theme,
+                    heightFraction: layout.heightFraction,
+                    bowlingIslandEnabled: layout.bowlingIslandEnabled
                 )
                 overlayCapture?.loadUrl(
-                    OverlayThemeBridge.urlWithTheme(baseUrl: self.overlayUrl, mobileTheme: layout.theme)
+                    OverlayThemeBridge.urlWithTheme(
+                        baseUrl: self.overlayUrl,
+                        mobileTheme: layout.theme,
+                        islandEnabled: layout.bowlingIslandEnabled
+                    )
                 )
             }
             await ensureOverlayObject()
@@ -424,7 +456,7 @@ final class StreamCameraEngine: NSObject {
             try await stream.publish(name)
             publishing = true
             if keepScreenOnDuringStream {
-                UIApplication.shared.isIdleTimerDisabled = true
+                setIdleTimerDisabled(true)
             }
             emit("connected", "")
             startConnectionWatch()
@@ -468,7 +500,7 @@ final class StreamCameraEngine: NSObject {
         stopOverlayRefresh()
         publishing = false
         streamPaused = false
-        UIApplication.shared.isIdleTimerDisabled = false
+        setIdleTimerDisabled(false)
         await hidePauseBlackOverlay()
         await hideStandbySlate()
         endBackgroundTaskIfNeeded()

@@ -75,6 +75,7 @@ object StreamCameraEngine : CameraSession.Listener {
         val sponsorScrollSpeed: Float = 1f,
         val sponsorScrollDirection: String = "rtl",
         val theme: String = "barlow",
+        val bowlingIslandEnabled: Boolean = true,
     )
 
     // Also caps the overlay raster width in OverlayCompositor (capture never exceeds the encoder).
@@ -1446,7 +1447,11 @@ object StreamCameraEngine : CameraSession.Listener {
             try {
                 if (overlayUrl.isNotEmpty()) {
                     overlayCompositor.ensureOverlayCapture()?.loadUrl(
-                        OverlayThemeBridge.urlWithTheme(overlayUrl, overlayLayout.theme),
+                        OverlayThemeBridge.urlWithTheme(
+                            overlayUrl,
+                            overlayLayout.theme,
+                            overlayLayout.bowlingIslandEnabled,
+                        ),
                     )
                 }
                 overlayCompositor.startOverlayRefresh()

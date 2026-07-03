@@ -9,10 +9,30 @@ struct HomeView: View {
     @State private var showRenameAlert = false
     @State private var showDeleteConfirm = false
     @State private var showCreateMode: CreateMode?
+    @State private var scorerQrSlug: ScorerQrTarget?
 
     enum CreateMode: Identifiable {
-        case playCricket, cricheroes
-        var id: String { self == .playCricket ? "pc" : "ch" }
+        case playCricket, cricheroes, manual
+        var id: String {
+            switch self {
+            case .playCricket: return "pc"
+            case .cricheroes: return "ch"
+            case .manual: return "manual"
+            }
+        }
+        var typeString: String {
+            switch self {
+            case .playCricket: return "play_cricket"
+            case .cricheroes: return "cricheroes"
+            case .manual: return "manual"
+            }
+        }
+    }
+
+    /// Wrapper so the QR link can be presented via `.sheet(item:)` from a slug.
+    struct ScorerQrTarget: Identifiable {
+        let slug: String
+        var id: String { slug }
     }
 
     private var greeting: String {
@@ -72,9 +92,17 @@ struct HomeView: View {
         .preferredColorScheme(.dark)
         .sheet(item: $showCreateMode) { mode in
             CreateStreamView(
-                mode: mode == .playCricket ? "play_cricket" : "cricheroes",
-                viewModel: viewModel
+                mode: mode.typeString,
+                viewModel: viewModel,
+                onManualCreated: { slug in
+                    // Chaining a second sheet during the create sheet's dismissal
+                    // can drop the presentation — defer to the next runloop.
+                    DispatchQueue.main.async { scorerQrSlug = ScorerQrTarget(slug: slug) }
+                }
             )
+        }
+        .sheet(item: $scorerQrSlug) { target in
+            ScorerQrSheet(slug: target.slug)
         }
         .alert("Rename stream", isPresented: $showRenameAlert, presenting: managedStream) { stream in
             TextField("Name", text: $renameLabel)
@@ -225,6 +253,9 @@ struct HomeView: View {
                     }
                     Button { showCreateMode = .cricheroes } label: {
                         Label("CricHeroes scorecard", systemImage: "link")
+                    }
+                    Button { showCreateMode = .manual } label: {
+                        Label("Manual scoring", systemImage: "qrcode")
                     }
                 } label: {
                     Label("Add", systemImage: "plus.circle.fill")

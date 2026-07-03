@@ -203,6 +203,58 @@ def test_sponsor_crud_and_overlay_prefs(client):
     assert c.get("/api/sponsors", headers=headers).get_json()["sponsors"] == []
 
 
+def test_overlay_theme_presets_and_bowling_island(client):
+    """Floodlight board rollout: preset theme ids validate, unknown ids fall back to
+    barlow, and the new bowling_island_enabled pref round-trips (default True)."""
+    c, _fake = client
+    _org_id, token, slug = _seed_org_and_match()
+    headers = _auth_headers(token)
+
+    # Default: island on, without any write
+    initial = c.get(f"/api/match/{slug}/overlay", headers=headers)
+    assert initial.status_code == 200
+    assert initial.get_json()["bowling_island_enabled"] is True
+
+    # Every new preset id (and legacy barlow) validates and round-trips
+    for theme in ("floodlight", "chalk", "club-green", "broadcast-blue", "mono", "barlow"):
+        resp = c.post(
+            f"/api/match/{slug}/overlay",
+            headers=headers,
+            data=json.dumps({"theme": theme}),
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["theme"] == theme
+
+    # Unknown ids sanitize to barlow (graceful degrade on old clients)
+    resp = c.post(
+        f"/api/match/{slug}/overlay",
+        headers=headers,
+        data=json.dumps({"theme": "neon-zebra"}),
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["theme"] == "barlow"
+
+    # Island flag: bool-coerced on write, persists, and survives a follow-up GET
+    resp = c.post(
+        f"/api/match/{slug}/overlay",
+        headers=headers,
+        data=json.dumps({"bowling_island_enabled": 0}),
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["bowling_island_enabled"] is False
+
+    fetched = c.get(f"/api/match/{slug}/overlay", headers=headers)
+    assert fetched.status_code == 200
+    assert fetched.get_json()["bowling_island_enabled"] is False
+
+    resp = c.post(
+        f"/api/match/{slug}/overlay",
+        headers=headers,
+        data=json.dumps({"bowling_island_enabled": True}),
+    )
+    assert resp.get_json()["bowling_island_enabled"] is True
+
+
 def test_remote_pair_redeem_command_poll(client):
     c, fake = client
     _org_id, token, slug = _seed_org_and_match()

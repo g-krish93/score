@@ -30,7 +30,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.core.content.res.ResourcesCompat
 import kotlinx.coroutines.delay
-import uk.co.cricrelay.mobile.R
+import uk.co.cricrelay.mobile.ui.R
 import uk.co.cricrelay.mobile.ui.rememberReducedMotion
 import java.util.Random
 import kotlin.math.cos

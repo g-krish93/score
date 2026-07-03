@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B0F16;font-family:"DM Sans",system-ui,sans-serif}
+@keyframes toastIn{0%{opacity:0;transform:translate(-50%,6px) scale(0.95)}100%{opacity:1;transform:translate(-50%,0) scale(1)}}
+@media (prefers-reduced-motion:reduce){*{animation:none !important}}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:30px 16px">
+<div style="font:500 10.5px ui-monospace,Menlo,monospace;color:#98A1B3;letter-spacing:0.5px">ARRANGE MODE — working prototype · drag the board or sponsor · pinch / corner handle resizes the board · DONE persists, CANCEL reverts</div>
+<div data-screen-label="Arrange Mode" ref="{{ setStageRef }}" style="position:relative;width:393px;height:852px;border-radius:34px;overflow:hidden;background:#0A0E15;border:1px solid #323B4D;box-shadow:0 24px 60px rgba(0,0,0,0.5);flex:none;touch-action:none">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,#26334a 0%,#1d2839 30%,#15202e 42%,#202c22 43%,#1a251d 58%,#141d17 100%)"></div>
+<div style="position:absolute;left:0;right:0;top:39%;height:5%;background:#0d141d;filter:blur(7px);opacity:0.85"></div>
+<div style="position:absolute;left:0;right:0;top:43%;bottom:0;background:repeating-linear-gradient(90deg,rgba(255,255,255,0.022) 0 46px,rgba(0,0,0,0.028) 46px 92px)"></div>
+<div style="position:absolute;left:0;right:0;top:56%;height:30%;clip-path:polygon(43% 0,57% 0,67% 100%,33% 100%);background:linear-gradient(180deg,#4d4836 0%,#3f3b2b 100%);opacity:0.75"></div>
+<div style="position:absolute;inset:0;background:radial-gradient(130% 95% at 50% 42%,rgba(0,0,0,0) 52%,rgba(3,5,9,0.6) 100%)"></div>
+<div style="position:absolute;inset:0;background:rgba(7,10,16,0.22)"></div>
+<div style="position:absolute;inset:14px;border:1px dashed rgba(255,255,255,0.16);border-radius:22px;pointer-events:none"></div>
+<div style="position:absolute;top:0;left:0;right:0;height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;z-index:30">
+<span style="font:700 13px 'DM Sans';color:#FFFFFF">14:32</span>
+<div style="display:flex;align-items:center;gap:6px">
+<div style="display:flex;align-items:flex-end;gap:2px"><div style="width:3px;height:4px;background:#FFF;border-radius:1px"></div><div style="width:3px;height:6px;background:#FFF;border-radius:1px"></div><div style="width:3px;height:8px;background:#FFF;border-radius:1px"></div><div style="width:3px;height:10px;background:rgba(255,255,255,0.4);border-radius:1px"></div></div>
+<div style="width:22px;height:11px;border:1px solid rgba(255,255,255,0.5);border-radius:3px;padding:1.5px;box-sizing:border-box"><div style="width:70%;height:100%;background:#FFF;border-radius:1.5px"></div></div>
+</div></div>
+<div style="position:absolute;top:54px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:30;pointer-events:none">
+<div style="display:flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:17px;background:rgba(7,10,16,0.85);border:1px solid rgba(255,194,51,0.5)"><div style="width:8px;height:8px;border-radius:50%;background:#FFC233"></div><span style="font:800 11px Archivo;color:#FFC233;letter-spacing:1.5px">ARRANGE</span></div>
+<span style="font:500 10.5px 'DM Sans';color:#C7CDD9;text-shadow:0 1px 3px rgba(0,0,0,0.8)">Drag to place · pinch or corner handle to resize the board</span>
+</div>
+<div style="position:absolute;top:128px;left:50%;transform:translateX(-50%);display:flex;padding:4px;border-radius:14px;background:rgba(7,10,16,0.85);border:1px solid rgba(255,255,255,0.14);z-index:30">
+<div onClick="{{ pickBoard }}" style="display:flex;align-items:center;justify-content:center;height:36px;padding:0 16px;border-radius:10px;cursor:pointer;background:{{ pickerBoardBg }}"><span style="font:800 11px 'DM Sans';letter-spacing:0.6px;color:{{ pickerBoardFg }}">BOARD</span></div>
+<div onClick="{{ pickSponsor }}" style="display:flex;align-items:center;justify-content:center;height:36px;padding:0 16px;border-radius:10px;cursor:pointer;background:{{ pickerSponsorBg }}"><span style="font:800 11px 'DM Sans';letter-spacing:0.6px;color:{{ pickerSponsorFg }}">SPONSOR</span></div>
+</div>
+<sc-if value="{{ hasReadout }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;top:182px;left:50%;transform:translateX(-50%);display:flex;align-items:center;height:28px;padding:0 12px;border-radius:14px;background:rgba(7,10,16,0.88);border:1px solid rgba(255,255,255,0.2);z-index:30;pointer-events:none"><span style="font:700 10.5px ui-monospace,Menlo,monospace;color:#FFFFFF;letter-spacing:0.5px">{{ readout }}</span></div>
+</sc-if>
+<sc-if value="{{ guideV }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,194,51,0.6);z-index:18;pointer-events:none"></div>
+</sc-if>
+<sc-if value="{{ guideH }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;top:50%;left:0;right:0;height:1px;background:rgba(255,194,51,0.6);z-index:18;pointer-events:none"></div>
+</sc-if>
+<sc-if value="{{ sponsorOn }}" hint-placeholder-val="{{ true }}">
+<div onPointerDown="{{ dragSponsor }}" onPointerMove="{{ dragMove }}" onPointerUp="{{ dragEnd }}" onPointerCancel="{{ dragEnd }}" style="position:absolute;left:{{ sponsorLeft }};top:{{ sponsorTop }};width:104px;height:30px;border-radius:6px;border:1px dashed rgba(255,255,255,0.35);background:repeating-linear-gradient(45deg,rgba(255,255,255,0.05) 0 6px,rgba(255,255,255,0) 6px 12px),rgba(7,10,16,0.6);display:flex;align-items:center;justify-content:center;z-index:20;touch-action:none;cursor:grab;outline:{{ sponsorOutline }};outline-offset:5px"><span style="font:500 8px ui-monospace,Menlo,monospace;color:#C7CDD9;letter-spacing:0.6px;pointer-events:none">SPONSOR LOGO</span></div>
+</sc-if>
+<div ref="{{ setBoardRef }}" onPointerDown="{{ dragBoard }}" onPointerMove="{{ dragMove }}" onPointerUp="{{ dragEnd }}" onPointerCancel="{{ dragEnd }}" style="position:absolute;left:{{ boardLeft }};top:{{ boardTop }};transform:{{ boardTf }};transform-origin:top left;z-index:21;touch-action:none;cursor:grab;outline:{{ boardOutline }};outline-offset:6px;border-radius:10px">
+<div style="border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.4);pointer-events:none">
+<div style="display:flex;align-items:center;background:rgba(10,14,21,0.88);padding:7px 12px;gap:10px"><span style="font:800 13px Archivo;color:#FFFFFF;letter-spacing:0.3px;white-space:nowrap">ASHCOMBE CC</span><span style="font:800 15px Archivo;color:#FFC233">142/3</span><span style="font:700 11px 'DM Sans';color:#C7CDD9;white-space:nowrap">28.4 OV</span></div>
+<div style="display:flex;background:rgba(7,10,16,0.82);padding:4px 12px;gap:10px"><span style="font:500 10px 'DM Sans';color:#C7CDD9;white-space:nowrap">R Patel 61*</span><span style="font:500 10px 'DM Sans';color:#98A1B3;white-space:nowrap">J Whitely 24*</span><span style="font:500 10px 'DM Sans';color:#98A1B3;white-space:nowrap">Target 219</span></div>
+</div>
+<sc-if value="{{ targetIsBoard }}" hint-placeholder-val="{{ true }}">
+<div onPointerDown="{{ dragHandle }}" onPointerMove="{{ dragMove }}" onPointerUp="{{ dragEnd }}" onPointerCancel="{{ dragEnd }}" style="position:absolute;right:-12px;bottom:-12px;width:24px;height:24px;border-radius:50%;background:linear-gradient(180deg,#FFD15C,#E8A912);border:1.5px solid #1A1305;display:flex;align-items:center;justify-content:center;cursor:nwse-resize;touch-action:none;z-index:22"><div style="width:8px;height:8px;border-right:2px solid #1A1305;border-bottom:2px solid #1A1305;pointer-events:none"></div></div>
+</sc-if>
+</div>
+<div style="position:absolute;right:16px;bottom:120px;display:flex;align-items:center;gap:5px;opacity:0.55;z-index:15;pointer-events:none"><div style="display:flex;flex-direction:column;align-items:center"><div style="width:6px;height:4px;border:1.5px solid #C7CDD9;border-bottom:none;border-radius:3px 3px 0 0"></div><div style="width:9px;height:6px;background:#C7CDD9;border-radius:1.5px;margin-top:-1px"></div></div><span style="font:500 9px 'DM Sans';color:#FFFFFF">cricrelay.co.uk</span></div>
+<sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+<div style="position:absolute;bottom:112px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:17px;background:rgba(7,10,16,0.9);border:1px solid rgba(87,199,255,0.5);z-index:35;animation:toastIn 240ms ease-out"><div style="width:8px;height:8px;border-radius:50%;background:#57C7FF"></div><span style="font:700 11px 'DM Sans';color:#57C7FF">Layout saved</span></div>
+</sc-if>
+<div style="position:absolute;left:12px;right:12px;bottom:28px;display:flex;gap:10px;z-index:30">
+<div onClick="{{ onCancel }}" style="flex:1;height:54px;border-radius:16px;background:rgba(9,13,20,0.82);border:1px solid rgba(255,255,255,0.22);display:flex;align-items:center;justify-content:center;cursor:pointer"><span style="font:700 14px 'DM Sans';color:#FFFFFF;letter-spacing:0.4px">Cancel</span></div>
+<div onClick="{{ onDone }}" style="flex:1;height:54px;border-radius:16px;background:linear-gradient(180deg,#FFD15C,#E8A912);box-shadow:0 6px 20px rgba(255,194,51,0.25);display:flex;align-items:center;justify-content:center;cursor:pointer"><span style="font:800 14px Archivo;color:#1A1305;letter-spacing:1px">DONE</span></div>
+</div>
+<div style="position:absolute;left:50%;transform:translateX(-50%);bottom:8px;width:120px;height:5px;border-radius:3px;background:rgba(255,255,255,0.35);z-index:40"></div>
+</div>
+<div style="font:500 10px ui-monospace,Menlo,monospace;color:#98A1B3">SNAPS: centre lines + 16px safe margins · landscape uses identical mechanics · sponsor size stays a sheet slider (drag = position only)</div>
+</div>
+<template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" rx="16" fill="#141A26"/><rect x="26" y="52" width="52" height="22" rx="5" fill="#0A0E15" stroke="#FFC233" stroke-width="2" stroke-dasharray="5 4"/><circle cx="84" y="80" cy="80" r="9" fill="#FFC233"/></svg></template>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 480, &quot;height&quot;: 990}, &quot;sponsorEnabled&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Arrange&quot;}}">
+class Component extends DCLogic {
+  state = {
+    target: 'board',
+    board: { x: 4, y: 61, s: 1 },
+    sponsor: { x: 37, y: 9 },
+    guideV: false, guideH: false,
+    readout: '', toast: false
+  };
+
+  componentDidMount() {
+    this.pts = new Map();
+    this.pinch = null;
+    this.dragInfo = null;
+    var def = { board: { x: 4, y: 61, s: 1 }, sponsor: { x: 37, y: 9 } };
+    this.saved = def;
+    try {
+      var raw = localStorage.getItem('cricrelay-arrange-proto');
+      if (raw) {
+        var d = JSON.parse(raw);
+        if (d && d.board && d.sponsor) {
+          this.saved = d;
+          this.setState({ board: d.board, sponsor: d.sponsor });
+        }
+      }
+    } catch (e) {}
+  }
+
+  rect() { return this.stageEl ? this.stageEl.getBoundingClientRect() : { width: 393, height: 852, left: 0, top: 0 }; }
+  clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+  start(kind, e) {
+    e.stopPropagation();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+    var st = this.state;
+    if (kind === 'board' || kind === 'handle') {
+      if (kind === 'board') {
+        this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (this.pts.size === 2) {
+          var a = Array.from(this.pts.values());
+          this.pinch = { d0: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), s0: st.board.s };
+          this.dragInfo = null;
+          this.setState({ target: 'board' });
+          return;
+        }
+      }
+      this.dragInfo = { kind: kind, sx: e.clientX, sy: e.clientY, orig: { x: st.board.x, y: st.board.y, s: st.board.s } };
+      this.setState({ target: 'board' });
+    } else {
+      this.dragInfo = { kind: 'sponsor', sx: e.clientX, sy: e.clientY, orig: { x: st.sponsor.x, y: st.sponsor.y } };
+      this.setState({ target: 'sponsor' });
+    }
+  }
+
+  move(e) {
+    var r = this.rect();
+    if (this.pinch && this.pts.has(e.pointerId)) {
+      this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.pts.size >= 2) {
+        var a = Array.from(this.pts.values());
+        var d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
+        var s = this.clamp(this.pinch.s0 * (d / Math.max(1, this.pinch.d0)), 0.6, 1.8);
+        var wPct = this.boardEl ? Math.round(this.boardEl.getBoundingClientRect().width / r.width * 100) : 0;
+        this.setState({ board: Object.assign({}, this.state.board, { s: s }), readout: 'BOARD WIDTH ' + wPct + '%' });
+      }
+      return;
+    }
+    var di = this.dragInfo;
+    if (!di) return;
+    if (di.kind === 'handle') {
+      var s2 = this.clamp(di.orig.s * (1 + (e.clientX - di.sx) / 140), 0.6, 1.8);
+      var wp = this.boardEl ? Math.round(this.boardEl.getBoundingClientRect().width / r.width * 100) : 0;
+      this.setState({ board: Object.assign({}, this.state.board, { s: s2 }), readout: 'BOARD WIDTH ' + wp + '%' });
+      return;
+    }
+    var dx = (e.clientX - di.sx) / r.width * 100;
+    var dy = (e.clientY - di.sy) / r.height * 100;
+    var el = di.kind === 'board' ? this.boardEl : this.sponEl;
+    var er = el ? el.getBoundingClientRect() : { width: 104, height: 30 };
+    var ew = er.width / r.width * 100, eh = er.height / r.height * 100;
+    var nx = this.clamp(di.orig.x + dx, 0, 100 - ew);
+    var ny = this.clamp(di.orig.y + dy, 0, 100 - eh);
+    var gv = false, gh = false;
+    var px = r.width / 100, py = r.height / 100;
+    if (Math.abs((nx + ew / 2 - 50) * px) < 7) { nx = 50 - ew / 2; gv = true; }
+    else if (Math.abs(nx * px - 16) < 8) { nx = 16 / px; }
+    else if (Math.abs((nx + ew) * px - (r.width - 16)) < 8) { nx = (r.width - 16) / px - ew; }
+    if (Math.abs((ny + eh / 2 - 50) * py) < 7) { ny = 50 - eh / 2; gh = true; }
+    var ro = di.kind.toUpperCase() + ' ' + Math.round(nx) + '% · ' + Math.round(ny) + '%';
+    if (di.kind === 'board') this.setState({ board: Object.assign({}, this.state.board, { x: nx, y: ny }), guideV: gv, guideH: gh, readout: ro });
+    else this.setState({ sponsor: { x: nx, y: ny }, guideV: gv, guideH: gh, readout: ro });
+  }
+
+  end(e) {
+    this.pts.delete(e.pointerId);
+    if (this.pts.size < 2) this.pinch = null;
+    this.dragInfo = null;
+    this.setState({ guideV: false, guideH: false, readout: '' });
+  }
+
+  renderVals() {
+    var st = this.state;
+    var self = this;
+    return {
+      setStageRef: function (el) { self.stageEl = el; },
+      setBoardRef: function (el) { self.boardEl = el; },
+      boardLeft: st.board.x + '%',
+      boardTop: st.board.y + '%',
+      boardTf: 'scale(' + st.board.s.toFixed(3) + ')',
+      boardOutline: st.target === 'board' ? '1.5px dashed #FFC233' : 'none',
+      sponsorLeft: st.sponsor.x + '%',
+      sponsorTop: st.sponsor.y + '%',
+      sponsorOutline: st.target === 'sponsor' ? '1.5px dashed #57C7FF' : 'none',
+      sponsorOn: (this.props.sponsorEnabled === undefined || this.props.sponsorEnabled === null) ? true : !!this.props.sponsorEnabled,
+      targetIsBoard: st.target === 'board',
+      pickerBoardBg: st.target === 'board' ? 'linear-gradient(180deg,#FFD15C,#E8A912)' : 'transparent',
+      pickerBoardFg: st.target === 'board' ? '#1A1305' : '#C7CDD9',
+      pickerSponsorBg: st.target === 'sponsor' ? 'linear-gradient(180deg,#FFD15C,#E8A912)' : 'transparent',
+      pickerSponsorFg: st.target === 'sponsor' ? '#1A1305' : '#C7CDD9',
+      guideV: st.guideV, guideH: st.guideH,
+      readout: st.readout, hasReadout: !!st.readout,
+      toast: st.toast,
+      dragBoard: function (e) { self.start('board', e); },
+      dragSponsor: function (e) { self.start('sponsor', e); },
+      dragHandle: function (e) { self.start('handle', e); },
+      dragMove: function (e) { self.move(e); },
+      dragEnd: function (e) { self.end(e); },
+      pickBoard: function () { self.setState({ target: 'board' }); },
+      pickSponsor: function () { self.setState({ target: 'sponsor' }); },
+      onDone: function () {
+        self.saved = { board: Object.assign({}, self.state.board), sponsor: Object.assign({}, self.state.sponsor) };
+        try { localStorage.setItem('cricrelay-arrange-proto', JSON.stringify(self.saved)); } catch (e) {}
+        self.setState({ toast: true });
+        clearTimeout(self._tt);
+        self._tt = setTimeout(function () { self.setState({ toast: false }); }, 1600);
+      },
+      onCancel: function () {
+        self.setState({ board: Object.assign({}, self.saved.board), sponsor: Object.assign({}, self.saved.sponsor), target: 'board' });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

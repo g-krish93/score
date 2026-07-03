@@ -21,6 +21,7 @@ import uk.co.cricrelay.mobile.feature.auth.RegisterScreen
 import uk.co.cricrelay.mobile.feature.home.CreateStreamScreen
 import uk.co.cricrelay.mobile.feature.home.HomeScreen
 import uk.co.cricrelay.mobile.feature.home.RemoteControlScreen
+import uk.co.cricrelay.mobile.feature.scoring.ScorerQrScreen
 import uk.co.cricrelay.mobile.feature.scoring.ScoringScreen
 import uk.co.cricrelay.mobile.feature.studio.PairRemoteScreen
 import uk.co.cricrelay.mobile.feature.studio.StudioScreen
@@ -120,6 +121,11 @@ fun CricRelayNavHost(
                     navController.navigate(StudioRoute(match.slug)) {
                         popUpTo(HomeRoute)
                     }
+                    // Manual streams surface the scorer QR immediately; Back
+                    // from it lands in the studio.
+                    if (match.relaySource == "manual") {
+                        navController.navigate(ScorerQrRoute(match.slug))
+                    }
                 },
                 onBack = { navController.popBackStack() },
             )
@@ -146,6 +152,7 @@ fun CricRelayNavHost(
                 onBack = { navController.popBackStack() },
                 onOpenScoring = { slug -> navController.navigate(ScoringRoute(slug)) },
                 onPairRemote = { navController.navigate(PairRemoteRoute(route.matchSlug)) },
+                onShowScorerQr = { navController.navigate(ScorerQrRoute(route.matchSlug)) },
             )
         }
         composable<PairRemoteRoute> { entry ->
@@ -165,6 +172,14 @@ fun CricRelayNavHost(
         composable<ScoringRoute> { entry ->
             val route = entry.toRoute<ScoringRoute>()
             ScoringScreen(
+                matchSlug = route.matchSlug,
+                onBack = { navController.popBackStack() },
+                onShowQr = { navController.navigate(ScorerQrRoute(route.matchSlug)) },
+            )
+        }
+        composable<ScorerQrRoute> { entry ->
+            val route = entry.toRoute<ScorerQrRoute>()
+            ScorerQrScreen(
                 matchSlug = route.matchSlug,
                 onBack = { navController.popBackStack() },
             )

@@ -36,24 +36,19 @@ class RtmpCredentialsStore @Inject constructor(
         return creds.rtmpUrl.isNotBlank() && creds.streamKey.isNotBlank()
     }
 
-    /** One-time guided precheck (Camera → Arrange → Ready) shown before the first Go Live. */
-    fun isPrecheckDone(): Boolean = prefs.getBoolean(PRECHECK_DONE, false)
-
-    fun setPrecheckDone() {
-        prefs.edit().putBoolean(PRECHECK_DONE, true).apply()
-    }
-
     private fun key(slug: String, field: String) = "rtmp_${slug}_$field"
 
     private companion object {
         const val PREFS = "cricrelay_rtmp_credentials"
-        const val PRECHECK_DONE = "studio_precheck_done"
     }
 }
 
-/** Vertical lift from the bottom edge; matches GL sprite [bottomMarginFraction] math. */
+/**
+ * Vertical lift from the bottom edge; matches the GL sprite [bottomMarginFraction] math in
+ * [toEngineLayout] (same /720 reference and 0..0.6 cap, so Arrange outlines line up).
+ */
 fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.bottomMarginPx(frameHeightPx: Int): Int {
-    val fraction = (bottomMargin.toFloat() / 720f).coerceIn(0f, 0.2f)
+    val fraction = (bottomMargin.toFloat() / 720f).coerceIn(0f, 0.6f)
     return (frameHeightPx * fraction).toInt()
 }
 
@@ -87,5 +82,6 @@ fun uk.co.cricrelay.shared.model.OverlayLayoutPrefs.toEngineLayout(
         sponsorScrollSpeed = sponsorScrollSpeed.toFloat().coerceIn(0.3f, 3f),
         sponsorScrollDirection = uk.co.cricrelay.shared.model.SponsorScrollDirection.sanitize(sponsorScrollDirection),
         theme = uk.co.cricrelay.shared.model.OverlayLayoutPrefs.sanitizeTheme(theme),
+        bowlingIslandEnabled = bowlingIslandEnabled,
     )
 }

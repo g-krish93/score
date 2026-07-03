@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.PhonelinkRing
+import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SmartDisplay
 import androidx.compose.material.icons.outlined.SportsCricket
@@ -380,6 +381,18 @@ fun HomeScreen(
             },
             modifier = Modifier.padding(horizontal = AppSpacing.lg),
         )
+        Spacer(Modifier.height(AppSpacing.sm))
+        ActionCard(
+            title = "Manual scoring",
+            description = "Not on either platform? A second phone scans a QR code and scores from its browser.",
+            icon = Icons.Outlined.QrCode2,
+            tint = AppColors.Primary,
+            onClick = {
+                createSheet = false
+                onCreateStream("manual")
+            },
+            modifier = Modifier.padding(horizontal = AppSpacing.lg),
+        )
     }
 
     CricRelayBottomSheet(
@@ -549,6 +562,7 @@ fun CreateStreamScreen(
             ScreenTopBar(
                 title = when (mode) {
                     "cricheroes" -> "New CricHeroes stream"
+                    "manual" -> "New manual stream"
                     else -> "New Play-Cricket stream"
                 },
                 onBack = onBack,
@@ -599,6 +613,14 @@ fun CreateStreamScreen(
                         style = AppTypography.bodySmall,
                         modifier = Modifier.padding(top = AppSpacing.sm),
                     )
+                } else if (mode == "manual") {
+                    Text(
+                        "Team names and overs are set on the scorer page after you create the " +
+                            "stream — you only name the stream here. You'll get a QR code for " +
+                            "the scorer's phone next.",
+                        style = AppTypography.bodySmall,
+                        modifier = Modifier.padding(top = AppSpacing.sm),
+                    )
                 }
                 state.error?.let {
                     Spacer(Modifier.height(AppSpacing.md))
@@ -613,6 +635,7 @@ fun CreateStreamScreen(
                     onClick = {
                         when (mode) {
                             "cricheroes" -> viewModel.createCricHeroes(onCreated)
+                            "manual" -> viewModel.createManual(onCreated)
                             else -> viewModel.createPlayCricket(onCreated)
                         }
                     },

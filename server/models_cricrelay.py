@@ -300,7 +300,8 @@ class RelayMatch(db.Model):
     score_match_slug = db.Column(db.String(120), unique=True, nullable=False, index=True)
     label = db.Column(db.String(120), nullable=True)
     paused = db.Column(db.Boolean, nullable=False, default=False)
-    # scraper = Play-Cricket HTML poll; cricheroes = CricHeroes scrape; pcs_ble = dormant BLE ingest
+    # scraper = Play-Cricket HTML poll; cricheroes = CricHeroes scrape; manual = QR scorer page;
+    # pcs_ble = dormant BLE ingest
     relay_source = db.Column(db.String(24), nullable=False, default="scraper")
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -474,7 +475,7 @@ RELAY_PROVIDERS = {
 
 def relay_source_to_provider(relay_source: str) -> str | None:
     src = (relay_source or "scraper").strip().lower()
-    if src == "pcs_ble":
+    if src in {"pcs_ble", "manual"}:
         return None
     if src == "cricheroes":
         return "cricheroes"

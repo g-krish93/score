@@ -87,6 +87,13 @@ final class HomeViewModel: ObservableObject {
         return stream
     }
 
+    func createManualStream(label: String) async throws -> StreamMatch {
+        let stream = try await api.createStream(type: "manual", label: label)
+        streams.insert(stream, at: 0)
+        slotsUsed = streams.count
+        return stream
+    }
+
     func youtubeAuthorizeUrl() async -> String? {
         await authorizeUrl(platform: "YouTube") { try await self.api.youtubeAuthorizeUrl() }
     }

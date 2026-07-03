@@ -29,8 +29,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uk.co.cricrelay.mobile.ui.AppColors
@@ -40,6 +38,7 @@ import uk.co.cricrelay.mobile.ui.CameraCircleButton
 import uk.co.cricrelay.mobile.ui.ErrorBanner
 import uk.co.cricrelay.mobile.ui.LoadingState
 import uk.co.cricrelay.mobile.ui.StudioBackdrop
+import uk.co.cricrelay.mobile.ui.encodeQrBitmap
 
 @Composable
 fun PairRemoteScreen(
@@ -130,15 +129,4 @@ fun PairRemoteScreen(
             }
         }
     }
-}
-
-private fun encodeQrBitmap(payload: String, size: Int): Bitmap {
-    val matrix = QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, size, size)
-    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.RGB_565)
-    for (x in 0 until size) {
-        for (y in 0 until size) {
-            bmp.setPixel(x, y, if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
-        }
-    }
-    return bmp
 }

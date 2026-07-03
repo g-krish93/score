@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@600;700;800;900&display=swap">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width:100%; height:100%; background:transparent; overflow:hidden;
@@ -380,6 +381,163 @@
   }
   body.play-cricket-data.board-barlow .sb-strike { display: none; }
   body.play-cricket-data .bat-star { visibility: hidden; width: 0; margin: 0; padding: 0; }
+
+  /* ── Floodlight broadcast scoreboard (boardStyle=floodlight | chalk | club-green |
+        broadcast-blue | mono — SPEC.md presets P1–P5) ──
+     Determinism contract for the WebView→GL capture: NO transition on any colour /
+     background / size property (style edits snap); the ONLY animations are the 160ms
+     score tick and the wicket-chip in/out keyframes (opacity+transform only, never
+     layout); board pixel height NEVER changes during the wicket flash (W chip lives
+     inline in the fixed-height row1); NO per-frame JS. */
+  body.board-floodlight {
+    /* Defaults = P1 Floodlight: rgba(10,14,21,0.88) / rgba(7,10,16,0.82) / #FFF / #FFC233 */
+    --fl-row1-bg: rgba(10,14,21,0.88);
+    --fl-row2-bg: rgba(7,10,16,0.82);
+    --fl-text:    #FFFFFF;
+    --fl-accent:  #FFC233;
+    --fl-muted:   #C7CDD9;
+    --fl-strip1:  #C7CDD9;
+    --fl-strip2:  #98A1B3;
+    /* Island = the preset's CONTRAST surface (P1: gold gradient + ink; THIS OVER stays dark) */
+    --fl-ihead-bg: linear-gradient(180deg,#FFD15C,#E8A912);
+    --fl-ihead-text: #1A1305;
+    --fl-ihead-muted: rgba(26,19,5,0.65);
+    --fl-istrip-bg: rgba(7,10,16,0.82);
+    font-family: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+  }
+  body.preset-floodlight { /* P1 — same as the board-floodlight defaults above */ }
+  body.preset-chalk {
+    /* P2: rgba(242,237,226,0.95) / rgba(230,224,209,0.95) / #1A1305 / #2E5E32; island club-green */
+    --fl-row1-bg: rgba(242,237,226,0.95);
+    --fl-row2-bg: rgba(230,224,209,0.95);
+    --fl-text:    #1A1305;
+    --fl-accent:  #2E5E32;
+    --fl-muted:   rgba(26,19,5,0.62);
+    --fl-strip1:  rgba(26,19,5,0.75);
+    --fl-strip2:  rgba(26,19,5,0.55);
+    --fl-ihead-bg: rgba(46,94,50,0.95);
+    --fl-ihead-text: #FFFFFF;
+    --fl-ihead-muted: #D8C9A3;
+  }
+  body.preset-club-green {
+    /* P3: rgba(30,61,34,0.92) / rgba(21,45,24,0.92) / #FFF+#D8C9A3 / #FFC233 */
+    --fl-row1-bg: rgba(30,61,34,0.92);
+    --fl-row2-bg: rgba(21,45,24,0.92);
+    --fl-text:    #FFFFFF;
+    --fl-accent:  #FFC233;
+    --fl-muted:   #D8C9A3;
+    --fl-strip1:  #D8C9A3;
+    --fl-strip2:  rgba(216,201,163,0.7);
+  }
+  body.preset-broadcast-blue {
+    /* P4: rgba(14,42,74,0.92) / rgba(10,32,58,0.92) / #FFF / #57C7FF */
+    --fl-row1-bg: rgba(14,42,74,0.92);
+    --fl-row2-bg: rgba(10,32,58,0.92);
+    --fl-text:    #FFFFFF;
+    --fl-accent:  #57C7FF;
+    --fl-ihead-bg: linear-gradient(180deg,#57C7FF,#4DA3FF);
+    --fl-ihead-text: #071018;
+    --fl-ihead-muted: rgba(7,16,24,0.65);
+  }
+  body.preset-mono {
+    /* P5: rgba(0,0,0,0.92) / rgba(0,0,0,0.85) / #FFF / #FFF (no accent) */
+    --fl-row1-bg: rgba(0,0,0,0.92);
+    --fl-row2-bg: rgba(0,0,0,0.85);
+    --fl-text:    #FFFFFF;
+    --fl-accent:  #FFFFFF;
+    --fl-muted:   rgba(255,255,255,0.72);
+    --fl-strip1:  rgba(255,255,255,0.72);
+    --fl-strip2:  rgba(255,255,255,0.55);
+    --fl-ihead-bg: rgba(255,255,255,0.92);
+    --fl-ihead-text: #000000;
+    --fl-ihead-muted: rgba(0,0,0,0.6);
+  }
+  #fl-root { display: none; }
+  body.board-floodlight #fl-root { display: block; }
+  /* Old-bridge injection wins: legacy apps pin board-barlow directly — barlow renders
+     even if board-floodlight is also present. */
+  body.board-barlow #fl-root { display: none !important; }
+  body.board-floodlight #accent-line,
+  body.board-floodlight #main-bar,
+  body.board-floodlight #bottom-strip { display: none !important; }
+  .fl-wrap { width: 100%; padding: 0 12px 10px; }
+  .fl-pair { display: flex; align-items: flex-end; gap: 10px; }
+  .fl-board, .fl-island {
+    border-radius: 10px; overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    flex: none;
+  }
+  .fl-row1 {
+    display: flex; align-items: center; gap: 18px;
+    height: 62px; padding: 0 22px;
+    background: var(--fl-row1-bg);
+    white-space: nowrap;
+  }
+  .fl-team  { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 30px; line-height: 1; color: var(--fl-text); letter-spacing: .3px; }
+  .fl-score { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 36px; line-height: 1; color: var(--fl-accent); }
+  .fl-board.fl-wicket .fl-score { color: #FF9466; }
+  .fl-overs { font-weight: 700; font-size: 24px; line-height: 1; color: var(--fl-muted); }
+  .fl-score.tick { animation: fl-tick 160ms ease-out; }
+
+  /* Inline W chip (D3) — fixed height inside the fixed-height row1: board height never changes */
+  .fl-wkt-chip {
+    display: none; align-items: center; gap: 8px;
+    height: 30px; padding: 0 12px;
+    background: rgba(255,148,102,0.16);
+    border: 1px solid rgba(255,148,102,0.6);
+    border-radius: 6px;
+  }
+  .fl-board.fl-wicket .fl-wkt-chip { display: flex; animation: fl-chip-in 240ms ease-out; }
+  .fl-board.fl-wicket-out .fl-wkt-chip { display: flex; animation: fl-chip-out 160ms ease-in forwards; }
+  .fl-wkt-w   { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 18px; line-height: 1; color: #FF9466; }
+  .fl-wkt-txt { font-weight: 500; font-size: 16px; line-height: 1; color: #FF9466; white-space: nowrap; }
+
+  .fl-row2 {
+    display: flex; align-items: center; gap: 18px;
+    height: 38px; padding: 0 22px;
+    background: var(--fl-row2-bg);
+    white-space: nowrap;
+  }
+  .fl-bat, .fl-ctx { font-weight: 500; font-size: 19px; line-height: 1; }
+  .fl-bat { color: var(--fl-strip1); }
+  .fl-bat.ns, .fl-ctx { color: var(--fl-strip2); }
+  /* Strip auto-hide: min board height (fl-compact), forced manual mode, or D4 single-row */
+  body.fl-compact .fl-row2,
+  body.fl-manual .fl-row2,
+  .fl-board.fl-single .fl-row2 { display: none; }
+
+  /* Bowling island — preset CONTRAST header + THIS OVER strip; bottom-aligned with board */
+  .fl-island { display: none; }
+  /* Body marker is fl-island-on (NOT fl-island) so the element rule above can
+     never match <body> and hide the whole board. */
+  body.board-floodlight.fl-island-on .fl-island { display: block; }
+  .fl-island.fl-empty { display: none !important; }
+  body.fl-manual .fl-island { display: none !important; }
+  .fl-i-head {
+    display: flex; align-items: center; gap: 14px;
+    height: 48px; padding: 0 18px;
+    background: var(--fl-ihead-bg);
+    white-space: nowrap;
+  }
+  .fl-i-name { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 22px; line-height: 1; color: var(--fl-ihead-text); }
+  .fl-i-fig  { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 26px; line-height: 1; color: var(--fl-ihead-text); }
+  .fl-i-ov   { font-weight: 700; font-size: 18px; line-height: 1; color: var(--fl-ihead-muted); }
+  .fl-i-strip {
+    display: flex; align-items: center; gap: 12px;
+    height: 32px; padding: 0 18px;
+    background: var(--fl-istrip-bg);
+    white-space: nowrap;
+  }
+  .fl-i-lbl { font-weight: 700; font-size: 13px; color: #98A1B3; letter-spacing: 1.2px; }
+  .fl-i-balls { display: flex; align-items: center; gap: 12px; }
+  .fl-ball { font-weight: 700; font-size: 17px; line-height: 1; color: #C7CDD9; }
+  .fl-ball.b46 { font-weight: 800; color: #FFC233; }
+  .fl-ball.bW  { font-weight: 800; color: #FF9466; }
+  .fl-ball.bph { color: #565f70; }
+
+  @keyframes fl-tick     { from { transform: translateY(3px); opacity: .35; } to { transform: none; opacity: 1; } }
+  @keyframes fl-chip-in  { from { transform: scale(.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @keyframes fl-chip-out { from { transform: scale(1); opacity: 1; } to { transform: scale(.95); opacity: 0; } }
 </style>
 </head>
 <body>
@@ -557,6 +715,38 @@
     </div>
   </div>
 
+  <!-- Floodlight broadcast layout (boardStyle=floodlight + presets P1–P5) -->
+  <div id="fl-root">
+    <div class="fl-wrap">
+      <div class="fl-pair">
+        <div class="fl-board" id="fl-board">
+          <div class="fl-row1">
+            <span class="fl-team" id="fl-team">—</span>
+            <span class="fl-score" id="fl-score">—/—</span>
+            <span class="fl-overs" id="fl-overs">— OV</span>
+            <span class="fl-wkt-chip"><span class="fl-wkt-w">W</span><span class="fl-wkt-txt" id="fl-wkt-txt">—</span></span>
+          </div>
+          <div class="fl-row2">
+            <span class="fl-bat" id="fl-bat1">—</span>
+            <span class="fl-bat ns" id="fl-bat2">—</span>
+            <span class="fl-ctx" id="fl-ctx">—</span>
+          </div>
+        </div>
+        <div class="fl-island" id="fl-island">
+          <div class="fl-i-head">
+            <span class="fl-i-name" id="fl-i-name">—</span>
+            <span class="fl-i-fig" id="fl-i-fig">—-—</span>
+            <span class="fl-i-ov" id="fl-i-ov">—</span>
+          </div>
+          <div class="fl-i-strip">
+            <span class="fl-i-lbl">THIS OVER</span>
+            <span class="fl-i-balls" id="fl-i-balls"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 <div id="sponsor-root"></div>
 
@@ -588,8 +778,52 @@ const CFG = {
 const THEMES = { navy:'', green:'theme-green', gold:'theme-gold', red:'theme-red' };
 document.getElementById('overlay').className = THEMES[CFG.theme] || '';
 
-function applyBoardStyle() {
-  document.body.classList.add('board-barlow');
+// ── Board style: "barlow" (legacy) or the Floodlight presets (SPEC P1–P5) ──
+const FLOODLIGHT_PRESETS = ['floodlight', 'chalk', 'club-green', 'broadcast-blue', 'mono'];
+
+function flParseBool(raw, dflt) {
+  if (raw === null || raw === undefined || raw === '') return dflt;
+  const v = String(raw).trim().toLowerCase();
+  return !(v === '0' || v === 'false' || v === 'no' || v === 'off');
+}
+
+// applyBoardStyle(style, opts) — resolves style from: explicit arg → ?boardStyle= →
+// default "floodlight". Back-compat: old mobile bridges call this with NO args and
+// separately inject the board-barlow class themselves — their injection must win, so
+// a no-arg call on a body already pinned to board-barlow keeps barlow.
+// opts: { island: bool (default ?island= or true) — toggles the bowling island;
+//         compact: bool — hides the batsmen strip (min board height);
+//         manual: bool — forces the single-row manual-scorer layout }
+function applyBoardStyle(style, opts) {
+  opts = opts || {};
+  const params = new URLSearchParams(location.search);
+  let resolved = String(style || params.get('boardStyle') || '').trim().toLowerCase();
+  if (!resolved) {
+    resolved = document.body.classList.contains('board-barlow') ? 'barlow' : 'floodlight';
+  }
+  if (resolved !== 'barlow' && FLOODLIGHT_PRESETS.indexOf(resolved) === -1) {
+    resolved = 'floodlight';
+  }
+
+  const cl = document.body.classList;
+  FLOODLIGHT_PRESETS.forEach(p => cl.remove('preset-' + p));
+  if (resolved === 'barlow') {
+    cl.remove('board-floodlight');
+    cl.add('board-barlow');
+  } else {
+    cl.remove('board-barlow');
+    cl.add('board-floodlight');
+    cl.add('preset-' + resolved);
+  }
+
+  const island = opts.island !== undefined ? !!opts.island : flParseBool(params.get('island'), true);
+  cl.toggle('fl-island-on', island && resolved !== 'barlow');
+  const compact = opts.compact !== undefined ? !!opts.compact : flParseBool(params.get('compact'), false);
+  cl.toggle('fl-compact', compact);
+  const manual = opts.manual !== undefined ? !!opts.manual
+    : flParseBool(params.get('manual'), !!window.__dataManual);
+  cl.toggle('fl-manual', manual);
+  return resolved;
 }
 applyBoardStyle();
 window.applyBoardStyle = applyBoardStyle;
@@ -628,6 +862,8 @@ const S = {
   isWicket:      false,
   wicketTimer:   null,
   wicketCycle:   null,
+  flWicketTimer:    null,
+  flWicketOutTimer: null,
   staleTimer:    null,
   noticeTimer:   null,
   noticeRefresh: null,
@@ -700,6 +936,14 @@ function applyDataPatternClass(data) {
     (data && data.relay_source === 'cricheroes') ||
     new URLSearchParams(location.search).get('source') === 'cricheroes'
   ));
+  // Manual (QR scorer) streams have totals only — force the single-row layout.
+  // Remembered in window.__dataManual so applyBoardStyle keeps it across theme
+  // pushes from the mobile bridge (which never passes a manual opt). URL
+  // manual=0 pins it off.
+  const manual = !!(data && data.data_pattern === 'manual');
+  const pinned = new URLSearchParams(location.search).get('manual');
+  window.__dataManual = manual && pinned !== '0';
+  if (window.__dataManual) document.body.classList.add('fl-manual');
 }
 
 function ballsLeft(totalOvers, currentOvers) {
@@ -802,7 +1046,11 @@ function buildTickerMsg(data) {
   const minAgo   = S.lastFetchedAt ? Math.floor((Date.now() - S.lastFetchedAt) / 60000) : '?';
 
   // One honest generic message — never speculates about cause
-  const msg = `  ⚠  Score not updating  ·  Last known: ${team} ${score} (${overs} ov) at ${lastTime}  ·  ${minAgo} min ago  ·  Please ask the on-field scorer to sync Play Cricket  ·  `;
+  const isManual = !!(data && (data.relay_mode === 'manual' || data.data_pattern === 'manual'));
+  const hint = isManual
+    ? 'Please ask the scorer to reopen the scoring page on their phone'
+    : 'Please ask the on-field scorer to sync Play Cricket';
+  const msg = `  ⚠  Score not updating  ·  Last known: ${team} ${score} (${overs} ov) at ${lastTime}  ·  ${minAgo} min ago  ·  ${hint}  ·  `;
   return msg + msg; // doubled for seamless CSS loop
 }
 
@@ -1086,7 +1334,13 @@ function applySponsor(sponsor) {
 // ══════════════════════════════════════════════════════════
 // BARLOW LAYOUT (boardStyle=barlow)
 // ══════════════════════════════════════════════════════════
-function isBarlowLayout() { return true; }
+function isBarlowLayout() { return document.body.classList.contains('board-barlow'); }
+
+// Floodlight is active unless a legacy bridge pinned board-barlow (which always wins)
+function isFloodlightActive() {
+  return document.body.classList.contains('board-floodlight')
+      && !document.body.classList.contains('board-barlow');
+}
 
 function barlowName(name) {
   if (!name) return '—';
@@ -1185,6 +1439,116 @@ function renderBarlow(data, inn, isSecond, target) {
     rrrLbl.textContent = 'LAST WKT:';
     rrrEl.textContent = lastWicketText(inn);
   }
+}
+
+// ══════════════════════════════════════════════════════════
+// FLOODLIGHT LAYOUT (boardStyle=floodlight + presets)
+// ══════════════════════════════════════════════════════════
+function renderFloodlightOver(balls) {
+  const wrap = document.getElementById('fl-i-balls');
+  if (!wrap) return;
+  const shown = (balls && balls.length) ? balls.slice(-6) : [];
+  wrap.innerHTML = '';
+  for (let i = 0; i < 6; i++) {
+    const sp = document.createElement('span');
+    if (i < shown.length) {
+      const raw = String(shown[i]).trim();
+      const up = raw.toUpperCase();
+      const isDot = raw === '.' || raw === '0';
+      sp.className = 'fl-ball' + (up === 'W' ? ' bW' : (raw === '4' || raw === '6') ? ' b46' : '');
+      sp.textContent = isDot ? '·' : (up === 'WD' ? 'Wd' : raw);
+    } else {
+      sp.className = 'fl-ball bph';
+      sp.textContent = '·';
+    }
+    wrap.appendChild(sp);
+  }
+}
+
+function flBatText(batter) {
+  if (!batter || !batter.name || !String(batter.name).trim()) return '';
+  return shortName(batter.name) + ' ' + (batter.runs != null ? batter.runs : 0) + '*';
+}
+
+function renderFloodlight(data, inn, isSecond, target) {
+  if (!document.getElementById('fl-root')) return;
+  const pc = isPlayCricketSource(data);
+  const board = document.getElementById('fl-board');
+
+  // Row 1 — TEAM / SCORE / OVERS
+  const battingName = inn.batting_team || data.batting_team || data.home_team || '—';
+  document.getElementById('fl-team').textContent = String(battingName).toUpperCase();
+
+  const scoreEl = document.getElementById('fl-score');
+  const scoreTxt = inn.runs + '/' + inn.wickets;
+  if (scoreEl.textContent !== scoreTxt) {
+    scoreEl.textContent = scoreTxt;
+    // 160ms score tick — transform/opacity only, never layout
+    scoreEl.classList.remove('tick');
+    void scoreEl.offsetWidth;
+    scoreEl.classList.add('tick');
+  }
+
+  document.getElementById('fl-overs').textContent = pc
+    ? formatInningsOverUp(inn.overs)
+    : inn.overs + ' OV';
+
+  // Row 2 — batsmen + context (D1 CRR / D2 chase); D4 manual scorer = single row
+  const s  = data.striker     || {};
+  const ns = data.non_striker || {};
+  const bat1 = flBatText(s);
+  const bat2 = flBatText(ns);
+  board.classList.toggle('fl-single', !bat1);
+  document.getElementById('fl-bat1').textContent = bat1 || '—';
+  document.getElementById('fl-bat2').textContent = bat2 || '—';
+
+  const ctx = document.getElementById('fl-ctx');
+  if (isSecond && target) {
+    const need  = target - inn.runs;
+    const bleft = ballsLeft(data.total_overs || 40, inn.overs);
+    ctx.textContent = need > 0
+      ? 'Target ' + target + ' · need ' + need + ' (' + bleft + ')'
+      : 'Target ' + target;
+  } else {
+    ctx.textContent = 'CRR ' + crr(inn.runs, inn.overs);
+  }
+
+  // Bowling island — bowler figures + THIS OVER strip
+  const b = data.current_bowler || {};
+  const island = document.getElementById('fl-island');
+  const hasBowler = !!(b.name && String(b.name).trim());
+  island.classList.toggle('fl-empty', !hasBowler);
+  document.getElementById('fl-i-name').textContent = hasBowler ? barlowName(b.name) : '—';
+  document.getElementById('fl-i-fig').textContent = (b.wickets || 0) + '-' + (b.runs || 0);
+  document.getElementById('fl-i-ov').textContent = pc
+    ? formatBowlerOversUp(b.overs)
+    : (b.overs || '—') + ' OV';
+  renderFloodlightOver(data.recent_over || []);
+}
+
+// D3 wicket flash: score coral + inline W chip — 240ms in / ~4s hold / 160ms out.
+// Discrete class states driven by setTimeout (no per-frame JS); the chip is inline in
+// the fixed-height row1 so board pixel height never changes.
+function flWicketFlash(text) {
+  const board = document.getElementById('fl-board');
+  if (!board) return;
+  document.getElementById('fl-wkt-txt').textContent = text || 'WICKET';
+  clearTimeout(S.flWicketTimer);
+  clearTimeout(S.flWicketOutTimer);
+  board.classList.remove('fl-wicket-out');
+  board.classList.remove('fl-wicket');
+  void board.offsetWidth;   // restart the chip-in animation on back-to-back wickets
+  board.classList.add('fl-wicket');
+  S.flWicketTimer = setTimeout(() => {
+    board.classList.remove('fl-wicket');
+    board.classList.add('fl-wicket-out');
+    S.flWicketOutTimer = setTimeout(() => board.classList.remove('fl-wicket-out'), 160);
+  }, 4000);
+}
+
+function flWicketChipText(batter) {
+  if (!batter || !batter.name) return 'WICKET';
+  return shortName(batter.name) + ' ' + (batter.runs != null ? batter.runs : 0);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1301,8 +1665,10 @@ function render(data) {
   // ── Bottom strip ──
   renderBottomStrip(data, inn, isSecond, target);
 
-  // ── Barlow layout mirror ──
-  if (isBarlowLayout()) renderBarlow(data, inn, isSecond, target);
+  // ── Board mirrors — update BOTH board DOMs every render so switching styles
+  //    (bridge setStyle / ?boardStyle=) never reveals stale text ──
+  renderBarlow(data, inn, isSecond, target);
+  renderFloodlight(data, inn, isSecond, target);
 
   // ── Result: match complete — show result panel ──
   if (isSecond && isMatchComplete(data)) {
@@ -1438,7 +1804,15 @@ async function poll() {
       const newlyOut = (activeInn.batters || [])
         .filter(b => b.status === 'out')
         .slice(-(newWkts - prev));
-      if (newlyOut.length) showWickets(newlyOut.map(dismissalText));
+      if (newlyOut.length) {
+        if (isFloodlightActive()) {
+          // D3: coral score + inline W chip on the floodlight board; the legacy
+          // #panel-wicket takeover is suppressed while floodlight is active
+          flWicketFlash(flWicketChipText(newlyOut[newlyOut.length - 1]));
+        } else {
+          showWickets(newlyOut.map(dismissalText));
+        }
+      }
     }
     S.prevWickets = newWkts;
 
@@ -1557,6 +1931,8 @@ window.loadMockAdith = () => {
 
 window.testWicket = () => showWickets(['A Clement 38(32) c A Thilo b L Hunt', 'A P R 5(6) b L Hunt']);
 window.testBalls  = (balls) => renderRecentOver(balls || ['.','1','Wd','4','.','W']);
+// Floodlight D3 flash — coral score + inline W chip (240ms in / 4s hold / 160ms out)
+window.testWicketFl = (txt) => flWicketFlash(txt || 'T Smith 52');
 
 // testStale(N)      — simulate N minutes since last update (default 8)
 // testStale(false)  — simulate reconnect, clears everything
@@ -1591,11 +1967,23 @@ window.loadMockPreMatch = () => {
 };
 
 (function autoDemo() {
+  // Works with every board: switch via ?boardStyle=<barlow|floodlight|chalk|club-green|
+  // broadcast-blue|mono>, toggle the bowling island via ?island=0, batsmen strip via
+  // ?compact=1, manual-scorer row via ?manual=1 (all resolved by applyBoardStyle above).
   const demo = new URLSearchParams(location.search).get('demo');
   if (demo === null) return;
   if (demo === 'prematch') { loadMockPreMatch(); return; }
   if (demo === 'inn1' || demo === 'first') { loadMock(1); return; }
   if (demo === 'crit' || demo === 'warn' || demo === 'ok') { loadMock(2, demo); return; }
+  if (demo === 'wicket') {
+    // D3 flash on the floodlight board (or legacy panel on barlow), 600ms after load
+    loadMockAdith();
+    setTimeout(() => {
+      if (isFloodlightActive()) { flWicketFlash('T Smith 52'); }
+      else { window.testWicket(); }
+    }, 600);
+    return;
+  }
   loadMockAdith();
 })();
 </script>
