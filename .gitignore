@@ -21,6 +21,8 @@ archive/pcs-ble-relay-android/app/build/
 archive/pcs-ble-relay-android/build/
 archive/pcs-ble-relay/build/
 archive/pcs-ble-relay/.dart_tool/
+# Local-only archive of the retired Flutter app (source lives in git history)
+archive/cricrelay-stream/
 **/terraform.tfvars
 !**/terraform.tfvars.example
 # Club-uploaded sponsor logos (dashboard upload)
