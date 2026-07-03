@@ -173,6 +173,15 @@ class StreamController @Inject constructor() {
         _status.value = _status.value.copy(streaming = false, paused = false)
     }
 
+    /**
+     * The engine gave up on a dead RTMP session ("stream_lost") and already tore it down —
+     * release the foreground service and re-sync controller state without stopping again.
+     */
+    fun onStreamLost() {
+        activity?.let { stopForegroundService(it) }
+        _status.value = _status.value.copy(streaming = false, paused = false)
+    }
+
     fun pauseStream() {
         StreamCameraEngine.pauseStream()
         _status.value = _status.value.copy(paused = true)
