@@ -23,7 +23,6 @@ import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.util.BitrateAdapter
 import com.pedro.library.view.OpenGlView
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
@@ -94,30 +93,31 @@ object StreamCameraEngine : ConnectChecker {
     private var imageFilter: ImageObjectFilterRender? = null
     private var watermarkFilter: ImageObjectFilterRender? = null
     private var appliedWatermarkText: String? = null
-    private data class SponsorSlot(
-        val filter: ImageObjectFilterRender,
-        var bitmapWidth: Int = 160,
-        var bitmapHeight: Int = 80,
-    )
-
-    private val sponsorSlots = LinkedHashMap<String, SponsorSlot>()
-    private val sponsorFetchInFlight = mutableSetOf<String>()
-    private var sponsorScrollRunnable: Runnable? = null
-    private var sponsorScrollOffsetPct: Float = 100f
-    // Direction the marquee timer is currently running, so repeated starts stay idempotent.
-    private var sponsorScrollActiveDir: String? = null
     // The board sprite's actual on-screen band (%), updated each time the board is placed.
     private var boardTopPct: Float = 84f
     private var boardBottomPct: Float = 100f
-    private var carouselRunnable: Runnable? = null
-    private var carouselUrls: List<String> = emptyList()
-    private var carouselIndex = 0
-    private val sponsorFetchExecutor = Executors.newSingleThreadExecutor()
     // TODO(paywall): once Stripe is wired, free-tier streams force the watermark on
     // regardless of the admin toggle — for now the toggle in Board Edit wins.
     private const val IS_FREE_USER = true
     private var overlayCapture: OverlayWebViewCapture? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // Sponsor burn-ins live in their own layer; it reads camera/layout/canvas lazily through
+    // these providers so the engine stays the single source of truth for session state.
+    private val sponsorLayer = SponsorLayer(
+        mainHandler = mainHandler,
+        camera = { camera },
+        appContext = { appContext },
+        layout = { overlayLayout },
+        canvasSize = { encodedCanvasWidth() to encodedCanvasHeight() },
+        boardBand = { boardTopPct to boardBottomPct },
+        applyOpacity = ::applyBitmapOpacity,
+        warn = ::warnBurnInOnce,
+    )
+
+    // Thermal mechanics (Q+ listener / pre-Q poll); the meaning of a status change —
+    // overlay-refresh scaling + the "thermal" UI event — stays in onThermalStatusChanged.
+    private val thermalMonitor = ThermalMonitor(mainHandler, ::onThermalStatusChanged)
     private var overlayRunnable: Runnable? = null
     private var previewOverlayRunnable: Runnable? = null
     private var previewOverlayPushActive = false
@@ -161,10 +161,6 @@ object StreamCameraEngine : ConnectChecker {
     // on a phone we haven't sized up yet.
     private var deviceTier = DeviceCapabilities.Tier.MID
     private var overlayRefreshMs = 500L
-    private var thermalStatusListener: PowerManager.OnThermalStatusChangedListener? = null
-    private var thermalPollRunnable: Runnable? = null
-    private var lastThermalStatus: Int = PowerManager.THERMAL_STATUS_NONE
-    private const val THERMAL_POLL_MS = 30_000L
     private var surfaceValid = true
     // True while the encoder renders to the offscreen GL interface (screen locked / app
     // backgrounded without PiP). Keeps the broadcast alive when the SurfaceView surface is gone.
@@ -370,7 +366,7 @@ object StreamCameraEngine : ConnectChecker {
             val cam = camera ?: return@postDelayed
             if (cam.isStreaming != true) return@postDelayed
             ensureWatermarkFilter()
-            ensureSponsorFilter()
+            sponsorLayer.ensure()
             if (overlayUrl.isNotEmpty() && !streamPaused) {
                 ensureOverlayFilter()
                 if (lastOverlayBitmap != null) applyOverlaySprite()
@@ -413,52 +409,7 @@ object StreamCameraEngine : ConnectChecker {
         }
     }
 
-    private fun registerThermalMonitor(context: Context) {
-        val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (thermalStatusListener != null) return
-            val listener = PowerManager.OnThermalStatusChangedListener { status ->
-                onThermalStatusChanged(status)
-            }
-            thermalStatusListener = listener
-            try {
-                pm.addThermalStatusListener(listener)
-                onThermalStatusChanged(pm.currentThermalStatus)
-            } catch (_: Exception) {
-            }
-        } else {
-            if (thermalPollRunnable != null) return
-            val runnable = object : Runnable {
-                override fun run() {
-                    val stressed = DeviceCapabilities.isThermalStressed(context)
-                    onThermalStatusChanged(
-                        if (stressed) PowerManager.THERMAL_STATUS_MODERATE else PowerManager.THERMAL_STATUS_NONE,
-                    )
-                    mainHandler.postDelayed(this, THERMAL_POLL_MS)
-                }
-            }
-            thermalPollRunnable = runnable
-            mainHandler.post(runnable)
-        }
-    }
-
-    private fun unregisterThermalMonitor(context: Context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            thermalStatusListener?.let { listener ->
-                try {
-                    (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)
-                        ?.removeThermalStatusListener(listener)
-                } catch (_: Exception) {
-                }
-            }
-            thermalStatusListener = null
-        }
-        thermalPollRunnable?.let { mainHandler.removeCallbacks(it) }
-        thermalPollRunnable = null
-    }
-
     private fun onThermalStatusChanged(status: Int) {
-        lastThermalStatus = status
         overlayRefreshMs = when {
             status >= PowerManager.THERMAL_STATUS_SEVERE ->
                 (DeviceCapabilities.overlayRefreshMs(deviceTier) * 2.5).toLong().coerceAtMost(3500L)
@@ -476,7 +427,7 @@ object StreamCameraEngine : ConnectChecker {
 
     fun attachView(view: OpenGlView, act: Activity) {
         refreshDeviceTier(act.applicationContext)
-        registerThermalMonitor(act.applicationContext)
+        thermalMonitor.register(act.applicationContext)
         appContext = act.applicationContext
         audioManager = act.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         activity = act
@@ -850,7 +801,7 @@ object StreamCameraEngine : ConnectChecker {
                     // Re-establish the watermark after every (re)prepare — covers rotation
                     // and streams with no scoreboard (where the capture loop never runs).
                     ensureWatermarkFilter()
-                    ensureSponsorFilter()
+                    sponsorLayer.ensure()
                 }
             }
         }
@@ -880,7 +831,7 @@ object StreamCameraEngine : ConnectChecker {
             overlayLayout = layout
             syncOverlayCaptureWidth()
             ensureWatermarkFilter()
-            ensureSponsorFilter()
+            sponsorLayer.ensure()
             if (overlayUrl.isEmpty()) return@runOnMain
             val themedUrl = OverlayThemeBridge.urlWithTheme(overlayUrl, layout.theme)
             ensureOverlayCapture()?.apply {
@@ -1051,7 +1002,7 @@ object StreamCameraEngine : ConnectChecker {
                 resetFocusState()
             } else {
                 ensureWatermarkFilter()
-                ensureSponsorFilter()
+                sponsorLayer.ensure()
                 return true
             }
         }
@@ -1146,7 +1097,7 @@ object StreamCameraEngine : ConnectChecker {
             if (ready) {
                 syncOverlayCaptureWidth()
                 ensureWatermarkFilter()
-                ensureSponsorFilter()
+                sponsorLayer.ensure()
             }
             ready
         } catch (t: Exception) {
@@ -1339,102 +1290,7 @@ object StreamCameraEngine : ConnectChecker {
                 sponsorLogoUrls = logoUrls,
                 sponsorLogoUrl = logoUrls.firstOrNull().orEmpty(),
             )
-            ensureSponsorFilter()
-        }
-    }
-
-    private fun effectiveSponsorUrls(): List<String> {
-        val urls = overlayLayout.sponsorLogoUrls.filter { it.isNotBlank() }
-        if (urls.isNotEmpty()) return urls.take(6)
-        return overlayLayout.sponsorLogoUrl.takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
-    }
-
-    private fun isSponsorScrollMode(): Boolean =
-        overlayLayout.sponsorDisplayMode.startsWith("scroll")
-
-    // Direction strings arrive already sanitized from OverlayLayoutPrefs (feature/studio maps them
-    // via SponsorScrollDirection); this module has no dependency on :shared, so compare locally.
-    private fun scrollDirection(): String = overlayLayout.sponsorScrollDirection.trim().lowercase()
-
-    private fun scrollAxisHorizontal(): Boolean =
-        scrollDirection().let { it == SCROLL_DIR_LTR || it == SCROLL_DIR_RTL }
-
-    /** Re-apply every visible sponsor sprite at the current [sponsorScrollOffsetPct]. */
-    private fun refreshSponsorScrollFrame() {
-        val urls = visibleSponsorUrls()
-        urls.forEachIndexed { index, url ->
-            sponsorSlots[url]?.let { slot ->
-                applySponsorSprite(slot.filter, slot, index, urls.size)
-            }
-        }
-    }
-
-    private fun startSponsorScroll() {
-        if (!overlayLayout.sponsorEnabled || !isSponsorScrollMode()) {
-            stopSponsorScroll()
-            return
-        }
-        val dir = scrollDirection()
-        // "fixed" = a scroll-band strip pinned in place (no travel): render once, no timer.
-        if (dir == SCROLL_DIR_FIXED) {
-            stopSponsorScroll()
-            sponsorScrollActiveDir = dir
-            sponsorScrollOffsetPct = 0f
-            refreshSponsorScrollFrame()
-            return
-        }
-        // Idempotent: studio init calls updateOverlay/syncSponsorLayer several times as prefs and
-        // logos load. If the marquee is already running this direction, keep the current offset so
-        // the logo doesn't jump back to the entry edge (the "cutting at the first few seconds" bug).
-        if (sponsorScrollRunnable != null && sponsorScrollActiveDir == dir) return
-        stopSponsorScroll()
-        sponsorScrollActiveDir = dir
-        sponsorScrollOffsetPct = 0f
-        val runnable = object : Runnable {
-            override fun run() {
-                // A monotonic distance accumulator in RootEncoder's 0–100% canvas space. Direction
-                // (which edge it enters from) is applied per-sprite in applySponsorSprite via a
-                // modulo marquee, so the strip slides fully edge-to-edge and tiles seamlessly.
-                // Percent-based => same visual pace on every resolution (720p/1080p).
-                val speed = overlayLayout.sponsorScrollSpeed.coerceIn(0.3f, 3f)
-                sponsorScrollOffsetPct += speed * SPONSOR_SCROLL_STEP_PCT
-                if (sponsorScrollOffsetPct > SPONSOR_SCROLL_WRAP_PCT) sponsorScrollOffsetPct = 0f
-                refreshSponsorScrollFrame()
-                mainHandler.postDelayed(this, SPONSOR_SCROLL_FRAME_MS)
-            }
-        }
-        sponsorScrollRunnable = runnable
-        mainHandler.post(runnable)
-    }
-
-    /**
-     * Marquee position (%) for sprite [index] of [total] along a [period]-wide loop. Evenly
-     * spaces the sprites around the loop so N logos form one continuous, seamless stream.
-     */
-    private fun marqueePhase(period: Float, index: Int, total: Int): Float {
-        val spacing = period / total.coerceAtLeast(1)
-        val raw = (sponsorScrollOffsetPct + index * spacing) % period
-        return if (raw < 0f) raw + period else raw
-    }
-
-    private fun stopSponsorScroll() {
-        sponsorScrollRunnable?.let { mainHandler.removeCallbacks(it) }
-        sponsorScrollRunnable = null
-        sponsorScrollActiveDir = null
-    }
-
-    private fun stopCarousel() {
-        carouselRunnable?.let { mainHandler.removeCallbacks(it) }
-        carouselRunnable = null
-        carouselUrls = emptyList()
-        carouselIndex = 0
-    }
-
-    private fun visibleSponsorUrls(): List<String> {
-        val all = effectiveSponsorUrls()
-        return when (overlayLayout.sponsorLayoutMode) {
-            "carousel" -> all.take(1)
-            else -> all
+            sponsorLayer.ensure()
         }
     }
 
@@ -1450,7 +1306,7 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     private fun releaseCamera() {
-        appContext?.let { unregisterThermalMonitor(it) }
+        appContext?.let { thermalMonitor.unregister(it) }
         stopPreviewOverlayPush()
         if (camera?.isStreaming == true) {
             stopStreamInternal()
@@ -1591,10 +1447,7 @@ object StreamCameraEngine : ConnectChecker {
     private fun dropStaleGlFilterRefs() {
         watermarkFilter = null
         imageFilter = null
-        sponsorSlots.clear()
-        sponsorFetchInFlight.clear()
-        stopCarousel()
-        stopSponsorScroll()
+        sponsorLayer.dropStaleRefs()
         appliedWatermarkText = null
     }
 
@@ -1611,30 +1464,8 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     private const val WATERMARK_TEXT_SIZE = 34f
-    private const val WATERMARK_BMP_HEIGHT = 80
-    // Sponsor scroll direction tokens (mirror uk.co.cricrelay.shared.model.SponsorScrollDirection;
-    // duplicated here because :streaming does not depend on :shared).
-    // ltr/ttb travel forward; rtl/btt travel back (the implicit "else"); fixed = pinned.
-    private const val SCROLL_DIR_LTR = "ltr"
-    private const val SCROLL_DIR_RTL = "rtl"
-    private const val SCROLL_DIR_TTB = "ttb"
-    private const val SCROLL_DIR_FIXED = "fixed"
-
-    // Sponsor scroll animation, in RootEncoder's 0–100% canvas space (resolution-independent).
-    private const val SPONSOR_SCROLL_STEP_PCT = 0.45f
-    private const val SPONSOR_SCROLL_FRAME_MS = 33L
-    private const val SPONSOR_SCROLL_GAP_PCT = 8f
-    // Reset the accumulator on a multiple of common periods to avoid float drift over long streams.
-    private const val SPONSOR_SCROLL_WRAP_PCT = 100_000f
-
-    private const val WATERMARK_HEIGHT_PCT = 5.5f
-    // The preview renders AspectRatioMode.Fill (aspect-fill), so the frame edges are cropped
-    // off-screen — portrait crops the sides, landscape crops top/bottom. These keep the
-    // watermark inside the crop-safe zone in BOTH orientations on tall (up to ~22:9) phones:
-    // right edge pulled in from 100%, and pushed down from the very top.
-    private const val WATERMARK_RIGHT_EDGE_PCT = 84f
-    private const val WATERMARK_TOP_PCT = 13f
-    private const val WATERMARK_MAX_WIDTH_PCT = 68f
+    // Crop-safe geometry (heights, edges) lives in WatermarkSpriteLayout — shared with the
+    // sponsor logos in SponsorLayer.
 
     private fun watermarkTextPaint(): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -1649,7 +1480,7 @@ object StreamCameraEngine : ConnectChecker {
 
     private fun buildWatermarkBitmap(text: String): Bitmap {
         val w = watermarkBitmapWidth(text)
-        val h = WATERMARK_BMP_HEIGHT
+        val h = WatermarkSpriteLayout.BMP_HEIGHT
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -1714,279 +1545,15 @@ object StreamCameraEngine : ConnectChecker {
                 canvasW = canvasW,
                 canvasH = canvasH,
                 bitmapWidth = watermarkBitmapWidth(appliedWatermarkText ?: ""),
-                bitmapHeight = WATERMARK_BMP_HEIGHT,
-                heightPct = WATERMARK_HEIGHT_PCT,
-                rightEdgePct = WATERMARK_RIGHT_EDGE_PCT,
-                topPct = WATERMARK_TOP_PCT,
-                maxWidthPct = WATERMARK_MAX_WIDTH_PCT,
+                bitmapHeight = WatermarkSpriteLayout.BMP_HEIGHT,
+                heightPct = WatermarkSpriteLayout.HEIGHT_PCT,
+                rightEdgePct = WatermarkSpriteLayout.RIGHT_EDGE_PCT,
+                topPct = WatermarkSpriteLayout.TOP_PCT,
+                maxWidthPct = WatermarkSpriteLayout.MAX_WIDTH_PCT,
             ),
         )
         filter.setScale(sprite.scaleX, sprite.scaleY)
         filter.setPosition(sprite.positionX, sprite.positionY)
-    }
-
-    /**
-     * Load a sponsor logo, resilient to network/DNS blips at a ground: return the on-disk cached
-     * copy immediately when present (and refresh it in the background), otherwise download once and
-     * persist it. Once a logo has loaded on any prior session it keeps showing even fully offline.
-     */
-    private fun fetchSponsorBitmap(url: String): Bitmap? {
-        val cacheFile = sponsorCacheFile(url)
-        if (cacheFile != null && cacheFile.exists() && cacheFile.length() > 0L) {
-            val cached = runCatching { BitmapFactory.decodeFile(cacheFile.absolutePath) }.getOrNull()
-            if (cached != null) {
-                // Refresh the cache for next time without blocking the current broadcast.
-                sponsorFetchExecutor.execute {
-                    downloadSponsorBytes(url)?.let { bytes ->
-                        runCatching { cacheFile.writeBytes(bytes) }
-                    }
-                }
-                return cached
-            }
-        }
-        val bytes = downloadSponsorBytes(url) ?: return null
-        val bmp = runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull()
-            ?: return null
-        if (cacheFile != null) runCatching { cacheFile.writeBytes(bytes) }
-        return bmp
-    }
-
-    private fun downloadSponsorBytes(url: String): ByteArray? = try {
-        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-        conn.connectTimeout = 5000
-        conn.readTimeout = 5000
-        conn.inputStream.use { it.readBytes() }
-    } catch (e: Exception) {
-        CricrelayLog.w("Sponsor logo fetch failed: ${e.message}")
-        null
-    }
-
-    /** Stable per-URL cache file under the app cache dir; null if no context yet. */
-    private fun sponsorCacheFile(url: String): java.io.File? {
-        val ctx = appContext ?: return null
-        return try {
-            val dir = java.io.File(ctx.cacheDir, "sponsor_logos").apply { mkdirs() }
-            java.io.File(dir, "logo_" + Integer.toHexString(url.hashCode()) + ".img")
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun ensureSponsorFilter() {
-        val cam = camera ?: return
-        val urls = effectiveSponsorUrls()
-        if (!overlayLayout.sponsorEnabled || urls.isEmpty()) {
-            clearSponsorFilters()
-            return
-        }
-        if (!cam.isOnPreview && !cam.isStreaming) return
-        when (overlayLayout.sponsorLayoutMode) {
-            "multi" -> ensureMultiSponsorFilters(cam, urls)
-            "carousel" -> ensureCarouselSponsorFilter(cam, urls)
-            else -> ensureSingleSponsorFilter(cam, urls.first())
-        }
-    }
-
-    private fun ensureSingleSponsorFilter(cam: RtmpCamera2, url: String) {
-        stopCarousel()
-        syncSponsorSlotKeys(setOf(url))
-        val slot = sponsorSlots[url] ?: createSponsorSlot(cam, url) ?: return
-        if (!sponsorFetchInFlight.contains(url)) {
-            fetchAndApplySponsor(url, slot, 0, 1)
-        } else {
-            applySponsorSprite(slot.filter, slot, 0, 1)
-        }
-        if (isSponsorScrollMode()) startSponsorScroll() else stopSponsorScroll()
-    }
-
-    private fun ensureMultiSponsorFilters(cam: RtmpCamera2, urls: List<String>) {
-        stopCarousel()
-        syncSponsorSlotKeys(urls.toSet())
-        urls.forEachIndexed { index, url ->
-            val slot = sponsorSlots[url] ?: createSponsorSlot(cam, url) ?: return
-            if (!sponsorFetchInFlight.contains(url)) {
-                fetchAndApplySponsor(url, slot, index, urls.size)
-            } else {
-                applySponsorSprite(slot.filter, slot, index, urls.size)
-            }
-        }
-        if (isSponsorScrollMode()) startSponsorScroll() else stopSponsorScroll()
-    }
-
-    private fun ensureCarouselSponsorFilter(cam: RtmpCamera2, urls: List<String>) {
-        stopCarousel()
-        carouselUrls = urls
-        carouselIndex = 0
-        showCarouselUrl(cam, urls.first())
-        if (urls.size > 1) {
-            val intervalMs = (overlayLayout.sponsorCarouselIntervalSec.coerceIn(2f, 30f) * 1000).toLong()
-            val runnable = object : Runnable {
-                override fun run() {
-                    if (overlayLayout.sponsorLayoutMode != "carousel" || carouselUrls.size <= 1) return
-                    carouselIndex = (carouselIndex + 1) % carouselUrls.size
-                    camera?.let { showCarouselUrl(it, carouselUrls[carouselIndex]) }
-                    carouselRunnable?.let { mainHandler.postDelayed(it, intervalMs) }
-                }
-            }
-            carouselRunnable = runnable
-            mainHandler.postDelayed(runnable, intervalMs)
-        }
-        if (isSponsorScrollMode()) startSponsorScroll() else stopSponsorScroll()
-    }
-
-    private fun showCarouselUrl(cam: RtmpCamera2, url: String) {
-        syncSponsorSlotKeys(setOf(url))
-        val slot = sponsorSlots[url] ?: createSponsorSlot(cam, url) ?: return
-        fetchAndApplySponsor(url, slot, 0, 1)
-    }
-
-    private fun createSponsorSlot(cam: RtmpCamera2, url: String): SponsorSlot? = try {
-        val filter = ImageObjectFilterRender()
-        cam.glInterface.addFilter(filter)
-        SponsorSlot(filter).also { sponsorSlots[url] = it }
-    } catch (e: Exception) {
-        CricrelayLog.w("Sponsor filter failed: ${e.message}")
-        warnBurnInOnce("sponsor_filter", "Sponsor overlay could not be added to the stream.")
-        null
-    }
-
-    private fun syncSponsorSlotKeys(want: Set<String>) {
-        val cam = camera ?: return
-        val remove = sponsorSlots.keys.filter { it !in want }
-        for (url in remove) {
-            sponsorSlots.remove(url)?.let { slot ->
-                try {
-                    cam.glInterface.removeFilter(slot.filter)
-                } catch (_: Exception) {
-                }
-            }
-        }
-    }
-
-    private fun fetchAndApplySponsor(url: String, slot: SponsorSlot, index: Int, total: Int) {
-        sponsorFetchInFlight.add(url)
-        sponsorFetchExecutor.execute {
-            val bmp = fetchSponsorBitmap(url)
-            mainHandler.post {
-                sponsorFetchInFlight.remove(url)
-                if (!effectiveSponsorUrls().contains(url)) return@post
-                val live = sponsorSlots[url] ?: return@post
-                if (bmp != null) {
-                    try {
-                        live.bitmapWidth = bmp.width
-                        live.bitmapHeight = bmp.height
-                        val opaque = applyBitmapOpacity(bmp, overlayLayout.sponsorOpacity.coerceIn(0.2f, 1f))
-                        live.filter.setImage(opaque)
-                        applySponsorSprite(live.filter, live, index, total)
-                    } catch (e: Exception) {
-                        CricrelayLog.w("Sponsor image failed: ${e.message}")
-                        warnBurnInOnce("sponsor:$url", "A sponsor logo could not be drawn on the stream.")
-                    }
-                } else {
-                    // No cached copy and the download failed — the slot stays empty and the
-                    // operator would otherwise never know the sponsor is missing on air.
-                    warnBurnInOnce("sponsor:$url", "A sponsor logo failed to load and is missing from the stream.")
-                }
-            }
-        }
-    }
-
-    private fun sponsorHeightPct(total: Int): Float {
-        val base = WATERMARK_HEIGHT_PCT * overlayLayout.sponsorSizeScale.coerceIn(0.3f, 3f)
-        return when {
-            total <= 1 -> base
-            total == 2 -> base * 0.85f
-            else -> base * 0.7f
-        }
-    }
-
-    private fun sponsorScrollYPercent(spriteScaleY: Float): Float {
-        return when (overlayLayout.sponsorDisplayMode) {
-            "scroll_top" -> 4f
-            "scroll_bottom" -> 96f - spriteScaleY
-            // Sit just above the board's real top edge.
-            "scroll_above_board" -> (boardTopPct - spriteScaleY - 2f).coerceAtLeast(2f)
-            // Just below the board's real bottom; if the board is flush to the frame bottom there is
-            // no room, so tuck it into the board's lower band instead of pushing it off-screen.
-            "scroll_below_board" -> (boardBottomPct + 2f).coerceAtMost(100f - spriteScaleY)
-            else -> overlayLayout.sponsorPositionY * 100f
-        }
-    }
-
-    private fun applySponsorSprite(
-        filter: ImageObjectFilterRender,
-        slot: SponsorSlot,
-        index: Int = 0,
-        total: Int = 1,
-    ) {
-        val canvasW = encodedCanvasWidth()
-        val canvasH = encodedCanvasHeight()
-        filter.setDefaultScale(canvasW, canvasH)
-        val sprite = WatermarkSpriteLayout.compute(
-            WatermarkSpriteLayout.Params(
-                canvasW = canvasW,
-                canvasH = canvasH,
-                bitmapWidth = slot.bitmapWidth.coerceAtLeast(160),
-                bitmapHeight = slot.bitmapHeight.coerceAtLeast(WATERMARK_BMP_HEIGHT),
-                heightPct = sponsorHeightPct(total),
-                rightEdgePct = WATERMARK_RIGHT_EDGE_PCT,
-                topPct = WATERMARK_TOP_PCT,
-                maxWidthPct = WATERMARK_MAX_WIDTH_PCT,
-            ),
-        )
-        filter.setScale(sprite.scaleX, sprite.scaleY)
-        if (isSponsorScrollMode()) {
-            val dir = scrollDirection()
-            if (scrollAxisHorizontal()) {
-                // Horizontal ticker: X marquees edge-to-edge, Y band comes from the display mode.
-                val period = 100f + sprite.scaleX + SPONSOR_SCROLL_GAP_PCT
-                val phase = marqueePhase(period, index, total)
-                // rtl: enter from right (x=100) → exit left; ltr: enter from left → exit right.
-                val x = if (dir == SCROLL_DIR_LTR) {
-                    -sprite.scaleX - SPONSOR_SCROLL_GAP_PCT + phase
-                } else {
-                    100f - phase
-                }
-                filter.setPosition(x, sponsorScrollYPercent(sprite.scaleY))
-            } else {
-                // Vertical crawl: Y marquees over the full frame, X comes from the drag position.
-                val period = 100f + sprite.scaleY + SPONSOR_SCROLL_GAP_PCT
-                val phase = marqueePhase(period, index, total)
-                // ttb: enter from top → exit bottom; btt: enter from bottom (y=100) → exit top.
-                val y = if (dir == SCROLL_DIR_TTB) {
-                    -sprite.scaleY - SPONSOR_SCROLL_GAP_PCT + phase
-                } else {
-                    100f - phase
-                }
-                val x = (overlayLayout.sponsorPositionX.coerceIn(0f, 1f) * 100f - sprite.scaleX / 2f)
-                    .coerceIn(0f, 100f - sprite.scaleX)
-                filter.setPosition(x, y)
-            }
-        } else {
-            val cx = if (total <= 1) {
-                overlayLayout.sponsorPositionX.coerceIn(0f, 1f) * 100f
-            } else {
-                ((index + 0.5f) / total) * 100f
-            }
-            val cy = overlayLayout.sponsorPositionY.coerceIn(0f, 1f) * 100f
-            filter.setPosition(cx - sprite.scaleX / 2f, cy - sprite.scaleY / 2f)
-        }
-    }
-
-    private fun clearSponsorFilters() {
-        stopCarousel()
-        stopSponsorScroll()
-        val cam = camera
-        sponsorSlots.values.forEach { slot ->
-            if (cam != null) {
-                try {
-                    cam.glInterface.removeFilter(slot.filter)
-                } catch (_: Exception) {
-                }
-            }
-        }
-        sponsorSlots.clear()
-        sponsorFetchInFlight.clear()
     }
 
     private fun ensureOverlayFilter() {
@@ -2211,7 +1778,7 @@ object StreamCameraEngine : ConnectChecker {
                 }
                 ensureOverlayFilter()
                 ensureWatermarkFilter()
-                ensureSponsorFilter()
+                sponsorLayer.ensure()
                 val filter = imageFilter ?: run {
                     if (!forGl.isRecycled) forGl.recycle()
                     return@runOnMain
