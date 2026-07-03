@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.SensorManager
+import android.os.Build
 import android.view.OrientationEventListener
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -53,12 +54,16 @@ fun StudioScreen(
     val permissionsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { grants ->
-        val cameraGranted = grants[Manifest.permission.CAMERA] == true
-        val audioGranted = grants[Manifest.permission.RECORD_AUDIO] == true
-        if (StudioCameraGate.permissionsSatisfied(cameraGranted, audioGranted)) {
-            viewModel.onCameraPermissionsGranted()
-        } else {
-            viewModel.onCameraPermissionsDenied()
+        // A notifications-only result carries no camera/audio keys and must never trip the
+        // denied path — the notification is a nice-to-have, the broadcast is not.
+        if (Manifest.permission.CAMERA in grants || Manifest.permission.RECORD_AUDIO in grants) {
+            val cameraGranted = grants[Manifest.permission.CAMERA] == true
+            val audioGranted = grants[Manifest.permission.RECORD_AUDIO] == true
+            if (StudioCameraGate.permissionsSatisfied(cameraGranted, audioGranted)) {
+                viewModel.onCameraPermissionsGranted()
+            } else {
+                viewModel.onCameraPermissionsDenied()
+            }
         }
     }
 
@@ -74,14 +79,25 @@ fun StudioScreen(
             context,
             Manifest.permission.RECORD_AUDIO,
         ) == PackageManager.PERMISSION_GRANTED
+        val needsNotificationGrant = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
         if (StudioCameraGate.permissionsSatisfied(cameraGranted, audioGranted)) {
             viewModel.onCameraPermissionsGranted()
+            // Without POST_NOTIFICATIONS the foreground service's "Live" notification is
+            // invisible on Android 13+ — ask, but never let a denial block the broadcast.
+            if (needsNotificationGrant) {
+                permissionsLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+            }
         } else {
             permissionsLauncher.launch(
-                arrayOf(
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.RECORD_AUDIO,
-                ),
+                buildList {
+                    add(Manifest.permission.CAMERA)
+                    add(Manifest.permission.RECORD_AUDIO)
+                    if (needsNotificationGrant) add(Manifest.permission.POST_NOTIFICATIONS)
+                }.toTypedArray(),
             )
         }
     }
