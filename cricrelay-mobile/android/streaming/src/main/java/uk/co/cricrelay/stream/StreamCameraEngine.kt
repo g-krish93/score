@@ -990,12 +990,26 @@ object StreamCameraEngine : CameraSession.Listener {
         }
     }
 
-    fun minZoom(): Float = 1f
+    /**
+     * Lower bound of the zoom ratio. On API 30+ non-legacy hardware RootEncoder drives zoom via
+     * CONTROL_ZOOM_RATIO on the logical (multi-lens) back camera, whose range dips below 1.0 on
+     * phones with an ultra-wide lens (e.g. 0.5–0.6) — that's the optical ultra-wide. We previously
+     * hardcoded 1f, which clamped the ultra-wide away; use the device's real lower bound instead
+     * (capped at 1.0 so a device that only reports [1, n] never reports a min above 1).
+     */
+    fun minZoom(): Float {
+        val cam = camera ?: return 1f
+        return try {
+            cam.zoomRange.lower.toFloat().coerceAtMost(1f)
+        } catch (_: Exception) {
+            1f
+        }
+    }
 
     fun maxZoom(): Float {
         val cam = camera ?: return 1f
         return try {
-            cam.zoomRange.upper.toFloat().coerceAtLeast(minZoom())
+            cam.zoomRange.upper.toFloat().coerceAtLeast(1f)
         } catch (_: Exception) {
             1f
         }

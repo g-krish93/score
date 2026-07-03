@@ -773,6 +773,14 @@ final class StudioViewModel: ObservableObject {
 
     // MARK: - Zoom
 
+    /// Display-zoom bounds (× relative to the wide lens) from the active capture device. `min`
+    /// drops below 1 (≈0.5) on phones with an ultra-wide lens; read live so it reflects whichever
+    /// virtual device the engine attached. Used to clamp the pinch gesture.
+    var zoomBounds: (min: Float, max: Float) {
+        let range = StreamCameraEngine.shared.zoomRange()
+        return (Float(range.min), Float(range.max))
+    }
+
     func setZoom(_ level: Float) {
         StreamCameraEngine.shared.setZoom(level: level)
     }

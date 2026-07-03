@@ -86,6 +86,21 @@ final class StreamCameraEngine: NSObject {
     private var streamFps = 30
     private var streamBitrate = StreamCameraEngine.defaultStreamBitrate
     private var devicesAttached = false
+    // The back capture device currently attached to the mixer. A virtual multi-camera device
+    // (triple / dual-wide / dual) lets a single `videoZoomFactor` cross the optical lens
+    // switch-over points — real optical zoom to the tele lens plus the 0.5× ultra-wide — instead
+    // of digital-only zoom on the wide lens. Zoom, focus, and exposure must all configure THIS
+    // device (not a fresh wide-angle lookup) or they'd target a lens that isn't in the pipeline.
+    private var videoCaptureDevice: AVCaptureDevice?
+    // The `videoZoomFactor` that frames the wide (1×) lens. On a device whose widest constituent
+    // is the ultra-wide lens this is the ultra-wide→wide switch-over factor, so display 1× == wide
+    // and display 0.5× == ultra-wide; it stays 1.0 when the device has no ultra-wide lens. All
+    // public zoom values are "display ×" (relative to the wide lens); the engine maps them to the
+    // device factor through this base so the UI keeps its familiar 1× == normal meaning.
+    private var wideBaseZoomFactor: CGFloat = 1
+    // Ceiling on display zoom (× relative to the wide lens): covers the optical tele plus a little
+    // digital, and keeps runaway digital zoom (mush) off the table.
+    private static let maxDisplayZoom: CGFloat = 10
     private var publishing = false
     private var streamPaused = false
     private var previewReady = false
@@ -239,6 +254,7 @@ final class StreamCameraEngine: NSObject {
         try? await mixer.attachAudio(nil, track: 0)
         await mixer.stopRunning()
         devicesAttached = false
+        videoCaptureDevice = nil
         previewReady = false
         preparedCaptureOrientation = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -541,16 +557,20 @@ final class StreamCameraEngine: NSObject {
 
     var isStreamPaused: Bool { streamPaused && publishing }
 
+    /// `level` is a display zoom (1× == wide lens). Mapped through `wideBaseZoomFactor` to the
+    /// device's real `videoZoomFactor`, which on a virtual multi-camera device crosses the optical
+    /// lens switch-over points (tele) and reaches the ultra-wide below 1×.
     func setZoom(level: Float) {
-        Task {
-            guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-                return
-            }
-            let maxZoom = min(Float(device.activeFormat.videoMaxZoomFactor), 10)
-            let clamped = max(1, min(level, maxZoom))
+        cameraConfigQueue.async { [weak self] in
+            guard let self, let device = self.backCamera() else { return }
+            let base = self.wideBaseZoomFactor
+            let minFactor = device.minAvailableVideoZoomFactor
+            let maxFactor = min(device.maxAvailableVideoZoomFactor, base * Self.maxDisplayZoom)
+            let target = base * CGFloat(level)
+            let clamped = max(minFactor, min(target, maxFactor))
             do {
                 try device.lockForConfiguration()
-                device.videoZoomFactor = CGFloat(clamped)
+                device.videoZoomFactor = clamped
                 device.unlockForConfiguration()
             } catch {
                 // ignore zoom errors
@@ -558,12 +578,15 @@ final class StreamCameraEngine: NSObject {
         }
     }
 
+    /// Display-zoom bounds (× relative to the wide lens). `min` drops below 1 (≈0.5) when the
+    /// device has an ultra-wide lens; `max` is capped at [maxDisplayZoom].
     func zoomRange() -> (min: Double, max: Double, current: Double) {
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-            return (1, 10, 1)
-        }
-        let maxZoom = min(Double(device.activeFormat.videoMaxZoomFactor), 10)
-        return (1, maxZoom, Double(device.videoZoomFactor))
+        guard let device = backCamera() else { return (1, Double(Self.maxDisplayZoom), 1) }
+        let base = Double(wideBaseZoomFactor)
+        let minDisplay = Double(device.minAvailableVideoZoomFactor) / base
+        let maxDisplay = min(Double(device.maxAvailableVideoZoomFactor), base * Double(Self.maxDisplayZoom)) / base
+        let current = Double(device.videoZoomFactor) / base
+        return (minDisplay, maxDisplay, current)
     }
 
     // MARK: - Focus
@@ -573,8 +596,39 @@ final class StreamCameraEngine: NSObject {
     // user-facing lock state) so the padlock can never show a state the camera didn't reach.
     private let cameraConfigQueue = DispatchQueue(label: "uk.co.cricrelay.camera.config")
 
+    /// The device the mixer is actually capturing from (a virtual multi-camera device when the
+    /// phone has one), falling back to a plain wide-angle lookup before the pipeline is attached.
     private func backCamera() -> AVCaptureDevice? {
-        AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+        videoCaptureDevice ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+    }
+
+    /// Prefer a virtual multi-camera device so zoom can switch physical lenses optically:
+    /// triple (UW+W+T) → dual-wide (UW+W) → dual (W+T) → plain wide (single lens fallback).
+    private static func selectBackCaptureDevice() -> AVCaptureDevice? {
+        let preferred: [AVCaptureDevice.DeviceType] = [
+            .builtInTripleCamera,
+            .builtInDualWideCamera,
+            .builtInDualCamera,
+            .builtInWideAngleCamera,
+        ]
+        for type in preferred {
+            if let device = AVCaptureDevice.default(type, for: .video, position: .back) {
+                return device
+            }
+        }
+        return nil
+    }
+
+    /// The `videoZoomFactor` that frames the wide (1×) lens. Virtual devices list their constituent
+    /// lenses widest-first; when the widest is the ultra-wide, the first switch-over factor is the
+    /// point the wide lens takes over — our 1× reference (so display 0.5× maps to factor 1.0 =
+    /// ultra-wide). Devices without an ultra-wide already open on the wide lens, so 1× == factor 1.
+    private static func wideBaseZoomFactor(for device: AVCaptureDevice) -> CGFloat {
+        guard device.constituentDevices.first?.deviceType == .builtInUltraWideCamera,
+              let firstSwitchOver = device.virtualDeviceSwitchOverVideoZoomFactors.first else {
+            return 1
+        }
+        return CGFloat(truncating: firstSwitchOver)
     }
 
     /// Active interface orientation. UIApplication is main-only — hence the main-actor isolation.
@@ -776,10 +830,19 @@ final class StreamCameraEngine: NSObject {
             if let audio = AVCaptureDevice.default(for: .audio) {
                 try await mixer.attachAudio(audio)
             }
-            if let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
+            if let camera = StreamCameraEngine.selectBackCaptureDevice() {
+                videoCaptureDevice = camera
+                wideBaseZoomFactor = StreamCameraEngine.wideBaseZoomFactor(for: camera)
                 let mode = stabMode(stabilizationLevel)
                 try await mixer.attachVideo(camera, track: 0) { unit in
                     unit.preferredVideoStabilizationMode = mode
+                }
+                // A virtual device opens on its widest lens (the ultra-wide, factor 1.0). Seat it
+                // at the wide lens so the preview starts at the familiar 1× framing, not 0.5×.
+                if wideBaseZoomFactor > 1 {
+                    try? camera.lockForConfiguration()
+                    camera.videoZoomFactor = min(wideBaseZoomFactor, camera.maxAvailableVideoZoomFactor)
+                    camera.unlockForConfiguration()
                 }
             }
             var vmSettings = await mixer.videoMixerSettings
