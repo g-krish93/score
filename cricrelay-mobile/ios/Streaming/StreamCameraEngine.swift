@@ -1145,6 +1145,12 @@ final class StreamCameraEngine: NSObject {
                 right: 0
             )
         }
+        // HaishinKit only recomputes a child's on-screen bounds when shouldInvalidateLayout is
+        // set, and `layoutMargin` (unlike `size`) has no didSet that flags it. Without this the
+        // sprite lays out once and then freezes wherever it first landed — so the scroll marquee
+        // rewrites layoutMargin every frame but the logo never moves. Flag it dirty so the next
+        // offscreen composite re-lays-out this sprite at its new position.
+        obj.invalidateLayout()
     }
 
     private func sponsorScrollY(canvasH: CGFloat, imgH: CGFloat) -> CGFloat {
