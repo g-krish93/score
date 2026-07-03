@@ -1,6 +1,7 @@
 package uk.co.cricrelay.stream
 
 import android.app.Activity
+import android.app.KeyguardManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -350,6 +351,14 @@ object StreamCameraEngine : CameraSession.Listener {
         val cam = camera ?: return
         if (!cam.isStreaming) {
             applyIntent(StreamPhasePolicy.Intent.Stop)
+            return
+        }
+        // The lockscreen rotation / AOD can hand us a valid-looking surface while the display
+        // is dark; accepting it flaps camera + EGL every few seconds of a lock and sprays
+        // garbage frames into the broadcast. Stay parked offscreen until the operator is
+        // actually looking at the screen — MainActivity.onStart retries after unlock.
+        if (!StreamLifecyclePolicy.shouldRestoreOnView(isDeviceInteractive(), isKeyguardLocked())) {
+            CricrelayLog.d("restoreOnViewRendering deferred: screen off / keyguard locked")
             return
         }
         try {
@@ -924,6 +933,27 @@ object StreamCameraEngine : CameraSession.Listener {
         return try {
             val surface = view.holder.surface
             surface != null && surface.isValid
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    // Device display/lock state for StreamLifecyclePolicy.shouldRestoreOnView. On any read
+    // failure fall back to the pre-gate behavior (restore allowed) rather than risk leaving
+    // the encoder parked offscreen with the operator watching a frozen preview.
+    private fun isDeviceInteractive(): Boolean {
+        val ctx = appContext ?: return true
+        return try {
+            (ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive != false
+        } catch (_: Exception) {
+            true
+        }
+    }
+
+    private fun isKeyguardLocked(): Boolean {
+        val ctx = appContext ?: return false
+        return try {
+            (ctx.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager)?.isKeyguardLocked == true
         } catch (_: Exception) {
             false
         }

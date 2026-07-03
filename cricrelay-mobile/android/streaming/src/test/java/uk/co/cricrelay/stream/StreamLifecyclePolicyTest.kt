@@ -99,4 +99,16 @@ class StreamLifecyclePolicyTest {
         assertFalse(StreamLifecyclePolicy.shouldEnterPipOnLeave(isStreaming = false, pipSupported = true))
         assertFalse(StreamLifecyclePolicy.shouldEnterPipOnLeave(isStreaming = true, pipSupported = false))
     }
+
+    @Test
+    fun `restore on view only when the display is interactive and unlocked`() {
+        assertTrue(StreamLifecyclePolicy.shouldRestoreOnView(isInteractive = true, keyguardLocked = false))
+        // Screen off (lock / doze): the lockscreen rotation still delivers a "valid" surface —
+        // accepting it churns camera + EGL and sprays static into the broadcast.
+        assertFalse(StreamLifecyclePolicy.shouldRestoreOnView(isInteractive = false, keyguardLocked = true))
+        // Screen woke to the lockscreen but the keyguard is still up: the app is not composited.
+        assertFalse(StreamLifecyclePolicy.shouldRestoreOnView(isInteractive = true, keyguardLocked = true))
+        // Screen off with no keyguard (no lock security): still not visible.
+        assertFalse(StreamLifecyclePolicy.shouldRestoreOnView(isInteractive = false, keyguardLocked = false))
+    }
 }

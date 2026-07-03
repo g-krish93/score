@@ -35,6 +35,20 @@ object StreamLifecyclePolicy {
     fun shouldExitBackground(isStreaming: Boolean, backgroundRendering: Boolean, surfacePresent: Boolean): Boolean =
         isStreaming && backgroundRendering && surfacePresent
 
+    /**
+     * Gate the swap BACK to the on-screen view on the display actually compositing it.
+     *
+     * A "valid" surface is not enough: the lockscreen rotation (and AOD blips) deliver
+     * surfaceChanged with a technically valid surface while the display is dark. Accepting
+     * those swaps flaps the encoder between offscreen and on-view every few seconds of a
+     * lock — each replaceView closes and reopens the camera + EGL context, and every churn
+     * injects garbage frames into the live broadcast (field report: "90s TV static" bursts
+     * while the screen is off). Screen off or keyguard showing ⇒ stay parked offscreen;
+     * MainActivity.onStart re-triggers the restore after unlock.
+     */
+    fun shouldRestoreOnView(isInteractive: Boolean, keyguardLocked: Boolean): Boolean =
+        isInteractive && !keyguardLocked
+
     /** Auto-enter Picture-in-Picture when the operator leaves the app mid-broadcast. */
     fun shouldEnterPipOnLeave(isStreaming: Boolean, pipSupported: Boolean): Boolean =
         isStreaming && pipSupported
