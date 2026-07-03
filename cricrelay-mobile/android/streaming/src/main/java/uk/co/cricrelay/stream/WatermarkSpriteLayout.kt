@@ -6,6 +6,16 @@ package uk.co.cricrelay.stream
  */
 object WatermarkSpriteLayout {
 
+    // Crop-safe geometry shared by the watermark pill and the sponsor logos. The preview
+    // renders AspectRatioMode.Fill (aspect-fill), so the frame edges are cropped off-screen —
+    // portrait crops the sides, landscape crops top/bottom. These keep burn-ins inside the
+    // crop-safe zone in BOTH orientations on tall (up to ~22:9) phones.
+    internal const val HEIGHT_PCT = 5.5f
+    internal const val RIGHT_EDGE_PCT = 84f
+    internal const val TOP_PCT = 13f
+    internal const val MAX_WIDTH_PCT = 68f
+    internal const val BMP_HEIGHT = 80
+
     data class Sprite(
         val scaleX: Float,
         val scaleY: Float,
