@@ -135,7 +135,14 @@ object StreamCameraEngine : ConnectChecker {
     private var overlayLayout = OverlayLayout()
     private var overlayUrl: String = ""
     private var statusListener: ((String, String) -> Unit)? = null
-    private var encoderPrepared = false
+
+    // Single source of truth for the session's phase. The legacy state booleans below are
+    // derived views, so every read keeps its old name while writes go through applyIntent —
+    // an invalid transition (e.g. a stale surface-loss callback trying to tear down a live
+    // encoder) is refused and logged instead of corrupting state.
+    private var phase: StreamPhase = StreamPhase.Idle
+    private val encoderPrepared: Boolean
+        get() = phase != StreamPhase.Idle
     private var lastOverlayBitmap: Bitmap? = null
     private var pendingOverlayAfterConnect = false
     private var prepareInFlight = false
@@ -147,7 +154,8 @@ object StreamCameraEngine : ConnectChecker {
     private var keepScreenOnDuringStream = false
     private var audioManager: AudioManager? = null
     private var pauseBlackFilter: BlackFilterRender? = null
-    private var streamPaused = false
+    private val streamPaused: Boolean
+        get() = (phase as? StreamPhase.Live)?.paused == true
     private var micMuted = false
     // MID until attachView measures the device — "auto" resolution must never guess 1080p
     // on a phone we haven't sized up yet.
@@ -160,10 +168,22 @@ object StreamCameraEngine : ConnectChecker {
     private var surfaceValid = true
     // True while the encoder renders to the offscreen GL interface (screen locked / app
     // backgrounded without PiP). Keeps the broadcast alive when the SurfaceView surface is gone.
-    private var backgroundRendering = false
+    private val backgroundRendering: Boolean
+        get() = (phase as? StreamPhase.Live)?.background == true
     private var overlayPausedForMemory = false
     private var overlayCaptureInFlight = false
     private var focusLocked = false
+    // Reconnect attempts used for the current outage (written on the RTMP callback thread,
+    // reset on connect success / stream start). Schedule lives in StreamReconnectPolicy.
+    @Volatile
+    private var reconnectAttempt = 0
+    // Burn-in degradations already surfaced this broadcast — warn once, not once per frame.
+    // Main-thread only (warnBurnInOnce hops to main).
+    private val burnInWarned = mutableSetOf<String>()
+    // Consecutive null overlay captures while live; a sustained streak means the score bar is
+    // silently missing from the broadcast. Touched only on the capture executor thread.
+    private var overlayCaptureFailStreak = 0
+    private const val OVERLAY_CAPTURE_WARN_STREAK = 8
     // Adaptive bitrate: created on RTMP connect, fed by onNewBitrate, steps the encoder
     // bitrate up/down with the real network via setVideoBitrateOnFly.
     private var bitrateAdapter: BitrateAdapter? = null
@@ -181,6 +201,22 @@ object StreamCameraEngine : ConnectChecker {
 
     fun setStatusListener(listener: ((String, String) -> Unit)?) {
         statusListener = listener
+    }
+
+    /**
+     * Dispatch a phase transition. Validation only — physical control flow stays with the
+     * existing camera-truth guards; a refusal means the caller acted on stale state and the
+     * phase (plus every boolean derived from it) is left untouched.
+     */
+    private fun applyIntent(intent: StreamPhasePolicy.Intent): Boolean {
+        val next = StreamPhasePolicy.next(phase, intent)
+        if (next == null) {
+            CricrelayLog.w("phase: $intent refused in $phase")
+            return false
+        }
+        if (next != phase) CricrelayLog.d("phase: $phase -> $next ($intent)")
+        phase = next
+        return true
     }
 
     /** Broadcast-health updates ~1/sec while live; a null value means the stream ended. */
@@ -254,7 +290,7 @@ object StreamCameraEngine : ConnectChecker {
                 onEnterBackground()
                 return@runOnMain
             }
-            encoderPrepared = false
+            applyIntent(StreamPhasePolicy.Intent.Release)
         }
     }
 
@@ -272,7 +308,7 @@ object StreamCameraEngine : ConnectChecker {
             try {
                 stopOverlayRefresh()
                 cam.replaceView(ctx)
-                backgroundRendering = true
+                applyIntent(StreamPhasePolicy.Intent.EnterBackground)
                 surfaceValid = false
                 dropStaleGlFilterRefs()
                 CricrelayLog.d("onEnterBackground: encoder -> offscreen GL")
@@ -293,7 +329,10 @@ object StreamCameraEngine : ConnectChecker {
         runOnMain {
             if (!backgroundRendering) return@runOnMain
             if (camera?.isStreaming != true) {
-                backgroundRendering = false
+                // Phase says live-in-background but the camera isn't streaming — the session
+                // ended without a clean stop, so reconcile the phase instead of leaving a
+                // stale Live behind.
+                applyIntent(StreamPhasePolicy.Intent.Stop)
                 return@runOnMain
             }
             val view = openGlView ?: return@runOnMain
@@ -308,12 +347,12 @@ object StreamCameraEngine : ConnectChecker {
     private fun restoreOnViewRendering(view: OpenGlView) {
         val cam = camera ?: return
         if (!cam.isStreaming) {
-            backgroundRendering = false
+            applyIntent(StreamPhasePolicy.Intent.Stop)
             return
         }
         try {
             cam.replaceView(view)
-            backgroundRendering = false
+            applyIntent(StreamPhasePolicy.Intent.ExitBackground)
             surfaceValid = true
             dropStaleGlFilterRefs()
             CricrelayLog.d("onExitBackground: encoder -> on-screen view")
@@ -452,7 +491,7 @@ object StreamCameraEngine : ConnectChecker {
             openGlView = view
             view.setBackgroundColor(Color.TRANSPARENT)
             view.setAspectRatioMode(AspectRatioMode.Fill)
-            backgroundRendering = true
+            applyIntent(StreamPhasePolicy.Intent.EnterBackground)
             onExitBackground()
             return
         }
@@ -554,7 +593,7 @@ object StreamCameraEngine : ConnectChecker {
                 camera?.stopPreview()
             } catch (_: Exception) {
             }
-            encoderPrepared = false
+            applyIntent(StreamPhasePolicy.Intent.Release)
             resetFocusState()
         }
         return preparePreview(width, height, fps, bitrate, rotation)
@@ -887,7 +926,7 @@ object StreamCameraEngine : ConnectChecker {
         pendingOverlayAfterConnect = url.isNotEmpty()
 
         val endpoint = StreamCaptureService.buildEndpoint(rtmpUrl, streamKey)
-        if (!endpoint.startsWith("rtmp://")) {
+        if (!endpoint.startsWith("rtmp://") && !endpoint.startsWith("rtmps://")) {
             throw IllegalArgumentException("Invalid RTMP URL")
         }
 
@@ -1008,7 +1047,7 @@ object StreamCameraEngine : ConnectChecker {
                     cam.stopPreview()
                 } catch (_: Exception) {
                 }
-                encoderPrepared = false
+                applyIntent(StreamPhasePolicy.Intent.Release)
                 resetFocusState()
             } else {
                 ensureWatermarkFilter()
@@ -1036,7 +1075,7 @@ object StreamCameraEngine : ConnectChecker {
                     false
                 }
             }
-            encoderPrepared = false
+            applyIntent(StreamPhasePolicy.Intent.Release)
         }
 
         prepareInFlight = true
@@ -1049,7 +1088,7 @@ object StreamCameraEngine : ConnectChecker {
             // stream alone — the exact cause of "preview upright, RTMP output sideways".
             val audioOk = cam.prepareAudio(128 * 1024, 32_000, true, false, false)
             if (!audioOk) {
-                encoderPrepared = false
+                applyIntent(StreamPhasePolicy.Intent.Release)
                 CricrelayLog.e("prepareAudio FAILED — preview cannot start (mic permission/codec?)")
                 return false
             }
@@ -1066,7 +1105,7 @@ object StreamCameraEngine : ConnectChecker {
                 )
             }
             if (!videoOk) {
-                encoderPrepared = false
+                applyIntent(StreamPhasePolicy.Intent.Release)
                 CricrelayLog.e("prepareVideo FAILED on all tiers — preview stays black")
                 return false
             }
@@ -1075,7 +1114,7 @@ object StreamCameraEngine : ConnectChecker {
                 // so the value bakes into the first repeating request — same as RootEncoder.
                 applyStabilization(cam, live = false)
             }
-            encoderPrepared = true
+            applyIntent(StreamPhasePolicy.Intent.Prepare)
             preparedVideoRotation = streamRotation
             if (!cam.isOnPreview) {
                 cam.startPreview()
@@ -1111,7 +1150,7 @@ object StreamCameraEngine : ConnectChecker {
             }
             ready
         } catch (t: Exception) {
-            encoderPrepared = false
+            applyIntent(StreamPhasePolicy.Intent.Release)
             CricrelayLog.e("preparePreviewOnMain threw — camera open/preview failed", t)
             false
         } finally {
@@ -1168,7 +1207,7 @@ object StreamCameraEngine : ConnectChecker {
             try {
                 dropStaleGlFilterRefs()
                 cam.stopPreview()
-                encoderPrepared = false
+                applyIntent(StreamPhasePolicy.Intent.Release)
                 resetFocusState()
             } catch (_: Exception) {
             }
@@ -1183,8 +1222,14 @@ object StreamCameraEngine : ConnectChecker {
         if (keepScreenOnDuringStream) {
             openGlView?.keepScreenOn = true
         }
+        // Arm the self-heal: a ground-side network blip must reconnect on its own — the
+        // operator is filming, not watching the phone.
+        reconnectAttempt = 0
+        burnInWarned.clear()
+        runCatching { cam.streamClient.setReTries(StreamReconnectPolicy.MAX_ATTEMPTS) }
         try {
             cam.startStream(endpoint)
+            applyIntent(StreamPhasePolicy.Intent.GoLive)
             activity?.let {
                 CameraPreviewHost.refreshPreviewSurface()
                 CameraPreviewHost.elevateComposeUi(it)
@@ -1213,7 +1258,7 @@ object StreamCameraEngine : ConnectChecker {
             }
         } catch (_: Exception) {
         }
-        encoderPrepared = false
+        applyIntent(StreamPhasePolicy.Intent.Release)
         resetFocusState()
         if (!preparePreviewOnMain()) {
             CricrelayLog.w("resetEncoderAfterRtmpStop: preview re-prepare failed")
@@ -1222,8 +1267,10 @@ object StreamCameraEngine : ConnectChecker {
 
     private fun stopStreamInternal() {
         pendingOverlayAfterConnect = false
-        streamPaused = false
-        backgroundRendering = false
+        applyIntent(StreamPhasePolicy.Intent.Stop)
+        // Disarm the self-heal: an intentional stop must not race a pending reconnect.
+        reconnectAttempt = 0
+        runCatching { camera?.streamClient?.setReTries(0) }
         bitrateAdapter = null
         statsListener?.invoke(null)
         removePauseBlackFilter()
@@ -1241,7 +1288,7 @@ object StreamCameraEngine : ConnectChecker {
     private fun pauseStreamInternal() {
         val cam = camera ?: return
         if (!cam.isStreaming || streamPaused) return
-        streamPaused = true
+        applyIntent(StreamPhasePolicy.Intent.Pause)
         stopOverlayRefresh()
         try {
             cam.disableAudio()
@@ -1261,7 +1308,7 @@ object StreamCameraEngine : ConnectChecker {
     private fun resumeStreamInternal() {
         val cam = camera ?: return
         if (!cam.isStreaming || !streamPaused) return
-        streamPaused = false
+        applyIntent(StreamPhasePolicy.Intent.Resume)
         removePauseBlackFilter()
         try {
             if (!micMuted) cam.enableAudio()
@@ -1416,7 +1463,7 @@ object StreamCameraEngine : ConnectChecker {
                 camera?.stopPreview()
             } catch (_: Exception) {
             }
-            encoderPrepared = false
+            applyIntent(StreamPhasePolicy.Intent.Release)
             surfaceValid = false
         }
         // Keep overlay WebView alive across studio navigation to avoid reload flicker.
@@ -1629,6 +1676,7 @@ object StreamCameraEngine : ConnectChecker {
             }
         } catch (e: Exception) {
             CricrelayLog.w("Watermark filter failed: ${e.message}")
+            warnBurnInOnce("watermark", "Watermark could not be added to the stream.")
             return
         }
         // Rebuild the bitmap only when the text changes (expensive)…
@@ -1798,6 +1846,7 @@ object StreamCameraEngine : ConnectChecker {
         SponsorSlot(filter).also { sponsorSlots[url] = it }
     } catch (e: Exception) {
         CricrelayLog.w("Sponsor filter failed: ${e.message}")
+        warnBurnInOnce("sponsor_filter", "Sponsor overlay could not be added to the stream.")
         null
     }
 
@@ -1831,7 +1880,12 @@ object StreamCameraEngine : ConnectChecker {
                         applySponsorSprite(live.filter, live, index, total)
                     } catch (e: Exception) {
                         CricrelayLog.w("Sponsor image failed: ${e.message}")
+                        warnBurnInOnce("sponsor:$url", "A sponsor logo could not be drawn on the stream.")
                     }
+                } else {
+                    // No cached copy and the download failed — the slot stays empty and the
+                    // operator would otherwise never know the sponsor is missing on air.
+                    warnBurnInOnce("sponsor:$url", "A sponsor logo failed to load and is missing from the stream.")
                 }
             }
         }
@@ -2123,7 +2177,20 @@ object StreamCameraEngine : ConnectChecker {
         overlayCaptureInFlight = true
         capture.captureAsync { captured ->
             overlayCaptureInFlight = false
-            if (captured == null) return@captureAsync
+            if (captured == null) {
+                // A sustained streak of failed captures while live means the score bar has
+                // silently vanished from the broadcast (e.g. the WebView never measured).
+                if (requireStreaming &&
+                    ++overlayCaptureFailStreak == OVERLAY_CAPTURE_WARN_STREAK
+                ) {
+                    warnBurnInOnce(
+                        "overlay_capture",
+                        "Scoreboard overlay is not rendering — the stream may be missing the score bar.",
+                    )
+                }
+                return@captureAsync
+            }
+            overlayCaptureFailStreak = 0
             val forGl = applyBitmapOpacity(
                 captured.copy(Bitmap.Config.ARGB_8888, false),
                 overlayLayout.opacity,
@@ -2173,11 +2240,29 @@ object StreamCameraEngine : ConnectChecker {
         statusListener?.invoke(event, message)
     }
 
+    /**
+     * A burn-in (scoreboard / watermark / sponsor) failing must reach the operator — a silent
+     * catch means they find out from the VOD after the match. One warning per element per
+     * broadcast; [burnInWarned] is cleared at stream start.
+     */
+    private fun warnBurnInOnce(key: String, message: String) {
+        mainHandler.post {
+            if (burnInWarned.add(key)) {
+                CricrelayLog.w("burn-in degraded [$key]: $message")
+                emit(StreamCaptureService.EVENT_OVERLAY_WARNING, message)
+            }
+        }
+    }
+
     override fun onConnectionStarted(url: String) {
         emit(StreamCaptureService.EVENT_CONNECTING, url)
     }
 
     override fun onConnectionSuccess() {
+        val wasReconnect = reconnectAttempt > 0
+        reconnectAttempt = 0
+        // Refill the retry budget so a later outage gets the full schedule again.
+        runCatching { camera?.streamClient?.setReTries(StreamReconnectPolicy.MAX_ATTEMPTS) }
         // Follow the real network: RootEncoder reports the sent bitrate once a second
         // (onNewBitrate); the adapter steps the encoder toward the prepared maximum when there
         // is headroom and cuts it on congestion (setVideoBitrateOnFly = live MediaCodec param).
@@ -2191,12 +2276,44 @@ object StreamCameraEngine : ConnectChecker {
             }
         }.apply { setMaxBitrate(streamBitrate) }
         attachOverlayAfterConnect()
-        emit(StreamCaptureService.EVENT_CONNECTED, "")
+        emit(StreamCaptureService.EVENT_CONNECTED, if (wasReconnect) "Reconnected" else "")
     }
 
     override fun onConnectionFailed(reason: String) {
+        val cam = camera
+        val detail = reason.ifBlank { "RTMP connection failed" }
+        // Self-heal first: reTry keeps the encoder running and re-dials the socket, so a network
+        // blip at the ground resumes the broadcast without a manual Go Live. RootEncoder refuses
+        // to retry malformed endpoints, so those fall straight through to the teardown below.
+        if (cam != null) {
+            val delayMs = StreamReconnectPolicy.backoffMs(reconnectAttempt)
+            val retrying = runCatching { cam.streamClient.reTry(delayMs, reason) }.getOrDefault(false)
+            if (retrying) {
+                reconnectAttempt++
+                CricrelayLog.w("RTMP reconnect $reconnectAttempt/${StreamReconnectPolicy.MAX_ATTEMPTS} in ${delayMs}ms: $detail")
+                emit(
+                    StreamCaptureService.EVENT_RECONNECTING,
+                    "Connection lost — reconnecting ($reconnectAttempt of ${StreamReconnectPolicy.MAX_ATTEMPTS})…",
+                )
+                return
+            }
+        }
         pendingOverlayAfterConnect = false
-        emit(StreamCaptureService.EVENT_ERROR, reason.ifBlank { "RTMP connection failed" })
+        endLostStream(detail)
+    }
+
+    /**
+     * Out of retries (or the failure isn't retryable): tear the session down so the UI can't sit
+     * on a dead LIVE badge, then tell the operator the broadcast is gone. The teardown re-prepares
+     * the preview, so the next Go Live starts clean.
+     */
+    private fun endLostStream(detail: String) {
+        mainHandler.post {
+            if (camera?.isStreaming == true) {
+                stopStreamInternal()
+            }
+            emit(StreamCaptureService.EVENT_STREAM_LOST, detail)
+        }
     }
 
     override fun onNewBitrate(bitrate: Long) {
@@ -2227,10 +2344,9 @@ object StreamCameraEngine : ConnectChecker {
 
     override fun onAuthError() {
         pendingOverlayAfterConnect = false
-        emit(
-            StreamCaptureService.EVENT_ERROR,
-            "Stream key rejected. Start the live event in Studio/dashboard first, then try again.",
-        )
+        // Auth won't heal on its own — no retry; tear down so the encoder doesn't run against
+        // a session the platform already rejected.
+        endLostStream("Stream key rejected. Start the live event in Studio/dashboard first, then try again.")
     }
 
     override fun onAuthSuccess() {}

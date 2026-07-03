@@ -129,6 +129,15 @@ class StreamCaptureService : Service() {
         const val EVENT_RESUMED = "resumed"
         const val EVENT_PREVIEW_READY = "preview_ready"
 
+        /** Mid-broadcast connection drop; the engine is retrying on its own. */
+        const val EVENT_RECONNECTING = "reconnecting"
+
+        /** Reconnect attempts exhausted; the engine tore the session down. */
+        const val EVENT_STREAM_LOST = "stream_lost"
+
+        /** A burn-in (scoreboard / watermark / sponsor) degraded — stream continues without it. */
+        const val EVENT_OVERLAY_WARNING = "overlay_warning"
+
         private const val NOTIF_ID = 4401
 
         @Volatile

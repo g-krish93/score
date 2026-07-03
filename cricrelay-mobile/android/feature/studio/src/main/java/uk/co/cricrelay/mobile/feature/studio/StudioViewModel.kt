@@ -25,6 +25,7 @@ import uk.co.cricrelay.shared.model.Sponsor
 import uk.co.cricrelay.shared.model.StreamMatch
 import uk.co.cricrelay.shared.repository.ApiClientProvider
 import uk.co.cricrelay.shared.repository.StreamRepository
+import uk.co.cricrelay.stream.StreamCaptureService
 import uk.co.cricrelay.stream.StreamController
 import javax.inject.Inject
 
@@ -56,11 +57,6 @@ enum class PrecheckStep { Camera, Arrange, Ready }
  */
 enum class OrientationMode { Auto, Landscape, Portrait }
 
-// Vertical drag maps to the board's bottom margin (px, /720 in the engine). Allow lifting the
-// board up to ~55% of the frame so the operator can place a lower-third or a mid-frame board.
-private const val BOARD_DRAG_MARGIN_SPAN = 400.0
-private const val BOARD_DRAG_MARGIN_MAX = 400.0
-
 /** Shown after a broadcast ends — the shareable wrap-up. */
 data class StreamRecap(
     val durationSeconds: Long,
@@ -75,6 +71,8 @@ data class StudioUiState(
     val previewReady: Boolean = false,
     val streaming: Boolean = false,
     val paused: Boolean = false,
+    // Mid-broadcast connection drop; the engine is retrying on its own (amber banner, still live).
+    val reconnecting: Boolean = false,
     val watchUrl: String = "",
     val error: String? = null,
     val statusMessage: String = "",
@@ -129,6 +127,12 @@ class StudioViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(StudioUiState())
     val uiState: StateFlow<StudioUiState> = _uiState.asStateFlow()
 
+    // Focused delegates sharing this ViewModel's UiState flow; the ViewModel keeps thin
+    // facades so the composables' call sites stay unchanged.
+    private val overlaySync =
+        OverlaySyncController(_uiState, viewModelScope, streamController, streamRepository, localPrefs)
+    private val arrange = ArrangeModeController(_uiState, overlaySync)
+
     private var matchDayJob: Job? = null
     private var liveTimerJob: Job? = null
     private var countdownJob: Job? = null
@@ -169,6 +173,8 @@ class StudioViewModel @Inject constructor(
                         previewReady = status.previewReady,
                         streaming = status.streaming,
                         paused = status.paused,
+                        // A user stop mid-reconnect must not leave the amber banner up.
+                        reconnecting = it.reconnecting && status.streaming,
                         // Engine is the source of truth for the focus lock: a re-prepare (e.g.
                         // rotating before Go Live) clears it inside resetFocusState(), so mirror
                         // the real state here rather than letting the padlock drift out of sync.
@@ -182,15 +188,29 @@ class StudioViewModel @Inject constructor(
                     )
                 }
                 val event = status.lastEvent ?: return@collect
-                if (event.event.contains("error", ignoreCase = true) ||
-                    event.event.contains("fail", ignoreCase = true)
-                ) {
-                    _uiState.update {
-                        it.copy(
-                            error = event.message.ifBlank { event.event },
-                            busy = false,
-                            loading = false,
-                        )
+                when (event.event) {
+                    StreamCaptureService.EVENT_RECONNECTING -> _uiState.update {
+                        it.copy(reconnecting = true, error = null)
+                    }
+                    StreamCaptureService.EVENT_CONNECTED -> _uiState.update {
+                        it.copy(reconnecting = false)
+                    }
+                    StreamCaptureService.EVENT_STREAM_LOST -> onStreamLost(event.message)
+                    // Burn-in degraded (watermark/sponsor/scoreboard) — broadcast continues,
+                    // but the operator must hear about it now, not from the VOD.
+                    StreamCaptureService.EVENT_OVERLAY_WARNING -> _uiState.update {
+                        it.copy(error = event.message)
+                    }
+                    else -> if (event.event.contains("error", ignoreCase = true) ||
+                        event.event.contains("fail", ignoreCase = true)
+                    ) {
+                        _uiState.update {
+                            it.copy(
+                                error = event.message.ifBlank { event.event },
+                                busy = false,
+                                loading = false,
+                            )
+                        }
                     }
                 }
             }
@@ -259,7 +279,7 @@ class StudioViewModel @Inject constructor(
             )
         }
         // Start overlay WebView load immediately; don't wait for overlay prefs API.
-        syncOverlay(match, _uiState.value.overlayPrefs)
+        overlaySync.syncOverlay(match, _uiState.value.overlayPrefs)
     }
 
     private suspend fun loadStudioExtras(slug: String, match: StreamMatch) {
@@ -300,8 +320,8 @@ class StudioViewModel @Inject constructor(
         }
         streamController.setStabilizationLevel(overlayPrefs.stabilizationLevel)
         streamController.setKeepScreenOnDuringStream(overlayPrefs.keepScreenOn)
-        syncOverlay(match, overlayPrefs)
-        syncSponsorLayer(overlayPrefs, sponsors)
+        overlaySync.syncOverlay(match, overlayPrefs)
+        overlaySync.syncSponsorLayer(overlayPrefs, sponsors)
     }
 
     private fun startRemoteCommandPolling(slug: String) {
@@ -342,16 +362,6 @@ class StudioViewModel @Inject constructor(
                 }
             }
         }
-    }
-
-    private fun syncSponsorLayer(prefs: OverlayLayoutPrefs, sponsors: List<Sponsor> = _uiState.value.sponsors) {
-        val match = _uiState.value.match ?: return
-        val logoUrls = prefs.resolveSponsorLogoUrls(sponsors)
-        if (match.overlayEmbedUrl.isBlank()) {
-            streamController.setSponsorLayer(prefs.sponsorEnabled, logoUrls)
-            return
-        }
-        streamController.updateOverlay(match.overlayEmbedUrl, prefs.toEngineLayout(logoUrls))
     }
 
     private fun resetCameraGate() {
@@ -428,59 +438,28 @@ class StudioViewModel @Inject constructor(
         streamController.ensureComposeAboveCamera()
     }
 
-    private fun syncOverlay(match: StreamMatch, prefs: OverlayLayoutPrefs) {
-        if (match.overlayEmbedUrl.isBlank()) return
-        val logoUrls = prefs.resolveSponsorLogoUrls(_uiState.value.sponsors)
-        streamController.updateOverlay(match.overlayEmbedUrl, prefs.toEngineLayout(logoUrls))
-    }
+    // ── Overlay sync + Arrange mode (logic in OverlaySyncController / ArrangeModeController;
+    // facades keep the composables' call sites unchanged) ─────────────────────────
 
     /** Push overlay/sponsor prefs to the camera preview without persisting to the server. */
-    fun previewOverlayPrefs(prefs: OverlayLayoutPrefs) {
-        val match = _uiState.value.match ?: return
-        syncOverlay(match, prefs)
-        syncSponsorLayer(prefs)
-    }
+    fun previewOverlayPrefs(prefs: OverlayLayoutPrefs) = overlaySync.previewOverlayPrefs(prefs)
 
     /** Restore the last saved overlay on the preview after cancel/dismiss without save. */
-    fun revertOverlayPreview() {
-        previewOverlayPrefs(_uiState.value.overlayPrefs)
-    }
+    fun revertOverlayPreview() = overlaySync.revertOverlayPreview()
 
-    // ── Arrange mode ────────────────────────────────────────────────────────────
-    // Direct manipulation of the board + sponsor on the live composited preview. Gestures push
-    // to the engine via previewOverlayPrefs (no network); commit persists once, on "Done".
+    fun enterArrangeMode() = arrange.enterArrangeMode()
 
-    fun enterArrangeMode() {
-        _uiState.update {
-            it.copy(arrangeMode = true, arrangeDraft = it.overlayPrefs, activeSheet = StudioSheet.None)
-        }
-    }
+    fun cancelArrangeMode() = arrange.cancelArrangeMode()
 
-    fun cancelArrangeMode() {
-        revertOverlayPreview()
-        _uiState.update { it.copy(arrangeMode = false, arrangeDraft = null) }
-    }
+    fun commitArrangeMode() = arrange.commitArrangeMode()
 
-    fun commitArrangeMode() {
-        val draft = _uiState.value.arrangeDraft
-        _uiState.update {
-            it.copy(
-                arrangeMode = false,
-                arrangeDraft = null,
-                // Completing Arrange advances the first-run precheck to its final step.
-                precheckStep = if (it.precheckActive && it.precheckStep == PrecheckStep.Arrange) {
-                    PrecheckStep.Ready
-                } else {
-                    it.precheckStep
-                },
-            )
-        }
-        if (draft != null) updateOverlayPrefs(draft)
-    }
+    fun setArrangeTarget(target: ArrangeTarget) = arrange.setArrangeTarget(target)
 
-    fun setArrangeTarget(target: ArrangeTarget) {
-        _uiState.update { it.copy(arrangeTarget = target) }
-    }
+    /** Pinch: [zoom] is the incremental scale ratio (~1.0) from the transform gesture. */
+    fun pinchBoard(zoom: Float) = arrange.pinchBoard(zoom)
+
+    /** Drag the active target by a fraction of the preview (dy<0 = up). */
+    fun dragArrange(dxFraction: Float, dyFraction: Float) = arrange.dragArrange(dxFraction, dyFraction)
 
     // ── First-run precheck ──────────────────────────────────────────────────────
 
@@ -492,38 +471,6 @@ class StudioViewModel @Inject constructor(
     fun finishPrecheck() {
         rtmpStore.setPrecheckDone()
         _uiState.update { it.copy(precheckActive = false) }
-    }
-
-    private fun mutateArrangeDraft(block: (OverlayLayoutPrefs) -> OverlayLayoutPrefs) {
-        val current = _uiState.value.arrangeDraft ?: _uiState.value.overlayPrefs
-        val next = block(current)
-        _uiState.update { it.copy(arrangeDraft = next) }
-        previewOverlayPrefs(next)
-    }
-
-    /** Pinch: [zoom] is the incremental scale ratio (~1.0) from the transform gesture. */
-    fun pinchBoard(zoom: Float) {
-        if (zoom <= 0f) return
-        mutateArrangeDraft { it.withBoardScale(it.boardScale() * zoom) }
-    }
-
-    /** Drag the active target by a fraction of the preview (dy<0 = up). */
-    fun dragArrange(dxFraction: Float, dyFraction: Float) {
-        mutateArrangeDraft { p ->
-            when (_uiState.value.arrangeTarget) {
-                ArrangeTarget.Board -> p.copy(
-                    anchorX = (p.anchorX + dxFraction).coerceIn(0.0, 1.0),
-                    // Android's GL sprite reads bottomMargin (px/720) for vertical placement:
-                    // dragging up (dy<0) lifts the board off the bottom edge.
-                    bottomMargin = (p.bottomMargin - dyFraction * BOARD_DRAG_MARGIN_SPAN)
-                        .coerceIn(0.0, BOARD_DRAG_MARGIN_MAX),
-                )
-                ArrangeTarget.Sponsor -> p.copy(
-                    sponsorPositionX = (p.sponsorPositionX + dxFraction).coerceIn(0.0, 1.0),
-                    sponsorPositionY = (p.sponsorPositionY + dyFraction).coerceIn(0.0, 1.0),
-                )
-            }
-        }
     }
 
     private fun startMatchDayPolling(slug: String) {
@@ -599,27 +546,7 @@ class StudioViewModel @Inject constructor(
         }
     }
 
-    fun updateOverlayPrefs(prefs: OverlayLayoutPrefs) {
-        val match = _uiState.value.match ?: return
-        // Local persistence + camera apply first — the studio must work fully offline.
-        localPrefs.saveOverlayPrefs(match.slug, prefs)
-        localPrefs.saveDeviceSettings(
-            DeviceStreamSettings(
-                stabilizationLevel = prefs.stabilizationLevel,
-                keepScreenOn = prefs.keepScreenOn,
-            ),
-        )
-        streamController.setStabilizationLevel(prefs.stabilizationLevel)
-        streamController.setKeepScreenOnDuringStream(prefs.keepScreenOn)
-        syncOverlay(match, prefs)
-        syncSponsorLayer(prefs)
-        _uiState.update { it.copy(overlayPrefs = prefs) }
-        // Best-effort mirror to the server so the club dashboard and remote companion stay
-        // informed — a failure never blocks or reverts the local studio.
-        viewModelScope.launch {
-            runCatching { streamRepository.setOverlayPrefs(match.slug, prefs) }
-        }
-    }
+    fun updateOverlayPrefs(prefs: OverlayLayoutPrefs) = overlaySync.updateOverlayPrefs(prefs)
 
     fun setZoom(level: Float) {
         streamController.setZoom(level)
@@ -816,6 +743,32 @@ class StudioViewModel @Inject constructor(
                     recap = recap.takeIf { r -> r.durationSeconds > 0 },
                 )
             }
+        }
+    }
+
+    /**
+     * The engine exhausted its reconnect attempts and already tore the RTMP session down.
+     * Mirror that here — stop the timer + foreground service, tell the server we're idle, and
+     * prompt a manual Go Live. The ON AIR badge must never outlive the broadcast.
+     */
+    private fun onStreamLost(detail: String) {
+        liveTimerJob?.cancel()
+        streamController.onStreamLost()
+        _uiState.update {
+            it.copy(
+                streaming = false,
+                paused = false,
+                busy = false,
+                reconnecting = false,
+                liveElapsedSeconds = 0,
+                statusMessage = "",
+                error = "Broadcast lost: ${detail.ifBlank { "connection dropped" }} " +
+                    "Check signal and Go Live again.",
+            )
+        }
+        val match = _uiState.value.match ?: return
+        viewModelScope.launch {
+            runCatching { streamRepository.updateBroadcastStatus(match.slug, status = "idle") }
         }
     }
 

@@ -54,6 +54,7 @@ import androidx.compose.material.icons.outlined.ScreenLockPortrait
 import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.outlined.Whatshot
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -592,6 +593,28 @@ private fun StudioStatusMessages(
                     .background(Color.Black.copy(alpha = 0.45f), CircleShape)
                     .padding(12.dp),
             )
+        }
+        if (state.reconnecting) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .padding(horizontal = 20.dp, vertical = 6.dp)
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                CircularProgressIndicator(
+                    color = AppColors.Warning,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Connection lost — reconnecting…",
+                    color = AppColors.Warning,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
         state.error?.let {
             ErrorBanner(it, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
