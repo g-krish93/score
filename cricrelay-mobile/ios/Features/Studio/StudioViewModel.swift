@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import CoreGraphics
 import UIKit
+import Shared
 
 /// What the Arrange-mode drag gesture moves (pinch always scales the board).
 enum ArrangeTarget {

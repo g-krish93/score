@@ -1,4 +1,5 @@
 import SwiftUI
+import Shared
 
 // MARK: - Destination sheet
 
@@ -518,7 +519,7 @@ struct OverlaySheet: View {
     private var sponsorPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(sponsors.filter(\.isActive)) { sponsor in
+                ForEach(sponsors.filter(\.isActive), id: \.id) { sponsor in
                     Button {
                         if SponsorLayoutMode.allowsMultiSelect(draft.sponsorLayoutMode) {
                             if draft.activeSponsorIds.contains(sponsor.id) {

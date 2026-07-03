@@ -50,6 +50,28 @@ targets:
         product: HaishinKit
       - package: HaishinKit
         product: RTMPHaishinKit
+      # KMP shared data layer (ADR-001). Static framework — linked, not embedded.
+      # Built by `./gradlew :shared:assembleSharedReleaseXCFramework` (CI does this
+      # before xcodegen; the pre-build script below covers local Mac builds).
+      - framework: ../shared/build/XCFrameworks/release/Shared.xcframework
+        embed: false
+
+    preBuildScripts:
+      - name: Build Shared KMP XCFramework
+        shell: /bin/bash
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          XCF="$SRCROOT/../shared/build/XCFrameworks/release/Shared.xcframework"
+          cd "$SRCROOT/.."
+          if ./gradlew :shared:assembleSharedReleaseXCFramework; then
+            echo "Shared.xcframework up to date"
+          elif [ -d "$XCF" ]; then
+            echo "warning: Gradle failed (JVM missing from Xcode env?) — linking existing Shared.xcframework"
+          else
+            echo "error: Shared.xcframework missing and Gradle failed. Run './gradlew :shared:assembleSharedReleaseXCFramework' in cricrelay-mobile/ first."
+            exit 1
+          fi
 
     info:
       path: CricRelay/Info.plist

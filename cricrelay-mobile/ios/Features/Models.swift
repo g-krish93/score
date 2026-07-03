@@ -1,148 +1,12 @@
 import Foundation
+import Shared
 
-struct BroadcastStatus: Codable {
-    var status: String
-    var platform: String?
-    var watchUrl: String?
-
-    var isStreaming: Bool { status == "streaming" }
-    var isPaused: Bool { status == "paused" }
-
-    enum CodingKeys: String, CodingKey {
-        case status, platform
-        case watchUrl = "watch_url"
-    }
-}
-
-struct StreamMatch: Identifiable, Codable {
-    var slug: String
-    var label: String
-    var overlayEmbedUrl: String
-    var relaySource: String
-    var relayPaused: Bool
-    var scoringMode: String
-    var scoringActive: Bool
-    var scoringStale: Bool
-    var isLive: Bool
-    var broadcast: BroadcastStatus
-
-    var id: String { slug }
-
-    enum CodingKeys: String, CodingKey {
-        case slug, label
-        case overlayEmbedUrl = "overlay_embed_url"
-        case relaySource = "relay_source"
-        case relayPaused = "relay_paused"
-        case scoringMode = "scoring_mode"
-        case scoringActive = "scoring_active"
-        case scoringStale = "scoring_stale"
-        case isLive = "is_live"
-        case broadcast
-    }
-}
-
-struct GoLiveResult: Codable {
-    var rtmpUrl: String
-    var streamKey: String
-    var watchUrl: String
-    var overlayEmbedUrl: String
-
-    enum CodingKeys: String, CodingKey {
-        case rtmpUrl = "rtmp_url"
-        case streamKey = "stream_key"
-        case watchUrl = "watch_url"
-        case overlayEmbedUrl = "overlay_embed_url"
-    }
-}
-
-struct FixtureItem: Identifiable, Codable {
-    var matchId: String
-    var title: String
-
-    var id: String { matchId }
-
-    enum CodingKeys: String, CodingKey {
-        case matchId = "match_id"
-        case title
-    }
-}
-
-struct FixturesResponse: Codable {
-    var fixtures: [FixtureItem]
-    var activeMatchIds: [String]
-    var error: String?
-    var slotsUsed: Int
-    var slotsTotal: Int
-
-    enum CodingKeys: String, CodingKey {
-        case fixtures
-        case activeMatchIds = "active_match_ids"
-        case error
-        case slotsUsed = "slots_used"
-        case slotsTotal = "slots_total"
-    }
-}
-
-struct ScoringConfig: Codable {
-    var mode: String
-    var manualInputUrl: String
-    var manualScorerUrl: String
-    var pcsIngestUrl: String
-    var pcsIngestToken: String
-    var pcsRelayApkUrl: String
-
-    var scorerUrl: String {
-        manualScorerUrl.isEmpty
-            ? manualInputUrl.replacingOccurrences(of: "/input", with: "/score")
-            : manualScorerUrl
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case mode
-        case manualInputUrl = "manual_input_url"
-        case manualScorerUrl = "manual_scorer_url"
-        case pcsIngestUrl = "pcs_ingest_url"
-        case pcsIngestToken = "pcs_ingest_token"
-        case pcsRelayApkUrl = "pcs_relay_apk_url"
-    }
-}
-
-struct PlatformStatus: Codable {
-    var connected: Bool
-    var ready: Bool
-    var label: String
-
-    init(connected: Bool = false, ready: Bool = false, label: String = "") {
-        self.connected = connected
-        self.ready = ready
-        self.label = label
-    }
-}
-
-struct Sponsor: Identifiable, Codable {
-    var id: String
-    var name: String
-    var logoUrl: String?
-    var linkUrl: String?
-    var isActive: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case id, name
-        case logoUrl = "logo_url"
-        case linkUrl = "link_url"
-        case isActive = "is_active"
-    }
-}
-
-struct PairRemoteResult: Codable {
-    var pairToken: String
-    var expiresAt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case pairToken = "pair_token"
-        case expiresAt = "expires_at"
-    }
-}
+// The data-layer models (StreamMatch, BroadcastStatus, GoLiveResult, FixturesResponse,
+// FixtureItem, ScoringConfig, MatchDayStatus, PlatformStatus, Sponsor, PairRemoteResult)
+// live in the KMP Shared framework now (ADR-001 item 2) — see SharedModels+App.swift for
+// their Swift-side conveniences. What remains here is iOS-only: the companion-session
+// types, OverlayLayoutPrefs (pending migration — it has a local-only field, a legacy cache
+// decoder, and the engine-layout mapping), and pure UI helpers.
 
 struct CompanionSession: Codable {
     var companionToken: String
@@ -620,27 +484,6 @@ enum SponsorDisplayMode {
     static func sanitize(_ raw: String?) -> String {
         let m = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? staticMode
         return modes.contains(where: { $0.id == m }) ? m : staticMode
-    }
-}
-
-struct MatchDayStatus: Codable {
-    var slug: String
-    var label: String
-    var scoringMode: String
-    var scoringActive: Bool
-    var scoringStale: Bool
-    var relayPaused: Bool
-    var broadcast: BroadcastStatus
-    var manualScorerUrl: String
-
-    enum CodingKeys: String, CodingKey {
-        case slug, label
-        case scoringMode = "scoring_mode"
-        case scoringActive = "scoring_active"
-        case scoringStale = "scoring_stale"
-        case relayPaused = "relay_paused"
-        case broadcast
-        case manualScorerUrl = "manual_scorer_url"
     }
 }
 

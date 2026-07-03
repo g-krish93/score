@@ -18,6 +18,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 struct CricRelayApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
+    init() {
+        #if DEBUG
+        // Exercises the KMP Shared framework at runtime, not just at link time (ADR-001 spike).
+        assert(SharedKitProbe.verify(), "KMP Shared framework probe failed")
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

@@ -48,6 +48,38 @@ jobs:
             cricrelay-mobile/**/build/reports/lint-results-*.html
           if-no-files-found: ignore
 
+  # The iOS app links the KMP shared data layer as Shared.xcframework (ADR-001).
+  # Apple-target linking only works on macOS, so the ubuntu job above can't catch
+  # a broken framework build — this one fails the PR before main's build does.
+  ios-shared-framework:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('cricrelay-mobile/gradle/libs.versions.toml') }}
+
+      - name: Assemble Shared.xcframework
+        working-directory: cricrelay-mobile
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :shared:assembleSharedReleaseXCFramework --no-daemon
+          if [ ! -d shared/build/XCFrameworks/release/Shared.xcframework ]; then
+            echo "::error::Shared.xcframework was not produced by :shared:assembleSharedReleaseXCFramework"
+            exit 1
+          fi
+          echo "✅ Shared.xcframework assembled"
+
   server:
     runs-on: ubuntu-latest
     steps:

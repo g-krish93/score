@@ -48,6 +48,9 @@ data class StreamMatch(
 ) {
     val paused: Boolean get() = relayPaused
 
+    /** Copy with a new label — Swift can't reach data-class `copy` defaults across the Obj-C boundary. */
+    fun withLabel(label: String): StreamMatch = copy(label = label)
+
     companion object {
         fun fromJson(json: JsonObject, baseUrl: String): StreamMatch {
             var overlay = json.string("overlay_embed_url").orEmpty()

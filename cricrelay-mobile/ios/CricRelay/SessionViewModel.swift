@@ -1,4 +1,5 @@
 import Foundation
+import Shared
 
 @MainActor
 final class SessionViewModel: ObservableObject {
@@ -9,6 +10,11 @@ final class SessionViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     private let api = CricRelayAPI.shared
+    /// KMP shared session persistence (ADR-001 item 4). The iOS actual writes the exact
+    /// keys this app has always used — NSUserDefaults "stream_api_base" /
+    /// "stream_onboarding_complete_v1" and the "uk.co.cricrelay" Keychain entry — so
+    /// existing installs keep their session across the migration.
+    private let store = SessionStore()
     private var expiryObserver: NSObjectProtocol?
 
     init() {
@@ -35,11 +41,12 @@ final class SessionViewModel: ObservableObject {
     func bootstrap() async {
         isLoading = true
         defer { isLoading = false }
-        baseUrl = UserDefaults.standard.string(forKey: "stream_api_base") ?? baseUrl
-        if let savedToken = KeychainHelper.readToken(), !savedToken.isEmpty {
-            api.configure(baseUrl: baseUrl, token: savedToken)
+        guard let session = try? await store.readSession(defaultBaseUrl: baseUrl) else { return }
+        baseUrl = session.baseUrl
+        if let savedToken = session.token, !savedToken.isEmpty {
+            api.configure(baseUrl: session.baseUrl, token: savedToken)
             isLoggedIn = true
-            onboardingComplete = UserDefaults.standard.bool(forKey: "stream_onboarding_complete_v1")
+            onboardingComplete = await loadOnboardingComplete()
         }
     }
 
@@ -47,10 +54,9 @@ final class SessionViewModel: ObservableObject {
         errorMessage = nil
         do {
             try await api.login(email: email, password: password, baseUrl: baseUrl)
-            UserDefaults.standard.set(baseUrl, forKey: "stream_api_base")
-            KeychainHelper.saveToken(api.token)
+            try await store.writeSession(baseUrl: api.baseUrl, token: api.token)
             isLoggedIn = true
-            onboardingComplete = UserDefaults.standard.bool(forKey: "stream_onboarding_complete_v1")
+            onboardingComplete = await loadOnboardingComplete()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -60,8 +66,7 @@ final class SessionViewModel: ObservableObject {
         errorMessage = nil
         do {
             try await api.register(name: name, email: email, password: password, consent: consent, baseUrl: baseUrl)
-            UserDefaults.standard.set(baseUrl, forKey: "stream_api_base")
-            KeychainHelper.saveToken(api.token)
+            try await store.writeSession(baseUrl: api.baseUrl, token: api.token)
             isLoggedIn = true
             onboardingComplete = false
         } catch {
@@ -70,12 +75,12 @@ final class SessionViewModel: ObservableObject {
     }
 
     func completeOnboarding() {
-        UserDefaults.standard.set(true, forKey: "stream_onboarding_complete_v1")
+        Task { try? await store.markOnboardingComplete() }
         onboardingComplete = true
     }
 
     func logout() {
-        KeychainHelper.deleteToken()
+        Task { try? await store.clearToken() }
         // Also drop the in-memory token — any still-running poll would otherwise keep
         // making authenticated calls as the signed-out user.
         api.clearToken()
@@ -89,5 +94,11 @@ final class SessionViewModel: ObservableObject {
         guard isLoggedIn else { return }
         logout()
         errorMessage = "Session expired — please sign in again."
+    }
+
+    /// Kotlin suspend functions box primitive returns (KotlinBoolean) across the bridge.
+    private func loadOnboardingComplete() async -> Bool {
+        guard let flag = try? await store.isOnboardingComplete() else { return false }
+        return flag.boolValue
     }
 }

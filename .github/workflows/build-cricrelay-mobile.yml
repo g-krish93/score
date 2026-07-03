@@ -170,6 +170,34 @@ jobs:
             echo "ℹ️  No signing secrets — building unsigned IPA for Sideloadly"
           fi
 
+      # ── KMP shared framework (ADR-001) ──────────────────────────────────────
+      # Must run BEFORE xcodegen/xcodebuild: project.yml links
+      # shared/build/XCFrameworks/release/Shared.xcframework.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('cricrelay-mobile/gradle/libs.versions.toml') }}
+
+      - name: Build Shared.xcframework (KMP shared data layer)
+        working-directory: cricrelay-mobile
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :shared:assembleSharedReleaseXCFramework --no-daemon
+          if [ ! -d shared/build/XCFrameworks/release/Shared.xcframework ]; then
+            echo "::error::Shared.xcframework was not produced by :shared:assembleSharedReleaseXCFramework"
+            exit 1
+          fi
+          ls -la shared/build/XCFrameworks/release/Shared.xcframework
+          echo "✅ Shared.xcframework assembled"
+
       # ── Tooling ────────────────────────────────────────────────────────────
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -296,15 +324,17 @@ jobs:
           echo "✅ Unsigned IPA ready. Install with Sideloadly (sideloadly.io) on Windows."
 
       # ── Upload: TestFlight ──────────────────────────────────────────────────
+      # main only: workflow_dispatch on a feature branch must prove the build compiles
+      # without shipping a TestFlight build to testers.
       - name: Set up App Store Connect API key
-        if: steps.check_secrets.outputs.unsigned == 'false' && env.DIST_MODE == 'testflight'
+        if: steps.check_secrets.outputs.unsigned == 'false' && env.DIST_MODE == 'testflight' && github.ref == 'refs/heads/main'
         run: |
           mkdir -p ~/.appstoreconnect/private_keys
           echo "$ASC_API_KEY_BASE64" | base64 --decode \
             > ~/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8
 
       - name: Upload to TestFlight
-        if: steps.check_secrets.outputs.unsigned == 'false' && env.DIST_MODE == 'testflight'
+        if: steps.check_secrets.outputs.unsigned == 'false' && env.DIST_MODE == 'testflight' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           xcrun altool --upload-app \
