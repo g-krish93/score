@@ -75,6 +75,8 @@ final class StreamCameraEngine: NSObject {
     static let defaultStreamWidth = 1920
     static let defaultStreamHeight = 1080
     static let defaultStreamBitrate = 4_500_000
+    /// Floor for manual quality step-downs — below ~1.2 Mbps 1080p30 sport is unwatchable.
+    private static let minStreamBitrate = 1_200_000
 
     private var streamWidth = StreamCameraEngine.defaultStreamWidth
     private var streamHeight = StreamCameraEngine.defaultStreamHeight
@@ -139,10 +141,28 @@ final class StreamCameraEngine: NSObject {
         }
     }
 
-    /// Manual mitigation for the "Lower quality" banner button.
-    /// Spike first: HaishinKit's RTMPStream/MediaMixer live-bitrate change API before wiring for real.
+    /// Manual mitigation for the "Lower quality" banner button: drop the video bitrate ~35% per
+    /// press (floored at [minStreamBitrate]) and, while live, apply it to the running encoder.
+    /// Verified against HaishinKit 2.2.0 source: RTMPStream.setVideoSettings has no publish-state
+    /// guard, and a bitRate-only change skips session invalidation — VideoCodec's settings didSet
+    /// applies it live as a VTSessionOption (kVTCompressionPropertyKey_AverageBitRate).
     func stepDownQuality() {
-        // TODO(spike): apply a lower bitrate via the real HaishinKit API once confirmed.
+        let lowered = max(Self.minStreamBitrate, Int(Double(streamBitrate) * 0.65))
+        guard lowered < streamBitrate else { return }
+        streamBitrate = lowered
+        emit("bitrate", String(lowered))
+        guard publishing, let stream = rtmpStream else { return }
+        Task {
+            // Rebuild settings exactly like preparePreview/startStream, reusing the encoded canvas
+            // currently in effect so only bitRate differs — a changed videoSize would force a
+            // compression-session rebuild (and a resolution change) instead of a live rate update.
+            let settings = VideoCodecSettings(
+                videoSize: .init(width: encodedCanvasWidth(), height: encodedCanvasHeight()),
+                bitRate: lowered,
+                maxKeyFrameIntervalDuration: 2
+            )
+            try? await stream.setVideoSettings(settings)
+        }
     }
 
     func setMicMuted(_ muted: Bool) async {

@@ -9,6 +9,28 @@ final class SessionViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     private let api = CricRelayAPI.shared
+    private var expiryObserver: NSObjectProtocol?
+
+    init() {
+        // CricRelayAPI posts this after a MAIN-token call returns 401 (it has already
+        // cleared the Keychain entry and its in-memory token). Flip the published state
+        // here so RootView drops back to LoginView instead of an empty dashboard.
+        expiryObserver = NotificationCenter.default.addObserver(
+            forName: .cricrelaySessionExpired,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.sessionDidExpire()
+            }
+        }
+    }
+
+    deinit {
+        if let expiryObserver {
+            NotificationCenter.default.removeObserver(expiryObserver)
+        }
+    }
 
     func bootstrap() async {
         isLoading = true
@@ -58,5 +80,14 @@ final class SessionViewModel: ObservableObject {
         // making authenticated calls as the signed-out user.
         api.clearToken()
         isLoggedIn = false
+    }
+
+    /// The API layer already deleted the token before posting the notification; running
+    /// logout() again is harmless (both deletes are idempotent) and keeps the reset in one
+    /// place. The message shows on the login screen so the sign-out isn't a mystery.
+    private func sessionDidExpire() {
+        guard isLoggedIn else { return }
+        logout()
+        errorMessage = "Session expired — please sign in again."
     }
 }

@@ -155,44 +155,58 @@ final class StudioViewModel: ObservableObject {
         customStreamKey = saved.streamKey
         customWatchUrl = saved.watchUrl
 
-        do {
-            async let matchFetch = api.matchDay(slug: matchSlug)
-            async let overlayFetch = api.overlayPrefs(slug: matchSlug)
-            async let scoringFetch = api.scoringConfig(slug: matchSlug)
+        // Fetch in parallel but land each result independently — one endpoint failing on flaky
+        // ground Wi-Fi must not abort the whole load, which would skip the local overlay cache,
+        // sponsors, and polling below.
+        async let matchFetch = api.matchDay(slug: matchSlug)
+        async let overlayFetch = api.overlayPrefs(slug: matchSlug)
+        async let scoringFetch = api.scoringConfig(slug: matchSlug)
 
-            let (status, serverPrefs, scoring) = try await (matchFetch, overlayFetch, scoringFetch)
+        var fetchError: Error?
+        var status: MatchDayStatus?
+        var serverPrefs: OverlayLayoutPrefs?
+        var scoring: ScoringConfig?
+        do { status = try await matchFetch } catch { fetchError = error }
+        do { serverPrefs = try await overlayFetch } catch { fetchError = fetchError ?? error }
+        do { scoring = try await scoringFetch } catch { fetchError = fetchError ?? error }
 
-            // Local-first: this phone owns its studio setup. The server copy only seeds a
-            // fresh install; camera/device settings are never read from the server at all.
-            let cached = StudioLocalPrefsStore.loadOverlayPrefs(slug: matchSlug)
-            if cached == nil {
-                StudioLocalPrefsStore.saveOverlayPrefs(slug: matchSlug, serverPrefs)
-            }
-            let prefs = StudioLocalPrefsStore.loadDeviceSettings().appliedTo(cached ?? serverPrefs)
+        // Surface the first fetch failure the same way the old all-or-nothing load did.
+        if let fetchError {
+            self.error = fetchError.localizedDescription
+        }
 
-            overlayPrefs = prefs
-            scoringConfig = scoring
+        // Local-first: this phone owns its studio setup. The server copy only seeds a
+        // fresh install; camera/device settings are never read from the server at all.
+        // Runs even when every fetch failed, so the studio comes up from cache offline.
+        let cached = StudioLocalPrefsStore.loadOverlayPrefs(slug: matchSlug)
+        if cached == nil, let serverPrefs {
+            StudioLocalPrefsStore.saveOverlayPrefs(slug: matchSlug, serverPrefs)
+        }
+        let prefs = StudioLocalPrefsStore.loadDeviceSettings()
+            .appliedTo(cached ?? serverPrefs ?? OverlayLayoutPrefs())
+
+        overlayPrefs = prefs
+        if let scoring { scoringConfig = scoring }
+        if let status {
             streaming = status.broadcast.isStreaming
             paused = status.broadcast.isPaused
             if let url = status.broadcast.watchUrl { watchUrl = url }
-
-            // Bootstrap camera settings from prefs
-            StreamCameraEngine.shared.setKeepScreenOnDuringStream(enabled: prefs.keepScreenOn)
-            StreamCameraEngine.shared.setStabilizationLevel(prefs.stabilizationLevel)
-
-            // Resolve the StreamMatch row (for the recap label) and real platform readiness.
-            await loadStudioExtras()
-
-            // Start polling
-            startPolling()
-            startRemoteCommandPolling()
-            sponsors = (try? await api.listSponsors()) ?? []
-
-            // Guided first-run precheck (Camera → Arrange → Ready) — never mid-broadcast.
-            if !streaming { startPrecheckIfNeeded() }
-        } catch {
-            self.error = error.localizedDescription
         }
+
+        // Bootstrap camera settings from prefs
+        StreamCameraEngine.shared.setKeepScreenOnDuringStream(enabled: prefs.keepScreenOn)
+        StreamCameraEngine.shared.setStabilizationLevel(prefs.stabilizationLevel)
+
+        // Resolve the StreamMatch row (for the recap label) and real platform readiness.
+        await loadStudioExtras()
+
+        // Start polling even when the fetches failed — the operator may regain signal mid-session.
+        startPolling()
+        startRemoteCommandPolling()
+        sponsors = (try? await api.listSponsors()) ?? []
+
+        // Guided first-run precheck (Camera → Arrange → Ready) — never mid-broadcast.
+        if !streaming { startPrecheckIfNeeded() }
     }
 
     /// Resolve the StreamMatch row plus live YouTube/Twitch connection state, and pick a sensible

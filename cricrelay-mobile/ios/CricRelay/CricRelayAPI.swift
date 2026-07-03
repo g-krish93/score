@@ -9,6 +9,13 @@ struct APIError: LocalizedError {
     var errorDescription: String? { message }
 }
 
+extension Notification.Name {
+    /// Posted (on the main thread) when a MAIN-token request comes back 401: the stored
+    /// session token has expired server-side (14-day TTL, no refresh endpoint) and the user
+    /// must sign in again. SessionViewModel observes this and drops back to the login screen.
+    static let cricrelaySessionExpired = Notification.Name("uk.co.cricrelay.sessionExpired")
+}
+
 final class CricRelayAPI {
     static let shared = CricRelayAPI()
     private init() {}
@@ -277,7 +284,7 @@ final class CricRelayAPI {
         let (data, response) = try await URLSession.shared.data(for: request)
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         // A companion 401 means the pairing lapsed, not the user session.
-        try checkResponse(response, json: json, unauthorizedHint: Self.pairingExpiredHint)
+        try checkResponse(response, json: json, unauthorizedHint: Self.pairingExpiredHint, sessionAuth: false)
         return json
     }
 
@@ -297,7 +304,7 @@ final class CricRelayAPI {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        try checkResponse(response, json: json, unauthorizedHint: Self.pairingExpiredHint)
+        try checkResponse(response, json: json, unauthorizedHint: Self.pairingExpiredHint, sessionAuth: false)
         return json
     }
 
@@ -306,20 +313,39 @@ final class CricRelayAPI {
     /// Shared success check: 2xx passes; 401 maps to a session-expired hint; anything else
     /// surfaces the server's own `error` message (the Kotlin client does both, and the server
     /// sends precise reasons like "YouTube OAuth is not configured…").
+    ///
+    /// `sessionAuth` is true only for requests that attached the MAIN bearer token. A 401 on
+    /// those means the stored session token expired (14-day TTL, no refresh endpoint), so the
+    /// token is cleared and the session layer told to fall back to the login screen. Requests
+    /// with `auth: false` (login/register — a wrong password is a 401 too) and companion-token
+    /// requests must never trip that path.
     private func checkResponse(
         _ response: URLResponse,
         json: [String: Any],
-        unauthorizedHint: String = "Session expired — sign out and sign back in."
+        unauthorizedHint: String = "Session expired — sign out and sign back in.",
+        sessionAuth: Bool = true
     ) throws {
         guard let http = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }
         guard !(200..<300).contains(http.statusCode) else { return }
         if http.statusCode == 401 {
+            if sessionAuth { handleSessionExpired() }
             throw APIError(statusCode: 401, message: unauthorizedHint)
         }
         let message = json["error"] as? String ?? "Request failed (\(http.statusCode))"
         throw APIError(statusCode: http.statusCode, message: message)
+    }
+
+    /// Clear the dead session exactly the way logout does (Keychain entry + in-memory token),
+    /// then notify SessionViewModel on the main thread so RootView swaps to LoginView instead
+    /// of rendering a silently empty dashboard off a stale token.
+    private func handleSessionExpired() {
+        KeychainHelper.deleteToken()
+        clearToken()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .cricrelaySessionExpired, object: nil)
+        }
     }
 
     @discardableResult
@@ -348,7 +374,7 @@ final class CricRelayAPI {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        try checkResponse(response, json: json)
+        try checkResponse(response, json: json, sessionAuth: auth)
         return json
     }
 
