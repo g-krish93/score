@@ -41,6 +41,11 @@ internal class OverlayCompositor(
     private var overlayCapture: OverlayWebViewCapture? = null
     private var imageFilter: ImageObjectFilterRender? = null
     private var lastOverlayBitmap: Bitmap? = null
+    // Scoreboard bitmap size, cached at setImage time. RootEncoder's TextureLoader recycles the
+    // bitmap right after the GL upload while the filter keeps the reference, so reading it back
+    // later (setDefaultScale) logs "Called getWidth() on a recycle()'d bitmap" on every refresh.
+    private var overlayBitmapWidth = 0
+    private var overlayBitmapHeight = 0
     private var overlayRunnable: Runnable? = null
     private var previewOverlayRunnable: Runnable? = null
     private var previewOverlayPushActive = false
@@ -220,9 +225,14 @@ internal class OverlayCompositor(
      */
     private fun applyOverlaySprite() {
         val filter = imageFilter ?: return
+        if (overlayBitmapWidth <= 0 || overlayBitmapHeight <= 0) return
         val (canvasW, canvasH) = canvasSize()
-        filter.setDefaultScale(canvasW, canvasH)
-        val base = filter.getScale()
+        // Base scale from the dimensions cached at setImage time, NOT filter.setDefaultScale:
+        // RootEncoder already recycled the bitmap the filter holds, so setDefaultScale would
+        // read a recycle()'d bitmap on every refresh (see OverlaySpriteLayout.defaultScale).
+        val base = OverlaySpriteLayout.defaultScale(
+            overlayBitmapWidth, overlayBitmapHeight, canvasW, canvasH,
+        )
         // Uniform, aspect-locked board scale: a single multiplier drives both axes so the fixed-
         // aspect strip never distorts (matches the Arrange pinch gesture). heightFraction is kept
         // in sync with widthFraction by OverlayLayoutPrefs.withBoardScale, so width is authoritative.
@@ -410,12 +420,14 @@ internal class OverlayCompositor(
                 }
                 val previous = lastOverlayBitmap
                 lastOverlayBitmap = forGl
+                overlayBitmapWidth = forGl.width
+                overlayBitmapHeight = forGl.height
                 filter.setImage(forGl)
                 applyOverlaySprite()
                 runCatching {
                     val s = filter.getScale()
                     CricrelayLog.d(
-                        "overlaySprite: bitmap=${forGl.width}x${forGl.height} " +
+                        "overlaySprite: bitmap=${overlayBitmapWidth}x$overlayBitmapHeight " +
                             "portrait=${isPortrait()} scale=${s.x}x${s.y}",
                     )
                 }

@@ -20,6 +20,20 @@ object OverlaySpriteLayout {
     data class SpriteScale(val x: Float, val y: Float)
 
     /**
+     * The base scale RootEncoder's `BaseObjectFilterRender.setDefaultScale` would set —
+     * bitmap size as a percentage of the canvas, INTEGER division included (verified against
+     * the 2.4.8 bytecode: `getWidth() * 100 / streamWidth` truncates before the int-to-float
+     * cast). Computed locally from dimensions cached at setImage time because RootEncoder's
+     * TextureLoader recycles the bitmap right after the GL upload, so calling setDefaultScale
+     * afterwards reads a recycle()'d bitmap and logs a warning per call.
+     */
+    fun defaultScale(bitmapWidth: Int, bitmapHeight: Int, canvasW: Int, canvasH: Int): SpriteScale =
+        SpriteScale(
+            (bitmapWidth * 100 / canvasW).toFloat(),
+            (bitmapHeight * 100 / canvasH).toFloat(),
+        )
+
+    /**
      * Scale the sprite from its native (base) size by the user width/height multipliers,
      * shrinking BOTH axes proportionally if the result would overflow the frame — this
      * preserves the bitmap aspect ratio (e.g. a 1280px-wide capture on a 720px-wide

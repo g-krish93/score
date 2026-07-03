@@ -1,10 +1,34 @@
 package uk.co.cricrelay.stream
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OverlaySpriteLayoutTest {
+
+    @Test
+    fun `defaultScale matches RootEncoder setDefaultScale integer math`() {
+        // Replaces filter.setDefaultScale (which reads the recycle()'d bitmap); must reproduce
+        // RootEncoder 2.4.8's `getWidth() * 100 / streamWidth` — integer division, truncated
+        // BEFORE the int-to-float cast, so 340*100/720 = 47, not 47.2.
+        val s = OverlaySpriteLayout.defaultScale(1280, 340, 1280, 720)
+        assertEquals(100f, s.x, 0f)
+        assertEquals("y must truncate like RootEncoder's idiv", 47f, s.y, 0f)
+    }
+
+    @Test
+    fun `defaultScale truncates on both axes and handles oversized bitmaps`() {
+        // 800x160 logo on 1280x720: 800*100/1280 = 62 (62.5 truncated), 160*100/720 = 22.
+        val logo = OverlaySpriteLayout.defaultScale(800, 160, 1280, 720)
+        assertEquals(62f, logo.x, 0f)
+        assertEquals(22f, logo.y, 0f)
+        // 1280-wide capture on a 720-wide portrait canvas: base may exceed 100% (fitScale
+        // shrinks it later), exactly as RootEncoder's setDefaultScale behaves.
+        val portrait = OverlaySpriteLayout.defaultScale(1280, 340, 720, 1280)
+        assertEquals(177f, portrait.x, 0f)
+        assertEquals(26f, portrait.y, 0f)
+    }
 
     @Test
     fun `computePosition places cricket scoreboard strip near bottom`() {

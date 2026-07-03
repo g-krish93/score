@@ -366,7 +366,10 @@ internal class SponsorLayer(
         total: Int = 1,
     ) {
         val (canvasW, canvasH) = canvasSize()
-        filter.setDefaultScale(canvasW, canvasH)
+        // No setDefaultScale: it reads the bitmap RootEncoder already recycled after the GL
+        // upload, and this runs every 33ms scroll tick per logo — the main source of the
+        // "Called getWidth() on a recycle()'d bitmap" logcat spam. Its result is dead anyway;
+        // the scale below comes from the slot's cached bitmap size and overwrites it.
         val sprite = WatermarkSpriteLayout.compute(
             WatermarkSpriteLayout.Params(
                 canvasW = canvasW,

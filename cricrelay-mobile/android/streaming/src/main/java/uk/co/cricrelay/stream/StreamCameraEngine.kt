@@ -1563,7 +1563,9 @@ object StreamCameraEngine : CameraSession.Listener {
     private fun applyWatermarkSprite(filter: ImageObjectFilterRender) {
         val canvasW = encodedCanvasWidth()
         val canvasH = encodedCanvasHeight()
-        filter.setDefaultScale(canvasW, canvasH)
+        // No setDefaultScale: it reads the bitmap RootEncoder already recycled after the GL
+        // upload (logging a recycle()'d-bitmap warning), and its result is dead anyway — the
+        // scale is fully overwritten by setScale/setPosition below.
         val sprite = WatermarkSpriteLayout.compute(
             WatermarkSpriteLayout.Params(
                 canvasW = canvasW,
