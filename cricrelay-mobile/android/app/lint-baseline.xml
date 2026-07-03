@@ -1,0 +1,385 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 8.7.3" type="baseline" client="gradle" dependencies="true" name="AGP (8.7.3)" variant="all" version="8.7.3">
+
+    <issue
+        id="DefaultLocale"
+        message="Implicitly using the default locale is a common source of bugs: Use `String.format(Locale, ...)` instead"
+        errorLine1="                valueText = String.format(&quot;%.1f×&quot;, prefs.sponsorScrollSpeed),"
+        errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/home/RemoteControlScreen.kt"
+            line="398"
+            column="29"/>
+    </issue>
+
+    <issue
+        id="DefaultLocale"
+        message="Implicitly using the default locale is a common source of bugs: Use `String.format(Locale, ...)` instead"
+        errorLine1="                    valueText = String.format(&quot;%.1f×&quot;, sponsorScrollSpeed),"
+        errorLine2="                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioSheets.kt"
+            line="552"
+            column="33"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
+        errorLine1="    private var lastThermalStatus: Int = PowerManager.THERMAL_STATUS_NONE"
+        errorLine2="                                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
+            line="158"
+            column="42"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_MODERATE`"
+        errorLine1="                        if (stressed) PowerManager.THERMAL_STATUS_MODERATE else PowerManager.THERMAL_STATUS_NONE,"
+        errorLine2="                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
+            line="407"
+            column="39"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
+        errorLine1="                        if (stressed) PowerManager.THERMAL_STATUS_MODERATE else PowerManager.THERMAL_STATUS_NONE,"
+        errorLine2="                                                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
+            line="407"
+            column="81"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
+        errorLine1="    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,"
+        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/StreamController.kt"
+            line="19"
+            column="30"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
+        errorLine1="    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,"
+        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/StreamController.kt"
+            line="19"
+            column="30"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
+        errorLine1="    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,"
+        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioViewModel.kt"
+            line="99"
+            column="30"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
+        errorLine1="    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,"
+        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioViewModel.kt"
+            line="99"
+            column="30"/>
+    </issue>
+
+    <issue
+        id="NotificationPermission"
+        message="When targeting Android 13 or higher, posting a permission requires holding the `POST_NOTIFICATIONS` permission (usage from uk.co.cricrelay.stream.StreamCaptureService)">
+        <location
+            file="src/main/AndroidManifest.xml"/>
+    </issue>
+
+    <issue
+        id="NotificationPermission"
+        message="When targeting Android 13 or higher, posting a permission requires holding the `POST_NOTIFICATIONS` permission"
+        errorLine1="        nm.notify(NOTIF_ID, buildNotification(label))"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/StreamCaptureService.kt"
+            line="78"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="PictureInPictureIssue"
+        message="An activity in this app supports picture-in-picture and the targetSdkVersion is 31 or above; it is therefore strongly recommended to call both `setAutoEnterEnabled(true)` and `setSourceRectHint(...)`"
+        errorLine1="    &lt;application"
+        errorLine2="     ~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="14"
+            column="6"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.camera.core.ExperimentalGetImage` or `@OptIn(markerClass = androidx.camera.core.ExperimentalGetImage.class)`"
+        errorLine1="                    val mediaImage = imageProxy.image"
+        errorLine2="                                                ~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/home/RemoteControlScreen.kt"
+            line="445"
+            column="49"/>
+    </issue>
+
+    <issue
+        id="ModifierParameter"
+        message="Modifier parameter should be the first optional parameter"
+        errorLine1="    modifier: Modifier = Modifier,"
+        errorLine2="    ~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/BroadcastCameraUi.kt"
+            line="122"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ModifierParameter"
+        message="Modifier parameter should be the first optional parameter"
+        errorLine1="    modifier: Modifier = Modifier,"
+        errorLine2="    ~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/ui/BroadcastUi.kt"
+            line="158"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ModifierParameter"
+        message="Modifier parameter should be the first optional parameter"
+        errorLine1="    modifier: Modifier = Modifier,"
+        errorLine2="    ~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/ui/Sheets.kt"
+            line="43"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="SetJavaScriptEnabled"
+        message="Using `setJavaScriptEnabled` can introduce XSS vulnerabilities into your application, review carefully"
+        errorLine1="                settings.javaScriptEnabled = true"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/OverlayWebViewCapture.kt"
+            line="267"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; SDK_INT is always >= 24"
+        errorLine1="        Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &amp;&amp; isInPictureInPictureMode"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/MainActivity.kt"
+            line="131"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="Do not place Android context classes in static fields (static reference to `CameraPreviewHost` which has field `hostActivity` pointing to `Activity`); this is a memory leak"
+        errorLine1="/**"
+        errorLine2="^">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/CameraPreviewHost.kt"
+            line="14"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="Do not place Android context classes in static fields; this is a memory leak"
+        errorLine1="    private var hostActivity: Activity? = null"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/CameraPreviewHost.kt"
+            line="26"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="Do not place Android context classes in static fields (static reference to `StreamCameraEngine` which has field `activity` pointing to `Activity`); this is a memory leak"
+        errorLine1="/**"
+        errorLine2="^">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
+            line="29"
+            column="1"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="Do not place Android context classes in static fields (static reference to `RtmpCamera2` which has field `context` pointing to `Context`); this is a memory leak"
+        errorLine1="    private var camera: RtmpCamera2? = null"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
+            line="90"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="Do not place Android context classes in static fields; this is a memory leak"
+        errorLine1="    private var activity: Activity? = null"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
+            line="92"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="Do not place Android context classes in static fields (static reference to `OverlayWebViewCapture` which has field `activity` pointing to `Activity`); this is a memory leak"
+        errorLine1="    private var overlayCapture: OverlayWebViewCapture? = null"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
+            line="119"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var fontScale by remember { mutableStateOf(prefs.fontScale.toFloat()) }"
+        errorLine2="                                ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioSheets.kt"
+            line="199"
+            column="33"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var widthFraction by remember { mutableStateOf(prefs.clampedWidthFraction().toFloat()) }"
+        errorLine2="                                    ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioSheets.kt"
+            line="200"
+            column="37"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var heightFraction by remember { mutableStateOf(prefs.clampedHeightFraction().toFloat()) }"
+        errorLine2="                                     ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioSheets.kt"
+            line="201"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var opacity by remember { mutableStateOf(prefs.opacity.toFloat()) }"
+        errorLine2="                              ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioSheets.kt"
+            line="202"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var bottomMargin by remember { mutableStateOf(prefs.bottomMargin.toFloat()) }"
+        errorLine2="                                   ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioSheets.kt"
+            line="203"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var sponsorCarouselIntervalSec by remember { mutableStateOf(prefs.sponsorCarouselIntervalSec.toFloat()) }"
+        errorLine2="                                                 ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioSheets.kt"
+            line="218"
+            column="50"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var sponsorPositionX by remember { mutableStateOf(prefs.sponsorPositionX.toFloat()) }"
+        errorLine2="                                       ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioSheets.kt"
+            line="220"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var sponsorPositionY by remember { mutableStateOf(prefs.sponsorPositionY.toFloat()) }"
+        errorLine2="                                       ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioSheets.kt"
+            line="221"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var sponsorSizeScale by remember { mutableStateOf(prefs.sponsorSizeScale.toFloat()) }"
+        errorLine2="                                       ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioSheets.kt"
+            line="222"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var sponsorOpacity by remember { mutableStateOf(prefs.sponsorOpacity.toFloat()) }"
+        errorLine2="                                     ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioSheets.kt"
+            line="223"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var sponsorScrollSpeed by remember { mutableStateOf(prefs.sponsorScrollSpeed.toFloat()) }"
+        errorLine2="                                         ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioSheets.kt"
+            line="224"
+            column="42"/>
+    </issue>
+
+</issues>
