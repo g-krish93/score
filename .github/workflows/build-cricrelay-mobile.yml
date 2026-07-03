@@ -58,10 +58,18 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          FIREBASE_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
           set -eu
           chmod +x gradlew
-          ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon
+          # Firebase is explicit: with the secret present the build must fail loudly if the
+          # decoded google-services.json is missing, instead of silently shipping without
+          # Crashlytics.
+          FIREBASE_FLAG="-PfirebaseEnabled=false"
+          if [ -n "${FIREBASE_GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
+            FIREBASE_FLAG="-PfirebaseEnabled=true"
+          fi
+          ./gradlew :app:assembleRelease :app:bundleRelease "$FIREBASE_FLAG" --no-daemon
           ls -la android/app/build/outputs/apk/release/
           ls -la android/app/build/outputs/bundle/release/
 

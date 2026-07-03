@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- RootEncoder's bundled `common` jar ships an empty trust-all X509TrustManager on its
+         optional insecure-TLS path. That's third-party bytecode we can't fix from here, and
+         its gradle-cache location is machine-relative, so baselining it would re-fire on CI.
+         The check stays live for all first-party code. -->
+    <issue id="TrustAllX509TrustManager">
+        <ignore regexp="common-2\.4\.8" />
+    </issue>
+
+    <!-- "Newer version available" nags fire whenever a library publishes a release, which
+         would break the CI gate non-deterministically. Version bumps are a deliberate act
+         via libs.versions.toml, not a lint finding. -->
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+</lint>

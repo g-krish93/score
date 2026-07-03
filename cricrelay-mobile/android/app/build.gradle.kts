@@ -9,6 +9,13 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// CI passes -PfirebaseEnabled=true together with the decoded google-services.json so the
+// Crashlytics wiring is explicit, not inferred; local builds fall back to the file check so
+// a dropped-in config still lights up Firebase without extra flags.
+val firebaseEnabled: Boolean =
+    (findProperty("firebaseEnabled") as? String)?.toBooleanStrictOrNull()
+        ?: file("google-services.json").exists()
+
 android {
     namespace = "uk.co.cricrelay.mobile"
     compileSdk = 35
@@ -68,6 +75,14 @@ android {
         compose = true
     }
 
+    lint {
+        // One :app:lintDebug invocation analyzes every local module the app depends on,
+        // so CI needs a single lint task instead of eight.
+        checkDependencies = true
+        // Pre-existing findings live in the baseline; the gate only fails on NEW issues.
+        baseline = file("lint-baseline.xml")
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -99,7 +114,7 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
-    if (file("google-services.json").exists()) {
+    if (firebaseEnabled) {
         implementation(platform(libs.firebase.bom))
         implementation(libs.firebase.crashlytics)
         implementation(libs.firebase.analytics)
@@ -109,7 +124,11 @@ dependencies {
     androidTestImplementation(libs.compose.ui.test.junit4)
 }
 
-if (file("google-services.json").exists()) {
+if (firebaseEnabled) {
+    check(file("google-services.json").exists()) {
+        "firebaseEnabled=true but android/app/google-services.json is missing — " +
+            "decode the GOOGLE_SERVICES_JSON secret before building."
+    }
     apply(plugin = "com.google.gms.google-services")
     apply(plugin = "com.google.firebase.crashlytics")
 }

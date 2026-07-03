@@ -32,11 +32,21 @@ jobs:
       - name: Install Android SDK 35
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: KMP tests and Android compile
+      - name: KMP tests, Android unit tests, lint, and compile
         working-directory: cricrelay-mobile
         run: |
           chmod +x gradlew
-          ./gradlew :shared:check :app:assembleRelease --no-daemon
+          ./gradlew :shared:check test :app:lintDebug :app:assembleRelease --no-daemon
+
+      - name: Upload test and lint reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-lint-reports
+          path: |
+            cricrelay-mobile/**/build/reports/tests/**
+            cricrelay-mobile/**/build/reports/lint-results-*.html
+          if-no-files-found: ignore
 
   server:
     runs-on: ubuntu-latest
