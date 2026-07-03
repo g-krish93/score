@@ -1,7 +1,7 @@
 # ADR-001: Scope of the KMP shared module — iOS adoption vs. Android-only
 
-**Status:** Proposed
-**Date:** 2026-07-03
+**Status:** Accepted (Option A — iOS adopts the shared data layer, scoped)
+**Date:** 2026-07-03 (decided same day)
 **Deciders:** Gopi
 
 ## Context
