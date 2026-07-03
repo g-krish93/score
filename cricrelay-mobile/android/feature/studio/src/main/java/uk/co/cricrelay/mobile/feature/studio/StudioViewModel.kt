@@ -196,9 +196,13 @@ class StudioViewModel @Inject constructor(
                         it.copy(reconnecting = false)
                     }
                     StreamCaptureService.EVENT_STREAM_LOST -> onStreamLost(event.message)
-                    // Burn-in degraded (watermark/sponsor/scoreboard) — broadcast continues,
-                    // but the operator must hear about it now, not from the VOD.
-                    StreamCaptureService.EVENT_OVERLAY_WARNING -> _uiState.update {
+                    // Burn-in degraded (watermark/sponsor/scoreboard) or the keep-alive
+                    // foreground service is down (a screen lock would freeze the process) —
+                    // broadcast continues, but the operator must hear about it now, not
+                    // from the VOD.
+                    StreamCaptureService.EVENT_OVERLAY_WARNING,
+                    StreamCaptureService.EVENT_KEEPALIVE_WARNING,
+                    -> _uiState.update {
                         it.copy(error = event.message)
                     }
                     else -> if (event.event.contains("error", ignoreCase = true) ||

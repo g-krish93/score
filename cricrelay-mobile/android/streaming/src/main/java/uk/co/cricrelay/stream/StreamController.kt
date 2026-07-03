@@ -1,8 +1,7 @@
 package uk.co.cricrelay.stream
 
 import android.app.Activity
-import android.content.Intent
-import android.os.Build
+import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,6 +37,10 @@ class StreamController @Inject constructor() {
 
     private var activity: Activity? = null
 
+    // Survives detachActivity so the keep-alive service can still be stopped (or a leak
+    // avoided) when the stream ends without a foreground Activity attached.
+    private var appContext: Context? = null
+
     val isStreaming: Boolean
         get() = StreamCameraEngine.isStreaming
 
@@ -60,6 +63,7 @@ class StreamController @Inject constructor() {
 
     fun attachActivity(activity: Activity) {
         this.activity = activity
+        this.appContext = activity.applicationContext
     }
 
     fun detachActivity() {
@@ -169,7 +173,7 @@ class StreamController @Inject constructor() {
 
     fun stopStream() {
         StreamCameraEngine.stopStream()
-        activity?.let { stopForegroundService(it) }
+        stopForegroundService()
         _status.value = _status.value.copy(streaming = false, paused = false)
     }
 
@@ -178,7 +182,7 @@ class StreamController @Inject constructor() {
      * release the foreground service and re-sync controller state without stopping again.
      */
     fun onStreamLost() {
-        activity?.let { stopForegroundService(it) }
+        stopForegroundService()
         _status.value = _status.value.copy(streaming = false, paused = false)
     }
 
@@ -227,21 +231,17 @@ class StreamController @Inject constructor() {
     fun stepDownQuality() = StreamCameraEngine.stepDownQuality()
 
     private fun startForegroundService(activity: Activity) {
-        try {
-            val intent = Intent(activity, StreamCaptureService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                activity.startForegroundService(intent)
-            } else {
-                activity.startService(intent)
-            }
-        } catch (_: Exception) {
+        if (!StreamCaptureService.start(activity)) {
+            // Refused start (e.g. Go Live from the remote-command bus while backgrounded):
+            // the broadcast would run one screen lock away from the cached-app freezer.
+            // The engine re-asserts the service on RTMP connect and on foreground return,
+            // and surfaces a keep-alive warning if it stays down.
+            CricrelayLog.w("Go Live keep-alive start refused — engine will re-assert on connect")
         }
     }
 
-    private fun stopForegroundService(activity: Activity) {
-        try {
-            activity.stopService(Intent(activity, StreamCaptureService::class.java))
-        } catch (_: Exception) {
-        }
+    private fun stopForegroundService() {
+        val ctx = activity ?: appContext ?: return
+        StreamCaptureService.stop(ctx)
     }
 }
