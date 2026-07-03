@@ -180,3 +180,8 @@ current strategy (App Store presence, feature parity shipped June 2026) says the
 - **Session wiring:** the Kotlin client owns base/token (constructed per login, mirroring
   the shared `AuthRepository`); its `onSessionExpired` fires on main-token 401s and the
   Swift facade translates that into the existing Keychain-clear + notification flow.
+- **The macOS validate job caught a latent bug on its first run:** `KeychainTokenStore.kt`
+  (iosMain) passed Kotlin `Map`s where the Security framework takes `CFDictionaryRef`, and
+  used the wrong out-pointer type for `SecItemCopyMatching` — it had never compiled,
+  because nothing built Apple targets before this ADR's CI wiring. Rewritten with
+  CoreFoundation dictionaries and explicit `CFBridgingRetain`/`Release` ownership.
