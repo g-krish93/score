@@ -233,6 +233,25 @@ class StudioViewModelTest {
         assertTrue(state.streaming)
     }
 
+    @Test
+    fun `keep-alive warning surfaces the banner but keeps broadcasting`() = runStudioTest {
+        val vm = loadedViewModel()
+        statusFlow.value = StreamStatus(
+            previewReady = true,
+            streaming = true,
+            lastEvent = StreamEvent(
+                StreamCaptureService.EVENT_KEEPALIVE_WARNING,
+                "Broadcast protection unavailable — keep the app open and the screen on.",
+            ),
+        )
+        val state = vm.uiState.value
+        assertEquals(
+            "Broadcast protection unavailable — keep the app open and the screen on.",
+            state.error,
+        )
+        assertTrue(state.streaming)
+    }
+
     // ── go live ─────────────────────────────────────────────────────────────
 
     @Test

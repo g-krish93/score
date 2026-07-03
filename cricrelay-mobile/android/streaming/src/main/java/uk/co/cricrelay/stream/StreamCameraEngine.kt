@@ -199,6 +199,12 @@ object StreamCameraEngine : CameraSession.Listener {
     // Burn-in degradations already surfaced this broadcast — warn once, not once per frame.
     // Main-thread only (warnBurnInOnce hops to main).
     private val burnInWarned = mutableSetOf<String>()
+    // Keep-alive service failure already surfaced this broadcast (reset at stream start).
+    // Main-thread only, like burnInWarned.
+    private var keepAliveWarned = false
+    // startForegroundService is asynchronous and the service stops itself on a refused
+    // startForeground — how long to wait before trusting isForegroundActive.
+    private const val KEEPALIVE_VERIFY_MS = 4_000L
     // Adaptive bitrate: created on RTMP connect, fed by onNewBitrate, steps the encoder
     // bitrate up/down with the real network via setVideoBitrateOnFly.
     private var bitrateAdapter: BitrateAdapter? = null
@@ -341,6 +347,9 @@ object StreamCameraEngine : CameraSession.Listener {
      * SurfaceView reports a usable size.
      */
     fun onExitBackground() {
+        // Foreground is the one state where a previously refused keep-alive start (remote Go
+        // Live from the background) is guaranteed startable — re-assert before the next lock.
+        ensureKeepAliveService()
         runOnMain {
             if (!backgroundRendering) return@runOnMain
             if (camera?.isStreaming != true) {
@@ -1270,6 +1279,7 @@ object StreamCameraEngine : CameraSession.Listener {
         // operator is filming, not watching the phone.
         reconnectAttempt = 0
         burnInWarned.clear()
+        keepAliveWarned = false
         runCatching { cam.setReTries(StreamReconnectPolicy.MAX_ATTEMPTS) }
         try {
             cam.startStream(endpoint)
@@ -1615,6 +1625,40 @@ object StreamCameraEngine : CameraSession.Listener {
         }
     }
 
+    /**
+     * [StreamCaptureService] is the broadcast's cached-app-freezer exemption: without it the
+     * OS freezes the whole process ~35s after the screen locks and viewers get dead air. The
+     * Go Live start can be refused silently (a remote start_broadcast while the app is
+     * backgrounded throws ForegroundServiceStartNotAllowedException on 12+), so re-assert it
+     * whenever RTMP (re)connects and when the app returns to the foreground — the moment a
+     * refused start becomes startable again.
+     */
+    fun ensureKeepAliveService() {
+        mainHandler.post {
+            val ctx = appContext ?: return@post
+            if (!isStreaming || StreamCaptureService.isForegroundActive) return@post
+            CricrelayLog.w("live without keep-alive service — restarting")
+            if (!StreamCaptureService.start(ctx)) {
+                warnKeepAliveOnce()
+                return@post
+            }
+            mainHandler.postDelayed({
+                if (isStreaming && !StreamCaptureService.isForegroundActive) warnKeepAliveOnce()
+            }, KEEPALIVE_VERIFY_MS)
+        }
+    }
+
+    private fun warnKeepAliveOnce() {
+        if (keepAliveWarned) return
+        keepAliveWarned = true
+        CricrelayLog.e("keep-alive service could not be started while live")
+        emit(
+            StreamCaptureService.EVENT_KEEPALIVE_WARNING,
+            "Broadcast protection unavailable — keep the app open and the screen on, " +
+                "or the stream may freeze.",
+        )
+    }
+
     override fun onConnectionStarted(url: String) {
         emit(StreamCaptureService.EVENT_CONNECTING, url)
     }
@@ -1637,6 +1681,9 @@ object StreamCameraEngine : CameraSession.Listener {
             }
         }.apply { setMaxBitrate(streamBitrate) }
         attachOverlayAfterConnect()
+        // A live RTMP session without the foreground service is one screen lock away from
+        // the freezer — verify (and if needed restore) it on every connect and reconnect.
+        ensureKeepAliveService()
         emit(StreamCaptureService.EVENT_CONNECTED, if (wasReconnect) "Reconnected" else "")
     }
 

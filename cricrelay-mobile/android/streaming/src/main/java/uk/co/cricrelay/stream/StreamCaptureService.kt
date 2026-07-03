@@ -44,6 +44,12 @@ class StreamCaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_UPDATE_ELAPSED) {
+            // An elapsed tick must never resurrect a stopped service: plain startService
+            // re-creates it without the freezer-exempting startForeground.
+            if (!foregroundActive) {
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
             val label = intent.getStringExtra(EXTRA_ELAPSED) ?: ""
             updateNotification(label)
             return START_STICKY
@@ -59,15 +65,23 @@ class StreamCaptureService : Service() {
             } else {
                 startForeground(NOTIF_ID, notification)
             }
-        } catch (_: Exception) {
-            stopSelf()
+        } catch (e: Exception) {
+            // Refused bring-up (e.g. camera/mic FGS while the app is in the background on 14+).
+            // Without startForeground there is no freezer exemption — the process is frozen
+            // ~35s after the screen locks and viewers get dead air. The engine's keep-alive
+            // check re-asserts on RTMP connect / foreground return and warns the operator.
+            CricrelayLog.e("StreamCaptureService startForeground refused", e)
+            foregroundActive = false
+            stopSelf(startId)
             return START_NOT_STICKY
         }
+        foregroundActive = true
         acquireStreamWakeLock()
         return START_STICKY
     }
 
     override fun onDestroy() {
+        foregroundActive = false
         releaseStreamWakeLock()
         super.onDestroy()
     }
@@ -138,10 +152,53 @@ class StreamCaptureService : Service() {
         /** A burn-in (scoreboard / watermark / sponsor) degraded — stream continues without it. */
         const val EVENT_OVERLAY_WARNING = "overlay_warning"
 
+        /**
+         * The freezer-exempting foreground service could not be (re)started — a screen lock
+         * or backgrounding may freeze the whole process mid-broadcast.
+         */
+        const val EVENT_KEEPALIVE_WARNING = "keepalive_warning"
+
         private const val NOTIF_ID = 4401
 
         @Volatile
         private var elapsedLabel: String = ""
+
+        @Volatile
+        private var foregroundActive = false
+
+        /**
+         * True from a successful [android.app.Service.startForeground] until destroy — i.e.
+         * while the process actually holds its cached-app-freezer exemption.
+         */
+        val isForegroundActive: Boolean
+            get() = foregroundActive
+
+        /**
+         * Start (or re-assert) the live keep-alive service. Returns false when the OS refuses
+         * the start itself (ForegroundServiceStartNotAllowedException — e.g. a remote Go Live
+         * while the app is backgrounded on Android 12+). A true return is not yet a running
+         * foreground service: startForegroundService is asynchronous, so confirm with
+         * [isForegroundActive] after a grace period.
+         */
+        fun start(context: Context): Boolean = try {
+            val intent = Intent(context, StreamCaptureService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            true
+        } catch (e: Exception) {
+            CricrelayLog.e("StreamCaptureService start refused: ${e.message}")
+            false
+        }
+
+        fun stop(context: Context) {
+            try {
+                context.stopService(Intent(context, StreamCaptureService::class.java))
+            } catch (_: Exception) {
+            }
+        }
 
         fun buildEndpoint(rtmpUrl: String, streamKey: String): String {
             var server = rtmpUrl.trim().trimEnd('/')
