@@ -2,7 +2,10 @@ package uk.co.cricrelay.stream
 
 import android.app.Activity
 import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -174,6 +177,15 @@ object StreamCameraEngine : CameraSession.Listener {
     private var deviceTier = DeviceCapabilities.Tier.MID
     private var overlayRefreshMs = 500L
     private var surfaceValid = true
+    // Deferred-restore retry. restoreOnViewRendering parks the encoder offscreen while the
+    // keyguard is up, but onStart and the surface-ready callback both fire DURING the unlock
+    // animation while isKeyguardLocked is still true — with no later lifecycle event, the
+    // preview stayed black for the rest of the broadcast. ACTION_USER_PRESENT is the
+    // authoritative "keyguard actually dismissed" signal; the poll is a safety net in case
+    // the broadcast is missed. Both are disarmed on successful restore or stream stop.
+    private var userPresentReceiver: BroadcastReceiver? = null
+    private var restoreRetryRunnable: Runnable? = null
+    private const val RESTORE_RETRY_MS = 1000L
     // True while the encoder renders to the offscreen GL interface (screen locked / app
     // backgrounded without PiP). Keeps the broadcast alive when the SurfaceView surface is gone.
     private val backgroundRendering: Boolean
@@ -335,6 +347,7 @@ object StreamCameraEngine : CameraSession.Listener {
                 // Phase says live-in-background but the camera isn't streaming — the session
                 // ended without a clean stop, so reconcile the phase instead of leaving a
                 // stale Live behind.
+                cancelRestoreRetry()
                 applyIntent(StreamPhasePolicy.Intent.Stop)
                 return@runOnMain
             }
@@ -350,15 +363,19 @@ object StreamCameraEngine : CameraSession.Listener {
     private fun restoreOnViewRendering(view: OpenGlView) {
         val cam = camera ?: return
         if (!cam.isStreaming) {
+            cancelRestoreRetry()
             applyIntent(StreamPhasePolicy.Intent.Stop)
             return
         }
         // The lockscreen rotation / AOD can hand us a valid-looking surface while the display
         // is dark; accepting it flaps camera + EGL every few seconds of a lock and sprays
         // garbage frames into the broadcast. Stay parked offscreen until the operator is
-        // actually looking at the screen — MainActivity.onStart retries after unlock.
+        // actually looking at the screen. onStart / surface-ready fire while the keyguard is
+        // still dismissing, so a deferral here must arm its own retry — nothing else fires
+        // after the unlock animation completes.
         if (!StreamLifecyclePolicy.shouldRestoreOnView(isDeviceInteractive(), isKeyguardLocked())) {
             CricrelayLog.d("restoreOnViewRendering deferred: screen off / keyguard locked")
+            scheduleRestoreRetry()
             return
         }
         try {
@@ -371,8 +388,66 @@ object StreamCameraEngine : CameraSession.Listener {
             CricrelayLog.w("restoreOnViewRendering replaceView failed: ${e.message}")
             return
         }
+        cancelRestoreRetry()
         activity?.let { CameraPreviewHost.elevateComposeUi(it) }
         reattachBurnInsAfterSwap()
+    }
+
+    /**
+     * Arm the deferred-restore retry: an [Intent.ACTION_USER_PRESENT] receiver (fires the
+     * moment the keyguard is really gone) plus a slow poll as a safety net. The retry funnels
+     * back through [onExitBackground], so all the usual guards apply and a still-locked
+     * keyguard simply re-arms via the deferred branch above.
+     */
+    private fun scheduleRestoreRetry() {
+        registerUserPresentReceiver()
+        if (restoreRetryRunnable != null) return
+        val runnable = object : Runnable {
+            override fun run() {
+                restoreRetryRunnable = null
+                onExitBackground()
+            }
+        }
+        restoreRetryRunnable = runnable
+        mainHandler.postDelayed(runnable, RESTORE_RETRY_MS)
+    }
+
+    private fun registerUserPresentReceiver() {
+        if (userPresentReceiver != null) return
+        val ctx = appContext ?: return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action != Intent.ACTION_USER_PRESENT) return
+                CricrelayLog.d("user present: retrying preview restore")
+                onExitBackground()
+            }
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ctx.registerReceiver(
+                    receiver,
+                    IntentFilter(Intent.ACTION_USER_PRESENT),
+                    Context.RECEIVER_NOT_EXPORTED,
+                )
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                ctx.registerReceiver(receiver, IntentFilter(Intent.ACTION_USER_PRESENT))
+            }
+            userPresentReceiver = receiver
+        } catch (e: Exception) {
+            CricrelayLog.w("user-present receiver failed: ${e.message}")
+        }
+    }
+
+    private fun cancelRestoreRetry() {
+        restoreRetryRunnable?.let { mainHandler.removeCallbacks(it) }
+        restoreRetryRunnable = null
+        val receiver = userPresentReceiver ?: return
+        userPresentReceiver = null
+        try {
+            appContext?.unregisterReceiver(receiver)
+        } catch (_: Exception) {
+        }
     }
 
     /** After a glInterface swap the scoreboard + watermark filters are gone — rebuild them. */
@@ -1030,6 +1105,23 @@ object StreamCameraEngine : CameraSession.Listener {
             applyIntent(StreamPhasePolicy.Intent.Release)
         }
 
+        // Reaching a full prepare while the camera still claims isOnPreview means the preview
+        // surface died and came back (lock/unlock inside the studio): OpenGlView.surfaceDestroyed
+        // stopped the view's GL thread and nothing restarts it implicitly (2.4.8 bytecode —
+        // surfaceCreated/surfaceChanged never touch the render loop), while isOnPreview stays
+        // true because stopPreview was never called. Without this stop, the startPreview below
+        // is skipped and the "successful" prepare renders into a dead surface: camera connected,
+        // engine reporting onPreview=true, screen black. Stop first so prepare + startPreview
+        // run the same cold path as a rotation change.
+        if (cam.isOnPreview) {
+            dropStaleGlFilterRefs()
+            try {
+                cam.stopPreview()
+            } catch (_: Exception) {
+            }
+            resetFocusState()
+        }
+
         prepareInFlight = true
         return try {
             openGlView?.setAspectRatioMode(AspectRatioMode.Fill)
@@ -1219,6 +1311,7 @@ object StreamCameraEngine : CameraSession.Listener {
 
     private fun stopStreamInternal() {
         pendingOverlayAfterConnect = false
+        cancelRestoreRetry()
         applyIntent(StreamPhasePolicy.Intent.Stop)
         // Disarm the self-heal: an intentional stop must not race a pending reconnect.
         reconnectAttempt = 0
@@ -1309,6 +1402,7 @@ object StreamCameraEngine : CameraSession.Listener {
 
     private fun releaseCamera() {
         appContext?.let { thermalMonitor.unregister(it) }
+        cancelRestoreRetry()
         overlayCompositor.stopPreviewOverlayPush()
         if (camera?.isStreaming == true) {
             stopStreamInternal()
