@@ -109,24 +109,28 @@ current strategy (App Store presence, feature parity shipped June 2026) says the
        model constructor + `UrlValidatorKt` call at DEBUG bootstrap. Apple-target linking
        is impossible on the Windows dev box (`compileKotlinIosArm64` SKIPPED) — the CI
        macOS run is the binding proof.
-2. [ ] Migrate `Models.swift` consumers to the shared models; delete duplicated structs.
-       *2026-07-03:* `FixtureItem`, `PlatformStatus`, `StreamMatch`, `BroadcastStatus`,
+2. [x] Migrate `Models.swift` consumers to the shared models; delete duplicated structs.
+       *Done 2026-07-03:* `FixtureItem`, `PlatformStatus`, `StreamMatch`, `BroadcastStatus`,
        `GoLiveResult`, `FixturesResponse`, `ScoringConfig`, `MatchDayStatus`, `Sponsor`,
-       `PairRemoteResult` migrated; Swift structs deleted. **Remaining: `OverlayLayoutPrefs`**
-       — it has an iOS-local-only field (`overlayEnabled`), a legacy-key cache decoder that
-       protects existing devices' saved arrangements, SwiftUI draft-mutation ergonomics, and
-       the engine-layout mapping. Migrating it means adding `overlay_enabled` + legacy-key
-       fallback to the Kotlin model first.
-3. [ ] Migrate `CricRelayAPI.swift` call sites to `CricRelayApiClient`; delete the Swift client.
-       *2026-07-03 (mostly done):* `CricRelayAPI` is now a thin facade over the shared client
-       — auth, streams, fixtures, scoring, match-day, broadcast, platform status/auth/
-       disconnect, sponsors, pairing and remote commands all delegate. The shared client
-       gained `@Throws` on every public suspend function (without it Kotlin exceptions
-       terminate the iOS process instead of arriving as NSError) and an `onSessionExpired`
-       callback with sessionAuth-aware 401 handling (parity with the iOS pre-demo-audit fix;
-       Android can adopt the same callback). Only the five OverlayLayoutPrefs-carrying
-       endpoints (overlay get/save, remote overlay/context, command polling) remain on
-       URLSession — they fall out with item 2's remainder.
+       `PairRemoteResult`, `RemoteCommand`, `RemoteCompanionContext` migrated; Swift structs
+       deleted. `OverlayLayoutPrefs` uses a **boundary-mapping pattern** instead of full
+       replacement: the Kotlin model (now carrying `overlay_enabled` and the legacy
+       unprefixed-key fallback) owns serialization, sanitization, and the sponsor-patch
+       merge; the Swift struct remains as the SwiftUI-editable value type, crossing through
+       `toShared()`/`init(shared:)` — Swift's definite-initialization rule makes a missed
+       field a compile error. Trade-off: the field list exists in both languages, but every
+       semantic that ever drifted (wire keys, clamps, merge key-list) exists once.
+3. [x] Migrate `CricRelayAPI.swift` call sites to `CricRelayApiClient`; delete the Swift client.
+       *Done 2026-07-03:* every endpoint delegates to the shared client; the URLSession
+       request layer is deleted outright. The shared client gained `@Throws` on every public
+       suspend function (without it Kotlin exceptions terminate the iOS process instead of
+       arriving as NSError) and an `onSessionExpired` callback with sessionAuth-aware 401
+       handling. **Android now consumes the same callback** (AuthRepository installs it on
+       every client; SessionEvents → token clear + toast + nav-host bounce to login),
+       closing the parity gap the other way for once. The per-slug prefs cache reads/writes
+       through the Kotlin codec (`toJsonString`/`fromJsonString`), so old caches — including
+       pre-prefix legacy keys — keep their saved arrangement. `SharedKitProbe.swift` retired:
+       real call sites exercise the framework on every screen.
 4. [x] Migrate token storage to the shared `SessionStore` (Keychain actual already exists).
        *Done 2026-07-03:* SessionViewModel bootstraps/persists via the shared `SessionStore`;
        `KeychainHelper.swift` deleted. The iOS actual uses the exact NSUserDefaults keys and

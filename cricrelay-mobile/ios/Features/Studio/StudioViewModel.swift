@@ -690,9 +690,7 @@ final class StudioViewModel: ObservableObject {
                     await dispatchRemoteCommand(cmd.command)
                 }
                 for cmd in commands where cmd.type == "overlay" {
-                    if let patch = cmd.prefs {
-                        await applyRemoteOverlayPatch(patch)
-                    }
+                    await applyRemoteOverlayPatch(cmd)
                 }
             }
         }
@@ -717,9 +715,10 @@ final class StudioViewModel: ObservableObject {
         }
     }
 
-    private func applyRemoteOverlayPatch(_ patch: [String: Any]) async {
-        let merged = overlayPrefs.mergeSponsorPatch(patch)
-        await saveOverlay(merged)
+    /// The sponsor-patch merge lives on the shared model — one owner for the key list.
+    private func applyRemoteOverlayPatch(_ cmd: RemoteCommand) async {
+        guard let merged = cmd.mergeSponsorInto(base: overlayPrefs.toShared()) else { return }
+        await saveOverlay(OverlayLayoutPrefs(shared: merged))
     }
 
     // MARK: - Scoring

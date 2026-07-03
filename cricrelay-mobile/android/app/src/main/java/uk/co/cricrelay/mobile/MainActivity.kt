@@ -6,6 +6,7 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -40,11 +41,24 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
     @Inject lateinit var streamController: StreamController
     @Inject lateinit var authRepository: AuthRepository
+    @Inject lateinit var sessionEvents: SessionEvents
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         streamController.attachActivity(this)
+        lifecycleScope.launch {
+            sessionEvents.expired.collect {
+                // Clear the dead token exactly like logout — a relaunch must not resurrect
+                // it. The nav host collects the same flow and drops to the login screen.
+                runCatching { authRepository.logout() }
+                Toast.makeText(
+                    this@MainActivity,
+                    "Session expired — please sign in again.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && pipSupported()) {
             // Keep auto-enter PiP params current so the home gesture floats the live camera even
             // when onUserLeaveHint isn't delivered (gesture nav). autoEnter tracks streaming state.
@@ -63,7 +77,10 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val startDestination = rememberStartDestination(authRepository)
                     if (startDestination != null) {
-                        CricRelayNavHost(startDestination = startDestination)
+                        CricRelayNavHost(
+                            startDestination = startDestination,
+                            sessionExpired = sessionEvents.expired,
+                        )
                     }
                     // Gated on the destination so an early tap-to-skip holds the logo
                     // lockup instead of exposing an empty window while auth resolves.

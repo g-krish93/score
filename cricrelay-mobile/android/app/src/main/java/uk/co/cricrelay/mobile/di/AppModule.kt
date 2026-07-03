@@ -7,6 +7,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import uk.co.cricrelay.mobile.SessionEvents
 import uk.co.cricrelay.mobile.database.CricRelayDatabase
 import uk.co.cricrelay.mobile.database.StreamDao
 import uk.co.cricrelay.shared.repository.ApiClientProvider
@@ -27,8 +28,15 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideAuthRepository(sessionStore: SessionStore): AuthRepository =
-        AuthRepository(sessionStore)
+    fun provideAuthRepository(
+        sessionStore: SessionStore,
+        sessionEvents: SessionEvents,
+    ): AuthRepository =
+        AuthRepository(sessionStore).apply {
+            // Main-token 401 anywhere → tell the app layer; MainActivity clears the stored
+            // token and the nav host drops to login instead of a silently empty dashboard.
+            onSessionExpired = { sessionEvents.signalExpired() }
+        }
 
     @Provides
     @Singleton

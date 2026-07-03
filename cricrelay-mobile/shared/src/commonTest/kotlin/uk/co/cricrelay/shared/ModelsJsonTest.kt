@@ -207,6 +207,51 @@ class ModelsJsonTest {
     }
 
     @Test
+    fun `overlay prefs string codec round-trips and rejects garbage`() {
+        // toJsonString/fromJsonString is the codec the iOS per-slug cache uses (ADR-001 item 2).
+        val original = nonDefaultPrefs().copy(overlayEnabled = false)
+        assertEquals(original, OverlayLayoutPrefs.fromJsonString(original.toJsonString()))
+        assertNull(OverlayLayoutPrefs.fromJsonString("not json at all"))
+        assertNull(OverlayLayoutPrefs.fromJsonString("[1, 2, 3]"))
+    }
+
+    @Test
+    fun `legacy unprefixed board keys from old iOS caches still restore the arrangement`() {
+        val legacy = OverlayLayoutPrefs.fromJson(
+            buildJsonObject {
+                put("height_fraction", 0.22)
+                put("width_fraction", 0.7)
+                put("anchor_x", 0.3)
+                put("anchor_y", 0.5)
+                put("bottom_margin", 12.0)
+                put("horizontal_inset", 8.0)
+                put("font_scale", 1.3)
+                put("bg_color", "#111111")
+                put("text_color", "#EEEEEE")
+                put("opacity", 0.8)
+            },
+        )
+        assertEquals(0.22, legacy.heightFraction, 0.0)
+        assertEquals(0.7, legacy.widthFraction, 0.0)
+        assertEquals(0.3, legacy.anchorX, 0.0)
+        assertEquals(0.5, legacy.anchorY, 0.0)
+        assertEquals(12.0, legacy.bottomMargin, 0.0)
+        assertEquals(8.0, legacy.horizontalInset, 0.0)
+        assertEquals(1.3, legacy.fontScale, 0.0)
+        assertEquals("#111111", legacy.bgColor)
+        assertEquals("#EEEEEE", legacy.textColor)
+        assertEquals(0.8, legacy.opacity, 0.0)
+        // Prefixed keys win when both are present.
+        val both = OverlayLayoutPrefs.fromJson(
+            buildJsonObject {
+                put("overlay_height_fraction", 0.18)
+                put("height_fraction", 0.25)
+            },
+        )
+        assertEquals(0.18, both.heightFraction, 0.0)
+    }
+
+    @Test
     fun `single active sponsor id is promoted into the id list`() {
         val prefs = OverlayLayoutPrefs.fromJson(
             buildJsonObject {

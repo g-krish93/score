@@ -399,7 +399,7 @@ struct RemoteControlView: View {
         do {
             let ctx = try await api.getRemoteContext(slug: matchSlug, companionToken: companionToken)
             sponsors = ctx.sponsors
-            sponsorPrefs = ctx.sponsorPrefs
+            sponsorPrefs = OverlayLayoutPrefs(shared: ctx.sponsorPrefs)
             watchUrl = ctx.watchUrl
         } catch {
             self.error = error.localizedDescription

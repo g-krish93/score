@@ -1,4 +1,5 @@
 import Foundation
+import Shared
 
 struct RtmpCredentials {
     var rtmpUrl: String = ""
@@ -73,15 +74,19 @@ enum StudioLocalPrefsStore {
         defaults.set(settings.keepScreenOn, forKey: keepScreenOnKey)
     }
 
+    /// Codec is the shared Kotlin model's (ADR-001 item 2): same JSON bytes and keys the
+    /// old Swift Codable wrote, plus a legacy unprefixed-key fallback for the oldest caches
+    /// — an existing device keeps its saved arrangement across the migration.
     static func loadOverlayPrefs(slug: String) -> OverlayLayoutPrefs? {
-        guard let data = defaults.data(forKey: overlayKey(slug)) else { return nil }
-        return try? JSONDecoder().decode(OverlayLayoutPrefs.self, from: data)
+        guard let data = defaults.data(forKey: overlayKey(slug)),
+              let raw = String(data: data, encoding: .utf8),
+              let shared = Shared.OverlayLayoutPrefs.companion.fromJsonString(raw: raw)
+        else { return nil }
+        return OverlayLayoutPrefs(shared: shared)
     }
 
     static func saveOverlayPrefs(slug: String, _ prefs: OverlayLayoutPrefs) {
-        if let data = try? JSONEncoder().encode(prefs) {
-            defaults.set(data, forKey: overlayKey(slug))
-        }
+        defaults.set(Data(prefs.toShared().toJsonString().utf8), forKey: overlayKey(slug))
     }
 
     private static func overlayKey(_ slug: String) -> String {
