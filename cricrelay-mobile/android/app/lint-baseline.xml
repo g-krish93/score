@@ -26,12 +26,45 @@
     <issue
         id="InlinedApi"
         message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
-        errorLine1="    private var lastThermalStatus: Int = PowerManager.THERMAL_STATUS_NONE"
-        errorLine2="                                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        errorLine1="    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,"
+        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
-            line="158"
-            column="42"/>
+            file="src/main/java/uk/co/cricrelay/stream/StreamController.kt"
+            line="19"
+            column="30"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
+        errorLine1="    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,"
+        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/stream/StreamController.kt"
+            line="19"
+            column="30"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
+        errorLine1="    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,"
+        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioViewModel.kt"
+            line="94"
+            column="30"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
+        errorLine1="    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,"
+        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioViewModel.kt"
+            line="94"
+            column="30"/>
     </issue>
 
     <issue
@@ -40,8 +73,8 @@
         errorLine1="                        if (stressed) PowerManager.THERMAL_STATUS_MODERATE else PowerManager.THERMAL_STATUS_NONE,"
         errorLine2="                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
-            line="407"
+            file="src/main/java/uk/co/cricrelay/stream/ThermalMonitor.kt"
+            line="37"
             column="39"/>
     </issue>
 
@@ -51,71 +84,9 @@
         errorLine1="                        if (stressed) PowerManager.THERMAL_STATUS_MODERATE else PowerManager.THERMAL_STATUS_NONE,"
         errorLine2="                                                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
-            line="407"
+            file="src/main/java/uk/co/cricrelay/stream/ThermalMonitor.kt"
+            line="37"
             column="81"/>
-    </issue>
-
-    <issue
-        id="InlinedApi"
-        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
-        errorLine1="    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,"
-        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/uk/co/cricrelay/stream/StreamController.kt"
-            line="19"
-            column="30"/>
-    </issue>
-
-    <issue
-        id="InlinedApi"
-        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
-        errorLine1="    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,"
-        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/uk/co/cricrelay/stream/StreamController.kt"
-            line="19"
-            column="30"/>
-    </issue>
-
-    <issue
-        id="InlinedApi"
-        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
-        errorLine1="    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,"
-        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioViewModel.kt"
-            line="99"
-            column="30"/>
-    </issue>
-
-    <issue
-        id="InlinedApi"
-        message="Field requires API level 29 (current min is 24): `android.os.PowerManager#THERMAL_STATUS_NONE`"
-        errorLine1="    val thermalStatus: Int = android.os.PowerManager.THERMAL_STATUS_NONE,"
-        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/uk/co/cricrelay/mobile/feature/studio/StudioViewModel.kt"
-            line="99"
-            column="30"/>
-    </issue>
-
-    <issue
-        id="NotificationPermission"
-        message="When targeting Android 13 or higher, posting a permission requires holding the `POST_NOTIFICATIONS` permission (usage from uk.co.cricrelay.stream.StreamCaptureService)">
-        <location
-            file="src/main/AndroidManifest.xml"/>
-    </issue>
-
-    <issue
-        id="NotificationPermission"
-        message="When targeting Android 13 or higher, posting a permission requires holding the `POST_NOTIFICATIONS` permission"
-        errorLine1="        nm.notify(NOTIF_ID, buildNotification(label))"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/uk/co/cricrelay/stream/StreamCaptureService.kt"
-            line="78"
-            column="9"/>
     </issue>
 
     <issue
@@ -125,7 +96,7 @@
         errorLine2="     ~~~~~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="14"
+            line="17"
             column="6"/>
     </issue>
 
@@ -224,7 +195,7 @@
         errorLine2="^">
         <location
             file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
-            line="29"
+            line="28"
             column="1"/>
     </issue>
 
@@ -235,7 +206,7 @@
         errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
-            line="90"
+            line="89"
             column="5"/>
     </issue>
 
@@ -246,7 +217,7 @@
         errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
-            line="92"
+            line="91"
             column="5"/>
     </issue>
 
@@ -257,7 +228,7 @@
         errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/uk/co/cricrelay/stream/StreamCameraEngine.kt"
-            line="119"
+            line="102"
             column="5"/>
     </issue>
 
