@@ -3,6 +3,7 @@ import CryptoKit
 import HaishinKit
 import RTMPHaishinKit
 import UIKit
+import VideoToolbox
 
 /// Camera RTMP + scoreboard overlay (HaishinKit). Matches Android MethodChannel API.
 @available(iOS 15.0, *)
@@ -168,10 +169,10 @@ final class StreamCameraEngine: NSObject {
             // Rebuild settings exactly like preparePreview/startStream, reusing the encoded canvas
             // currently in effect so only bitRate differs — a changed videoSize would force a
             // compression-session rebuild (and a resolution change) instead of a live rate update.
-            let settings = VideoCodecSettings(
-                videoSize: .init(width: encodedCanvasWidth(), height: encodedCanvasHeight()),
-                bitRate: lowered,
-                maxKeyFrameIntervalDuration: 2
+            let settings = makeVideoSettings(
+                width: encodedCanvasWidth(),
+                height: encodedCanvasHeight(),
+                bitRate: lowered
             )
             try? await stream.setVideoSettings(settings)
         }
@@ -258,10 +259,10 @@ final class StreamCameraEngine: NSObject {
             streamIsPortrait = encoded.height > encoded.width
             preparedCaptureOrientation = captureOrientation
             await mixer.setVideoOrientation(captureOrientation)
-            var settings = VideoCodecSettings(
-                videoSize: .init(width: encoded.width, height: encoded.height),
-                bitRate: streamBitrate,
-                maxKeyFrameIntervalDuration: 2
+            let settings = makeVideoSettings(
+                width: encoded.width,
+                height: encoded.height,
+                bitRate: streamBitrate
             )
             try await stream.setVideoSettings(settings)
             try await mixer.setFrameRate(Double(fps))
@@ -415,10 +416,10 @@ final class StreamCameraEngine: NSObject {
             streamIsPortrait = encoded.height > encoded.width
             preparedCaptureOrientation = captureOrientation
             await mixer.setVideoOrientation(captureOrientation)
-            var settings = VideoCodecSettings(
-                videoSize: .init(width: encoded.width, height: encoded.height),
-                bitRate: bitrate,
-                maxKeyFrameIntervalDuration: 2
+            let settings = makeVideoSettings(
+                width: encoded.width,
+                height: encoded.height,
+                bitRate: bitrate
             )
             try await stream.setVideoSettings(settings)
             try await mixer.setFrameRate(Double(fps))
@@ -1274,6 +1275,26 @@ final class StreamCameraEngine: NSObject {
             self?.overlayTimer?.invalidate()
             self?.overlayTimer = nil
         }
+    }
+
+    /// H.264 encode settings shared by preview, go-live, and live step-down.
+    ///
+    /// HaishinKit's pinned default profile is `H264_Baseline_3_1`, whose level tops out at
+    /// 1280×720 (3600 macroblocks). Encoding the 1080p canvas (8160 macroblocks) against that
+    /// level makes VideoToolbox emit a non-conformant bitstream: the RTMP publish still
+    /// succeeds (so the badge reads ON AIR), but YouTube/Twitch reject every frame and show no
+    /// video at the destination. The preview looks live only because it draws the uncompressed
+    /// composite and never touches the encoder. High profile with automatic level selection
+    /// covers both 720p and 1080p, and disabling frame reordering keeps DTS == PTS for the RTMP
+    /// timestamps (parity with Android's RootEncoder, which emits no B-frames).
+    private func makeVideoSettings(width: Int, height: Int, bitRate: Int) -> VideoCodecSettings {
+        VideoCodecSettings(
+            videoSize: .init(width: width, height: height),
+            bitRate: bitRate,
+            profileLevel: kVTProfileLevel_H264_High_AutoLevel as String,
+            maxKeyFrameIntervalDuration: 2,
+            allowFrameReordering: false
+        )
     }
 
     private func encodedCanvasWidth() -> Int {
