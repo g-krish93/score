@@ -41,4 +41,7 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.zxing.core)
     testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.turbine)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
