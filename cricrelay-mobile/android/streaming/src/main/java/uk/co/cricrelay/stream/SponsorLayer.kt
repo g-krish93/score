@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Handler
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
-import com.pedro.library.rtmp.RtmpCamera2
 import java.util.concurrent.Executors
 
 /**
@@ -17,7 +16,7 @@ import java.util.concurrent.Executors
  */
 internal class SponsorLayer(
     private val mainHandler: Handler,
-    private val camera: () -> RtmpCamera2?,
+    private val camera: () -> CameraSession?,
     private val appContext: () -> Context?,
     private val layout: () -> StreamCameraEngine.OverlayLayout,
     /** Effective encoded canvas (post rotation swap), width to height. */
@@ -70,7 +69,7 @@ internal class SponsorLayer(
         slots.values.forEach { slot ->
             if (cam != null) {
                 try {
-                    cam.glInterface.removeFilter(slot.filter)
+                    cam.removeFilter(slot.filter)
                 } catch (_: Exception) {
                 }
             }
@@ -186,7 +185,7 @@ internal class SponsorLayer(
         carouselIndex = 0
     }
 
-    private fun ensureSingle(cam: RtmpCamera2, url: String) {
+    private fun ensureSingle(cam: CameraSession, url: String) {
         stopCarousel()
         syncSlotKeys(setOf(url))
         val slot = slots[url] ?: createSlot(cam, url) ?: return
@@ -198,7 +197,7 @@ internal class SponsorLayer(
         if (isScrollMode()) startScroll() else stopScroll()
     }
 
-    private fun ensureMulti(cam: RtmpCamera2, urls: List<String>) {
+    private fun ensureMulti(cam: CameraSession, urls: List<String>) {
         stopCarousel()
         syncSlotKeys(urls.toSet())
         urls.forEachIndexed { index, url ->
@@ -212,7 +211,7 @@ internal class SponsorLayer(
         if (isScrollMode()) startScroll() else stopScroll()
     }
 
-    private fun ensureCarousel(cam: RtmpCamera2, urls: List<String>) {
+    private fun ensureCarousel(cam: CameraSession, urls: List<String>) {
         stopCarousel()
         carouselUrls = urls
         carouselIndex = 0
@@ -233,15 +232,15 @@ internal class SponsorLayer(
         if (isScrollMode()) startScroll() else stopScroll()
     }
 
-    private fun showCarouselUrl(cam: RtmpCamera2, url: String) {
+    private fun showCarouselUrl(cam: CameraSession, url: String) {
         syncSlotKeys(setOf(url))
         val slot = slots[url] ?: createSlot(cam, url) ?: return
         fetchAndApply(url, slot, 0, 1)
     }
 
-    private fun createSlot(cam: RtmpCamera2, url: String): Slot? = try {
+    private fun createSlot(cam: CameraSession, url: String): Slot? = try {
         val filter = ImageObjectFilterRender()
-        cam.glInterface.addFilter(filter)
+        cam.addFilter(filter)
         Slot(filter).also { slots[url] = it }
     } catch (e: Exception) {
         CricrelayLog.w("Sponsor filter failed: ${e.message}")
@@ -255,7 +254,7 @@ internal class SponsorLayer(
         for (url in remove) {
             slots.remove(url)?.let { slot ->
                 try {
-                    cam.glInterface.removeFilter(slot.filter)
+                    cam.removeFilter(slot.filter)
                 } catch (_: Exception) {
                 }
             }

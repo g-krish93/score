@@ -3,7 +3,6 @@ package uk.co.cricrelay.stream
 import android.app.Activity
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -15,18 +14,16 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.Surface
-import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.BlackFilterRender
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 import com.pedro.encoder.utils.gl.AspectRatioMode
-import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.util.BitrateAdapter
 import com.pedro.library.view.OpenGlView
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * Camera RTMP + scoreboard overlay (RootEncoder / RtmpCamera2).
+ * Camera RTMP + scoreboard overlay (RootEncoder / RtmpCamera2, behind [CameraSession]).
  *
  * Golden path (do not deviate — re-preparing or stopPreview during Go Live crashes Pixel):
  * 1. attachView + prepareAudio/prepareVideo once
@@ -34,7 +31,7 @@ import java.util.concurrent.TimeUnit
  * 3. startStream(endpoint) on Go Live — no second prepareVideo
  * 4. overlay WebView + GL filter when RTMP connects (preview uses Flutter WebView)
  */
-object StreamCameraEngine : ConnectChecker {
+object StreamCameraEngine : CameraSession.Listener {
 
     /** Live broadcast health, published ~once a second while streaming (null when not live). */
     data class StreamStats(
@@ -76,52 +73,67 @@ object StreamCameraEngine : ConnectChecker {
         val theme: String = "barlow",
     )
 
-    private const val MAX_WIDTH = 1920
-    // Reference prefs (the defaults in OverlayLayoutPrefs). When the user sliders sit at
-    // these values the overlay bitmap renders at its NATIVE aspect ratio — wMul/hMul == 1.
-    private const val REF_OVERLAY_WIDTH_FRACTION = 1.0f
-    private const val REF_OVERLAY_HEIGHT_FRACTION = 0.16f
+    // Also caps the overlay raster width in OverlayCompositor (capture never exceeds the encoder).
+    internal const val MAX_WIDTH = 1920
     private const val MAX_HEIGHT = 1080
     private const val DEFAULT_BITRATE = 2500000
     private const val MAX_BITRATE = 8_000_000
     private const val DEFAULT_FPS = 30
 
-    private var camera: RtmpCamera2? = null
+    private var camera: CameraSession? = null
     private var openGlView: OpenGlView? = null
     private var activity: Activity? = null
     private var appContext: Context? = null
-    private var imageFilter: ImageObjectFilterRender? = null
     private var watermarkFilter: ImageObjectFilterRender? = null
     private var appliedWatermarkText: String? = null
-    // The board sprite's actual on-screen band (%), updated each time the board is placed.
-    private var boardTopPct: Float = 84f
-    private var boardBottomPct: Float = 100f
     // TODO(paywall): once Stripe is wired, free-tier streams force the watermark on
     // regardless of the admin toggle — for now the toggle in Board Edit wins.
     private const val IS_FREE_USER = true
-    private var overlayCapture: OverlayWebViewCapture? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // Sponsor burn-ins live in their own layer; it reads camera/layout/canvas lazily through
     // these providers so the engine stays the single source of truth for session state.
-    private val sponsorLayer = SponsorLayer(
+    // (Explicit type: the boardBand/ensureSiblingBurnIns lambdas make the two layers
+    // mutually referential, which defeats type inference.)
+    private val sponsorLayer: SponsorLayer = SponsorLayer(
         mainHandler = mainHandler,
         camera = { camera },
         appContext = { appContext },
         layout = { overlayLayout },
         canvasSize = { encodedCanvasWidth() to encodedCanvasHeight() },
-        boardBand = { boardTopPct to boardBottomPct },
+        boardBand = { overlayCompositor.boardBand() },
         applyOpacity = ::applyBitmapOpacity,
         warn = ::warnBurnInOnce,
+    )
+
+    // Scoreboard burn-in (WebView rasterize -> GL sprite + refresh loops) lives in its own
+    // layer; camera, layout, and cadence are read lazily through these providers — the refresh
+    // cadence (overlayRefreshMs) stays here, fed by ThermalMonitor.
+    private val overlayCompositor: OverlayCompositor = OverlayCompositor(
+        mainHandler = mainHandler,
+        camera = { camera },
+        activity = { activity },
+        appContext = { appContext },
+        overlayUrl = { overlayUrl },
+        layout = { overlayLayout },
+        canvasSize = { encodedCanvasWidth() to encodedCanvasHeight() },
+        refreshMs = { overlayRefreshMs },
+        pausedForMemory = { overlayPausedForMemory },
+        streamPaused = { streamPaused },
+        isPortrait = { streamIsPortrait },
+        previewListener = { previewOverlayListener },
+        applyOpacity = ::applyBitmapOpacity,
+        ensureSiblingBurnIns = {
+            ensureWatermarkFilter()
+            sponsorLayer.ensure()
+        },
+        warn = ::warnBurnInOnce,
+        emit = ::emit,
     )
 
     // Thermal mechanics (Q+ listener / pre-Q poll); the meaning of a status change —
     // overlay-refresh scaling + the "thermal" UI event — stays in onThermalStatusChanged.
     private val thermalMonitor = ThermalMonitor(mainHandler, ::onThermalStatusChanged)
-    private var overlayRunnable: Runnable? = null
-    private var previewOverlayRunnable: Runnable? = null
-    private var previewOverlayPushActive = false
-    private var previewOverlayRefreshRunnable: Runnable? = null
     private var previewOverlayListener: ((ByteArray, Int, Int) -> Unit)? = null
     // Conservative 720p until preparePreview resolves the device tier — never assume 1080p.
     private var streamWidth = 1280
@@ -143,7 +155,6 @@ object StreamCameraEngine : ConnectChecker {
     private var phase: StreamPhase = StreamPhase.Idle
     private val encoderPrepared: Boolean
         get() = phase != StreamPhase.Idle
-    private var lastOverlayBitmap: Bitmap? = null
     private var pendingOverlayAfterConnect = false
     private var prepareInFlight = false
     private var previewSurfaceRunnable: Runnable? = null
@@ -167,7 +178,6 @@ object StreamCameraEngine : ConnectChecker {
     private val backgroundRendering: Boolean
         get() = (phase as? StreamPhase.Live)?.background == true
     private var overlayPausedForMemory = false
-    private var overlayCaptureInFlight = false
     private var focusLocked = false
     // Reconnect attempts used for the current outage (written on the RTMP callback thread,
     // reset on connect success / stream start). Schedule lives in StreamReconnectPolicy.
@@ -176,10 +186,6 @@ object StreamCameraEngine : ConnectChecker {
     // Burn-in degradations already surfaced this broadcast — warn once, not once per frame.
     // Main-thread only (warnBurnInOnce hops to main).
     private val burnInWarned = mutableSetOf<String>()
-    // Consecutive null overlay captures while live; a sustained streak means the score bar is
-    // silently missing from the broadcast. Touched only on the capture executor thread.
-    private var overlayCaptureFailStreak = 0
-    private const val OVERLAY_CAPTURE_WARN_STREAK = 8
     // Adaptive bitrate: created on RTMP connect, fed by onNewBitrate, steps the encoder
     // bitrate up/down with the real network via setVideoBitrateOnFly.
     private var bitrateAdapter: BitrateAdapter? = null
@@ -240,7 +246,7 @@ object StreamCameraEngine : ConnectChecker {
      * through the reflected builder ([Camera2Controls.setEisMode]) and clamps down to the best
      * supported mode on older devices; if reflection is unavailable it degrades to EIS 1.
      */
-    private fun applyStabilization(cam: RtmpCamera2, live: Boolean) {
+    private fun applyStabilization(cam: CameraSession, live: Boolean) {
         CricrelayLog.d("applyStabilization level=$stabilizationLevel live=$live")
         try {
             when (stabilizationLevel) {
@@ -253,7 +259,7 @@ object StreamCameraEngine : ConnectChecker {
                     runCatching { cam.enableOpticalVideoStabilization() }
                 }
                 2 -> {
-                    if (!Camera2Controls.setEisMode(cam, 2, live)) {
+                    if (!cam.setEisMode(2, live)) {
                         cam.enableVideoStabilization()
                     }
                     runCatching { cam.enableOpticalVideoStabilization() }
@@ -264,10 +270,10 @@ object StreamCameraEngine : ConnectChecker {
     }
 
     /** One-time diagnostic so a debug run shows whether the correct path (not fallback) is live. */
-    private fun logReflectStateOnce(cam: RtmpCamera2) {
+    private fun logReflectStateOnce(cam: CameraSession) {
         if (reflectOkLogged) return
         reflectOkLogged = true
-        CricrelayLog.d("Camera2Controls.reflectOk=${Camera2Controls.reflectOk(cam)}")
+        CricrelayLog.d("Camera2Controls.reflectOk=${cam.reflectOk()}")
     }
 
     /** Surface lost (rotation, PiP) — wait for surfaceChanged before prepare again. */
@@ -302,7 +308,7 @@ object StreamCameraEngine : ConnectChecker {
             if (!cam.isStreaming || backgroundRendering) return@runOnMain
             val ctx = appContext ?: return@runOnMain
             try {
-                stopOverlayRefresh()
+                overlayCompositor.stopOverlayRefresh()
                 cam.replaceView(ctx)
                 applyIntent(StreamPhasePolicy.Intent.EnterBackground)
                 surfaceValid = false
@@ -368,9 +374,7 @@ object StreamCameraEngine : ConnectChecker {
             ensureWatermarkFilter()
             sponsorLayer.ensure()
             if (overlayUrl.isNotEmpty() && !streamPaused) {
-                ensureOverlayFilter()
-                if (lastOverlayBitmap != null) applyOverlaySprite()
-                startOverlayRefresh()
+                overlayCompositor.reattachAfterSwap()
             }
         }, 300)
     }
@@ -386,8 +390,8 @@ object StreamCameraEngine : ConnectChecker {
     fun onMemoryPressure() {
         runOnMain {
             overlayPausedForMemory = true
-            stopOverlayRefresh()
-            recycleOverlayBitmap()
+            overlayCompositor.stopOverlayRefresh()
+            overlayCompositor.recycleOverlayBitmap()
         }
     }
 
@@ -396,7 +400,7 @@ object StreamCameraEngine : ConnectChecker {
             if (!overlayPausedForMemory) return@runOnMain
             overlayPausedForMemory = false
             if (camera?.isStreaming == true && !streamPaused && overlayUrl.isNotEmpty()) {
-                startOverlayRefresh()
+                overlayCompositor.startOverlayRefresh()
             }
         }
     }
@@ -454,13 +458,13 @@ object StreamCameraEngine : ConnectChecker {
         view.setAspectRatioMode(AspectRatioMode.Fill)
         if (camera == null) {
             camera = try {
-                RtmpCamera2(view, this)
+                RtmpCameraSession(view, this)
             } catch (e: Exception) {
                 emit(StreamCaptureService.EVENT_ERROR, "Camera init failed: ${e.message ?: "unknown"}")
                 null
             }
         }
-        resumeOverlayPreviewIfNeeded()
+        overlayCompositor.resumeOverlayPreviewIfNeeded()
     }
 
     fun detachView(view: OpenGlView) {
@@ -569,9 +573,9 @@ object StreamCameraEngine : ConnectChecker {
         runOnMain {
             previewOverlayListener = listener
             if (listener != null && !isStreaming && overlayUrl.isNotEmpty()) {
-                startPreviewOverlayPush()
+                overlayCompositor.startPreviewOverlayPush()
             } else {
-                stopPreviewOverlayPush()
+                overlayCompositor.stopPreviewOverlayPush()
             }
         }
     }
@@ -687,7 +691,7 @@ object StreamCameraEngine : ConnectChecker {
         var ok = false
         runOnMainSync {
             val cam = camera ?: return@runOnMainSync
-            ok = Camera2Controls.lockFocusAtCurrentDistance(cam)
+            ok = cam.lockFocusAtCurrentDistance()
             if (!ok) {
                 try {
                     ok = cam.disableAutoFocus()
@@ -728,7 +732,7 @@ object StreamCameraEngine : ConnectChecker {
             }
 
             logReflectStateOnce(cam)
-            focused = Camera2Controls.tapToFocus(cam, w, h, px, py, frontFacing = false)
+            focused = cam.tapToFocusSensor(w, h, px, py, frontFacing = false)
             if (!focused) {
                 val event = MotionEvent.obtain(
                     SystemClock.uptimeMillis(),
@@ -797,7 +801,7 @@ object StreamCameraEngine : ConnectChecker {
                     emit(StreamCaptureService.EVENT_PREVIEW_READY, "${streamWidth}x${streamHeight}")
                     CricrelayLog.d("preview ready ${streamWidth}x${streamHeight} onPreview=${camera?.isOnPreview}")
                     activity?.let { CameraPreviewHost.elevateComposeUi(it) }
-                    resumeOverlayPreviewIfNeeded()
+                    overlayCompositor.resumeOverlayPreviewIfNeeded()
                     // Re-establish the watermark after every (re)prepare — covers rotation
                     // and streams with no scoreboard (where the capture loop never runs).
                     ensureWatermarkFilter()
@@ -815,50 +819,17 @@ object StreamCameraEngine : ConnectChecker {
     private fun encodedCanvasHeight(): Int =
         if (streamIsPortrait) streamWidth else streamHeight
 
-    /** Raster width = encoded frame width (capped by device tier) so overlay fills every stream size. */
-    private fun syncOverlayCaptureWidth() {
-        val ctx = appContext ?: activity?.applicationContext ?: return
-        val tierMax = DeviceCapabilities.maxOverlayCaptureWidth(DeviceCapabilities.tier(ctx))
-        val w = encodedCanvasWidth().coerceIn(320, tierMax.coerceAtMost(MAX_WIDTH))
-        ensureOverlayCapture()?.setCaptureWidth(w)
-    }
-
     fun updateOverlay(url: String, layout: OverlayLayout) {
         runOnMain {
             if (url.isNotEmpty()) {
                 overlayUrl = url
             }
             overlayLayout = layout
-            syncOverlayCaptureWidth()
+            overlayCompositor.syncOverlayCaptureWidth()
             ensureWatermarkFilter()
             sponsorLayer.ensure()
             if (overlayUrl.isEmpty()) return@runOnMain
-            val themedUrl = OverlayThemeBridge.urlWithTheme(overlayUrl, layout.theme)
-            ensureOverlayCapture()?.apply {
-                loadUrl(themedUrl)
-                setStyle(layout.fontScale, layout.bgColor, layout.textColor, layout.theme)
-            }
-            stopPreviewOverlayRefresh()
-            val refreshMode = StreamOverlayPolicy.refreshMode(
-                isStreaming = camera?.isStreaming == true,
-                hasPreviewListener = previewOverlayListener != null,
-                overlayUrlBlank = false,
-            )
-            when (refreshMode) {
-                StreamOverlayPolicy.RefreshMode.StreamRefresh -> {
-                    if (imageFilter != null && lastOverlayBitmap != null) {
-                        applyOverlaySprite()
-                    }
-                    if (imageFilter != null) {
-                        startOverlayRefresh()
-                    }
-                }
-                StreamOverlayPolicy.RefreshMode.PreviewGlRefresh -> startPreviewOverlayRefresh()
-                StreamOverlayPolicy.RefreshMode.None -> {
-                    stopPreviewOverlayPush()
-                    stopPreviewOverlayRefresh()
-                }
-            }
+            overlayCompositor.applyOverlayConfig()
         }
     }
 
@@ -1077,7 +1048,7 @@ object StreamCameraEngine : ConnectChecker {
                 // RootEncoder's flag replay. Now that the reflected builder exists: switch the
                 // HAL to its video-tuned processing path, top Cinematic up to
                 // PREVIEW_STABILIZATION(2), and log the truthful reflect state.
-                Camera2Controls.applyCaptureQuality(cam, live = true)
+                cam.applyCaptureQuality(live = true)
                 if (stabilizationLevel == 2 && deviceTier != DeviceCapabilities.Tier.LOW) {
                     applyStabilization(cam, live = true)
                 }
@@ -1095,7 +1066,7 @@ object StreamCameraEngine : ConnectChecker {
                     "rot=$streamRotation portrait=$streamIsPortrait encodedFrame=${effW}x${effH}",
             )
             if (ready) {
-                syncOverlayCaptureWidth()
+                overlayCompositor.syncOverlayCaptureWidth()
                 ensureWatermarkFilter()
                 sponsorLayer.ensure()
             }
@@ -1167,8 +1138,8 @@ object StreamCameraEngine : ConnectChecker {
             }
         }
 
-        stopPreviewOverlayPush()
-        stopPreviewOverlayRefresh()
+        overlayCompositor.stopPreviewOverlayPush()
+        overlayCompositor.stopPreviewOverlayRefresh()
         emit(StreamCaptureService.EVENT_PREPARING, "Starting stream…")
         if (keepScreenOnDuringStream) {
             openGlView?.keepScreenOn = true
@@ -1177,7 +1148,7 @@ object StreamCameraEngine : ConnectChecker {
         // operator is filming, not watching the phone.
         reconnectAttempt = 0
         burnInWarned.clear()
-        runCatching { cam.streamClient.setReTries(StreamReconnectPolicy.MAX_ATTEMPTS) }
+        runCatching { cam.setReTries(StreamReconnectPolicy.MAX_ATTEMPTS) }
         try {
             cam.startStream(endpoint)
             applyIntent(StreamPhasePolicy.Intent.GoLive)
@@ -1221,18 +1192,19 @@ object StreamCameraEngine : ConnectChecker {
         applyIntent(StreamPhasePolicy.Intent.Stop)
         // Disarm the self-heal: an intentional stop must not race a pending reconnect.
         reconnectAttempt = 0
-        runCatching { camera?.streamClient?.setReTries(0) }
+        runCatching { camera?.setReTries(0) }
         bitrateAdapter = null
         statsListener?.invoke(null)
         removePauseBlackFilter()
-        stopOverlayRefresh()
-        clearOverlayFilter()
-        recycleOverlayBitmap()
+        overlayCompositor.stopOverlayRefresh()
+        overlayCompositor.clearOverlayFilter()
+        clearWatermarkFilter()
+        overlayCompositor.recycleOverlayBitmap()
         openGlView?.keepScreenOn = false
         abandonStreamAudioFocus()
         resetEncoderAfterRtmpStop()
         if (overlayUrl.isNotEmpty()) {
-            startPreviewOverlayRefresh()
+            overlayCompositor.startPreviewOverlayRefresh()
         }
     }
 
@@ -1240,7 +1212,7 @@ object StreamCameraEngine : ConnectChecker {
         val cam = camera ?: return
         if (!cam.isStreaming || streamPaused) return
         applyIntent(StreamPhasePolicy.Intent.Pause)
-        stopOverlayRefresh()
+        overlayCompositor.stopOverlayRefresh()
         try {
             cam.disableAudio()
         } catch (_: Exception) {
@@ -1249,7 +1221,7 @@ object StreamCameraEngine : ConnectChecker {
             if (pauseBlackFilter == null) {
                 val filter = BlackFilterRender()
                 pauseBlackFilter = filter
-                cam.glInterface.addFilter(filter)
+                cam.addFilter(filter)
             }
         } catch (_: Exception) {
         }
@@ -1265,8 +1237,8 @@ object StreamCameraEngine : ConnectChecker {
             if (!micMuted) cam.enableAudio()
         } catch (_: Exception) {
         }
-        if (overlayUrl.isNotEmpty() && imageFilter != null) {
-            startOverlayRefresh()
+        if (overlayUrl.isNotEmpty() && overlayCompositor.hasFilter) {
+            overlayCompositor.startOverlayRefresh()
         }
         emit(StreamCaptureService.EVENT_RESUMED, "")
     }
@@ -1298,7 +1270,7 @@ object StreamCameraEngine : ConnectChecker {
         val cam = camera ?: return
         pauseBlackFilter?.let { filter ->
             try {
-                cam.glInterface.removeFilter(filter)
+                cam.removeFilter(filter)
             } catch (_: Exception) {
             }
         }
@@ -1307,13 +1279,14 @@ object StreamCameraEngine : ConnectChecker {
 
     private fun releaseCamera() {
         appContext?.let { thermalMonitor.unregister(it) }
-        stopPreviewOverlayPush()
+        overlayCompositor.stopPreviewOverlayPush()
         if (camera?.isStreaming == true) {
             stopStreamInternal()
         } else {
-            stopPreviewOverlayRefresh()
-            recycleOverlayBitmap()
-            clearOverlayFilter()
+            overlayCompositor.stopPreviewOverlayRefresh()
+            overlayCompositor.recycleOverlayBitmap()
+            overlayCompositor.clearOverlayFilter()
+            clearWatermarkFilter()
             resetFocusState()
             try {
                 camera?.stopPreview()
@@ -1329,58 +1302,7 @@ object StreamCameraEngine : ConnectChecker {
 
     /** Full teardown — ViewModel cleared or streaming session ended. */
     fun destroyOverlayCapture() {
-        runOnMain {
-            overlayCapture?.destroy()
-            overlayCapture = null
-        }
-    }
-
-    private fun captureOverlayAfterStyleChange() {
-        val streaming = camera?.isStreaming == true && !streamPaused
-        captureAndApplyOverlayInternal(requireStreaming = streaming)
-    }
-
-    private fun ensureOverlayCapture(): OverlayWebViewCapture? {
-        val act = activity ?: return null
-        if (overlayCapture == null) {
-            overlayCapture = OverlayWebViewCapture(act).also { capture ->
-                capture.onStyleApplied = {
-                    mainHandler.post { captureOverlayAfterStyleChange() }
-                }
-                capture.onPageReady = {
-                    CricrelayLog.d("overlay WebView page ready — capture via applyMeasureScript")
-                }
-            }
-        }
-        return overlayCapture
-    }
-
-    /** Overlay URL may be set before the GL view attaches an Activity — restart capture then. */
-    private fun resumeOverlayPreviewIfNeeded() {
-        if (overlayUrl.isEmpty() || activity == null) return
-        syncOverlayCaptureWidth()
-        ensureOverlayCapture()?.apply {
-            loadUrl(OverlayThemeBridge.urlWithTheme(overlayUrl, overlayLayout.theme))
-            setStyle(
-                overlayLayout.fontScale,
-                overlayLayout.bgColor,
-                overlayLayout.textColor,
-                overlayLayout.theme,
-            )
-        }
-        when (
-            StreamOverlayPolicy.refreshMode(
-                isStreaming = camera?.isStreaming == true,
-                hasPreviewListener = previewOverlayListener != null,
-                overlayUrlBlank = false,
-            )
-        ) {
-            StreamOverlayPolicy.RefreshMode.StreamRefresh -> {
-                if (imageFilter != null && overlayRunnable == null) startOverlayRefresh()
-            }
-            StreamOverlayPolicy.RefreshMode.PreviewGlRefresh -> startPreviewOverlayRefresh()
-            StreamOverlayPolicy.RefreshMode.None -> Unit
-        }
+        runOnMain { overlayCompositor.destroyOverlayCapture() }
     }
 
     private fun attachOverlayAfterConnect() {
@@ -1389,25 +1311,15 @@ object StreamCameraEngine : ConnectChecker {
         mainHandler.postDelayed({
             try {
                 if (overlayUrl.isNotEmpty()) {
-                    ensureOverlayCapture()?.loadUrl(
+                    overlayCompositor.ensureOverlayCapture()?.loadUrl(
                         OverlayThemeBridge.urlWithTheme(overlayUrl, overlayLayout.theme),
                     )
                 }
-                startOverlayRefresh()
+                overlayCompositor.startOverlayRefresh()
             } catch (e: Exception) {
                 emit(StreamCaptureService.EVENT_ERROR, "Scoreboard overlay failed: ${e.message}")
             }
         }, 800)
-    }
-
-    private fun recycleOverlayBitmap() {
-        val bmp = lastOverlayBitmap
-        lastOverlayBitmap = null
-        if (bmp == null) return
-        // GL draw runs on a pool thread — defer recycle until after the filter stops sampling.
-        mainHandler.postDelayed({
-            bmp.takeIf { !it.isRecycled }?.recycle()
-        }, 1500)
     }
 
     private fun runOnMain(block: () -> Unit) {
@@ -1446,21 +1358,9 @@ object StreamCameraEngine : ConnectChecker {
      */
     private fun dropStaleGlFilterRefs() {
         watermarkFilter = null
-        imageFilter = null
+        overlayCompositor.dropStaleRefs()
         sponsorLayer.dropStaleRefs()
         appliedWatermarkText = null
-    }
-
-    private fun clearOverlayFilter() {
-        val cam = camera ?: return
-        imageFilter?.let { filter ->
-            try {
-                cam.glInterface.removeFilter(filter)
-            } catch (_: Exception) {
-            }
-        }
-        imageFilter = null
-        clearWatermarkFilter()
     }
 
     private const val WATERMARK_TEXT_SIZE = 34f
@@ -1502,7 +1402,7 @@ object StreamCameraEngine : ConnectChecker {
         if (!cam.isOnPreview && !cam.isStreaming) return
         val filter = watermarkFilter ?: try {
             ImageObjectFilterRender().also {
-                cam.glInterface.addFilter(it)
+                cam.addFilter(it)
                 watermarkFilter = it
             }
         } catch (e: Exception) {
@@ -1528,7 +1428,7 @@ object StreamCameraEngine : ConnectChecker {
         val cam = camera ?: return
         watermarkFilter?.let { filter ->
             try {
-                cam.glInterface.removeFilter(filter)
+                cam.removeFilter(filter)
             } catch (_: Exception) {
             }
         }
@@ -1556,26 +1456,6 @@ object StreamCameraEngine : ConnectChecker {
         filter.setPosition(sprite.positionX, sprite.positionY)
     }
 
-    private fun ensureOverlayFilter() {
-        val cam = camera ?: return
-        if (imageFilter != null) {
-            if (lastOverlayBitmap != null) applyOverlaySprite()
-            return
-        }
-        if (!cam.isOnPreview && !cam.isStreaming) return
-        try {
-            val filter = ImageObjectFilterRender()
-            cam.glInterface.addFilter(filter)
-            imageFilter = filter
-        } catch (e: Exception) {
-            emit(StreamCaptureService.EVENT_ERROR, "Overlay filter failed: ${e.message}")
-        }
-    }
-
-    /**
-     * Position the scoreboard sprite using RootEncoder's 0–100% coordinate system
-     * (see [com.pedro.encoder.input.gl.Sprite] — 0,0 is top-left, 100,100 is bottom-right).
-     */
     /** Bake a uniform alpha into the overlay bitmap (used for the GL sprite path). */
     private fun applyBitmapOpacity(src: Bitmap, opacity: Float): Bitmap {
         if (opacity >= 0.999f) return src
@@ -1588,218 +1468,6 @@ object StreamCameraEngine : ConnectChecker {
             out
         } catch (_: Exception) {
             src
-        }
-    }
-
-    private fun applyOverlaySprite() {
-        val filter = imageFilter ?: return
-        val canvasW = encodedCanvasWidth()
-        val canvasH = encodedCanvasHeight()
-        filter.setDefaultScale(canvasW, canvasH)
-        val base = filter.getScale()
-        // Uniform, aspect-locked board scale: a single multiplier drives both axes so the fixed-
-        // aspect strip never distorts (matches the Arrange pinch gesture). heightFraction is kept
-        // in sync with widthFraction by OverlayLayoutPrefs.withBoardScale, so width is authoritative.
-        val boardScale = overlayLayout.widthFraction.coerceIn(0.25f, 0.98f) / REF_OVERLAY_WIDTH_FRACTION
-        val fitted = OverlaySpriteLayout.fitScale(base.x, base.y, boardScale, boardScale, maxPercent = 100f)
-        filter.setScale(fitted.x, fitted.y)
-        val scale = filter.getScale()
-        val pos = OverlaySpriteLayout.computePosition(
-            OverlaySpriteLayout.Params(
-                scaleX = scale.x,
-                scaleY = scale.y,
-                anchorX = overlayLayout.anchorX,
-                anchorY = overlayLayout.anchorY,
-                bottomMarginFraction = overlayLayout.bottomMarginFraction,
-                horizontalInsetFraction = overlayLayout.horizontalInsetFraction,
-            ),
-        )
-        filter.setPosition(pos.x, pos.y)
-        // Remember the board's actual on-screen band so the sponsor's above/below-board modes track
-        // the real (flush-bottom, pinch-scaled) board instead of a stale anchorY estimate.
-        boardTopPct = pos.y
-        boardBottomPct = (pos.y + scale.y).coerceAtMost(100f)
-    }
-
-    private fun startOverlayRefresh() {
-        if (overlayPausedForMemory) return
-        stopOverlayRefresh()
-        val interval = overlayRefreshMs
-        val runnable = object : Runnable {
-            override fun run() {
-                try {
-                    captureAndApplyOverlay()
-                } catch (_: Exception) {
-                }
-                mainHandler.postDelayed(this, interval)
-            }
-        }
-        overlayRunnable = runnable
-        mainHandler.postDelayed(runnable, 1200)
-    }
-
-    private fun stopOverlayRefresh() {
-        overlayRunnable?.let { mainHandler.removeCallbacks(it) }
-        overlayRunnable = null
-    }
-
-    private fun startPreviewOverlayPush() {
-        if (previewOverlayPushActive) return
-        if (camera?.isStreaming == true || overlayPausedForMemory) return
-        if (overlayUrl.isEmpty() || previewOverlayListener == null) {
-            CricrelayLog.w(
-                "startPreviewOverlayPush skipped: urlEmpty=${overlayUrl.isEmpty()} listener=${previewOverlayListener != null}",
-            )
-            return
-        }
-        previewOverlayPushActive = true
-        CricrelayLog.d("startPreviewOverlayPush: url=$overlayUrl")
-        val interval = (overlayRefreshMs * 2).coerceIn(1000L, 2500L)
-        val runnable = object : Runnable {
-            override fun run() {
-                try {
-                    pushPreviewOverlayFrame()
-                } catch (_: Exception) {
-                }
-                mainHandler.postDelayed(this, interval)
-            }
-        }
-        previewOverlayRunnable = runnable
-        mainHandler.postDelayed(runnable, 1000)
-    }
-
-    private fun stopPreviewOverlayPush() {
-        previewOverlayPushActive = false
-        previewOverlayRunnable?.let { mainHandler.removeCallbacks(it) }
-        previewOverlayRunnable = null
-    }
-
-    private fun startPreviewOverlayRefresh() {
-        if (camera?.isStreaming == true || overlayPausedForMemory) return
-        stopPreviewOverlayRefresh()
-        if (overlayUrl.isEmpty()) return
-        ensureOverlayCapture()?.loadUrl(OverlayThemeBridge.urlWithTheme(overlayUrl, overlayLayout.theme))
-        val interval = (overlayRefreshMs * 2).coerceIn(800L, 2500L)
-        val runnable = object : Runnable {
-            override fun run() {
-                try {
-                    captureAndApplyOverlayForPreview()
-                } catch (_: Exception) {
-                }
-                mainHandler.postDelayed(this, interval)
-            }
-        }
-        previewOverlayRefreshRunnable = runnable
-        mainHandler.postDelayed(runnable, 400)
-    }
-
-    private fun stopPreviewOverlayRefresh() {
-        previewOverlayRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
-        previewOverlayRefreshRunnable = null
-    }
-
-    private fun pushPreviewOverlayFrame() {
-        if (camera?.isStreaming == true || overlayPausedForMemory || overlayCaptureInFlight) return
-        val listener = previewOverlayListener ?: return
-        val capture = ensureOverlayCapture()
-        if (capture == null) {
-            CricrelayLog.w("pushPreviewOverlayFrame: no activity for overlay capture")
-            return
-        }
-        capture.ensureAttached()
-        overlayCaptureInFlight = true
-        capture.captureAsync { captured ->
-            overlayCaptureInFlight = false
-            if (captured == null) return@captureAsync
-            val w = captured.width
-            val h = captured.height
-            val stream = java.io.ByteArrayOutputStream()
-            captured.compress(Bitmap.CompressFormat.PNG, 85, stream)
-            if (!captured.isRecycled) {
-                captured.recycle()
-            }
-            val bytes = stream.toByteArray()
-            mainHandler.post { listener(bytes, w, h) }
-        }
-    }
-
-    private fun captureAndApplyOverlay() {
-        captureAndApplyOverlayInternal(requireStreaming = true)
-    }
-
-    private fun captureAndApplyOverlayForPreview() {
-        captureAndApplyOverlayInternal(requireStreaming = false)
-    }
-
-    private fun captureAndApplyOverlayInternal(requireStreaming: Boolean) {
-        val cam = camera ?: return
-        if (requireStreaming) {
-            if (!cam.isStreaming || streamPaused) return
-        } else if (!cam.isOnPreview || cam.isStreaming) {
-            return
-        }
-        if (overlayCaptureInFlight) return
-        syncOverlayCaptureWidth()
-        val capture = overlayCapture ?: return
-        overlayCaptureInFlight = true
-        capture.captureAsync { captured ->
-            overlayCaptureInFlight = false
-            if (captured == null) {
-                // A sustained streak of failed captures while live means the score bar has
-                // silently vanished from the broadcast (e.g. the WebView never measured).
-                if (requireStreaming &&
-                    ++overlayCaptureFailStreak == OVERLAY_CAPTURE_WARN_STREAK
-                ) {
-                    warnBurnInOnce(
-                        "overlay_capture",
-                        "Scoreboard overlay is not rendering — the stream may be missing the score bar.",
-                    )
-                }
-                return@captureAsync
-            }
-            overlayCaptureFailStreak = 0
-            val forGl = applyBitmapOpacity(
-                captured.copy(Bitmap.Config.ARGB_8888, false),
-                overlayLayout.opacity,
-            )
-            if (forGl != captured) {
-                captured.recycle()
-            }
-            runOnMain {
-                val liveCam = camera ?: return@runOnMain
-                if (requireStreaming) {
-                    if (!liveCam.isStreaming || streamPaused) {
-                        if (!forGl.isRecycled) forGl.recycle()
-                        return@runOnMain
-                    }
-                } else if (!liveCam.isOnPreview || liveCam.isStreaming) {
-                    if (!forGl.isRecycled) forGl.recycle()
-                    return@runOnMain
-                }
-                ensureOverlayFilter()
-                ensureWatermarkFilter()
-                sponsorLayer.ensure()
-                val filter = imageFilter ?: run {
-                    if (!forGl.isRecycled) forGl.recycle()
-                    return@runOnMain
-                }
-                val previous = lastOverlayBitmap
-                lastOverlayBitmap = forGl
-                filter.setImage(forGl)
-                applyOverlaySprite()
-                runCatching {
-                    val s = filter.getScale()
-                    CricrelayLog.d(
-                        "overlaySprite: bitmap=${forGl.width}x${forGl.height} " +
-                            "portrait=$streamIsPortrait scale=${s.x}x${s.y}",
-                    )
-                }
-                if (previous != null && previous !== forGl && !previous.isRecycled) {
-                    mainHandler.postDelayed({
-                        previous.takeIf { !it.isRecycled && it !== lastOverlayBitmap }?.recycle()
-                    }, 1000)
-                }
-            }
         }
     }
 
@@ -1829,7 +1497,7 @@ object StreamCameraEngine : ConnectChecker {
         val wasReconnect = reconnectAttempt > 0
         reconnectAttempt = 0
         // Refill the retry budget so a later outage gets the full schedule again.
-        runCatching { camera?.streamClient?.setReTries(StreamReconnectPolicy.MAX_ATTEMPTS) }
+        runCatching { camera?.setReTries(StreamReconnectPolicy.MAX_ATTEMPTS) }
         // Follow the real network: RootEncoder reports the sent bitrate once a second
         // (onNewBitrate); the adapter steps the encoder toward the prepared maximum when there
         // is headroom and cuts it on congestion (setVideoBitrateOnFly = live MediaCodec param).
@@ -1854,7 +1522,7 @@ object StreamCameraEngine : ConnectChecker {
         // to retry malformed endpoints, so those fall straight through to the teardown below.
         if (cam != null) {
             val delayMs = StreamReconnectPolicy.backoffMs(reconnectAttempt)
-            val retrying = runCatching { cam.streamClient.reTry(delayMs, reason) }.getOrDefault(false)
+            val retrying = runCatching { cam.reTry(delayMs, reason) }.getOrDefault(false)
             if (retrying) {
                 reconnectAttempt++
                 CricrelayLog.w("RTMP reconnect $reconnectAttempt/${StreamReconnectPolicy.MAX_ATTEMPTS} in ${delayMs}ms: $detail")
@@ -1887,7 +1555,7 @@ object StreamCameraEngine : ConnectChecker {
         val cam = camera ?: return
         if (!cam.isStreaming) return
         // >20% of the RTMP send cache in use = the uplink can't keep up right now.
-        val congested = runCatching { cam.streamClient.hasCongestion(20f) }.getOrDefault(false)
+        val congested = runCatching { cam.hasCongestion(20f) }.getOrDefault(false)
         bitrateAdapter?.adaptBitrate(bitrate, congested)
         val stats = StreamStats(
             sentBitrateBps = bitrate,
@@ -1897,7 +1565,7 @@ object StreamCameraEngine : ConnectChecker {
             height = encodedCanvasHeight(),
             fps = streamFps,
             congested = congested,
-            droppedVideoFrames = runCatching { cam.streamClient.getDroppedVideoFrames() }.getOrDefault(0L),
+            droppedVideoFrames = runCatching { cam.getDroppedVideoFrames() }.getOrDefault(0L),
         )
         mainHandler.post { statsListener?.invoke(stats) }
     }
