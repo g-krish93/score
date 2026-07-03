@@ -109,10 +109,16 @@ class CricRelayApiClientTest {
 
     @Test
     fun `html 401 maps to session expired`() = runTest {
+        var expired = false
         val api = client(token = "stale") { htmlResponse(HttpStatusCode.Unauthorized) }
+        api.onSessionExpired = { expired = true }
         val e = runCatching { api.listStreams() }.exceptionOrNull()
         assertTrue(e is ApiException)
-        assertEquals("Session expired — log out and sign in again.", e?.message)
+        // Wording unified with the app-facing hint (ADR-001 item 3).
+        assertEquals("Session expired — sign out and sign back in.", e?.message)
+        // A main-token 401 also drops the in-memory token and notifies the host app.
+        assertNull(api.token)
+        assertTrue(expired)
     }
 
     @Test
