@@ -319,6 +319,8 @@ def blank_state():
         "sponsor_size_scale": 1.0,
         "sponsor_opacity": 1.0,
         "sponsor_scroll_speed": 1.0,
+        # Constant club/team logo shown top-left (image set per-org in the dashboard).
+        "team_logo_enabled": True,
         "overlay_height_fraction": 0.16,
         "overlay_width_fraction": 1.0,
         "overlay_anchor_x": 0.5,
@@ -478,6 +480,9 @@ def migrate_organization_brand_columns():
     altered = False
     if "public_logo_url" not in cols:
         db.session.execute(text("ALTER TABLE cricrelay_org ADD COLUMN public_logo_url VARCHAR(1000)"))
+        altered = True
+    if "team_logo_url" not in cols:
+        db.session.execute(text("ALTER TABLE cricrelay_org ADD COLUMN team_logo_url VARCHAR(1000)"))
         altered = True
     if "public_primary_color" not in cols:
         db.session.execute(
@@ -2132,6 +2137,93 @@ def dashboard_sponsors_delete():
     return redirect(url_for("dashboard"))
 
 
+# --- Team logo (constant club logo, top-left) ---------------------------------
+# Mirrors the sponsor upload flow but stores a single constant logo per org
+# (Organization.team_logo_url) rendered top-left on the broadcast, distinct from
+# the rotating sponsor logos (bottom-right).
+
+
+def _team_logo_static_root() -> Path:
+    return Path(app.static_folder or "../static") / "team_logos"
+
+
+def _team_logo_public_url(org_id: str, filename: str) -> str:
+    base = _public_base_url().rstrip("/")
+    return f"{base}/static/team_logos/{org_id}/{filename}"
+
+
+def _save_team_logo_upload(org: Organization, file_storage) -> str:
+    """Persist an uploaded team logo under static/team_logos/<org_id>/ and return its public URL."""
+    if not file_storage or not file_storage.filename:
+        raise ValueError("Choose a logo image to upload.")
+    raw_name = secure_filename(file_storage.filename)
+    ext = Path(raw_name).suffix.lower()
+    if ext not in SPONSOR_LOGO_EXTS:
+        raise ValueError("Logo must be PNG, JPG, WEBP, or GIF.")
+    file_storage.stream.seek(0, os.SEEK_END)
+    size = file_storage.stream.tell()
+    file_storage.stream.seek(0)
+    if size <= 0:
+        raise ValueError("Logo file is empty.")
+    if size > SPONSOR_LOGO_MAX_BYTES:
+        raise ValueError("Logo must be 2 MB or smaller.")
+    dest_dir = _team_logo_static_root() / org.id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}{ext}"
+    dest = dest_dir / filename
+    file_storage.save(dest)
+    return _team_logo_public_url(org.id, filename)
+
+
+def _try_delete_team_logo_file(logo_url: str | None, org_id: str) -> None:
+    if not logo_url:
+        return
+    marker = f"/static/team_logos/{org_id}/"
+    if marker not in logo_url:
+        return
+    filename = logo_url.split(marker, 1)[-1].split("?")[0]
+    path = _team_logo_static_root() / org_id / filename
+    if path.is_file():
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+@app.post("/dashboard/team-logo/set")
+@login_required
+def dashboard_team_logo_set():
+    org = _org_from_session()
+    logo = request.files.get("logo")
+    try:
+        logo_url = _save_team_logo_upload(org, logo)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("dashboard"))
+    except Exception:
+        flash("Could not save logo — try again.", "error")
+        return redirect(url_for("dashboard"))
+    old_url = org.team_logo_url
+    org.team_logo_url = logo_url
+    db.session.commit()
+    if old_url and old_url != logo_url:
+        _try_delete_team_logo_file(old_url, org.id)
+    flash("Team logo updated — it shows top-left on the broadcast.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/dashboard/team-logo/remove")
+@login_required
+def dashboard_team_logo_remove():
+    org = _org_from_session()
+    logo_url = org.team_logo_url
+    org.team_logo_url = None
+    db.session.commit()
+    _try_delete_team_logo_file(logo_url, org.id)
+    flash("Team logo removed.", "success")
+    return redirect(url_for("dashboard"))
+
+
 # --- Competition module (native mode): tournaments, teams, players, fixtures ---
 # Additive feature. All mutating routes are @login_required and scoped to the
 # caller's org; the only public surface is the read-only GET /t/<slug>.
@@ -2672,6 +2764,16 @@ def relay_overlay_data(match_id):
                 "scroll_speed": float(data.get("sponsor_scroll_speed") or 1.0),
             }
     payload["sponsor"] = sponsor_payload
+
+    # Constant team/club logo (top-left). The image is set per-org in the
+    # dashboard; the per-stream toggle just controls whether it renders.
+    team_logo_payload = None
+    if bool(data.get("team_logo_enabled", True)) and row is not None:
+        org_row = db.session.get(Organization, row.organization_id)
+        team_logo_url = getattr(org_row, "team_logo_url", None) if org_row else None
+        if team_logo_url:
+            team_logo_payload = {"logo_url": team_logo_url}
+    payload["team_logo"] = team_logo_payload
 
     relay_src = (getattr(row, "relay_source", None) or "scraper").strip().lower()
     payload["relay_source"] = relay_src
@@ -4223,6 +4325,7 @@ OVERLAY_LAYOUT_STATE_KEYS = (
     "sponsor_size_scale",
     "sponsor_opacity",
     "sponsor_scroll_speed",
+    "team_logo_enabled",
 )
 
 
@@ -4279,7 +4382,7 @@ def _apply_overlay_layout_to_state(data: dict) -> None:
         val = data[key]
         if key == "sponsor_display_mode":
             state[key] = _sanitize_sponsor_display_mode(val)
-        elif key in {"sponsor_enabled", "video_stabilization", "keep_screen_on", "watermark_enabled", "bowling_island_enabled"}:
+        elif key in {"sponsor_enabled", "video_stabilization", "keep_screen_on", "watermark_enabled", "bowling_island_enabled", "team_logo_enabled"}:
             state[key] = bool(val)
         elif key == "stabilization_level":
             try:

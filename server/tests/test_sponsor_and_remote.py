@@ -143,6 +143,84 @@ def test_dashboard_sponsor_logo_upload(client, monkeypatch, tmp_path):
         assert (static_root / "sponsors" / org_id).is_dir()
 
 
+_ONE_PX_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452"
+    "000000010000000108060000001f15c489"
+    "0000000a49444154789c630001000000050001"
+    "0d0a2db40000000049454e44ae426082"
+)
+
+
+def test_dashboard_team_logo_upload_and_remove(client, monkeypatch, tmp_path):
+    c, _fake = client
+    org_id, _token, _slug = _seed_org_and_match()
+    static_root = tmp_path / "static"
+    static_root.mkdir()
+    monkeypatch.setattr("server.app.app.static_folder", str(static_root))
+    monkeypatch.setattr("server.app._public_base_url", lambda: "https://test.example")
+
+    with c.session_transaction() as sess:
+        sess["org_id"] = org_id
+
+    from io import BytesIO
+
+    resp = c.post(
+        "/dashboard/team-logo/set",
+        data={"logo": (BytesIO(_ONE_PX_PNG), "team.png")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 302
+
+    with app.app_context():
+        org = db.session.get(Organization, org_id)
+        assert org.team_logo_url is not None
+        assert org.team_logo_url.startswith("https://test.example/static/team_logos/")
+        assert (static_root / "team_logos" / org_id).is_dir()
+        saved_url = org.team_logo_url
+
+    filename = saved_url.rsplit("/", 1)[-1]
+    assert (static_root / "team_logos" / org_id / filename).is_file()
+
+    # Remove clears the column and deletes the file on disk.
+    resp = c.post("/dashboard/team-logo/remove")
+    assert resp.status_code == 302
+    with app.app_context():
+        org = db.session.get(Organization, org_id)
+        assert org.team_logo_url is None
+    assert not (static_root / "team_logos" / org_id / filename).is_file()
+
+
+def test_team_logo_in_overlay_payload(client):
+    c, _fake = client
+    org_id, token, slug = _seed_org_and_match()
+    headers = _auth_headers(token)
+
+    # Org-level constant logo, set directly (upload path covered above).
+    with app.app_context():
+        org = db.session.get(Organization, org_id)
+        org.team_logo_url = "https://cdn.example/team.png"
+        db.session.commit()
+
+    # Enabled by default -> present in the overlay payload.
+    relay = c.get(f"/m/{slug}/overlay-data")
+    assert relay.status_code == 200
+    team_logo = relay.get_json().get("team_logo")
+    assert team_logo is not None
+    assert team_logo["logo_url"] == "https://cdn.example/team.png"
+
+    # Per-stream toggle off -> omitted from the payload.
+    off = c.post(
+        f"/api/match/{slug}/overlay",
+        headers=headers,
+        data=json.dumps({"team_logo_enabled": False}),
+    )
+    assert off.status_code == 200
+    assert off.get_json()["team_logo_enabled"] is False
+
+    relay = c.get(f"/m/{slug}/overlay-data")
+    assert relay.get_json().get("team_logo") is None
+
+
 def test_sponsor_crud_and_overlay_prefs(client):
     c, _fake = client
     _org_id, token, slug = _seed_org_and_match()

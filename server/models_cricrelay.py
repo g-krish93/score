@@ -224,6 +224,10 @@ class Organization(db.Model):
     play_cricket_base_url = db.Column(db.String(500), nullable=True)
     consent_given_at = db.Column(db.DateTime, nullable=True)
     public_logo_url = db.Column(db.String(1000), nullable=True)
+    # Club/team logo shown top-left on the broadcast (uploaded in the dashboard,
+    # stored on disk under static/team_logos/<org_id>/). Distinct from sponsor
+    # logos (bottom-right) and the public-page logo above.
+    team_logo_url = db.Column(db.String(1000), nullable=True)
     public_primary_color = db.Column(db.String(7), nullable=False, default="#22d3a8")
     public_accent_color = db.Column(db.String(7), nullable=False, default="#38bdf8")
     ui_theme = db.Column(db.String(16), nullable=False, default="original")

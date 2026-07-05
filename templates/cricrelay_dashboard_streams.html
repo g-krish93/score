@@ -85,6 +85,30 @@
   </div>
 
   <div class="cr-card">
+    <h2>Team logo</h2>
+    <p class="cr-muted" style="margin:0 0 14px;">
+      Upload your club/team logo here. It shows <strong>constantly in the top-left</strong> of the broadcast —
+      separate from sponsor logos (bottom-right). Upload once; it stays until you replace or remove it.
+    </p>
+    {% if org.team_logo_url %}
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
+      <img src="{{ org.team_logo_url }}" alt="Team logo" style="max-height:56px;max-width:160px;object-fit:contain;background:#0f172a;border-radius:6px;padding:6px;">
+      <form method="post" action="{{ url_for('dashboard_team_logo_remove') }}" style="display:inline;" onsubmit="return confirm('Remove the team logo?');">
+        <button type="submit" class="cr-btn cr-btn-danger cr-btn-sm">Remove</button>
+      </form>
+    </div>
+    {% else %}
+    <p class="cr-muted" style="margin:0 0 14px;">No team logo yet — upload one below.</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('dashboard_team_logo_set') }}" enctype="multipart/form-data" style="max-width:420px;">
+      <label class="cr-label" for="team-logo">{% if org.team_logo_url %}Replace logo image{% else %}Logo image{% endif %}</label>
+      <input class="cr-input" id="team-logo" name="logo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required style="margin-bottom:12px;">
+      <p class="cr-help" style="margin:0 0 12px;">PNG or JPG with a transparent background works best. Max 2&nbsp;MB.</p>
+      <button type="submit" class="cr-btn cr-btn-primary cr-btn-sm">{% if org.team_logo_url %}Update team logo{% else %}Upload team logo{% endif %}</button>
+    </form>
+  </div>
+
+  <div class="cr-card">
     <h2>Sponsor logos</h2>
     <p class="cr-muted" style="margin:0 0 14px;">
       Upload club sponsor logos here. In the <strong>CricRelay Stream</strong> app, open a match →

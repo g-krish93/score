@@ -27,3 +27,5 @@ archive/cricrelay-stream/
 !**/terraform.tfvars.example
 # Club-uploaded sponsor logos (dashboard upload)
 static/sponsors/
+# Club-uploaded team logos (dashboard upload)
+static/team_logos/

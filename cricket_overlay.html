@@ -247,6 +247,24 @@
     to   { transform: translateX(-120%); }
   }
 
+  /* ── TEAM LOGO (constant club logo, top-left; web/OBS overlay) ── */
+  #team-logo-root {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    pointer-events: none;
+    z-index: 100;
+    display: none;
+  }
+  #team-logo-img {
+    max-height: 72px;
+    max-width: 22vw;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
+  }
+
   /* ── Barlow broadcast scoreboard (default layout) ── */
   body.board-barlow {
     --sb-navy: #16294d;
@@ -749,6 +767,7 @@
 
 </div>
 <div id="sponsor-root"></div>
+<div id="team-logo-root"><img id="team-logo-img" alt="Team logo"></div>
 
 <script>
 // ══════════════════════════════════════════════════════════
@@ -1331,6 +1350,22 @@ function applySponsor(sponsor) {
   renderSponsorSet(sponsor, showAll);
 }
 
+// TEAM LOGO — constant club logo, top-left. Distinct from the rotating
+// sponsor logos; the image is set per-club in the dashboard.
+function applyTeamLogo(teamLogo) {
+  const root = document.getElementById('team-logo-root');
+  const img = document.getElementById('team-logo-img');
+  if (!root || !img) return;
+  const url = teamLogo && teamLogo.logo_url;
+  if (!url) {
+    root.style.display = 'none';
+    img.removeAttribute('src');
+    return;
+  }
+  if (img.getAttribute('src') !== url) img.src = url;
+  root.style.display = 'block';
+}
+
 // ══════════════════════════════════════════════════════════
 // BARLOW LAYOUT (boardStyle=barlow)
 // ══════════════════════════════════════════════════════════
@@ -1598,6 +1633,7 @@ function render(data) {
 
   applyDataPatternClass(data);
   applySponsor(data.sponsor);
+  applyTeamLogo(data.team_logo);
 
   // Pre-match: no innings yet — show fixture details
   if (isPreMatch(data)) {
