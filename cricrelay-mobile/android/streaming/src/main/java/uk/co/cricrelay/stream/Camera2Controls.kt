@@ -184,28 +184,35 @@ internal object Camera2Controls {
     // ---- Focus lock ----------------------------------------------------------------------------
 
     /**
-     * Freeze the lens at its current (converged) position: read LENS_FOCUS_DISTANCE from one
-     * capture result, then switch to AF_MODE_OFF holding that exact distance.
+     * Freeze the whole imaging pipeline at its current (converged) state: read LENS_FOCUS_DISTANCE
+     * from one capture result, then switch to AF_MODE_OFF holding that exact distance AND lock
+     * auto-exposure + auto-white-balance (CONTROL_AE_LOCK / CONTROL_AWB_LOCK).
      *
-     * Why: RootEncoder's disableAutoFocus() (2.4.8, decompiled) sets AF_MODE_OFF without a lens
-     * distance, so the HAL applies the builder's default (0 = infinity) and a converged tap focus
-     * is visibly thrown away the moment the operator locks. Locking must hold the lens where the
-     * tap left it.
+     * Why: at a cricket boundary the depth of field is huge, so the lens is rarely the problem —
+     * a fielder or passer-by crossing the frame makes AE re-meter (brightness pulse) and AWB shift
+     * (colour pulse), which reads as "the stream went out of focus". Freezing all three (a full 3A
+     * lock) is what actually holds the shot. And RootEncoder's disableAutoFocus() (2.4.8, decompiled)
+     * sets AF_MODE_OFF WITHOUT a lens distance, so the HAL applies the builder default (0 = infinity)
+     * and a converged tap focus is visibly thrown away the moment the operator locks.
+     *
+     * AE/AWB locks are each guarded by the device's *_LOCK_AVAILABLE characteristic; where a lock
+     * isn't supported the focus hold still applies (graceful degradation).
      *
      * Blocks up to ~600ms waiting for the capture result (delivered on RootEncoder's camera
      * handler thread — never the calling looper, guarded below).
      *
-     * @return true if locked at the current distance; false ⇒ caller should fall back to
-     * RootEncoder's disableAutoFocus().
+     * @return the converged LENS_FOCUS_DISTANCE (diopters) if locked; null ⇒ caller should fall back
+     * to RootEncoder's disableAutoFocus(). The distance lets the engine re-apply the same lock after
+     * a pre-stream re-prepare (see [reapplyLock]).
      */
-    fun lockFocusAtCurrentDistance(cam: RtmpCamera2): Boolean {
-        val b = builder(cam) ?: return false
-        val s = session(cam) ?: return false
-        val h = handler(cam) ?: return false
-        if (h.looper == Looper.myLooper()) return false // blocking here would deadlock the result
-        val ch = characteristics(cam) ?: return false
-        val modes = ch.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES) ?: return false
-        if (!modes.contains(CaptureRequest.CONTROL_AF_MODE_OFF)) return false
+    fun lockFocusAtCurrentDistance(cam: RtmpCamera2): Float? {
+        val b = builder(cam) ?: return null
+        val s = session(cam) ?: return null
+        val h = handler(cam) ?: return null
+        if (h.looper == Looper.myLooper()) return null // blocking here would deadlock the result
+        val ch = characteristics(cam) ?: return null
+        val modes = ch.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES) ?: return null
+        if (!modes.contains(CaptureRequest.CONTROL_AF_MODE_OFF)) return null
 
         val latch = CountDownLatch(1)
         var distance: Float? = null
@@ -232,15 +239,88 @@ internal object Camera2Controls {
                 },
                 h,
             )
-            if (!latch.await(600, TimeUnit.MILLISECONDS)) return false
-            val d = distance ?: return false // LEGACY HALs may not report it — fall back
+            if (!latch.await(600, TimeUnit.MILLISECONDS)) return null
+            val d = distance ?: return null // LEGACY HALs may not report it — fall back
             b.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
             b.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
             b.set(CaptureRequest.LENS_FOCUS_DISTANCE, d)
+            applyExposureLocks(ch, b, locked = true)
+            s.setRepeatingRequest(b.build(), null, h)
+            d
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * Re-establish a *known* 3A lock without a blocking capture — used at Go Live, after the
+     * pre-RTMP rotation re-sync re-prepares the pipeline and clears the live AF_MODE_OFF state.
+     * The focus distance is remembered from the original [lockFocusAtCurrentDistance] (diopters are
+     * orientation- and zoom-independent), so re-applying it re-locks the pitch rather than whatever
+     * continuous AF happened to grab at that instant.
+     *
+     * @return true if re-applied; false ⇒ reflection unavailable (caller keeps focus unlocked).
+     */
+    fun reapplyLock(cam: RtmpCamera2, distance: Float): Boolean {
+        val b = builder(cam) ?: return false
+        val s = session(cam) ?: return false
+        val h = handler(cam)
+        val ch = characteristics(cam) ?: return false
+        val modes = ch.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES) ?: return false
+        if (!modes.contains(CaptureRequest.CONTROL_AF_MODE_OFF)) return false
+        return try {
+            b.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
+            b.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
+            b.set(CaptureRequest.LENS_FOCUS_DISTANCE, distance)
+            applyExposureLocks(ch, b, locked = true)
             s.setRepeatingRequest(b.build(), null, h)
             true
         } catch (_: Throwable) {
             false
+        }
+    }
+
+    /**
+     * Symmetric unlock: clear AE_LOCK/AWB_LOCK and hand focus back to continuous video AF via the
+     * reflected builder. Returns false ⇒ reflection unavailable, so the caller falls back to
+     * RootEncoder's enableAutoFocus() (AE/AWB were never locked on that path, so nothing to clear).
+     */
+    fun unlockFocusReleasing3A(cam: RtmpCamera2): Boolean {
+        val b = builder(cam) ?: return false
+        val s = session(cam) ?: return false
+        val h = handler(cam)
+        val ch = characteristics(cam) ?: return false
+        val modes = ch.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)
+        val afMode = when {
+            modes == null -> CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO
+            modes.contains(CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO) ->
+                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO
+            modes.contains(CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE) ->
+                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+            else -> return false
+        }
+        return try {
+            b.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
+            b.set(CaptureRequest.CONTROL_AF_MODE, afMode)
+            applyExposureLocks(ch, b, locked = false)
+            s.setRepeatingRequest(b.build(), null, h)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** Set (or clear) CONTROL_AE_LOCK / CONTROL_AWB_LOCK, each guarded by its availability key. */
+    private fun applyExposureLocks(
+        ch: CameraCharacteristics,
+        b: CaptureRequest.Builder,
+        locked: Boolean,
+    ) {
+        if (ch.get(CameraCharacteristics.CONTROL_AE_LOCK_AVAILABLE) == true) {
+            b.set(CaptureRequest.CONTROL_AE_LOCK, locked)
+        }
+        if (ch.get(CameraCharacteristics.CONTROL_AWB_LOCK_AVAILABLE) == true) {
+            b.set(CaptureRequest.CONTROL_AWB_LOCK, locked)
         }
     }
 

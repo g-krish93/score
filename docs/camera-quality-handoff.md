@@ -102,15 +102,30 @@ If minification is ever enabled, repeat the focus + stabilization checks on a re
 `reflectOk=false` there, the keep rules in `proguard-rules.pro` aren't matching — fix before
 shipping.
 
-### 5. ~~Optional polish~~ DONE — focus lock now freezes the converged distance
+### 5. ~~Optional polish~~ DONE — focus lock is now a full 3A freeze (focus + exposure + WB)
 
 On-device testing (July 2026) confirmed RootEncoder's `disableAutoFocus()` loses the tapped focus
 on lock: it sets `AF_MODE_OFF` without a `LENS_FOCUS_DISTANCE`, so the HAL applies the builder
 default (0 = infinity). Fixed: `Camera2Controls.lockFocusAtCurrentDistance` reads the converged
 `LENS_FOCUS_DISTANCE` from a capture result, then holds `AF_MODE_OFF` at that exact distance
-(RootEncoder path kept as reflection-unavailable fallback). Re-verify tap → lock keeps the
-subject sharp; unlock resumes continuous AF. iOS needs no change (its lock already uses
-AVFoundation `.locked`, which holds the current lens position).
+(RootEncoder path kept as reflection-unavailable fallback).
+
+**Extended (user feedback: stream still "went out of focus" under a locked camera when players
+crossed the boundary-line lens / in wind).** Root cause: at a boundary the depth of field spans the
+pitch, so the lens was never the issue — auto-exposure re-metered (brightness pulse) and
+auto-white-balance shifted (colour pulse) as an object crossed. The lock is now a **full 3A freeze**:
+`lockFocusAtCurrentDistance` also sets `CONTROL_AE_LOCK` + `CONTROL_AWB_LOCK` (each guarded by its
+`*_LOCK_AVAILABLE` characteristic) and returns the converged distance; `unlockFocusReleasing3A`
+clears both and resumes `AF_MODE_CONTINUOUS_VIDEO`. The lock also **survives Go Live**: the
+pre-RTMP rotation re-sync used to drop it via `resetFocusState`, so the engine now remembers the
+operator's intent (`focusLockDesired` + `lockedFocusDistance`) and re-applies it with
+`Camera2Controls.reapplyLock` after the re-prepare (safe — pre-RTMP, reuses the existing
+builder/session). iOS: `lockFocus` now also sets `whiteBalanceMode = .locked` (it already locked
+focus + exposure), and `tapToFocus` converges-and-holds via one-shot `.autoFocus` (was continuous)
+to match Android. Reflection-unavailable Android devices still get focus-hold only (AE/AWB keep
+adapting) — acceptable degradation. Re-verify tap → lock kills brightness/colour pulsing under a
+crossing player, survives Go Live, and unlock resumes all three. **Trade-off:** a full lock won't
+track gradual light changes (dusk, floodlights, cloud) — the operator re-taps the pitch and re-locks.
 
 ## Standing constraints
 

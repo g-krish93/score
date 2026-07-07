@@ -193,6 +193,12 @@ object StreamCameraEngine : CameraSession.Listener {
         get() = (phase as? StreamPhase.Live)?.background == true
     private var overlayPausedForMemory = false
     private var focusLocked = false
+    // Operator intent to keep a 3A lock, plus the converged focus distance it was set at. Unlike
+    // focusLocked (the momentary HAL state, cleared by resetFocusState on every re-prepare), these
+    // survive the pre-stream re-prepare so the lock can be re-applied at Go Live — see
+    // startStreamOnMain. Cleared only on explicit unlock or when a broadcast ends.
+    private var focusLockDesired = false
+    private var lockedFocusDistance: Float? = null
     // Reconnect attempts used for the current outage (written on the RTMP callback thread,
     // reset on connect success / stream start). Schedule lives in StreamReconnectPolicy.
     @Volatile
@@ -760,8 +766,14 @@ object StreamCameraEngine : CameraSession.Listener {
         var ok = false
         runOnMainSync {
             focusLocked = false
+            focusLockDesired = false
+            lockedFocusDistance = null
+            // Clear AE/AWB lock + resume continuous AF through the reflected builder; fall back to
+            // RootEncoder's enableAutoFocus() when reflection is unavailable (nothing was locked
+            // there beyond focus, so nothing extra to clear).
             try {
-                ok = camera?.enableAutoFocus() == true
+                ok = camera?.unlockFocusReleasing3A() == true
+                if (!ok) ok = camera?.enableAutoFocus() == true
             } catch (_: Exception) {
                 ok = false
             }
@@ -770,28 +782,38 @@ object StreamCameraEngine : CameraSession.Listener {
     }
 
     /**
-     * Freeze autofocus at its current (converged) distance so a fielder, umpire, or passer-by
-     * crossing between the camera and the pitch can't pull focus off the strip. The operator
-     * frames + taps the pitch (AF converges), then locks — the lens is held at the exact
-     * converged distance. At long range the depth of field comfortably spans both ends of the
-     * pitch, so one locked distance keeps the whole strip sharp. [unlockFocus] resumes AF.
+     * Freeze the whole imaging pipeline — focus + exposure + white balance — at its current
+     * (converged) state so a fielder, umpire, or passer-by crossing between the camera and the
+     * pitch can't pull focus, brightness, or colour off the strip. At a boundary the depth of field
+     * comfortably spans the pitch, so the real artifact is AE/AWB re-metering as an object crosses;
+     * a full 3A lock holds all three. The operator frames + taps the pitch (AF converges), then
+     * locks. [unlockFocus] resumes continuous AF/AE/AWB.
      *
      * Uses [Camera2Controls.lockFocusAtCurrentDistance] (reads LENS_FOCUS_DISTANCE from a capture
-     * result, then AF_MODE_OFF at that distance). RootEncoder's disableAutoFocus() alone sets AF
-     * off WITHOUT a lens distance, which resets the lens to the builder default (infinity) and
-     * visibly loses the tapped focus — kept only as the reflection-unavailable fallback.
+     * result, then AF_MODE_OFF at that distance + AE/AWB lock). Remembers the converged distance so
+     * the lock can be re-applied after the pre-stream re-prepare at Go Live (see startStreamOnMain).
+     * RootEncoder's disableAutoFocus() (focus-only, resets lens to infinity, no AE/AWB lock) is kept
+     * only as the reflection-unavailable fallback.
      */
     fun lockFocus(): Boolean {
         var ok = false
         runOnMainSync {
             val cam = camera ?: return@runOnMainSync
-            ok = cam.lockFocusAtCurrentDistance()
-            if (!ok) {
+            val distance = cam.lockFocusAtCurrentDistance()
+            if (distance != null) {
+                lockedFocusDistance = distance
+                focusLockDesired = true
+                ok = true
+            } else {
                 try {
                     ok = cam.disableAutoFocus()
                 } catch (_: Exception) {
                     ok = false
                 }
+                // Fallback path has no remembered distance, so a Go-Live re-apply can't reproduce
+                // it — don't claim the intent it can't honour.
+                lockedFocusDistance = null
+                focusLockDesired = false
             }
             focusLocked = ok
         }
@@ -824,6 +846,10 @@ object StreamCameraEngine : CameraSession.Listener {
                 }
                 focusLocked = false
             }
+            // A tap re-aims the shot, abandoning any prior lock intent — otherwise Go Live could
+            // re-apply the stale distance instead of what the operator just tapped.
+            focusLockDesired = false
+            lockedFocusDistance = null
 
             logReflectStateOnce(cam)
             focused = cam.tapToFocusSensor(w, h, px, py, frontFacing = false)
@@ -849,6 +875,9 @@ object StreamCameraEngine : CameraSession.Listener {
     }
 
     private fun resetFocusState() {
+        // Only the momentary HAL state — a re-prepare drops the live AF_MODE_OFF, but the operator's
+        // lock intent (focusLockDesired + lockedFocusDistance) must survive so Go Live can re-apply
+        // it. Those are cleared only on explicit unlock or when a broadcast ends.
         focusLocked = false
     }
 
@@ -1270,6 +1299,21 @@ object StreamCameraEngine : CameraSession.Listener {
             }
         }
 
+        // The rotation re-sync above (or any other pre-stream re-prepare) drops the live AF_MODE_OFF
+        // via resetFocusState, silently returning the camera to continuous AF exactly at Go Live.
+        // If the operator locked in preview, re-apply the remembered 3A lock now — the builder +
+        // session exist (post-startPreview, same window applyCaptureQuality uses) and RTMP hasn't
+        // started, so this is safe. Re-uses the remembered diopter so it re-locks the pitch, not
+        // whatever continuous AF grabbed during the re-prepare.
+        if (!focusLocked && focusLockDesired) {
+            lockedFocusDistance?.let { distance ->
+                if (cam.reapplyLock(distance)) {
+                    focusLocked = true
+                    CricrelayLog.d("Go Live: re-applied 3A focus lock at distance=$distance")
+                }
+            }
+        }
+
         overlayCompositor.stopPreviewOverlayPush()
         overlayCompositor.stopPreviewOverlayRefresh()
         emit(StreamCaptureService.EVENT_PREPARING, "Starting stream…")
@@ -1315,6 +1359,10 @@ object StreamCameraEngine : CameraSession.Listener {
         }
         applyIntent(StreamPhasePolicy.Intent.Release)
         resetFocusState()
+        // A finished broadcast starts fresh: drop the operator's lock intent too, so the next Go
+        // Live doesn't silently re-apply a stale focus distance from the previous match.
+        focusLockDesired = false
+        lockedFocusDistance = null
         if (!preparePreviewOnMain()) {
             CricrelayLog.w("resetEncoderAfterRtmpStop: preview re-prepare failed")
         }

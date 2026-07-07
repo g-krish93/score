@@ -597,10 +597,14 @@ final class StreamCameraEngine: NSObject {
         }
     }
 
-    /// Focus + meter at a point given in view coordinates, resuming continuous AF/AE (releasing any
-    /// lock) so the operator can re-aim before locking again. The HaishinKit preview has no
-    /// AVCaptureVideoPreviewLayer to convert through, so we map the view point ourselves. Runs on the
-    /// main actor (the orientation read needs it); the device write hops to the camera queue.
+    /// Focus + meter at a point given in view coordinates, releasing any lock so the operator can
+    /// re-aim before locking again. Focus converges-and-holds (one-shot `.autoFocus`) rather than
+    /// running continuously, matching Android's `AF_MODE_AUTO` tap — a passer-by is far less likely
+    /// to trigger a refocus even without an explicit lock. Exposure stays continuous (metered to the
+    /// tap point), same as Android, so the shot still adapts to light until the operator locks. The
+    /// HaishinKit preview has no AVCaptureVideoPreviewLayer to convert through, so we map the view
+    /// point ourselves. Runs on the main actor (the orientation read needs it); the device write
+    /// hops to the camera queue.
     @MainActor
     func tapToFocus(viewWidth: Int, viewHeight: Int, x: Float, y: Float) {
         guard viewWidth > 0, viewHeight > 0 else { return }
@@ -612,10 +616,12 @@ final class StreamCameraEngine: NSObject {
             do {
                 try device.lockForConfiguration()
                 if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = poi }
-                if device.isFocusModeSupported(.continuousAutoFocus) {
-                    device.focusMode = .continuousAutoFocus
-                } else if device.isFocusModeSupported(.autoFocus) {
+                // One-shot converge-and-hold; fall back to continuous only where `.autoFocus`
+                // isn't supported.
+                if device.isFocusModeSupported(.autoFocus) {
                     device.focusMode = .autoFocus
+                } else if device.isFocusModeSupported(.continuousAutoFocus) {
+                    device.focusMode = .continuousAutoFocus
                 }
                 if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = poi }
                 if device.isExposureModeSupported(.continuousAutoExposure) {
@@ -628,24 +634,32 @@ final class StreamCameraEngine: NSObject {
         }
     }
 
-    /// Freeze focus *and* exposure at their current values so a fielder, umpire, or passer-by
-    /// crossing between the camera and the pitch can't pull either off the strip. AVFoundation's
-    /// `.locked` modes hold the converged lens position and exposure until [unlockFocus] resumes
-    /// continuous metering. Returns whether the lock actually took.
+    /// Freeze focus, exposure *and* white balance at their current values so a fielder, umpire, or
+    /// passer-by crossing between the camera and the pitch can't pull any of them off the strip. At
+    /// a boundary the depth of field spans the pitch, so the visible artifact is AE re-metering
+    /// (brightness pulse) and AWB shifting (colour pulse) as an object crosses — a full 3A lock
+    /// holds all three. AVFoundation's `.locked` modes hold the converged values until [unlockFocus]
+    /// resumes continuous metering. Returns whether the lock actually took.
     func lockFocus() async -> Bool {
         await configureDevice { device in
             if device.isFocusModeSupported(.locked) { device.focusMode = .locked }
             if device.isExposureModeSupported(.locked) { device.exposureMode = .locked }
-            return device.focusMode == .locked || device.exposureMode == .locked
+            if device.isWhiteBalanceModeSupported(.locked) { device.whiteBalanceMode = .locked }
+            return device.focusMode == .locked || device.exposureMode == .locked ||
+                device.whiteBalanceMode == .locked
         }
     }
 
-    /// Hand focus + exposure back to continuous metering. Returns whether it took.
+    /// Hand focus, exposure and white balance back to continuous metering. Returns whether it took.
     func unlockFocus() async -> Bool {
         await configureDevice { device in
             if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
             if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
-            return device.focusMode == .continuousAutoFocus || device.exposureMode == .continuousAutoExposure
+            if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+                device.whiteBalanceMode = .continuousAutoWhiteBalance
+            }
+            return device.focusMode == .continuousAutoFocus || device.exposureMode == .continuousAutoExposure ||
+                device.whiteBalanceMode == .continuousAutoWhiteBalance
         }
     }
 
