@@ -184,6 +184,21 @@ fun HomeScreen(
                                 },
                             )
                             DropdownMenuItem(
+                                text = { Text("Play-Cricket club") },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Outlined.SportsCricket,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                        tint = AppColors.OnBackground,
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    viewModel.openClubSheet()
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Sign out") },
                                 leadingIcon = {
                                     Icon(
@@ -247,6 +262,32 @@ fun HomeScreen(
                                     body = "On match day, paste your YouTube or Twitch stream key in the broadcast screen. No Google login required on the phone.",
                                     onDismiss = viewModel::dismissVolunteerBanner,
                                 )
+                            }
+                        }
+                        // Known-empty ("") only — null means fixtures haven't loaded yet.
+                        if (state.clubSiteUrl == "" && !state.clubNudgeDismissed) {
+                            item {
+                                GlassPanel {
+                                    Text("See your fixtures here", style = AppTypography.titleMedium)
+                                    Spacer(Modifier.height(AppSpacing.sm))
+                                    Text(
+                                        "Link your club's Play-Cricket site to see fixtures and create streams in one tap.",
+                                        style = AppTypography.bodyMedium,
+                                    )
+                                    Spacer(Modifier.height(AppSpacing.md))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                                        SecondaryButton(
+                                            text = "Link club site",
+                                            onClick = viewModel::openClubSheet,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        GhostButton(
+                                            text = "Not now",
+                                            onClick = viewModel::dismissClubNudge,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+                                }
                             }
                         }
                         state.error?.let { error ->
@@ -391,6 +432,36 @@ fun HomeScreen(
                 createSheet = false
                 onCreateStream("manual")
             },
+            modifier = Modifier.padding(horizontal = AppSpacing.lg),
+        )
+    }
+
+    CricRelayBottomSheet(visible = state.clubSheet, onDismiss = viewModel::closeClubSheet) {
+        SheetHeader(
+            title = "Play-Cricket club",
+            subtitle = "Fixtures come from your club's Play-Cricket site.",
+        )
+        StudioTextField(
+            value = state.clubInput,
+            onValueChange = viewModel::onClubInputChange,
+            label = "Club code or site URL",
+            modifier = Modifier.padding(horizontal = AppSpacing.lg),
+        )
+        Spacer(Modifier.height(AppSpacing.xs))
+        Text(
+            "The short name before .play-cricket.com — e.g. bmacc for bmacc.play-cricket.com.",
+            style = AppTypography.bodySmall,
+            modifier = Modifier.padding(horizontal = AppSpacing.lg),
+        )
+        state.clubError?.let {
+            Spacer(Modifier.height(AppSpacing.md))
+            ErrorBanner(it, modifier = Modifier.padding(horizontal = AppSpacing.lg))
+        }
+        Spacer(Modifier.height(AppSpacing.md))
+        PrimaryButton(
+            text = "Save club link",
+            loading = state.clubSaving,
+            onClick = viewModel::saveClubLink,
             modifier = Modifier.padding(horizontal = AppSpacing.lg),
         )
     }
@@ -596,7 +667,12 @@ fun CreateStreamScreen(
                     }
                     if (state.fixtures.isEmpty()) {
                         Text(
-                            "No upcoming fixtures found for your club.",
+                            if (state.fixtureSourceUrl.isBlank()) {
+                                "No Play-Cricket site is linked to your account yet — add your " +
+                                    "club code from the home screen menu to see fixtures."
+                            } else {
+                                "No upcoming fixtures found for your club."
+                            },
                             style = AppTypography.bodyMedium,
                             modifier = Modifier.padding(vertical = AppSpacing.sm),
                         )

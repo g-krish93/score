@@ -38,6 +38,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Sensors
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SportsCricket
 import androidx.compose.material.icons.outlined.ViewInAr
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -247,6 +248,21 @@ fun RegisterScreen(
                 label = "Confirm password",
                 isPassword = true,
                 leadingIcon = Icons.Outlined.Lock,
+            )
+            Spacer(Modifier.height(AppSpacing.md))
+            StudioTextField(
+                value = state.clubCode,
+                onValueChange = viewModel::onClubCodeChange,
+                label = "Play-Cricket club code (optional)",
+                leadingIcon = Icons.Outlined.SportsCricket,
+            )
+            Spacer(Modifier.height(AppSpacing.xs))
+            Text(
+                "The short name before .play-cricket.com — e.g. bmacc. Linking it fills " +
+                    "your fixture list; you can also add it later from the home menu.",
+                style = AppTypography.bodySmall,
+                color = AppColors.OnBackgroundMuted,
+                modifier = Modifier.fillMaxWidth(),
             )
             if (state.error != null) Spacer(Modifier.height(AppSpacing.md))
             AnimatedErrorBanner(state.error)

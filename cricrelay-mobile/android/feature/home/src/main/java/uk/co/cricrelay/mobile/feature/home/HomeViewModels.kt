@@ -33,12 +33,20 @@ data class HomeUiState(
     val volunteerBannerDismissed: Boolean = false,
     val managementSlug: String? = null,
     val renameLabel: String = "",
+    /** Linked Play-Cricket site: null until the first fixtures load, "" when none linked. */
+    val clubSiteUrl: String? = null,
+    val clubNudgeDismissed: Boolean = false,
+    val clubSheet: Boolean = false,
+    val clubInput: String = "",
+    val clubSaving: Boolean = false,
+    val clubError: String? = null,
 )
 
 data class CreateStreamUiState(
     val loading: Boolean = false,
     val fixtures: List<FixtureItem> = emptyList(),
     val activeMatchIds: Set<String> = emptySet(),
+    val fixtureSourceUrl: String = "",
     val selectedMatchId: String = "",
     val label: String = "",
     val cricheroesUrl: String = "",
@@ -87,6 +95,7 @@ class HomeViewModel @Inject constructor(
                         activeMatchIds = fixtures.activeMatchIds,
                         slotsUsed = fixtures.slotsUsed,
                         slotsTotal = fixtures.slotsTotal,
+                        clubSiteUrl = fixtures.fixtureSourceUrl,
                         youtube = youtube,
                         twitch = twitch,
                     )
@@ -106,6 +115,42 @@ class HomeViewModel @Inject constructor(
     fun toggleAdvanced() = _uiState.update { it.copy(showAdvanced = !it.showAdvanced) }
 
     fun dismissVolunteerBanner() = _uiState.update { it.copy(volunteerBannerDismissed = true) }
+
+    fun dismissClubNudge() = _uiState.update { it.copy(clubNudgeDismissed = true) }
+
+    fun openClubSheet() = _uiState.update {
+        it.copy(clubSheet = true, clubInput = it.clubSiteUrl.orEmpty(), clubError = null)
+    }
+
+    fun closeClubSheet() = _uiState.update { it.copy(clubSheet = false, clubSaving = false) }
+
+    fun onClubInputChange(value: String) = _uiState.update { it.copy(clubInput = value, clubError = null) }
+
+    fun saveClubLink() {
+        val input = _uiState.value.clubInput.trim()
+        if (input.isBlank()) {
+            _uiState.update {
+                it.copy(clubError = "Enter your club code — the short name before .play-cricket.com")
+            }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(clubSaving = true, clubError = null) }
+            try {
+                val linked = authRepository.updateAccount(input)
+                _uiState.update { it.copy(clubSaving = false, clubSheet = false, clubSiteUrl = linked) }
+                refresh()
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        clubSaving = false,
+                        clubError = e.message?.replace("Exception: ", "").orEmpty()
+                            .ifBlank { "Could not link the club site" },
+                    )
+                }
+            }
+        }
+    }
 
     fun openManagement(slug: String, label: String) {
         _uiState.update { it.copy(managementSlug = slug, renameLabel = label) }
@@ -185,6 +230,7 @@ class CreateStreamViewModel @Inject constructor(
                     it.copy(
                         fixtures = fixtures.fixtures,
                         activeMatchIds = fixtures.activeMatchIds,
+                        fixtureSourceUrl = fixtures.fixtureSourceUrl,
                         selectedMatchId = fixtures.fixtures.firstOrNull()?.matchId.orEmpty(),
                     )
                 }

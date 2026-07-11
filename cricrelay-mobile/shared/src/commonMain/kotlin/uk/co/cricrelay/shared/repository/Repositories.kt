@@ -13,6 +13,7 @@ import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.shared.model.PlatformStatus
 import uk.co.cricrelay.shared.model.ScoringConfig
 import uk.co.cricrelay.shared.model.StreamMatch
+import uk.co.cricrelay.shared.model.string
 import uk.co.cricrelay.shared.session.SessionData
 import uk.co.cricrelay.shared.session.SessionStore
 import uk.co.cricrelay.shared.util.isAllowedApiBaseUrl
@@ -38,22 +39,31 @@ class AuthRepository(
         return client
     }
 
+    /**
+     * Returns the Play-Cricket site the server linked to the new account — empty when none,
+     * in which case the UI should nudge the user to link one so fixtures appear.
+     */
     suspend fun register(
         baseUrl: String,
         name: String,
         email: String,
         password: String,
         consent: Boolean = false,
-    ): CricRelayApiClient {
+        playCricketBaseUrl: String = "",
+    ): String {
         val normalized = normalizeApiBaseUrl(baseUrl)
         if (!isAllowedApiBaseUrl(normalized)) {
             throw IllegalArgumentException("Use HTTPS for your club server (http only for local testing).")
         }
         val client = CricRelayApiClient(httpClientFactory(), normalized)
-        client.register(name, email, password, consent)
+        val body = client.register(name, email, password, consent, playCricketBaseUrl)
         sessionStore.writeSession(client.baseUrl, client.token.orEmpty())
-        return client
+        return body.string("play_cricket_base_url").orEmpty()
     }
+
+    /** Link (or replace) the account's Play-Cricket club site. Returns the normalized URL stored. */
+    suspend fun updateAccount(playCricketBaseUrl: String): String =
+        loadApiClient().updateAccount(playCricketBaseUrl)
 
     suspend fun logout() {
         sessionStore.clearToken()

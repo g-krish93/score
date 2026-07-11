@@ -56,10 +56,17 @@ final class SessionViewModel: ObservableObject {
         }
     }
 
-    func register(name: String, email: String, password: String, consent: Bool) async {
+    func register(name: String, email: String, password: String, consent: Bool, clubCode: String = "") async {
         errorMessage = nil
         do {
-            try await api.register(name: name, email: email, password: password, consent: consent, baseUrl: baseUrl)
+            try await api.register(
+                name: name,
+                email: email,
+                password: password,
+                consent: consent,
+                baseUrl: baseUrl,
+                playCricketBaseUrl: clubCode
+            )
             UserDefaults.standard.set(baseUrl, forKey: "stream_api_base")
             KeychainHelper.saveToken(api.token)
             isLoggedIn = true

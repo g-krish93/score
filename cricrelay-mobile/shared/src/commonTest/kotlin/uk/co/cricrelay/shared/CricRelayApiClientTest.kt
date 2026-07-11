@@ -283,6 +283,71 @@ class CricRelayApiClientTest {
         assertNull(authHeader)
     }
 
+    // ── register / account club link ────────────────────────────────────────
+
+    @Test
+    fun `register sends the club code only when provided`() = runTest {
+        var sentBody = ""
+        val api = client { request ->
+            sentBody = String(request.body.toByteArray())
+            jsonResponse(
+                """{"token":"t","play_cricket_base_url":"https://bmacc.play-cricket.com"}""",
+                HttpStatusCode.Created,
+            )
+        }
+
+        api.register("Club", "a@b.com", "password1", consent = true, playCricketBaseUrl = " bmacc ")
+        assertTrue(sentBody.contains("\"play_cricket_base_url\":\"bmacc\""))
+
+        api.register("Club", "a@b.com", "password1", consent = true)
+        assertFalse(sentBody.contains("play_cricket_base_url"))
+    }
+
+    @Test
+    fun `updateAccount patches the club link and returns the normalized url`() = runTest {
+        var requestedUrl = ""
+        var method = ""
+        var sentBody = ""
+        val api = client(token = "t") { request ->
+            requestedUrl = request.url.toString()
+            method = request.method.value
+            sentBody = String(request.body.toByteArray())
+            jsonResponse("""{"ok":true,"play_cricket_base_url":"https://bmacc.play-cricket.com"}""")
+        }
+
+        val linked = api.updateAccount(" bmacc ")
+
+        assertEquals("$BASE/api/auth/account", requestedUrl)
+        assertEquals("PATCH", method)
+        assertTrue(sentBody.contains("\"play_cricket_base_url\":\"bmacc\""))
+        assertEquals("https://bmacc.play-cricket.com", linked)
+    }
+
+    @Test
+    fun `updateAccount surfaces the server validation message`() = runTest {
+        val api = client(token = "t") {
+            jsonResponse(
+                """{"error":"That doesn't look like a Play-Cricket club site"}""",
+                HttpStatusCode.BadRequest,
+            )
+        }
+        val e = runCatching { api.updateAccount("not a club") }.exceptionOrNull()
+        assertTrue(e is ApiException)
+        assertEquals("That doesn't look like a Play-Cricket club site", e?.message)
+    }
+
+    @Test
+    fun `listFixtures parses the linked club site url`() = runTest {
+        val api = client(token = "t") {
+            jsonResponse(
+                """{"ok":true,"fixtures":[],"active_match_ids":[],
+                    "fixture_source_url":"https://bmacc.play-cricket.com"}""",
+            )
+        }
+        val fixtures = api.listFixtures()
+        assertEquals("https://bmacc.play-cricket.com", fixtures.fixtureSourceUrl)
+    }
+
     // ── manual streams / scorer link ────────────────────────────────────────
 
     @Test

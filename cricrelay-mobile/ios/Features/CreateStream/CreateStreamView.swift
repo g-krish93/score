@@ -105,7 +105,9 @@ struct CreateStreamView: View {
                 .frame(maxWidth: .infinity)
                 .padding(24)
             } else if viewModel.fixtures.isEmpty {
-                Text("No upcoming fixtures found for your club on Play-Cricket.")
+                Text(viewModel.clubSiteUrl == ""
+                    ? "No Play-Cricket site is linked to your account yet — link your club from the home menu to see fixtures."
+                    : "No upcoming fixtures found for your club on Play-Cricket.")
                     .font(.footnote)
                     .foregroundStyle(CricTheme.textMuted)
                     .multilineTextAlignment(.center)

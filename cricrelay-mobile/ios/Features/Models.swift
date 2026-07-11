@@ -73,6 +73,8 @@ struct FixturesResponse: Codable {
     var error: String?
     var slotsUsed: Int
     var slotsTotal: Int
+    /// The club's linked Play-Cricket site; empty/absent when no club site is linked yet.
+    var fixtureSourceUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case fixtures
@@ -80,6 +82,7 @@ struct FixturesResponse: Codable {
         case error
         case slotsUsed = "slots_used"
         case slotsTotal = "slots_total"
+        case fixtureSourceUrl = "fixture_source_url"
     }
 }
 
