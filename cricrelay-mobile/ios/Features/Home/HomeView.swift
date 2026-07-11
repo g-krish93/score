@@ -10,6 +10,8 @@ struct HomeView: View {
     @State private var showDeleteConfirm = false
     @State private var showCreateMode: CreateMode?
     @State private var scorerQrSlug: ScorerQrTarget?
+    @State private var showClubSheet = false
+    @State private var clubNudgeDismissed = false
 
     enum CreateMode: Identifiable {
         case playCricket, cricheroes, manual
@@ -79,6 +81,9 @@ struct HomeView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
+                        Button { showClubSheet = true } label: {
+                            Label("Play-Cricket club", systemImage: "sportscourt")
+                        }
                         Button(role: .destructive) { session.logout() } label: {
                             Label("Sign out", systemImage: "arrow.right.square")
                         }
@@ -103,6 +108,9 @@ struct HomeView: View {
         }
         .sheet(item: $scorerQrSlug) { target in
             ScorerQrSheet(slug: target.slug)
+        }
+        .sheet(isPresented: $showClubSheet) {
+            ClubLinkSheet(viewModel: viewModel)
         }
         .alert("Rename stream", isPresented: $showRenameAlert, presenting: managedStream) { stream in
             TextField("Name", text: $renameLabel)
@@ -138,6 +146,12 @@ struct HomeView: View {
 
                 if let error = viewModel.error {
                     errorBanner(error)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                // Known-empty ("") only — nil means fixtures haven't loaded yet.
+                if viewModel.clubSiteUrl == "" && !clubNudgeDismissed {
+                    clubLinkNudge
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
@@ -235,6 +249,37 @@ struct HomeView: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(CricTheme.primary.opacity(0.35), lineWidth: 1))
         }
         .buttonStyle(PressableScaleStyle())
+    }
+
+    // MARK: - Club link nudge
+
+    private var clubLinkNudge: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "sportscourt")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(CricTheme.accent)
+                Text("See your fixtures here")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.white)
+            }
+            Text("Link your club's Play-Cricket site to see fixtures and create streams in one tap.")
+                .font(.footnote)
+                .foregroundStyle(CricTheme.textMuted)
+            HStack(spacing: 10) {
+                Button("Link club site") { showClubSheet = true }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(CricTheme.accent)
+                Button("Not now") { clubNudgeDismissed = true }
+                    .font(.footnote)
+                    .foregroundStyle(CricTheme.textDim)
+            }
+            .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(CricTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(CricTheme.accent.opacity(0.25), lineWidth: 1))
     }
 
     // MARK: - Streams section
@@ -503,5 +548,72 @@ struct HomeView: View {
         }
         .padding(12)
         .background(CricTheme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+// MARK: - Club link sheet
+
+/// View and update the Play-Cricket club site linked to the account (fixtures come from it).
+/// Accepts the short club code or a full URL; the server validates and returns a clear error
+/// for unrecognised clubs.
+struct ClubLinkSheet: View {
+    @ObservedObject var viewModel: HomeViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var input = ""
+
+    var body: some View {
+        NavigationStack {
+            StudioBackdrop {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Fixtures come from your club's Play-Cricket site.")
+                            .font(.subheadline)
+                            .foregroundStyle(CricTheme.textMuted)
+
+                        TextField("Club code or site URL", text: $input)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .modifier(StudioFieldStyle())
+
+                        Text("The short name before .play-cricket.com — e.g. bmacc for bmacc.play-cricket.com.")
+                            .font(.footnote)
+                            .foregroundStyle(CricTheme.textDim)
+
+                        if let error = viewModel.clubError {
+                            Text(error)
+                                .font(.footnote)
+                                .foregroundStyle(CricTheme.danger)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                                .background(CricTheme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                        }
+
+                        Button {
+                            Task { if await viewModel.saveClubSite(input) { dismiss() } }
+                        } label: {
+                            if viewModel.clubSaving { ProgressView().tint(CricTheme.onPrimary) }
+                            else { Text("Save club link") }
+                        }
+                        .buttonStyle(PrimaryCtaStyle())
+                        .disabled(viewModel.clubSaving)
+                        .padding(.top, 8)
+                    }
+                    .padding(24)
+                }
+            }
+            .navigationTitle("Play-Cricket club")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(CricTheme.textMuted)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .onAppear {
+            input = viewModel.clubSiteUrl ?? ""
+            viewModel.clubError = nil
+        }
     }
 }

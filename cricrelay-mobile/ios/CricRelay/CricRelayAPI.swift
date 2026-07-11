@@ -56,13 +56,37 @@ final class CricRelayAPI {
         token = newToken
     }
 
-    func register(name: String, email: String, password: String, consent: Bool, baseUrl: String) async throws {
+    /// Returns the Play-Cricket site the server linked to the new account — empty when none,
+    /// in which case the UI nudges the user to link one so fixtures appear.
+    @discardableResult
+    func register(
+        name: String,
+        email: String,
+        password: String,
+        consent: Bool,
+        baseUrl: String,
+        playCricketBaseUrl: String = ""
+    ) async throws -> String {
         self.baseUrl = baseUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let json = try await postJson("/api/auth/register", body: [
+        var body: [String: Any] = [
             "name": name, "email": email, "password": password, "consent": consent
-        ], auth: false, expectedStatus: 201)
+        ]
+        let club = playCricketBaseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !club.isEmpty { body["play_cricket_base_url"] = club }
+        let json = try await postJson("/api/auth/register", body: body, auth: false, expectedStatus: 201)
         guard let newToken = json["token"] as? String else { throw URLError(.badServerResponse) }
         token = newToken
+        return json["play_cricket_base_url"] as? String ?? ""
+    }
+
+    /// Link (or replace) the account's Play-Cricket club site. Accepts the short club code
+    /// ("bmacc") or a full site URL — the server normalizes it and responds 400 with a clear
+    /// message when the club isn't recognised. Returns the normalized site URL the server stored.
+    func updateAccount(playCricketBaseUrl: String) async throws -> String {
+        let json = try await sendPatch("/api/auth/account", body: [
+            "play_cricket_base_url": playCricketBaseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        ])
+        return json["play_cricket_base_url"] as? String ?? ""
     }
 
     // MARK: - Streams

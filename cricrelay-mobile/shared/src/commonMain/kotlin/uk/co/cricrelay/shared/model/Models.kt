@@ -107,6 +107,8 @@ data class FixturesResponse(
     val error: String? = null,
     val slotsUsed: Int = 0,
     val slotsTotal: Int = 6,
+    /** The club's linked Play-Cricket site; empty when no club site is linked yet. */
+    val fixtureSourceUrl: String = "",
 ) {
     companion object {
         fun fromJson(json: JsonObject): FixturesResponse {
@@ -122,6 +124,7 @@ data class FixturesResponse(
                 error = json.string("error"),
                 slotsUsed = json.string("slots_used")?.toIntOrNull() ?: 0,
                 slotsTotal = json.string("slots_total")?.toIntOrNull() ?: 6,
+                fixtureSourceUrl = json.string("fixture_source_url").orEmpty(),
             )
         }
     }

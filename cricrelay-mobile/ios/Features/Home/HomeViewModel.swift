@@ -14,6 +14,10 @@ final class HomeViewModel: ObservableObject {
     @Published var fixturesLoading = false
     @Published var fixturesError: String?
     @Published var activeMatchIds: [String] = []
+    /// Linked Play-Cricket site: nil until the first fixtures load, "" when none linked.
+    @Published var clubSiteUrl: String?
+    @Published var clubSaving = false
+    @Published var clubError: String?
 
     private let api = CricRelayAPI.shared
 
@@ -63,6 +67,7 @@ final class HomeViewModel: ObservableObject {
             activeMatchIds = response.activeMatchIds
             slotsUsed = response.slotsUsed
             slotsTotal = response.slotsTotal
+            clubSiteUrl = response.fixtureSourceUrl ?? ""
             // The server reports scrape failures as fixtures:[] + error — surface it instead of
             // letting the picker sit on an empty list that reads as "still loading".
             if fixtures.isEmpty, let serverError = response.error, !serverError.isEmpty {
@@ -136,10 +141,32 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
+    /// Save the club's Play-Cricket link (code or URL). Returns true when it saved so the
+    /// sheet can dismiss; validation failures land in `clubError` with the server's message.
+    func saveClubSite(_ input: String) async -> Bool {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            clubError = "Enter your club code — the short name before .play-cricket.com"
+            return false
+        }
+        clubSaving = true
+        clubError = nil
+        defer { clubSaving = false }
+        do {
+            clubSiteUrl = try await api.updateAccount(playCricketBaseUrl: trimmed)
+            await loadFixtures()
+            return true
+        } catch {
+            clubError = error.localizedDescription
+            return false
+        }
+    }
+
     private func fetchAll() async {
         async let streamsFetch = api.listStreams()
         async let ytFetch = api.youtubeStatus()
         async let twFetch = api.twitchStatus()
+        async let fixturesFetch = api.listFixtures()
 
         do {
             streams = try await streamsFetch
@@ -151,6 +178,13 @@ final class HomeViewModel: ObservableObject {
         // Platform badges are secondary; their failure alone shouldn't banner the home screen.
         if let yt = try? await ytFetch { youtube = yt }
         if let tw = try? await twFetch { twitch = tw }
+        // Fixtures ride along to learn whether a Play-Cricket site is linked (drives the
+        // "link your club" nudge); a failure just leaves clubSiteUrl nil = unknown.
+        if let fx = try? await fixturesFetch {
+            fixtures = fx.fixtures
+            activeMatchIds = fx.activeMatchIds
+            clubSiteUrl = fx.fixtureSourceUrl ?? ""
+        }
         slotsUsed = streams.count
     }
 }

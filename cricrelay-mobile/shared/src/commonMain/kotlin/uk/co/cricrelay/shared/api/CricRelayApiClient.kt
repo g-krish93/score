@@ -126,7 +126,13 @@ class CricRelayApiClient(
         return body
     }
 
-    suspend fun register(name: String, email: String, password: String, consent: Boolean = false): JsonObject {
+    suspend fun register(
+        name: String,
+        email: String,
+        password: String,
+        consent: Boolean = false,
+        playCricketBaseUrl: String = "",
+    ): JsonObject {
         if (!isAllowedApiBaseUrl(baseUrl)) {
             throw ApiException("Server URL must use HTTPS (http only for local testing).")
         }
@@ -137,6 +143,7 @@ class CricRelayApiClient(
                 put("email", email)
                 put("password", password)
                 put("consent", consent)
+                if (playCricketBaseUrl.isNotBlank()) put("play_cricket_base_url", playCricketBaseUrl.trim())
             })
         }
         val body = parseJsonObject(response)
@@ -145,6 +152,22 @@ class CricRelayApiClient(
             ?: throw ApiException("Registration failed")
         updateSession(baseUrl, newToken)
         return body
+    }
+
+    /**
+     * Link (or replace) the account's Play-Cricket club site so fixtures load. Accepts the
+     * short club code ("bmacc") or a full site URL — the server normalizes it and responds
+     * 400 with a clear message when the club isn't recognised. Returns the normalized site
+     * URL the server stored.
+     */
+    suspend fun updateAccount(playCricketBaseUrl: String): String {
+        val response = httpClient.patch("$baseUrl/api/auth/account") {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+            setBody(buildJsonObject { put("play_cricket_base_url", playCricketBaseUrl.trim()) })
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Failed to update the club link")
+        return body.string("play_cricket_base_url").orEmpty()
     }
 
     suspend fun listStreams(): List<StreamMatch> {

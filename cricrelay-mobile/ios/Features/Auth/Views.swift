@@ -221,6 +221,7 @@ struct RegisterView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
+    @State private var clubCode = ""
     @State private var busy = false
     @State private var localError: String?
     @State private var consent = false
@@ -253,6 +254,14 @@ struct RegisterView: View {
                         .modifier(StudioFieldStyle())
                     SecureField("Confirm password", text: $confirmPassword)
                         .modifier(StudioFieldStyle())
+                    TextField("Play-Cricket club code (optional)", text: $clubCode)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .modifier(StudioFieldStyle())
+                    Text("The short name before .play-cricket.com — e.g. bmacc. Linking it fills your fixture list; you can also add it later from the home menu.")
+                        .font(.footnote)
+                        .foregroundStyle(CricTheme.textDim)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     // Real consent, recorded as given — registration used to hard-code true.
                     Toggle(isOn: $consent) {
@@ -279,7 +288,13 @@ struct RegisterView: View {
                         localError = nil
                         Task {
                             busy = true
-                            await session.register(name: name, email: email, password: password, consent: consent)
+                            await session.register(
+                                name: name,
+                                email: email,
+                                password: password,
+                                consent: consent,
+                                clubCode: clubCode
+                            )
                             busy = false
                             if session.errorMessage == nil { dismiss() }
                         }

@@ -62,6 +62,7 @@ data class RegisterUiState(
     val email: String = "",
     val password: String = "",
     val confirmPassword: String = "",
+    val clubCode: String = "",
     val consent: Boolean = false,
     val loading: Boolean = false,
     val error: String? = null,
@@ -85,6 +86,7 @@ class RegisterViewModel @Inject constructor(
     fun onEmailChange(value: String) = _uiState.update { it.copy(email = value, error = null) }
     fun onPasswordChange(value: String) = _uiState.update { it.copy(password = value, error = null) }
     fun onConfirmPasswordChange(value: String) = _uiState.update { it.copy(confirmPassword = value, error = null) }
+    fun onClubCodeChange(value: String) = _uiState.update { it.copy(clubCode = value, error = null) }
     fun onConsentChange(value: Boolean) = _uiState.update { it.copy(consent = value, error = null) }
 
     fun register(onSuccess: suspend (needsOnboarding: Boolean) -> Unit) {
@@ -106,6 +108,7 @@ class RegisterViewModel @Inject constructor(
                     state.email.trim(),
                     state.password,
                     consent = true,
+                    playCricketBaseUrl = state.clubCode.trim(),
                 )
                 onSuccess(true)
             } catch (e: Exception) {
