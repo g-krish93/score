@@ -500,4 +500,46 @@ class StudioViewModelTest {
         assertTrue(vm.uiState.value.micMuted)
         verify { streamController.setMicMuted(true) }
     }
+
+    // ── focus lock ──────────────────────────────────────────────────────────
+
+    @Test
+    fun `toggling focus lock on maps the engine result into the ui`() = runStudioTest {
+        every { streamController.lockFocus() } returns true
+        val vm = loadedViewModel()
+        assertFalse(vm.uiState.value.focusLocked)
+
+        vm.onToggleFocusLock()
+
+        verify { streamController.lockFocus() }
+        assertTrue(vm.uiState.value.focusLocked)
+    }
+
+    @Test
+    fun `a failed lock leaves the padlock unlocked`() = runStudioTest {
+        every { streamController.lockFocus() } returns false
+        val vm = loadedViewModel()
+
+        vm.onToggleFocusLock()
+
+        assertFalse(vm.uiState.value.focusLocked)
+    }
+
+    @Test
+    fun `toggling focus lock off unlocks and clears the reticle`() = runStudioTest {
+        every { streamController.lockFocus() } returns true
+        val vm = loadedViewModel()
+        // Land on the pitch and lock so there is a reticle + lock state to clear.
+        vm.onPreviewTap(x = 10f, y = 20f, width = 100, height = 100)
+        vm.onToggleFocusLock()
+        assertTrue(vm.uiState.value.focusLocked)
+
+        vm.onToggleFocusLock()
+
+        verify { streamController.unlockFocus() }
+        val state = vm.uiState.value
+        assertFalse(state.focusLocked)
+        assertNull(state.focusX)
+        assertNull(state.focusY)
+    }
 }

@@ -116,8 +116,18 @@ internal interface CameraSession {
     /** Video-record capture intent + FAST NR/edge; see [Camera2Controls.applyCaptureQuality]. */
     fun applyCaptureQuality(live: Boolean): Boolean
 
-    /** Freeze the lens at its converged distance; see [Camera2Controls.lockFocusAtCurrentDistance]. */
-    fun lockFocusAtCurrentDistance(): Boolean
+    /**
+     * Freeze focus + exposure + white balance at their converged state; returns the converged focus
+     * distance (diopters) so it can be re-applied after a pre-stream re-prepare, or null on fallback.
+     * See [Camera2Controls.lockFocusAtCurrentDistance].
+     */
+    fun lockFocusAtCurrentDistance(): Float?
+
+    /** Re-apply a remembered 3A lock at [distance]; see [Camera2Controls.reapplyLock]. */
+    fun reapplyLock(distance: Float): Boolean
+
+    /** Clear AE/AWB lock and resume continuous AF; see [Camera2Controls.unlockFocusReleasing3A]. */
+    fun unlockFocusReleasing3A(): Boolean
 
     /** Correct sensor-space tap-to-focus; see [Camera2Controls.tapToFocus]. */
     fun tapToFocusSensor(viewW: Int, viewH: Int, x: Float, y: Float, frontFacing: Boolean): Boolean

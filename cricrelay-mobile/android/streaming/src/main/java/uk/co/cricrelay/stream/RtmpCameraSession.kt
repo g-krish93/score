@@ -151,8 +151,14 @@ internal class RtmpCameraSession(
     override fun applyCaptureQuality(live: Boolean): Boolean =
         Camera2Controls.applyCaptureQuality(camera, live)
 
-    override fun lockFocusAtCurrentDistance(): Boolean =
+    override fun lockFocusAtCurrentDistance(): Float? =
         Camera2Controls.lockFocusAtCurrentDistance(camera)
+
+    override fun reapplyLock(distance: Float): Boolean =
+        Camera2Controls.reapplyLock(camera, distance)
+
+    override fun unlockFocusReleasing3A(): Boolean =
+        Camera2Controls.unlockFocusReleasing3A(camera)
 
     override fun tapToFocusSensor(viewW: Int, viewH: Int, x: Float, y: Float, frontFacing: Boolean): Boolean =
         Camera2Controls.tapToFocus(camera, viewW, viewH, x, y, frontFacing)
