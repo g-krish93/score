@@ -220,9 +220,28 @@
 
   <div class="cr-card cr-card-highlight">
     <h2>Play-Cricket fixtures</h2>
+    {% if play_cricket_root %}
     <p class="cr-muted" style="margin:0 0 6px;">Loaded from <code class="cr-code">{{ fixture_source_url }}</code></p>
     {% if fixtures_error %}
     <p class="cr-muted">Could not load fixtures — use manual match ID below.</p>
+    {% endif %}
+    {% else %}
+    <p class="cr-muted" style="margin:0 0 6px;">
+      No Play-Cricket club site is linked to this account yet, so there are no fixtures to pick from.
+      Enter your club code — the short name before <code class="cr-code">.play-cricket.com</code>
+      (e.g. <strong>bmacc</strong> for https://bmacc.play-cricket.com).
+    </p>
+    <form method="post" action="{{ url_for('dashboard_set_play_cricket') }}" style="margin:0 0 14px;">
+      <div class="cr-row2">
+        <div>
+          <label class="cr-label" for="dash_play_cricket_base_url">Play-Cricket club code</label>
+          <input class="cr-input" id="dash_play_cricket_base_url" name="play_cricket_base_url" required autocomplete="off" placeholder="bmacc">
+        </div>
+        <div style="display:flex;align-items:flex-end;">
+          <button type="submit" class="cr-btn cr-btn-primary">Link club site</button>
+        </div>
+      </div>
+    </form>
     {% endif %}
     {% if fixtures %}
     <div class="cr-table-wrap">

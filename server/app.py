@@ -638,6 +638,33 @@ def _org_play_cricket_root(org: Organization) -> str:
     return normalize_play_cricket_club_root(raw) or raw.rstrip("/")
 
 
+def _sibling_play_cricket_root(club_name: str, exclude_org_id: str | None = None) -> str:
+    """Play-Cricket site used by other accounts registered under the same club name.
+
+    Second and third volunteers sign up with their own email (the mobile app never
+    asks for the club code), leaving their org without a base URL and therefore an
+    empty fixture list. Match them to the club by normalized name, and only trust
+    the result when every same-name account points at a single Play-Cricket site.
+    """
+    name_slug = slugify_org_name(club_name)
+    if not name_slug or name_slug == "club":
+        return ""
+    candidates = Organization.query.filter(
+        Organization.play_cricket_base_url.isnot(None),
+        Organization.play_cricket_base_url != "",
+    ).all()
+    roots: set[str] = set()
+    for other in candidates:
+        if exclude_org_id and other.id == exclude_org_id:
+            continue
+        if slugify_org_name(other.name) != name_slug:
+            continue
+        root = normalize_play_cricket_club_root(other.play_cricket_base_url or "")
+        if root:
+            roots.add(root)
+    return roots.pop() if len(roots) == 1 else ""
+
+
 def _org_fixture_roots(org: Organization, matches: list[RelayMatch] | None = None) -> list[str]:
     """Candidate Play-Cricket roots for fixture scraping.
 
@@ -665,6 +692,14 @@ def _org_fixture_roots(org: Organization, matches: list[RelayMatch] | None = Non
         parsed = urlparse(src)
         if parsed.scheme and parsed.netloc:
             add(f"{parsed.scheme}://{parsed.netloc}")
+    if not roots:
+        sibling = _sibling_play_cricket_root(org.name, exclude_org_id=org.id)
+        if sibling:
+            # Self-heal accounts created without a club code (e.g. via the mobile
+            # app): persist so match-id stream creation and later loads work too.
+            org.play_cricket_base_url = sibling
+            db.session.commit()
+            add(sibling)
     return roots
 
 
@@ -1578,7 +1613,8 @@ def _dashboard_fixture_data(org):
     fixtures_error = None
     fixture_source_url = ""
     probe_errors = []
-    for root in _org_fixture_roots(org, matches):
+    fixture_roots = _org_fixture_roots(org, matches)
+    for root in fixture_roots:
         for candidate in _fixture_candidate_urls(root):
             try:
                 rows = scrape_fixtures(candidate, limit=36)
@@ -1592,6 +1628,11 @@ def _dashboard_fixture_data(org):
             break
     if not fixtures and probe_errors:
         fixtures_error = probe_errors[0]
+    if not fixture_roots:
+        fixtures_error = (
+            "No Play-Cricket club site is linked to this account yet. Add your club code "
+            "(the short name before .play-cricket.com) to load fixtures."
+        )
     if not fixture_source_url:
         fixture_source_url = _org_play_cricket_root(org)
     relay_poll_sec = max(5, int(os.getenv("RELAY_POLL_INTERVAL_SEC", "10")))
@@ -1964,6 +2005,25 @@ def dashboard_add_match():
         flash(err, "error")
         return redirect(url_for("dashboard"))
     flash("Stream ready — copy your overlay URL into Prism or OBS.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/dashboard/play-cricket")
+@login_required
+def dashboard_set_play_cricket():
+    """Link the club's Play-Cricket site to an account that registered without one."""
+    org = _org_from_session()
+    base = normalize_play_cricket_club_root(request.form.get("play_cricket_base_url") or "")
+    if not base:
+        flash(
+            "That Play-Cricket club code was not recognised — enter the short name before "
+            ".play-cricket.com, like bmacc for https://bmacc.play-cricket.com.",
+            "error",
+        )
+        return redirect(url_for("dashboard"))
+    org.play_cricket_base_url = base
+    db.session.commit()
+    flash("Play-Cricket club site linked — your fixtures now load from it.", "success")
     return redirect(url_for("dashboard"))
 
 
@@ -3884,13 +3944,27 @@ def api_stream_register():
     name = (data.get("name") or "").strip()
     email = (data.get("email") or "").strip().lower()
     password = data.get("password") or ""
-    play_cricket_base_url = normalize_play_cricket_club_root(data.get("play_cricket_base_url") or "")
+    raw_base_url = str(data.get("play_cricket_base_url") or "").strip()
+    play_cricket_base_url = normalize_play_cricket_club_root(raw_base_url)
     if not name or not email or not password:
         return jsonify({"error": "name, email, and password are required"}), 400
     if not data.get("consent"):
         return jsonify({"error": "You must agree to the Privacy Policy"}), 400
     if len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters"}), 400
+    if raw_base_url and not play_cricket_base_url:
+        return jsonify(
+            {
+                "error": (
+                    "That Play-Cricket club code was not recognised. Use the short name "
+                    "before .play-cricket.com, like bmacc for https://bmacc.play-cricket.com."
+                )
+            }
+        ), 400
+    if not play_cricket_base_url:
+        # App registrations don't ask for the club code; a teammate's account
+        # under the same club name tells us which Play-Cricket site to use.
+        play_cricket_base_url = _sibling_play_cricket_root(name)
     base_slug = slugify_org_name(name)
     slug = base_slug
     for _ in range(12):
@@ -3917,8 +3991,37 @@ def api_stream_register():
             "token": issue_stream_token(org),
             "org_id": org.id,
             "org_name": org.name,
+            "play_cricket_base_url": org.play_cricket_base_url or "",
         }
     ), 201
+
+
+@app.patch("/api/auth/account")
+@stream_api_auth_required
+def api_update_account(org: Organization):
+    """Link or update the club's Play-Cricket site after registration.
+
+    The mobile registration flow has no club-code field, so accounts created
+    there start with no Play-Cricket site and an empty fixture list — this is
+    the recovery path the apps (and support) can call.
+    """
+    data = request.get_json(silent=True) or {}
+    if "play_cricket_base_url" not in data:
+        return jsonify({"error": "play_cricket_base_url is required"}), 400
+    raw = str(data.get("play_cricket_base_url") or "").strip()
+    base = normalize_play_cricket_club_root(raw)
+    if not base:
+        return jsonify(
+            {
+                "error": (
+                    "That Play-Cricket club code was not recognised. Use the short name "
+                    "before .play-cricket.com, like bmacc for https://bmacc.play-cricket.com."
+                )
+            }
+        ), 400
+    org.play_cricket_base_url = base
+    db.session.commit()
+    return jsonify({"ok": True, "play_cricket_base_url": base})
 
 
 def _erase_org_personal_data(org_id: str) -> None:
