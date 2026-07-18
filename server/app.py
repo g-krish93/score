@@ -621,9 +621,19 @@ def _org_twitch_access_token(org: Organization) -> str | None:
         return None
     try:
         data = tw.refresh_access_token(refresh)
-        return data.get("access_token")
     except Exception:
         return None
+    # Twitch rotates refresh tokens: each refresh response carries a new refresh_token and
+    # the old one can stop working once the new one exists. Not persisting the rotation is
+    # how a club that connected Twitch fine gets "Twitch not connected" at go-live minutes
+    # later (the destination sheet's status poll burns the stored token first).
+    new_refresh = (data.get("refresh_token") or "").strip()
+    if new_refresh and new_refresh != refresh:
+        new_enc = tw.encrypt_token(new_refresh)
+        if new_enc:
+            org.twitch_refresh_token_enc = new_enc
+            db.session.commit()
+    return data.get("access_token")
 
 
 def _safe_hex_color(value: str, default: str) -> str:
@@ -4864,7 +4874,12 @@ def api_youtube_status(org: Organization):
     live_streaming_message = ""
     if connected:
         access = _org_youtube_access_token(org)
-        if access:
+        if not access:
+            # Same honesty rule as twitch-status: a token that no longer refreshes must not
+            # gate Go Live open, or the operator only learns at go-live time.
+            connected = False
+            live_streaming_message = "YouTube connection expired — reconnect YouTube."
+        else:
             check = yt.verify_live_streaming_access(access)
             live_streaming_ok = bool(check.get("ok"))
             live_streaming_message = str(check.get("message") or "")
@@ -4874,6 +4889,7 @@ def api_youtube_status(org: Organization):
             "oauth_configured": yt.oauth_configured(),
             "oauth_scopes": yt.oauth_scopes(),
             "connected": connected,
+            "ready": bool(connected and live_streaming_ok),
             "channel_title": org.youtube_channel_title or "",
             "live_streaming_ok": live_streaming_ok,
             "live_streaming_message": live_streaming_message,
@@ -4934,7 +4950,13 @@ def api_twitch_status(org: Organization):
     if connected:
         access = _org_twitch_access_token(org)
         bid = (org.twitch_user_id or "").strip()
-        if access and bid:
+        if not access:
+            # A stored token that no longer refreshes (revoked, or rotation lost) is not
+            # "connected": reporting it as such is how go-live fails with "Twitch not
+            # connected" right after the destination sheet showed Twitch as ready.
+            connected = False
+            stream_key_message = "Twitch connection expired — reconnect Twitch."
+        elif bid:
             check = tw.verify_streaming_access(access, bid)
             stream_key_ok = bool(check.get("ok"))
             stream_key_message = (check.get("message") or "").strip()
@@ -4944,6 +4966,7 @@ def api_twitch_status(org: Organization):
             "oauth_configured": tw.oauth_configured(),
             "oauth_scopes": tw.oauth_scopes(),
             "connected": connected,
+            "ready": bool(connected and stream_key_ok),
             "display_name": org.twitch_display_name or org.twitch_login or "",
             "login": org.twitch_login or "",
             "stream_key_ok": stream_key_ok,

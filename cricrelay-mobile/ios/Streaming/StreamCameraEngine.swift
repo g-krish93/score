@@ -260,7 +260,46 @@ final class StreamCameraEngine: NSObject {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
+    // MARK: - Reconfiguration serial queue
+
+    // Camera/encoder/canvas reconfiguration runs strictly one-at-a-time, in submission
+    // order. Studio fires orientation re-prepares from three overlapping triggers (both
+    // size classes + the device-orientation notification) and go-live re-syncs again; two
+    // interleaved runs can leave the capture orientation and the screen canvas disagreeing —
+    // the exact geometry mismatch that crashes HaishinKit's CPU screen renderer (see
+    // configureScreenSize). Chained unstructured tasks give run-to-completion ordering
+    // without ever blocking a thread.
+    private let reconfigLock = NSLock()
+    private var reconfigTail: Task<Void, Never>?
+
+    private func serializedReconfig(_ op: @escaping () async -> Void) async {
+        reconfigLock.lock()
+        let previous = reconfigTail
+        let task = Task {
+            await previous?.value
+            await op()
+        }
+        reconfigTail = task
+        reconfigLock.unlock()
+        await task.value
+    }
+
     func preparePreview(width: Int, height: Int, fps: Int, bitrate: Int? = nil, rotation: Int = 0) async {
+        await serializedReconfig { [self] in
+            await preparePreviewSerialized(width: width, height: height, fps: fps, bitrate: bitrate, rotation: rotation)
+        }
+    }
+
+    /// Body of [preparePreview] — must only run on the reconfig queue.
+    private func preparePreviewSerialized(width: Int, height: Int, fps: Int, bitrate: Int?, rotation: Int) async {
+        if publishing {
+            // A live broadcast owns the encoder and the canvas. Studio re-entry mid-broadcast
+            // (attachView) must not re-derive geometry from how the phone is held right now —
+            // that would flip the screen canvas and rebuild the compression session on air.
+            previewReady = devicesAttached
+            emit("preview_ready", "\(encodedCanvasWidth())x\(encodedCanvasHeight())")
+            return
+        }
         streamWidth = width
         streamHeight = height
         streamFps = fps
@@ -274,7 +313,6 @@ final class StreamCameraEngine: NSObject {
             let encoded = encodedFrameSize(baseWidth: width, baseHeight: height, landscape: isLandscape(captureOrientation))
             streamIsPortrait = encoded.height > encoded.width
             preparedCaptureOrientation = captureOrientation
-            await mixer.setVideoOrientation(captureOrientation)
             let settings = makeVideoSettings(
                 width: encoded.width,
                 height: encoded.height,
@@ -282,7 +320,12 @@ final class StreamCameraEngine: NSObject {
             )
             try await stream.setVideoSettings(settings)
             try await mixer.setFrameRate(Double(fps))
+            // Canvas flip BEFORE setVideoOrientation: the orientation change stalls capture
+            // frames while the session reconfigures, and flipping the canvas inside that gap
+            // is the stale-sprite overflow configureScreenSize documents. With frames still
+            // flowing, the camera track re-lays out against the new canvas on the next tick.
             await configureScreenSize()
+            await mixer.setVideoOrientation(captureOrientation)
             syncOverlayCaptureWidth()
             if !overlayUrl.isEmpty {
                 overlayCapture?.setStyle(
@@ -315,7 +358,7 @@ final class StreamCameraEngine: NSObject {
             emit("preview_ready", "\(encoded.width)x\(encoded.height)")
         } catch {
             previewReady = false
-            emit("error", error.localizedDescription)
+            emit("error", Self.describeError(error))
         }
     }
 
@@ -399,6 +442,33 @@ final class StreamCameraEngine: NSObject {
         fps: Int,
         layout: OverlayLayout
     ) async {
+        await serializedReconfig { [self] in
+            await startStreamSerialized(
+                rtmpUrl: rtmpUrl,
+                streamKey: streamKey,
+                overlayUrl: overlayUrl,
+                width: width,
+                height: height,
+                bitrate: bitrate,
+                fps: fps,
+                layout: layout
+            )
+        }
+    }
+
+    /// Body of [startStream] — must only run on the reconfig queue, so a rotation re-prepare
+    /// can never interleave with the encoder sync + RTMP connect of a go-live.
+    private func startStreamSerialized(
+        rtmpUrl: String,
+        streamKey: String,
+        overlayUrl: String,
+        width: Int,
+        height: Int,
+        bitrate: Int,
+        fps: Int,
+        layout: OverlayLayout
+    ) async {
+        guard !publishing else { return }
         streamWidth = width
         streamHeight = height
         streamFps = fps
@@ -431,7 +501,6 @@ final class StreamCameraEngine: NSObject {
             let encoded = encodedFrameSize(baseWidth: width, baseHeight: height, landscape: isLandscape(captureOrientation))
             streamIsPortrait = encoded.height > encoded.width
             preparedCaptureOrientation = captureOrientation
-            await mixer.setVideoOrientation(captureOrientation)
             let settings = makeVideoSettings(
                 width: encoded.width,
                 height: encoded.height,
@@ -439,7 +508,10 @@ final class StreamCameraEngine: NSObject {
             )
             try await stream.setVideoSettings(settings)
             try await mixer.setFrameRate(Double(fps))
+            // Same flip-before-orientation ordering as preparePreviewSerialized (see
+            // configureScreenSize for the overflow this avoids).
             await configureScreenSize()
+            await mixer.setVideoOrientation(captureOrientation)
 
             if !self.overlayUrl.isEmpty {
                 overlayCapture?.setStyle(
@@ -479,7 +551,7 @@ final class StreamCameraEngine: NSObject {
             startConnectionWatch()
         } catch {
             publishing = false
-            emit("error", error.localizedDescription)
+            emit("error", Self.describeError(error))
         }
     }
 
@@ -783,10 +855,13 @@ final class StreamCameraEngine: NSObject {
     }
 
     /// Re-prepare preview when orientation drifted between Studio open and Go Live tap.
+    /// Runs inside startStreamSerialized's reconfig-queue turn, so it must call the
+    /// serialized body directly — going through preparePreview would enqueue behind the
+    /// go-live turn currently running and deadlock.
     private func syncEncoderForGoLive(width: Int, height: Int, fps: Int, bitrate: Int) async {
         let captureOrientation = await MainActor.run { currentCaptureOrientation() }
         if captureOrientation != preparedCaptureOrientation || !previewReady {
-            await preparePreview(width: width, height: height, fps: fps, bitrate: bitrate)
+            await preparePreviewSerialized(width: width, height: height, fps: fps, bitrate: bitrate, rotation: 0)
         }
     }
 
@@ -883,12 +958,45 @@ final class StreamCameraEngine: NSObject {
         }
     }
 
+    /// Applies the encoded canvas size to the offscreen compositor — with care, because
+    /// HaishinKit 2.2.0's CPU screen renderer composites every object from a cached image
+    /// with no bounds check against the canvas (upstream HaishinKit#1652, closed wontfix),
+    /// and the camera track only refreshes that cache when a frame arrives. Flipping the
+    /// canvas while a stale image is cached lets one render tick write past the end of the
+    /// new, smaller canvas: SIGSEGV in vImageCopyBuffer, seen on-device 2026-07-11 (iOS 26.5,
+    /// portrait↔landscape rotation). Defences:
+    ///  - an unchanged size never touches the screen (no pool churn, no re-layout);
+    ///  - on a real flip, every sprite this engine owns is removed in the same ScreenActor
+    ///    turn as the size change — no suspension point in between — so nothing of ours can
+    ///    be composited against the wrong canvas; callers re-add via the ensure* calls that
+    ///    always follow;
+    ///  - callers flip the canvas BEFORE mixer.setVideoOrientation (whose capture-session
+    ///    reconfiguration stalls frames), so the camera track re-lays out against the new
+    ///    canvas on the very next frame instead of holding old geometry across the gap.
     private func configureScreenSize() async {
-        let encodedW = encodedCanvasWidth()
-        let encodedH = encodedCanvasHeight()
+        let newSize = CGSize(width: encodedCanvasWidth(), height: encodedCanvasHeight())
+        let screen = await mixer.screen
         await Task { @ScreenActor in
-            await mixer.screen.size = CGSize(width: encodedW, height: encodedH)
-            await mixer.screen.backgroundColor = UIColor.black.cgColor
+            guard screen.size != newSize else {
+                screen.backgroundColor = UIColor.black.cgColor
+                return
+            }
+            var stale: [ImageScreenObject] = [
+                overlayObject, watermarkObject, standbyObject, pauseBlackObject,
+            ].compactMap { $0 }
+            stale.append(contentsOf: sponsorObjects.values)
+            for obj in stale {
+                try? screen.removeChild(obj)
+            }
+            overlayObject = nil
+            watermarkObject = nil
+            appliedWatermarkText = nil
+            standbyObject = nil
+            pauseBlackObject = nil
+            sponsorObjects.removeAll()
+            appliedSponsorUrls.removeAll()
+            screen.size = newSize
+            screen.backgroundColor = UIColor.black.cgColor
         }.value
     }
 
@@ -1488,6 +1596,18 @@ final class StreamCameraEngine: NSObject {
         let base = String(endpoint[..<lastSlash.lowerBound])
         let name = String(endpoint[lastSlash.upperBound...])
         return (base, name)
+    }
+
+    /// Failure detail for the studio banner. HaishinKit's Swift enum errors localize to the
+    /// useless "The operation couldn't be completed…" — their case description (e.g.
+    /// "requestTimedOut") is the diagnostic that matters at a ground, where this text is the
+    /// only record of why a go-live failed.
+    private static func describeError(_ error: Error) -> String {
+        let ns = error as NSError
+        if ns.domain.hasPrefix("HaishinKit") || ns.domain.hasPrefix("RTMPHaishinKit") {
+            return String(describing: error)
+        }
+        return error.localizedDescription
     }
 
     private func emit(_ event: String, _ message: String) {

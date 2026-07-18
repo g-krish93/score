@@ -172,7 +172,13 @@ struct StudioView: View {
                     if event == "connected" { viewModel.streaming = true }
                     if event == "disconnected" { viewModel.onStreamDisconnected(message) }
                     if event == "thermal" { viewModel.thermalLevel = Int(message) ?? viewModel.thermalLevel }
-                    if event == "error" { viewModel.error = "Stream error — tap restart camera." }
+                    if event == "error" {
+                        // Keep the engine's failure detail: it's the only field record of
+                        // WHY a go-live failed (connect timeout vs bad key vs device error).
+                        viewModel.error = message.isEmpty
+                            ? "Stream error — tap restart camera."
+                            : "Stream error: \(message)"
+                    }
                 }
             }
             await StreamCameraEngine.shared.preparePreview(
