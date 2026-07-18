@@ -922,7 +922,8 @@ final class StreamCameraEngine: NSObject {
             return
         }
         guard appliedWatermarkText != text || watermarkObject == nil else { return }
-        guard let cg = buildWatermarkImage(text)?.cgImage else { return }
+        guard let watermark = buildWatermarkImage(text).map(fitBitmapWithinCanvas),
+              let cg = watermark.cgImage else { return }
         await Task { @ScreenActor in
             if watermarkObject == nil {
                 let obj = ImageScreenObject()
@@ -1063,7 +1064,10 @@ final class StreamCameraEngine: NSObject {
             if let cacheFile { try? data.write(to: cacheFile) }
         }
         guard let rawImage = UIImage(data: data) else { return }
-        let image = applyImageOpacity(rawImage, opacity: overlayLayout.sponsorOpacity)
+        // Scale to the on-canvas display size first: HaishinKit composites 1:1, so a native-res
+        // logo would render oversized and could overrun the canvas buffer (vImageCopyBuffer crash).
+        let display = sponsorDisplayImage(rawImage, total: total)
+        let image = applyImageOpacity(display, opacity: overlayLayout.sponsorOpacity)
         guard let cg = image.cgImage else { return }
         await Task { @ScreenActor in
             if sponsorObjects[url] == nil {
@@ -1166,11 +1170,11 @@ final class StreamCameraEngine: NSObject {
         guard let cg = obj.cgImage else { return }
         let canvasW = CGFloat(encodedCanvasWidth())
         let canvasH = CGFloat(encodedCanvasHeight())
-        let sizeMul: CGFloat = total <= 1 ? 1 : total == 2 ? 0.85 : 0.7
-        let scale = CGFloat(max(0.3, min(3, overlayLayout.sponsorSizeScale))) * sizeMul
-        let aspect = CGFloat(cg.height) / max(CGFloat(cg.width), 1)
-        let imgW = canvasW * 0.18 * scale
-        let imgH = imgW * aspect
+        // The bitmap is already the on-canvas display size (sponsorDisplayImage), so position from
+        // its real pixel dimensions — the object's bounds then equal the bitmap, which the
+        // right/bottom edge clamps below rely on to keep every sprite inside the canvas.
+        let imgW = CGFloat(cg.width)
+        let imgH = CGFloat(cg.height)
         if isSponsorScrollMode() {
             obj.horizontalAlignment = .left
             obj.verticalAlignment = .top
@@ -1181,7 +1185,11 @@ final class StreamCameraEngine: NSObject {
                 let period = canvasH + imgH + gap
                 let phase = marqueePhase(period: period, index: index, total: total)
                 // ttb: enter from top → exit bottom; btt: enter from bottom → exit top.
-                let y = dir == SponsorScrollDirection.ttb ? (-imgH - gap + phase) : (canvasH - phase)
+                // Clamp the bottom edge so origin.y + imgH never exceeds the canvas: a bitmap that
+                // overruns the bottom/right crashes the CPU compositor (vImageCopyBuffer). Negative
+                // (off-top) origins are safe — HaishinKit clamps the write start to 0 and crops.
+                let rawY = dir == SponsorScrollDirection.ttb ? (-imgH - gap + phase) : (canvasH - phase)
+                let y = min(rawY, canvasH - imgH)
                 let x = max(0, min(canvasW - imgW,
                     CGFloat(max(0, min(1, overlayLayout.sponsorPositionX))) * canvasW - imgW / 2))
                 obj.layoutMargin = UIEdgeInsets(top: y, left: x, bottom: 0, right: 0)
@@ -1190,8 +1198,12 @@ final class StreamCameraEngine: NSObject {
                 let period = canvasW + imgW + gap
                 let phase = marqueePhase(period: period, index: index, total: total)
                 // rtl: enter from right → exit left; ltr: enter from left → exit right.
-                let x = dir == SponsorScrollDirection.ltr ? (-imgW - gap + phase) : (canvasW - phase)
-                let y = sponsorScrollY(canvasH: canvasH, imgH: imgH)
+                // Clamp the right edge so origin.x + imgW never exceeds the canvas (a right/bottom
+                // overrun crashes the CPU compositor inside vImageCopyBuffer). Off-left negatives
+                // are safe — HaishinKit clamps the write start to 0 and crops the hidden part.
+                let rawX = dir == SponsorScrollDirection.ltr ? (-imgW - gap + phase) : (canvasW - phase)
+                let x = min(rawX, canvasW - imgW)
+                let y = min(max(0, sponsorScrollY(canvasH: canvasH, imgH: imgH)), max(0, canvasH - imgH))
                 obj.layoutMargin = UIEdgeInsets(top: y, left: x, bottom: 0, right: 0)
             }
         } else {
@@ -1201,9 +1213,12 @@ final class StreamCameraEngine: NSObject {
                 ? CGFloat(max(0, min(1, overlayLayout.sponsorPositionX))) * canvasW
                 : ((CGFloat(index) + 0.5) / CGFloat(total)) * canvasW
             let cy = CGFloat(max(0, min(1, overlayLayout.sponsorPositionY))) * canvasH
+            // Keep the sprite fully inside the canvas on all sides — an origin near the right/bottom
+            // edge would otherwise push origin + imgW/imgH past the canvas and overrun the
+            // compositor's destination buffer (vImageCopyBuffer crash).
             obj.layoutMargin = UIEdgeInsets(
-                top: max(0, cy - imgH / 2),
-                left: max(0, cx - imgW / 2),
+                top: min(max(0, cy - imgH / 2), max(0, canvasH - imgH)),
+                left: min(max(0, cx - imgW / 2), max(0, canvasW - imgW)),
                 bottom: 0,
                 right: 0
             )
@@ -1300,6 +1315,52 @@ final class StreamCameraEngine: NSObject {
         }
     }
 
+    /// Downscale a bitmap so it never exceeds the encoded canvas (aspect-preserving; a no-op when
+    /// already within bounds). HaishinKit's CPU compositor copies each screen object's bitmap
+    /// straight into the canvas using the bitmap's own width/height with NO clamp to the canvas
+    /// (`ScreenRendererByCPU.draw`), so any bitmap larger than the canvas overruns the destination
+    /// buffer and crashes inside `vImageCopyBuffer` (EXC_BAD_ACCESS). This is the last-line guard;
+    /// it matters most for the WKWebView overlay snapshot, which WebKit can hand back oversized.
+    private func fitBitmapWithinCanvas(_ image: UIImage) -> UIImage {
+        let maxW = CGFloat(encodedCanvasWidth())
+        let maxH = CGFloat(encodedCanvasHeight())
+        let w = image.size.width, h = image.size.height
+        guard w > 0, h > 0, maxW > 0, maxH > 0, w > maxW || h > maxH else { return image }
+        let k = min(maxW / w, maxH / h)
+        let size = CGSize(width: max(1, floor(w * k)), height: max(1, floor(h * k)))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// Render a sponsor logo at its on-canvas *display* size rather than its native resolution.
+    /// HaishinKit composites the bitmap 1:1 with no scaling, so a native-resolution logo would
+    /// both render far larger than the intended strip and — if wider/taller than the canvas —
+    /// overrun the canvas buffer inside `vImageCopyBuffer`. Matches the footprint
+    /// `layoutSponsorObject` positions for, then caps to the canvas so `imgW ≤ canvasW` and
+    /// `imgH ≤ canvasH` always hold (a tall logo can otherwise blow past the height).
+    private func sponsorDisplayImage(_ image: UIImage, total: Int) -> UIImage {
+        let canvasW = CGFloat(encodedCanvasWidth())
+        let canvasH = CGFloat(encodedCanvasHeight())
+        let sizeMul: CGFloat = total <= 1 ? 1 : total == 2 ? 0.85 : 0.7
+        let scale = CGFloat(max(0.3, min(3, overlayLayout.sponsorSizeScale))) * sizeMul
+        let srcW = max(image.size.width, 1), srcH = max(image.size.height, 1)
+        var w = canvasW * 0.18 * scale
+        var h = w * (srcH / srcW)
+        if w > canvasW { h *= canvasW / w; w = canvasW }
+        if h > canvasH { w *= canvasH / h; h = canvasH }
+        let size = CGSize(width: max(1, floor(w)), height: max(1, floor(h)))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
     /// Bake a uniform alpha into the overlay bitmap (parity with Android applyBitmapOpacity).
     private func applyImageOpacity(_ image: UIImage, opacity: Float) -> UIImage {
         let alpha = CGFloat(max(0.2, min(1.0, opacity)))
@@ -1390,7 +1451,10 @@ final class StreamCameraEngine: NSObject {
             guard let self, let image = await capture.capture() else { return }
             let scaled = self.scaleOverlayImage(image, targetWidth: targetW)
             let withOpacity = self.applyImageOpacity(scaled, opacity: self.overlayLayout.opacity)
-            guard let cg = withOpacity.cgImage else { return }
+            // Final guard: never composite a bitmap larger than the canvas (a WKWebView snapshot can
+            // come back oversized), which would overrun the compositor's buffer (vImageCopyBuffer).
+            let fitted = self.fitBitmapWithinCanvas(withOpacity)
+            guard let cg = fitted.cgImage else { return }
             Task { @ScreenActor in
                 self.overlayObject?.cgImage = cg
                 self.applyOverlayLayout()
