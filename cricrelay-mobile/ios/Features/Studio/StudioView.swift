@@ -75,12 +75,16 @@ struct StudioView: View {
                         .onChanged { scale in
                             // Arrange mode reclaims pinch for board resize (see ArrangeOverlayView).
                             guard !viewModel.arrangeMode else { return }
-                            let newZoom = zoom * Float(scale)
+                            let bounds = viewModel.zoomBounds
+                            let newZoom = min(max(zoom * Float(scale), bounds.min), bounds.max)
                             viewModel.setZoom(newZoom)
                         }
                         .onEnded { scale in
                             guard !viewModel.arrangeMode else { return }
-                            zoom = max(1, zoom * Float(scale))
+                            let bounds = viewModel.zoomBounds
+                            // Clamp to the device's real range so pinch-out can reach the 0.5×
+                            // ultra-wide (min drops below 1 on multi-lens phones), not floored at 1×.
+                            zoom = min(max(zoom * Float(scale), bounds.min), bounds.max)
                         }
                 )
                 .overlay { focusReticle }
@@ -339,7 +343,7 @@ struct StudioView: View {
     private var portraitIdleControls: some View {
         VStack(spacing: 12) {
             HStack(spacing: 10) {
-                if zoom > 1.1 { ZoomPill(zoom: zoom) }
+                if zoom > 1.05 || zoom < 0.95 { ZoomPill(zoom: zoom) }
                 BoardChip { viewModel.activeSheet = .overlay }
             }
             ChecklistPanel(checks: viewModel.checks) { kind in
@@ -356,7 +360,7 @@ struct StudioView: View {
     private var landscapeIdleControls: some View {
         HStack(alignment: .bottom) {
             HStack(spacing: 10) {
-                if zoom > 1.1 { ZoomPill(zoom: zoom) }
+                if zoom > 1.05 || zoom < 0.95 { ZoomPill(zoom: zoom) }
                 BoardChip { viewModel.activeSheet = .overlay }
             }
             Spacer()

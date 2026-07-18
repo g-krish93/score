@@ -3,6 +3,7 @@ import CryptoKit
 import HaishinKit
 import RTMPHaishinKit
 import UIKit
+import VideoToolbox
 
 /// Camera RTMP + scoreboard overlay (HaishinKit). Matches Android MethodChannel API.
 @available(iOS 15.0, *)
@@ -85,6 +86,21 @@ final class StreamCameraEngine: NSObject {
     private var streamFps = 30
     private var streamBitrate = StreamCameraEngine.defaultStreamBitrate
     private var devicesAttached = false
+    // The back capture device currently attached to the mixer. A virtual multi-camera device
+    // (triple / dual-wide / dual) lets a single `videoZoomFactor` cross the optical lens
+    // switch-over points — real optical zoom to the tele lens plus the 0.5× ultra-wide — instead
+    // of digital-only zoom on the wide lens. Zoom, focus, and exposure must all configure THIS
+    // device (not a fresh wide-angle lookup) or they'd target a lens that isn't in the pipeline.
+    private var videoCaptureDevice: AVCaptureDevice?
+    // The `videoZoomFactor` that frames the wide (1×) lens. On a device whose widest constituent
+    // is the ultra-wide lens this is the ultra-wide→wide switch-over factor, so display 1× == wide
+    // and display 0.5× == ultra-wide; it stays 1.0 when the device has no ultra-wide lens. All
+    // public zoom values are "display ×" (relative to the wide lens); the engine maps them to the
+    // device factor through this base so the UI keeps its familiar 1× == normal meaning.
+    private var wideBaseZoomFactor: CGFloat = 1
+    // Ceiling on display zoom (× relative to the wide lens): covers the optical tele plus a little
+    // digital, and keeps runaway digital zoom (mush) off the table.
+    private static let maxDisplayZoom: CGFloat = 10
     private var publishing = false
     private var streamPaused = false
     private var previewReady = false
@@ -168,10 +184,10 @@ final class StreamCameraEngine: NSObject {
             // Rebuild settings exactly like preparePreview/startStream, reusing the encoded canvas
             // currently in effect so only bitRate differs — a changed videoSize would force a
             // compression-session rebuild (and a resolution change) instead of a live rate update.
-            let settings = VideoCodecSettings(
-                videoSize: .init(width: encodedCanvasWidth(), height: encodedCanvasHeight()),
-                bitRate: lowered,
-                maxKeyFrameIntervalDuration: 2
+            let settings = makeVideoSettings(
+                width: encodedCanvasWidth(),
+                height: encodedCanvasHeight(),
+                bitRate: lowered
             )
             try? await stream.setVideoSettings(settings)
         }
@@ -238,6 +254,7 @@ final class StreamCameraEngine: NSObject {
         try? await mixer.attachAudio(nil, track: 0)
         await mixer.stopRunning()
         devicesAttached = false
+        videoCaptureDevice = nil
         previewReady = false
         preparedCaptureOrientation = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -258,10 +275,10 @@ final class StreamCameraEngine: NSObject {
             streamIsPortrait = encoded.height > encoded.width
             preparedCaptureOrientation = captureOrientation
             await mixer.setVideoOrientation(captureOrientation)
-            var settings = VideoCodecSettings(
-                videoSize: .init(width: encoded.width, height: encoded.height),
-                bitRate: streamBitrate,
-                maxKeyFrameIntervalDuration: 2
+            let settings = makeVideoSettings(
+                width: encoded.width,
+                height: encoded.height,
+                bitRate: streamBitrate
             )
             try await stream.setVideoSettings(settings)
             try await mixer.setFrameRate(Double(fps))
@@ -415,10 +432,10 @@ final class StreamCameraEngine: NSObject {
             streamIsPortrait = encoded.height > encoded.width
             preparedCaptureOrientation = captureOrientation
             await mixer.setVideoOrientation(captureOrientation)
-            var settings = VideoCodecSettings(
-                videoSize: .init(width: encoded.width, height: encoded.height),
-                bitRate: bitrate,
-                maxKeyFrameIntervalDuration: 2
+            let settings = makeVideoSettings(
+                width: encoded.width,
+                height: encoded.height,
+                bitRate: bitrate
             )
             try await stream.setVideoSettings(settings)
             try await mixer.setFrameRate(Double(fps))
@@ -540,16 +557,20 @@ final class StreamCameraEngine: NSObject {
 
     var isStreamPaused: Bool { streamPaused && publishing }
 
+    /// `level` is a display zoom (1× == wide lens). Mapped through `wideBaseZoomFactor` to the
+    /// device's real `videoZoomFactor`, which on a virtual multi-camera device crosses the optical
+    /// lens switch-over points (tele) and reaches the ultra-wide below 1×.
     func setZoom(level: Float) {
-        Task {
-            guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-                return
-            }
-            let maxZoom = min(Float(device.activeFormat.videoMaxZoomFactor), 10)
-            let clamped = max(1, min(level, maxZoom))
+        cameraConfigQueue.async { [weak self] in
+            guard let self, let device = self.backCamera() else { return }
+            let base = self.wideBaseZoomFactor
+            let minFactor = device.minAvailableVideoZoomFactor
+            let maxFactor = min(device.maxAvailableVideoZoomFactor, base * Self.maxDisplayZoom)
+            let target = base * CGFloat(level)
+            let clamped = max(minFactor, min(target, maxFactor))
             do {
                 try device.lockForConfiguration()
-                device.videoZoomFactor = CGFloat(clamped)
+                device.videoZoomFactor = clamped
                 device.unlockForConfiguration()
             } catch {
                 // ignore zoom errors
@@ -557,12 +578,15 @@ final class StreamCameraEngine: NSObject {
         }
     }
 
+    /// Display-zoom bounds (× relative to the wide lens). `min` drops below 1 (≈0.5) when the
+    /// device has an ultra-wide lens; `max` is capped at [maxDisplayZoom].
     func zoomRange() -> (min: Double, max: Double, current: Double) {
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-            return (1, 10, 1)
-        }
-        let maxZoom = min(Double(device.activeFormat.videoMaxZoomFactor), 10)
-        return (1, maxZoom, Double(device.videoZoomFactor))
+        guard let device = backCamera() else { return (1, Double(Self.maxDisplayZoom), 1) }
+        let base = Double(wideBaseZoomFactor)
+        let minDisplay = Double(device.minAvailableVideoZoomFactor) / base
+        let maxDisplay = min(Double(device.maxAvailableVideoZoomFactor), base * Double(Self.maxDisplayZoom)) / base
+        let current = Double(device.videoZoomFactor) / base
+        return (minDisplay, maxDisplay, current)
     }
 
     // MARK: - Focus
@@ -572,8 +596,39 @@ final class StreamCameraEngine: NSObject {
     // user-facing lock state) so the padlock can never show a state the camera didn't reach.
     private let cameraConfigQueue = DispatchQueue(label: "uk.co.cricrelay.camera.config")
 
+    /// The device the mixer is actually capturing from (a virtual multi-camera device when the
+    /// phone has one), falling back to a plain wide-angle lookup before the pipeline is attached.
     private func backCamera() -> AVCaptureDevice? {
-        AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+        videoCaptureDevice ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+    }
+
+    /// Prefer a virtual multi-camera device so zoom can switch physical lenses optically:
+    /// triple (UW+W+T) → dual-wide (UW+W) → dual (W+T) → plain wide (single lens fallback).
+    private static func selectBackCaptureDevice() -> AVCaptureDevice? {
+        let preferred: [AVCaptureDevice.DeviceType] = [
+            .builtInTripleCamera,
+            .builtInDualWideCamera,
+            .builtInDualCamera,
+            .builtInWideAngleCamera,
+        ]
+        for type in preferred {
+            if let device = AVCaptureDevice.default(type, for: .video, position: .back) {
+                return device
+            }
+        }
+        return nil
+    }
+
+    /// The `videoZoomFactor` that frames the wide (1×) lens. Virtual devices list their constituent
+    /// lenses widest-first; when the widest is the ultra-wide, the first switch-over factor is the
+    /// point the wide lens takes over — our 1× reference (so display 0.5× maps to factor 1.0 =
+    /// ultra-wide). Devices without an ultra-wide already open on the wide lens, so 1× == factor 1.
+    private static func wideBaseZoomFactor(for device: AVCaptureDevice) -> CGFloat {
+        guard device.constituentDevices.first?.deviceType == .builtInUltraWideCamera,
+              let firstSwitchOver = device.virtualDeviceSwitchOverVideoZoomFactors.first else {
+            return 1
+        }
+        return CGFloat(truncating: firstSwitchOver)
     }
 
     /// Active interface orientation. UIApplication is main-only — hence the main-actor isolation.
@@ -789,10 +844,19 @@ final class StreamCameraEngine: NSObject {
             if let audio = AVCaptureDevice.default(for: .audio) {
                 try await mixer.attachAudio(audio)
             }
-            if let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
+            if let camera = StreamCameraEngine.selectBackCaptureDevice() {
+                videoCaptureDevice = camera
+                wideBaseZoomFactor = StreamCameraEngine.wideBaseZoomFactor(for: camera)
                 let mode = stabMode(stabilizationLevel)
                 try await mixer.attachVideo(camera, track: 0) { unit in
                     unit.preferredVideoStabilizationMode = mode
+                }
+                // A virtual device opens on its widest lens (the ultra-wide, factor 1.0). Seat it
+                // at the wide lens so the preview starts at the familiar 1× framing, not 0.5×.
+                if wideBaseZoomFactor > 1 {
+                    try? camera.lockForConfiguration()
+                    camera.videoZoomFactor = min(wideBaseZoomFactor, camera.maxAvailableVideoZoomFactor)
+                    camera.unlockForConfiguration()
                 }
             }
             var vmSettings = await mixer.videoMixerSettings
@@ -872,7 +936,8 @@ final class StreamCameraEngine: NSObject {
             return
         }
         guard appliedWatermarkText != text || watermarkObject == nil else { return }
-        guard let cg = buildWatermarkImage(text)?.cgImage else { return }
+        guard let watermark = buildWatermarkImage(text).map(fitBitmapWithinCanvas),
+              let cg = watermark.cgImage else { return }
         await Task { @ScreenActor in
             if watermarkObject == nil {
                 let obj = ImageScreenObject()
@@ -1013,7 +1078,10 @@ final class StreamCameraEngine: NSObject {
             if let cacheFile { try? data.write(to: cacheFile) }
         }
         guard let rawImage = UIImage(data: data) else { return }
-        let image = applyImageOpacity(rawImage, opacity: overlayLayout.sponsorOpacity)
+        // Scale to the on-canvas display size first: HaishinKit composites 1:1, so a native-res
+        // logo would render oversized and could overrun the canvas buffer (vImageCopyBuffer crash).
+        let display = sponsorDisplayImage(rawImage, total: total)
+        let image = applyImageOpacity(display, opacity: overlayLayout.sponsorOpacity)
         guard let cg = image.cgImage else { return }
         await Task { @ScreenActor in
             if sponsorObjects[url] == nil {
@@ -1116,11 +1184,11 @@ final class StreamCameraEngine: NSObject {
         guard let cg = obj.cgImage else { return }
         let canvasW = CGFloat(encodedCanvasWidth())
         let canvasH = CGFloat(encodedCanvasHeight())
-        let sizeMul: CGFloat = total <= 1 ? 1 : total == 2 ? 0.85 : 0.7
-        let scale = CGFloat(max(0.3, min(3, overlayLayout.sponsorSizeScale))) * sizeMul
-        let aspect = CGFloat(cg.height) / max(CGFloat(cg.width), 1)
-        let imgW = canvasW * 0.18 * scale
-        let imgH = imgW * aspect
+        // The bitmap is already the on-canvas display size (sponsorDisplayImage), so position from
+        // its real pixel dimensions — the object's bounds then equal the bitmap, which the
+        // right/bottom edge clamps below rely on to keep every sprite inside the canvas.
+        let imgW = CGFloat(cg.width)
+        let imgH = CGFloat(cg.height)
         if isSponsorScrollMode() {
             obj.horizontalAlignment = .left
             obj.verticalAlignment = .top
@@ -1131,7 +1199,11 @@ final class StreamCameraEngine: NSObject {
                 let period = canvasH + imgH + gap
                 let phase = marqueePhase(period: period, index: index, total: total)
                 // ttb: enter from top → exit bottom; btt: enter from bottom → exit top.
-                let y = dir == SponsorScrollDirection.ttb ? (-imgH - gap + phase) : (canvasH - phase)
+                // Clamp the bottom edge so origin.y + imgH never exceeds the canvas: a bitmap that
+                // overruns the bottom/right crashes the CPU compositor (vImageCopyBuffer). Negative
+                // (off-top) origins are safe — HaishinKit clamps the write start to 0 and crops.
+                let rawY = dir == SponsorScrollDirection.ttb ? (-imgH - gap + phase) : (canvasH - phase)
+                let y = min(rawY, canvasH - imgH)
                 let x = max(0, min(canvasW - imgW,
                     CGFloat(max(0, min(1, overlayLayout.sponsorPositionX))) * canvasW - imgW / 2))
                 obj.layoutMargin = UIEdgeInsets(top: y, left: x, bottom: 0, right: 0)
@@ -1140,8 +1212,12 @@ final class StreamCameraEngine: NSObject {
                 let period = canvasW + imgW + gap
                 let phase = marqueePhase(period: period, index: index, total: total)
                 // rtl: enter from right → exit left; ltr: enter from left → exit right.
-                let x = dir == SponsorScrollDirection.ltr ? (-imgW - gap + phase) : (canvasW - phase)
-                let y = sponsorScrollY(canvasH: canvasH, imgH: imgH)
+                // Clamp the right edge so origin.x + imgW never exceeds the canvas (a right/bottom
+                // overrun crashes the CPU compositor inside vImageCopyBuffer). Off-left negatives
+                // are safe — HaishinKit clamps the write start to 0 and crops the hidden part.
+                let rawX = dir == SponsorScrollDirection.ltr ? (-imgW - gap + phase) : (canvasW - phase)
+                let x = min(rawX, canvasW - imgW)
+                let y = min(max(0, sponsorScrollY(canvasH: canvasH, imgH: imgH)), max(0, canvasH - imgH))
                 obj.layoutMargin = UIEdgeInsets(top: y, left: x, bottom: 0, right: 0)
             }
         } else {
@@ -1151,13 +1227,22 @@ final class StreamCameraEngine: NSObject {
                 ? CGFloat(max(0, min(1, overlayLayout.sponsorPositionX))) * canvasW
                 : ((CGFloat(index) + 0.5) / CGFloat(total)) * canvasW
             let cy = CGFloat(max(0, min(1, overlayLayout.sponsorPositionY))) * canvasH
+            // Keep the sprite fully inside the canvas on all sides — an origin near the right/bottom
+            // edge would otherwise push origin + imgW/imgH past the canvas and overrun the
+            // compositor's destination buffer (vImageCopyBuffer crash).
             obj.layoutMargin = UIEdgeInsets(
-                top: max(0, cy - imgH / 2),
-                left: max(0, cx - imgW / 2),
+                top: min(max(0, cy - imgH / 2), max(0, canvasH - imgH)),
+                left: min(max(0, cx - imgW / 2), max(0, canvasW - imgW)),
                 bottom: 0,
                 right: 0
             )
         }
+        // HaishinKit only recomputes a child's on-screen bounds when shouldInvalidateLayout is
+        // set, and `layoutMargin` (unlike `size`) has no didSet that flags it. Without this the
+        // sprite lays out once and then freezes wherever it first landed — so the scroll marquee
+        // rewrites layoutMargin every frame but the logo never moves. Flag it dirty so the next
+        // offscreen composite re-lays-out this sprite at its new position.
+        obj.invalidateLayout()
     }
 
     private func sponsorScrollY(canvasH: CGFloat, imgH: CGFloat) -> CGFloat {
@@ -1244,6 +1329,52 @@ final class StreamCameraEngine: NSObject {
         }
     }
 
+    /// Downscale a bitmap so it never exceeds the encoded canvas (aspect-preserving; a no-op when
+    /// already within bounds). HaishinKit's CPU compositor copies each screen object's bitmap
+    /// straight into the canvas using the bitmap's own width/height with NO clamp to the canvas
+    /// (`ScreenRendererByCPU.draw`), so any bitmap larger than the canvas overruns the destination
+    /// buffer and crashes inside `vImageCopyBuffer` (EXC_BAD_ACCESS). This is the last-line guard;
+    /// it matters most for the WKWebView overlay snapshot, which WebKit can hand back oversized.
+    private func fitBitmapWithinCanvas(_ image: UIImage) -> UIImage {
+        let maxW = CGFloat(encodedCanvasWidth())
+        let maxH = CGFloat(encodedCanvasHeight())
+        let w = image.size.width, h = image.size.height
+        guard w > 0, h > 0, maxW > 0, maxH > 0, w > maxW || h > maxH else { return image }
+        let k = min(maxW / w, maxH / h)
+        let size = CGSize(width: max(1, floor(w * k)), height: max(1, floor(h * k)))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// Render a sponsor logo at its on-canvas *display* size rather than its native resolution.
+    /// HaishinKit composites the bitmap 1:1 with no scaling, so a native-resolution logo would
+    /// both render far larger than the intended strip and — if wider/taller than the canvas —
+    /// overrun the canvas buffer inside `vImageCopyBuffer`. Matches the footprint
+    /// `layoutSponsorObject` positions for, then caps to the canvas so `imgW ≤ canvasW` and
+    /// `imgH ≤ canvasH` always hold (a tall logo can otherwise blow past the height).
+    private func sponsorDisplayImage(_ image: UIImage, total: Int) -> UIImage {
+        let canvasW = CGFloat(encodedCanvasWidth())
+        let canvasH = CGFloat(encodedCanvasHeight())
+        let sizeMul: CGFloat = total <= 1 ? 1 : total == 2 ? 0.85 : 0.7
+        let scale = CGFloat(max(0.3, min(3, overlayLayout.sponsorSizeScale))) * sizeMul
+        let srcW = max(image.size.width, 1), srcH = max(image.size.height, 1)
+        var w = canvasW * 0.18 * scale
+        var h = w * (srcH / srcW)
+        if w > canvasW { h *= canvasW / w; w = canvasW }
+        if h > canvasH { w *= canvasH / h; h = canvasH }
+        let size = CGSize(width: max(1, floor(w)), height: max(1, floor(h)))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
     /// Bake a uniform alpha into the overlay bitmap (parity with Android applyBitmapOpacity).
     private func applyImageOpacity(_ image: UIImage, opacity: Float) -> UIImage {
         let alpha = CGFloat(max(0.2, min(1.0, opacity)))
@@ -1290,6 +1421,26 @@ final class StreamCameraEngine: NSObject {
         }
     }
 
+    /// H.264 encode settings shared by preview, go-live, and live step-down.
+    ///
+    /// HaishinKit's pinned default profile is `H264_Baseline_3_1`, whose level tops out at
+    /// 1280×720 (3600 macroblocks). Encoding the 1080p canvas (8160 macroblocks) against that
+    /// level makes VideoToolbox emit a non-conformant bitstream: the RTMP publish still
+    /// succeeds (so the badge reads ON AIR), but YouTube/Twitch reject every frame and show no
+    /// video at the destination. The preview looks live only because it draws the uncompressed
+    /// composite and never touches the encoder. High profile with automatic level selection
+    /// covers both 720p and 1080p, and disabling frame reordering keeps DTS == PTS for the RTMP
+    /// timestamps (parity with Android's RootEncoder, which emits no B-frames).
+    private func makeVideoSettings(width: Int, height: Int, bitRate: Int) -> VideoCodecSettings {
+        VideoCodecSettings(
+            videoSize: .init(width: width, height: height),
+            bitRate: bitRate,
+            profileLevel: kVTProfileLevel_H264_High_AutoLevel as String,
+            maxKeyFrameIntervalDuration: 2,
+            allowFrameReordering: false
+        )
+    }
+
     private func encodedCanvasWidth() -> Int {
         streamIsPortrait ? streamHeight : streamWidth
     }
@@ -1314,7 +1465,10 @@ final class StreamCameraEngine: NSObject {
             guard let self, let image = await capture.capture() else { return }
             let scaled = self.scaleOverlayImage(image, targetWidth: targetW)
             let withOpacity = self.applyImageOpacity(scaled, opacity: self.overlayLayout.opacity)
-            guard let cg = withOpacity.cgImage else { return }
+            // Final guard: never composite a bitmap larger than the canvas (a WKWebView snapshot can
+            // come back oversized), which would overrun the compositor's buffer (vImageCopyBuffer).
+            let fitted = self.fitBitmapWithinCanvas(withOpacity)
+            guard let cg = fitted.cgImage else { return }
             Task { @ScreenActor in
                 self.overlayObject?.cgImage = cg
                 self.applyOverlayLayout()

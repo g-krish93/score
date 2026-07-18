@@ -242,7 +242,7 @@ private fun IdlePortraitChrome(
         // Bottom stack sits over the BroadcastGradientScrim for the SPEC contrast floor.
         Column(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
             StudioStatusMessages(state, onLowerQuality)
-            if (state.zoomLevel > 1.1f) {
+            if ((state.zoomLevel > 1.05f || state.zoomLevel < 0.95f)) {
                 ZoomPill(state.zoomLevel)
                 Spacer(Modifier.height(8.dp))
             }
@@ -322,7 +322,7 @@ private fun IdleLandscapeChrome(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (state.zoomLevel > 1.1f) ZoomPill(state.zoomLevel)
+            if ((state.zoomLevel > 1.05f || state.zoomLevel < 0.95f)) ZoomPill(state.zoomLevel)
             BoardChip(onClick = onBoard)
         }
 
