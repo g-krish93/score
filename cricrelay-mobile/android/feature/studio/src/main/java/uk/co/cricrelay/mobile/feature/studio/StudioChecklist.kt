@@ -86,7 +86,10 @@ object StudioChecklist {
         val (title, sublabel) = when (state.destination) {
             StreamDestination.YouTube -> "YouTube connected" to "Club channel via OAuth"
             StreamDestination.Twitch -> "Twitch connected" to "Club channel via OAuth"
-            StreamDestination.Custom -> "Custom RTMP set" to "Server URL and stream key saved"
+            StreamDestination.Custom -> "Custom RTMP set" to (
+                if (state.selectedSavedDestinationId != null) "Saved destination ready"
+                else "Server URL and stream key saved"
+            )
         }
         return StudioCheck(CheckKind.Destination, complete = true, title = title, sublabel = sublabel)
     }

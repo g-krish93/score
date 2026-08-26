@@ -4,17 +4,20 @@ Use this before de-emphasising the OBS browser-overlay path.
 
 ## Club setup
 
-- [ ] YouTube OAuth connected on dashboard (correct Google account for club channel)
+- [ ] YouTube OAuth connected on dashboard (correct Google account for club channel) **or** saved Custom RTMP destinations for each XI
 - [ ] Play-Cricket stream created and auto-poll receiving scores
 - [ ] Stream app login with club credentials
+- [ ] (Multi-team) Add named RTMP destinations on the dashboard (or in-app) and assign to each stream before match day
 
 ## Match day
 
 - [ ] Phone on tripod, power connected or battery pack
 - [ ] 5G or club Wi‑Fi stable (~15 GB per 40-over HD stream on cellular)
+- [ ] Destination ready: saved vault key selected, or OAuth connected — no re-pasting keys each match
 - [ ] Go Live → YouTube watch URL plays within 60s
 - [ ] Score updates on stream within **3s** of Play-Cricket / PCS BLE (measure 10 ball changes)
 - [ ] Stop stream ends YouTube broadcast cleanly
+- [ ] (Parallel XIs) Different phones use different saved destinations at the same time
 
 ## Overlay parity
 
@@ -33,7 +36,8 @@ Use this before de-emphasising the OBS browser-overlay path.
 
 - No multi-camera, highlights, or stump cam
 - Scraper lag follows Play-Cricket (not ball-by-ball)
-- YouTube API quotas — one broadcast per stream session
+- YouTube OAuth is one club channel / one active broadcast — use **saved Custom RTMP destinations** for simultaneous 1st/2nd XI streams
+- YouTube API quotas — one OAuth broadcast per stream session
 
 ## Gate OBS deprecation
 

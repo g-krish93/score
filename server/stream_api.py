@@ -414,6 +414,14 @@ def stream_dict_for_relay_match(org: Organization, m: RelayMatch) -> dict[str, A
     overlay = f"{base}/m/{slug}/stream?embed=1" if base else f"/m/{slug}/stream?embed=1"
     scoring = scoring_status_for_slug(slug)
     broadcast = broadcast_status_for_match(org, slug)
+    dest_id = getattr(m, "stream_destination_id", None)
+    destination = None
+    if dest_id:
+        from .models_cricrelay import StreamDestination
+
+        dest = StreamDestination.query.filter_by(id=dest_id, organization_id=org.id).first()
+        if dest:
+            destination = {"id": dest.id, "label": dest.label or ""}
     return {
         "id": m.id,
         "slug": slug,
@@ -424,6 +432,8 @@ def stream_dict_for_relay_match(org: Organization, m: RelayMatch) -> dict[str, A
         "relay_paused": bool(m.paused),
         "overlay_embed_url": overlay,
         "is_live": _match_scoring_recently_active(slug),
+        "stream_destination_id": dest_id or None,
+        "destination": destination,
         **scoring,
         "broadcast": broadcast,
     }

@@ -25,6 +25,8 @@ struct StreamMatch: Identifiable, Codable {
     var scoringStale: Bool
     var isLive: Bool
     var broadcast: BroadcastStatus
+    var streamDestinationId: String?
+    var destination: AssignedDestination?
 
     var id: String { slug }
 
@@ -38,6 +40,60 @@ struct StreamMatch: Identifiable, Codable {
         case scoringStale = "scoring_stale"
         case isLive = "is_live"
         case broadcast
+        case streamDestinationId = "stream_destination_id"
+        case destination
+    }
+}
+
+struct AssignedDestination: Codable {
+    var id: String
+    var label: String
+}
+
+struct SavedRtmpDestination: Identifiable, Codable {
+    var id: String
+    var label: String
+    var provider: String
+    var rtmpUrl: String
+    var watchUrl: String
+    var streamKeyMasked: String
+    var streamKey: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, label, provider
+        case rtmpUrl = "rtmp_url"
+        case watchUrl = "watch_url"
+        case streamKeyMasked = "stream_key_masked"
+        case streamKey = "stream_key"
+    }
+
+    init(
+        id: String = "",
+        label: String = "",
+        provider: String = "custom_rtmp",
+        rtmpUrl: String = "",
+        watchUrl: String = "",
+        streamKeyMasked: String = "",
+        streamKey: String = ""
+    ) {
+        self.id = id
+        self.label = label
+        self.provider = provider
+        self.rtmpUrl = rtmpUrl
+        self.watchUrl = watchUrl
+        self.streamKeyMasked = streamKeyMasked
+        self.streamKey = streamKey
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        provider = try c.decodeIfPresent(String.self, forKey: .provider) ?? "custom_rtmp"
+        rtmpUrl = try c.decodeIfPresent(String.self, forKey: .rtmpUrl) ?? ""
+        watchUrl = try c.decodeIfPresent(String.self, forKey: .watchUrl) ?? ""
+        streamKeyMasked = try c.decodeIfPresent(String.self, forKey: .streamKeyMasked) ?? ""
+        streamKey = try c.decodeIfPresent(String.self, forKey: .streamKey) ?? ""
     }
 }
 

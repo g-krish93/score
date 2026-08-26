@@ -45,6 +45,7 @@ from .models_cricrelay import (
     Player,
     RelayMatch,
     Sponsor,
+    StreamDestination,
     StreamSession,
     Team,
     Tournament,
@@ -467,6 +468,95 @@ def migrate_relay_source_column():
         return
     db.session.execute(text("ALTER TABLE cricrelay_match ADD COLUMN relay_source VARCHAR(24) DEFAULT 'scraper'"))
     db.session.commit()
+
+
+MAX_STREAM_DESTINATIONS_PER_ORG = 20
+
+
+def migrate_stream_destination_columns():
+    """Add stream_destination_id on RelayMatch for databases created before destinations vault."""
+    insp = inspect(db.engine)
+    if not insp.has_table("cricrelay_match"):
+        return
+    cols = {c["name"] for c in insp.get_columns("cricrelay_match")}
+    if "stream_destination_id" in cols:
+        return
+    db.session.execute(
+        text("ALTER TABLE cricrelay_match ADD COLUMN stream_destination_id VARCHAR(36)")
+    )
+    try:
+        db.session.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_cricrelay_match_stream_destination_id "
+                "ON cricrelay_match (stream_destination_id)"
+            )
+        )
+    except Exception:
+        pass
+    db.session.commit()
+
+
+def _mask_stream_key(plain: str) -> str:
+    key = (plain or "").strip()
+    if len(key) <= 4:
+        return "••••"
+    return f"••••{key[-4:]}"
+
+
+def _destination_public_dict(dest: StreamDestination, *, include_key: bool = False) -> dict:
+    plain = yt.decrypt_token((dest.stream_key_enc or "").strip()) if include_key else ""
+    out = {
+        "id": dest.id,
+        "label": dest.label or "",
+        "provider": dest.provider or "custom_rtmp",
+        "rtmp_url": dest.rtmp_url or "",
+        "watch_url": dest.watch_url or "",
+        "stream_key_masked": _mask_stream_key(
+            yt.decrypt_token((dest.stream_key_enc or "").strip())
+        ),
+    }
+    if include_key:
+        out["stream_key"] = plain
+    return out
+
+
+def _destination_summary(dest: StreamDestination | None) -> dict | None:
+    if not dest:
+        return None
+    return {"id": dest.id, "label": dest.label or ""}
+
+
+def _org_destinations(org: Organization) -> list[StreamDestination]:
+    return (
+        StreamDestination.query.filter_by(organization_id=org.id)
+        .order_by(StreamDestination.created_at.asc())
+        .all()
+    )
+
+
+def _destination_for_org(org: Organization, dest_id: str) -> StreamDestination | None:
+    did = (dest_id or "").strip()
+    if not did:
+        return None
+    return StreamDestination.query.filter_by(id=did, organization_id=org.id).first()
+
+
+def _validate_destination_payload(
+    data: dict, *, require_key: bool
+) -> tuple[str, str, str, str, str | None]:
+    label = str(data.get("label") or "").strip()[:120]
+    rtmp_url = str(data.get("rtmp_url") or "").strip()[:500]
+    stream_key = str(data.get("stream_key") or "").strip()
+    watch_url = str(data.get("watch_url") or "").strip()[:500]
+    if not label:
+        return "", "", "", "", "Label is required"
+    if not rtmp_url:
+        return "", "", "", "", "RTMP server URL is required"
+    if not rtmp_url.lower().startswith(("rtmp://", "rtmps://")):
+        return "", "", "", "", "RTMP URL must start with rtmp:// or rtmps://"
+    if require_key and not stream_key:
+        return "", "", "", "", "Stream key is required"
+    return label, rtmp_url, stream_key, watch_url, None
 
 
 def migrate_organization_brand_columns():
@@ -1665,6 +1755,8 @@ def _dashboard_fixture_data(org):
             }
         )
     youtube_connected = bool((org.youtube_refresh_token_enc or "").strip())
+    destinations = _org_destinations(org)
+    dest_by_id = {d.id: d for d in destinations}
     return {
         "matches": matches,
         "active_ids": active_ids,
@@ -1696,6 +1788,10 @@ def _dashboard_fixture_data(org):
         "sponsors": Sponsor.query.filter_by(organization_id=org.id)
         .order_by(Sponsor.created_at.desc())
         .all(),
+        "stream_destinations": destinations,
+        "stream_destination_dicts": [_destination_public_dict(d) for d in destinations],
+        "destination_by_id": dest_by_id,
+        "destination_slots_total": MAX_STREAM_DESTINATIONS_PER_ORG,
     }
 
 
@@ -2084,6 +2180,87 @@ def dashboard_relay_toggle_pause():
         flash("Stream live — CricHeroes sync is on (when enabled on server).", "success")
     else:
         flash("Stream live — Play-Cricket sync is on.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/dashboard/destinations/add")
+@login_required
+def dashboard_destination_add():
+    org = _org_from_session()
+    if StreamDestination.query.filter_by(organization_id=org.id).count() >= MAX_STREAM_DESTINATIONS_PER_ORG:
+        flash(f"Maximum {MAX_STREAM_DESTINATIONS_PER_ORG} destinations per club.", "error")
+        return redirect(url_for("dashboard"))
+    data = {
+        "label": request.form.get("label", ""),
+        "rtmp_url": request.form.get("rtmp_url", ""),
+        "stream_key": request.form.get("stream_key", ""),
+        "watch_url": request.form.get("watch_url", ""),
+    }
+    label, rtmp_url, stream_key, watch_url, err = _validate_destination_payload(data, require_key=True)
+    if err:
+        flash(err, "error")
+        return redirect(url_for("dashboard"))
+    enc = yt.encrypt_token(stream_key)
+    if not enc:
+        flash("Could not encrypt stream key — check server encryption config.", "error")
+        return redirect(url_for("dashboard"))
+    dest = StreamDestination(
+        organization_id=org.id,
+        label=label,
+        provider="custom_rtmp",
+        rtmp_url=rtmp_url,
+        stream_key_enc=enc,
+        watch_url=watch_url or None,
+    )
+    db.session.add(dest)
+    db.session.commit()
+    flash(f"Saved destination “{label}”.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/dashboard/destinations/delete")
+@login_required
+def dashboard_destination_delete():
+    org = _org_from_session()
+    dest = _destination_for_org(org, request.form.get("destination_id", ""))
+    if not dest:
+        flash("Unknown destination.", "error")
+        return redirect(url_for("dashboard"))
+    label = dest.label or "destination"
+    RelayMatch.query.filter_by(organization_id=org.id, stream_destination_id=dest.id).update(
+        {"stream_destination_id": None}
+    )
+    db.session.delete(dest)
+    db.session.commit()
+    flash(f"Removed “{label}”.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/dashboard/relay/assign-destination")
+@login_required
+def dashboard_relay_assign_destination():
+    org = _org_from_session()
+    slug = sanitize_match_id(request.form.get("score_match_slug", ""))
+    if not slug:
+        flash("Missing stream.", "error")
+        return redirect(url_for("dashboard"))
+    row = RelayMatch.query.filter_by(organization_id=org.id, score_match_slug=slug).first()
+    if not row:
+        flash("Unknown stream.", "error")
+        return redirect(url_for("dashboard"))
+    raw = (request.form.get("stream_destination_id") or "").strip()
+    if not raw:
+        row.stream_destination_id = None
+        db.session.commit()
+        flash("Cleared assigned destination — pick in the app.", "success")
+        return redirect(url_for("dashboard"))
+    dest = _destination_for_org(org, raw)
+    if not dest:
+        flash("Unknown destination.", "error")
+        return redirect(url_for("dashboard"))
+    row.stream_destination_id = dest.id
+    db.session.commit()
+    flash(f"Assigned “{dest.label}” to this stream.", "success")
     return redirect(url_for("dashboard"))
 
 
@@ -4841,19 +5018,120 @@ def api_patch_stream(org: Organization, match_slug: str):
     if not row:
         return jsonify({"error": "unknown stream"}), 404
     data = request.get_json(silent=True) or {}
+    changed = False
     if "label" in data:
         label = str(data.get("label") or "").strip()
         row.label = label or row.play_cricket_match_id
+        changed = True
+    if "stream_destination_id" in data:
+        raw = data.get("stream_destination_id")
+        if raw is None or str(raw).strip() == "":
+            row.stream_destination_id = None
+            changed = True
+        else:
+            dest = _destination_for_org(org, str(raw))
+            if not dest:
+                return jsonify({"error": "unknown destination"}), 404
+            row.stream_destination_id = dest.id
+            changed = True
+    if changed:
         db.session.commit()
+    return jsonify({"ok": True, "stream": stream_dict_for_relay_match(org, row)})
+
+
+@app.get("/api/stream/destinations")
+@stream_api_auth_required
+def api_list_destinations(org: Organization):
+    rows = _org_destinations(org)
     return jsonify(
         {
             "ok": True,
-            "stream": {
-                "slug": slug,
-                "label": row.label or row.play_cricket_match_id,
-            },
+            "destinations": [_destination_public_dict(d) for d in rows],
+            "slots_used": len(rows),
+            "slots_total": MAX_STREAM_DESTINATIONS_PER_ORG,
         }
     )
+
+
+@app.post("/api/stream/destinations")
+@stream_api_auth_required
+def api_create_destination(org: Organization):
+    if StreamDestination.query.filter_by(organization_id=org.id).count() >= MAX_STREAM_DESTINATIONS_PER_ORG:
+        return jsonify({"error": f"Maximum {MAX_STREAM_DESTINATIONS_PER_ORG} destinations per club"}), 400
+    data = request.get_json(silent=True) or {}
+    label, rtmp_url, stream_key, watch_url, err = _validate_destination_payload(data, require_key=True)
+    if err:
+        return jsonify({"error": err}), 400
+    enc = yt.encrypt_token(stream_key)
+    if not enc:
+        return jsonify({"error": "Could not encrypt stream key — check server encryption config"}), 503
+    dest = StreamDestination(
+        organization_id=org.id,
+        label=label,
+        provider="custom_rtmp",
+        rtmp_url=rtmp_url,
+        stream_key_enc=enc,
+        watch_url=watch_url or None,
+    )
+    db.session.add(dest)
+    db.session.commit()
+    return jsonify({"ok": True, "destination": _destination_public_dict(dest)}), 201
+
+
+@app.get("/api/stream/destinations/<dest_id>")
+@stream_api_auth_required
+def api_get_destination(org: Organization, dest_id: str):
+    dest = _destination_for_org(org, dest_id)
+    if not dest:
+        return jsonify({"error": "unknown destination"}), 404
+    return jsonify({"ok": True, "destination": _destination_public_dict(dest, include_key=True)})
+
+
+@app.patch("/api/stream/destinations/<dest_id>")
+@stream_api_auth_required
+def api_patch_destination(org: Organization, dest_id: str):
+    dest = _destination_for_org(org, dest_id)
+    if not dest:
+        return jsonify({"error": "unknown destination"}), 404
+    data = request.get_json(silent=True) or {}
+    require_key = "stream_key" in data and bool(str(data.get("stream_key") or "").strip())
+    # Allow partial updates: reuse existing fields when omitted
+    merged = {
+        "label": data["label"] if "label" in data else dest.label,
+        "rtmp_url": data["rtmp_url"] if "rtmp_url" in data else dest.rtmp_url,
+        "stream_key": data.get("stream_key") if require_key else "x",
+        "watch_url": data["watch_url"] if "watch_url" in data else (dest.watch_url or ""),
+    }
+    label, rtmp_url, stream_key, watch_url, err = _validate_destination_payload(
+        merged, require_key=require_key
+    )
+    if err:
+        return jsonify({"error": err}), 400
+    dest.label = label
+    dest.rtmp_url = rtmp_url
+    dest.watch_url = watch_url or None
+    if require_key:
+        enc = yt.encrypt_token(stream_key)
+        if not enc:
+            return jsonify({"error": "Could not encrypt stream key — check server encryption config"}), 503
+        dest.stream_key_enc = enc
+    dest.updated_at = datetime.now(timezone.utc)
+    db.session.commit()
+    return jsonify({"ok": True, "destination": _destination_public_dict(dest)})
+
+
+@app.delete("/api/stream/destinations/<dest_id>")
+@stream_api_auth_required
+def api_delete_destination(org: Organization, dest_id: str):
+    dest = _destination_for_org(org, dest_id)
+    if not dest:
+        return jsonify({"error": "unknown destination"}), 404
+    RelayMatch.query.filter_by(organization_id=org.id, stream_destination_id=dest.id).update(
+        {"stream_destination_id": None}
+    )
+    db.session.delete(dest)
+    db.session.commit()
+    return jsonify({"ok": True, "deleted": dest_id})
 
 
 @app.delete("/api/streams/<match_slug>")
@@ -5149,6 +5427,7 @@ with app.app_context():
     db.create_all()
     migrate_relay_match_columns()
     migrate_relay_source_column()
+    migrate_stream_destination_columns()
     migrate_organization_brand_columns()
     migrate_youtube_columns()
     migrate_twitch_columns()

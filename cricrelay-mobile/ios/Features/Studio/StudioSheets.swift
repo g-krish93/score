@@ -11,6 +11,31 @@ struct DestinationSheet: View {
             StudioBackdrop {
                 ScrollView {
                     VStack(spacing: 14) {
+                        if !viewModel.savedDestinations.isEmpty {
+                            Text("Saved destinations")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(CricTheme.textMuted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            ForEach(viewModel.savedDestinations) { dest in
+                                Button {
+                                    Task {
+                                        await viewModel.selectSavedDestination(id: dest.id)
+                                        dismiss()
+                                    }
+                                } label: {
+                                    destinationRow(
+                                        icon: "key.fill",
+                                        iconColor: CricTheme.accent,
+                                        title: dest.label.isEmpty ? "RTMP" : dest.label,
+                                        subtitle: dest.streamKeyMasked.isEmpty ? dest.rtmpUrl : dest.streamKeyMasked,
+                                        selected: viewModel.destination == "custom"
+                                            && viewModel.selectedSavedDestinationId == dest.id
+                                    )
+                                }
+                                .buttonStyle(PressableScaleStyle())
+                            }
+                        }
+
                         destinationOption(
                             id: "youtube",
                             icon: "play.rectangle.fill",
@@ -29,11 +54,11 @@ struct DestinationSheet: View {
                             id: "custom",
                             icon: "network",
                             iconColor: CricTheme.accent,
-                            title: "Custom RTMP",
+                            title: "One-off Custom RTMP",
                             subtitle: "Any RTMP-compatible service"
                         )
 
-                        if viewModel.destination == "custom" {
+                        if viewModel.destination == "custom" && viewModel.selectedSavedDestinationId == nil {
                             customRtmpFields
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         }
@@ -46,12 +71,18 @@ struct DestinationSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        viewModel.persistCustomRtmp()
+                    Button("Done") {
+                        if viewModel.destination == "custom"
+                            && viewModel.selectedSavedDestinationId == nil {
+                            viewModel.persistCustomRtmp()
+                        }
                         dismiss()
                     }
                     .foregroundStyle(CricTheme.accent)
                 }
+            }
+            .task {
+                await viewModel.refreshSavedDestinations()
             }
         }
         .preferredColorScheme(.dark)
@@ -60,41 +91,60 @@ struct DestinationSheet: View {
     private func destinationOption(id: String, icon: String, iconColor: Color, title: String, subtitle: String) -> some View {
         Button {
             viewModel.destination = id
+            viewModel.selectedSavedDestinationId = nil
         } label: {
-            HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(iconColor)
-                    .frame(width: 42, height: 42)
-                    .background(iconColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.white)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(CricTheme.textMuted)
-                }
-                Spacer()
-                Image(systemName: viewModel.destination == id ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(viewModel.destination == id ? CricTheme.primary : CricTheme.textDim)
-                    .font(.system(size: 20))
-            }
-            .padding(14)
-            .background(
-                viewModel.destination == id ? CricTheme.primary.opacity(0.08) : CricTheme.surface,
-                in: RoundedRectangle(cornerRadius: 14)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(
-                        viewModel.destination == id ? CricTheme.primary.opacity(0.35) : Color.white.opacity(0.08),
-                        lineWidth: 1
-                    )
+            destinationRow(
+                icon: icon,
+                iconColor: iconColor,
+                title: title,
+                subtitle: subtitle,
+                selected: viewModel.destination == id
+                    && (id != "custom" || viewModel.selectedSavedDestinationId == nil)
             )
         }
         .buttonStyle(PressableScaleStyle())
+    }
+
+    private func destinationRow(
+        icon: String,
+        iconColor: Color,
+        title: String,
+        subtitle: String,
+        selected: Bool
+    ) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(iconColor)
+                .frame(width: 42, height: 42)
+                .background(iconColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(CricTheme.textMuted)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(selected ? CricTheme.primary : CricTheme.textDim)
+                .font(.system(size: 20))
+        }
+        .padding(14)
+        .background(
+            selected ? CricTheme.primary.opacity(0.08) : CricTheme.surface,
+            in: RoundedRectangle(cornerRadius: 14)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(
+                    selected ? CricTheme.primary.opacity(0.35) : Color.white.opacity(0.08),
+                    lineWidth: 1
+                )
+        )
     }
 
     private var customRtmpFields: some View {
@@ -110,6 +160,22 @@ struct DestinationSheet: View {
                 .autocorrectionDisabled()
                 .keyboardType(.URL)
                 .modifier(StudioFieldStyle())
+            TextField("Save as (optional label)", text: $viewModel.saveAsLabel)
+                .modifier(StudioFieldStyle())
+            Button {
+                Task {
+                    await viewModel.saveCustomAsDestination()
+                    dismiss()
+                }
+            } label: {
+                Text("Save to club vault")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(CricTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                    .foregroundStyle(CricTheme.accent)
+            }
+            .buttonStyle(PressableScaleStyle())
         }
         .padding(.top, 4)
     }

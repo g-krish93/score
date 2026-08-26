@@ -143,6 +143,73 @@
   </div>
 
   <div class="cr-card">
+    <h2>Saved RTMP destinations</h2>
+    <p class="cr-muted" style="margin:0 0 10px;">
+      Store YouTube Studio (or other) stream keys once and reuse them for every match.
+      Assign a destination to a stream below, or pick it in the mobile app. Use different keys for 1st XI / 2nd XI when both go live at the same time.
+    </p>
+    {% if stream_destinations %}
+    <div class="cr-table-wrap" style="margin-bottom:16px;">
+      <table class="cr-table">
+        <thead>
+          <tr>
+            <th>Label</th>
+            <th>RTMP URL</th>
+            <th>Key</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in stream_destination_dicts %}
+          <tr>
+            <td><strong>{{ d.label }}</strong></td>
+            <td><code class="cr-code" style="font-size:0.85em;">{{ d.rtmp_url }}</code></td>
+            <td><code class="cr-code">{{ d.stream_key_masked }}</code></td>
+            <td>
+              <form method="post" action="{{ url_for('dashboard_destination_delete') }}" style="display:inline;" onsubmit="return confirm('Remove this destination? Streams using it will need a new pick in the app.');">
+                <input type="hidden" name="destination_id" value="{{ d.id }}">
+                <button type="submit" class="cr-btn cr-btn-danger cr-btn-sm">Remove</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="cr-muted">No saved destinations yet — add one below, or save from the app under Destination → Custom RTMP.</p>
+    {% endif %}
+    {% if stream_destinations|length < destination_slots_total %}
+    <form method="post" action="{{ url_for('dashboard_destination_add') }}">
+      <div class="cr-row2">
+        <div>
+          <label class="cr-label" for="dest_label">Label</label>
+          <input class="cr-input" id="dest_label" name="label" required maxlength="120" placeholder="e.g. 1st XI YouTube">
+        </div>
+        <div>
+          <label class="cr-label" for="dest_rtmp_url">RTMP server URL</label>
+          <input class="cr-input" id="dest_rtmp_url" name="rtmp_url" required placeholder="rtmp://a.rtmp.youtube.com/live2">
+        </div>
+      </div>
+      <div class="cr-row2" style="margin-top:12px;">
+        <div>
+          <label class="cr-label" for="dest_stream_key">Stream key</label>
+          <input class="cr-input" id="dest_stream_key" name="stream_key" required type="password" autocomplete="off" placeholder="From YouTube Studio → Go live → Stream">
+        </div>
+        <div>
+          <label class="cr-label" for="dest_watch_url">Watch URL (optional)</label>
+          <input class="cr-input" id="dest_watch_url" name="watch_url" type="url" placeholder="https://youtube.com/…">
+        </div>
+      </div>
+      <button type="submit" class="cr-btn cr-btn-primary cr-btn-sm" style="margin-top:12px;">Save destination</button>
+      <p class="cr-help" style="margin:8px 0 0;">Keys are encrypted on the server. The app and dashboard share the same list.</p>
+    </form>
+    {% else %}
+    <p class="cr-muted">Destination limit reached ({{ destination_slots_total }}). Remove one to add another.</p>
+    {% endif %}
+  </div>
+
+  <div class="cr-card">
     <h2>Active streams</h2>
     <p class="cr-muted" style="margin:0 0 14px;">{{ stream_slots_used }} / {{ stream_slots_total }} slots · {% if relay_auto_poll %}auto-sync (scraper){% else %}auto-sync off{% endif %}</p>
     {% if relay_rows %}
@@ -190,6 +257,16 @@
                   <button type="submit" class="cr-btn cr-btn-danger cr-btn-sm">Remove</button>
                 </form>
               </div>
+              <form method="post" action="{{ url_for('dashboard_relay_assign_destination') }}" style="margin-top:10px;max-width:380px;">
+                <input type="hidden" name="score_match_slug" value="{{ m.score_match_slug }}">
+                <label class="cr-label" for="dest-assign-{{ loop.index }}">Assigned RTMP destination</label>
+                <select class="cr-input" id="dest-assign-{{ loop.index }}" name="stream_destination_id" onchange="this.form.submit()">
+                  <option value="">None — pick in app</option>
+                  {% for d in stream_destinations %}
+                  <option value="{{ d.id }}" {% if m.stream_destination_id == d.id %}selected{% endif %}>{{ d.label }}</option>
+                  {% endfor %}
+                </select>
+              </form>
               <details style="margin-top:8px;">
                 <summary class="cr-help" style="cursor:pointer;font-weight:600;">Widget style &amp; size</summary>
                 <form method="post" action="{{ url_for('dashboard_relay_appearance') }}" style="margin-top:10px;max-width:380px;">

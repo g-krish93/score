@@ -290,6 +290,28 @@ class Sponsor(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class StreamDestination(db.Model):
+    """Named reusable Custom RTMP destination (YouTube Stream Now key, etc.) for a club."""
+
+    __tablename__ = "cricrelay_stream_destination"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id = db.Column(
+        db.String(36), db.ForeignKey("cricrelay_org.id"), nullable=False, index=True
+    )
+    label = db.Column(db.String(120), nullable=False)
+    provider = db.Column(db.String(32), nullable=False, default="custom_rtmp")
+    rtmp_url = db.Column(db.String(500), nullable=False)
+    stream_key_enc = db.Column(db.Text, nullable=False)
+    watch_url = db.Column(db.String(500), nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class RelayMatch(db.Model):
     __tablename__ = "cricrelay_match"
 
@@ -303,6 +325,12 @@ class RelayMatch(db.Model):
     # scraper = Play-Cricket HTML poll; cricheroes = CricHeroes scrape; manual = QR scorer page;
     # pcs_ble = dormant BLE ingest
     relay_source = db.Column(db.String(24), nullable=False, default="scraper")
+    stream_destination_id = db.Column(
+        db.String(36),
+        db.ForeignKey("cricrelay_stream_destination.id"),
+        nullable=True,
+        index=True,
+    )
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (

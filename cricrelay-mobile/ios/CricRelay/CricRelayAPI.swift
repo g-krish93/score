@@ -171,6 +171,45 @@ final class CricRelayAPI {
         _ = try await postJson("/api/stream/stop", body: body)
     }
 
+    // MARK: - Saved RTMP destinations
+
+    func listDestinations() async throws -> [SavedRtmpDestination] {
+        let json = try await getJson("/api/stream/destinations")
+        guard let arr = json["destinations"] as? [[String: Any]] else { return [] }
+        let data = try JSONSerialization.data(withJSONObject: arr)
+        return (try? JSONDecoder().decode([SavedRtmpDestination].self, from: data)) ?? []
+    }
+
+    func getDestination(id: String) async throws -> SavedRtmpDestination {
+        let json = try await getJson("/api/stream/destinations/\(enc(id))")
+        guard let dest = json["destination"] as? [String: Any] else { throw URLError(.badServerResponse) }
+        let data = try JSONSerialization.data(withJSONObject: dest)
+        return try JSONDecoder().decode(SavedRtmpDestination.self, from: data)
+    }
+
+    func createDestination(label: String, rtmpUrl: String, streamKey: String, watchUrl: String = "") async throws -> SavedRtmpDestination {
+        var body: [String: Any] = [
+            "label": label,
+            "rtmp_url": rtmpUrl,
+            "stream_key": streamKey,
+        ]
+        if !watchUrl.isEmpty { body["watch_url"] = watchUrl }
+        let json = try await postJson("/api/stream/destinations", body: body)
+        guard let dest = json["destination"] as? [String: Any] else { throw URLError(.badServerResponse) }
+        let data = try JSONSerialization.data(withJSONObject: dest)
+        return try JSONDecoder().decode(SavedRtmpDestination.self, from: data)
+    }
+
+    func assignStreamDestination(slug: String, destinationId: String?) async throws {
+        let body: [String: Any]
+        if let destinationId, !destinationId.isEmpty {
+            body = ["stream_destination_id": destinationId]
+        } else {
+            body = ["stream_destination_id": NSNull()]
+        }
+        _ = try await sendPatch("/api/streams/\(enc(slug))", body: body)
+    }
+
     // MARK: - Platforms
 
     func youtubeStatus() async throws -> PlatformStatus {

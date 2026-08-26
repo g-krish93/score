@@ -257,6 +257,8 @@ fun StudioScreen(
         DestinationSheet(
             state = state,
             onSaveCustom = viewModel::updateCustomRtmp,
+            onSaveAsDestination = viewModel::saveCustomAsDestination,
+            onSelectSaved = viewModel::selectSavedDestination,
             onSelect = viewModel::setDestination,
             onDismiss = viewModel::closeSheet,
         )
