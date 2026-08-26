@@ -80,6 +80,10 @@ data class StudioUiState(
     val customRtmpUrl: String = "",
     val customStreamKey: String = "",
     val customWatchUrl: String = "",
+    /** Club vault of named RTMP destinations (synced from server). */
+    val savedDestinations: List<uk.co.cricrelay.shared.model.SavedRtmpDestination> = emptyList(),
+    /** Selected vault destination id when using Custom RTMP from the vault. */
+    val selectedSavedDestinationId: String? = null,
     val overlayPrefs: OverlayLayoutPrefs = OverlayLayoutPrefs(),
     val zoomLevel: Float = 1f,
     val matchDay: MatchDayStatus? = null,
@@ -109,7 +113,16 @@ data class StudioUiState(
 ) {
     val destinationLabel: String
         get() = when (destination) {
-            StreamDestination.Custom -> if (destinationReady) "Custom RTMP" else "Set stream key"
+            StreamDestination.Custom -> {
+                val saved = selectedSavedDestinationId?.let { id ->
+                    savedDestinations.firstOrNull { it.id == id }?.label
+                }
+                when {
+                    !saved.isNullOrBlank() -> saved
+                    destinationReady -> "Custom RTMP"
+                    else -> "Set stream key"
+                }
+            }
             StreamDestination.YouTube -> "YouTube"
             StreamDestination.Twitch -> "Twitch"
         }
@@ -290,15 +303,36 @@ class StudioViewModel @Inject constructor(
             .getOrDefault(PlatformStatus())
         val twitch = runCatching { streamRepository.twitchPlatformStatus() }
             .getOrDefault(PlatformStatus())
+        val savedDestinations = runCatching { streamRepository.listDestinations() }
+            .getOrDefault(emptyList())
+        val assignedId = match.streamDestinationId
+            ?: match.destination?.id?.takeIf { it.isNotBlank() }
+        var selectedSavedId: String? = null
+        var customUrl = rtmpStore.load(slug).rtmpUrl
+        var customKey = rtmpStore.load(slug).streamKey
+        var customWatch = rtmpStore.load(slug).watchUrl
+        if (!assignedId.isNullOrBlank()) {
+            val full = runCatching { streamRepository.getDestination(assignedId) }.getOrNull()
+            if (full != null && full.rtmpUrl.isNotBlank() && full.streamKey.isNotBlank()) {
+                selectedSavedId = full.id
+                customUrl = full.rtmpUrl
+                customKey = full.streamKey
+                customWatch = full.watchUrl
+                rtmpStore.save(
+                    slug,
+                    RtmpCredentials(full.rtmpUrl, full.streamKey, full.watchUrl),
+                )
+            }
+        }
         val destination = when {
+            selectedSavedId != null -> StreamDestination.Custom
             youtube.ready || youtube.connected -> StreamDestination.YouTube
             twitch.ready || twitch.connected -> StreamDestination.Twitch
             else -> StreamDestination.Custom
         }
-        val creds = rtmpStore.load(slug)
         val destinationReady = when (destination) {
             StreamDestination.Custom ->
-                creds.rtmpUrl.isNotBlank() && creds.streamKey.isNotBlank()
+                customUrl.isNotBlank() && customKey.isNotBlank()
             StreamDestination.YouTube -> youtube.ready || youtube.connected
             StreamDestination.Twitch -> twitch.ready || twitch.connected
         }
@@ -309,6 +343,11 @@ class StudioViewModel @Inject constructor(
                 scoring = scoring,
                 destination = destination,
                 destinationReady = destinationReady,
+                savedDestinations = savedDestinations,
+                selectedSavedDestinationId = selectedSavedId,
+                customRtmpUrl = customUrl,
+                customStreamKey = customKey,
+                customWatchUrl = customWatch,
                 zoomLevel = streamController.currentZoom(),
             )
         }
@@ -498,6 +537,15 @@ class StudioViewModel @Inject constructor(
             }
             return
         }
+        if (sheet == StudioSheet.Destination) {
+            viewModelScope.launch {
+                val saved = runCatching { streamRepository.listDestinations() }.getOrDefault(emptyList())
+                _uiState.update {
+                    it.copy(activeSheet = sheet, error = null, savedDestinations = saved)
+                }
+            }
+            return
+        }
         _uiState.update { it.copy(activeSheet = sheet, error = null) }
     }
 
@@ -521,7 +569,85 @@ class StudioViewModel @Inject constructor(
                         .let { it.ready || it.connected }
                 }
             }
-            _uiState.update { it.copy(destination = destination, destinationReady = ready) }
+            _uiState.update {
+                it.copy(
+                    destination = destination,
+                    destinationReady = ready,
+                    // One-off Custom clears vault selection; saved picks go through selectSavedDestination.
+                    selectedSavedDestinationId = null,
+                )
+            }
+        }
+    }
+
+    fun selectSavedDestination(id: String) {
+        viewModelScope.launch {
+            try {
+                val full = streamRepository.getDestination(id)
+                if (full.rtmpUrl.isBlank() || full.streamKey.isBlank()) {
+                    _uiState.update { it.copy(error = "Destination is missing URL or key") }
+                    return@launch
+                }
+                val creds = RtmpCredentials(full.rtmpUrl, full.streamKey, full.watchUrl)
+                rtmpStore.save(matchSlug, creds)
+                runCatching { streamRepository.assignStreamDestination(matchSlug, full.id) }
+                val list = _uiState.value.savedDestinations
+                    .map { if (it.id == full.id) full.copy(streamKey = "") else it }
+                    .let { existing ->
+                        if (existing.any { it.id == full.id }) existing
+                        else existing + full.copy(streamKey = "")
+                    }
+                _uiState.update {
+                    it.copy(
+                        destination = StreamDestination.Custom,
+                        selectedSavedDestinationId = full.id,
+                        customRtmpUrl = creds.rtmpUrl,
+                        customStreamKey = creds.streamKey,
+                        customWatchUrl = creds.watchUrl,
+                        destinationReady = true,
+                        savedDestinations = list,
+                        error = null,
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(error = e.message ?: "Could not load destination")
+                }
+            }
+        }
+    }
+
+    fun saveCustomAsDestination(label: String, url: String, key: String, watch: String) {
+        viewModelScope.launch {
+            try {
+                val created = streamRepository.createDestination(
+                    label = label.trim().ifBlank { "Saved RTMP" },
+                    rtmpUrl = url.trim(),
+                    streamKey = key.trim(),
+                    watchUrl = watch.trim(),
+                )
+                val creds = RtmpCredentials(url.trim(), key.trim(), watch.trim())
+                rtmpStore.save(matchSlug, creds)
+                runCatching { streamRepository.assignStreamDestination(matchSlug, created.id) }
+                val refreshed = runCatching { streamRepository.listDestinations() }
+                    .getOrDefault(_uiState.value.savedDestinations + created)
+                _uiState.update {
+                    it.copy(
+                        destination = StreamDestination.Custom,
+                        selectedSavedDestinationId = created.id,
+                        customRtmpUrl = creds.rtmpUrl,
+                        customStreamKey = creds.streamKey,
+                        customWatchUrl = creds.watchUrl,
+                        destinationReady = true,
+                        savedDestinations = refreshed,
+                        error = null,
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(error = e.message ?: "Could not save destination")
+                }
+            }
         }
     }
 
@@ -536,6 +662,7 @@ class StudioViewModel @Inject constructor(
                 customWatchUrl = creds.watchUrl,
                 destinationReady = creds.rtmpUrl.isNotBlank() && creds.streamKey.isNotBlank(),
                 destination = StreamDestination.Custom,
+                selectedSavedDestinationId = null,
             )
         }
     }
@@ -676,9 +803,17 @@ class StudioViewModel @Inject constructor(
                 val watchUrl: String
                 when (state.destination) {
                     StreamDestination.Custom -> {
+                        var rtmpUrl = state.customRtmpUrl
+                        var streamKey = state.customStreamKey
+                        val savedId = state.selectedSavedDestinationId
+                        if (!savedId.isNullOrBlank() && (rtmpUrl.isBlank() || streamKey.isBlank())) {
+                            val full = streamRepository.getDestination(savedId)
+                            rtmpUrl = full.rtmpUrl
+                            streamKey = full.streamKey
+                        }
                         val endpoint = streamController.startStream(
-                            rtmpUrl = state.customRtmpUrl,
-                            streamKey = state.customStreamKey,
+                            rtmpUrl = rtmpUrl,
+                            streamKey = streamKey,
                             overlayUrl = match.overlayEmbedUrl,
                             layout = layout,
                         )

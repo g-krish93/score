@@ -45,6 +45,8 @@ data class StreamMatch(
     @SerialName("scoring_stale") val scoringStale: Boolean = false,
     @SerialName("is_live") val isLive: Boolean = false,
     val broadcast: BroadcastStatus = BroadcastStatus(),
+    @SerialName("stream_destination_id") val streamDestinationId: String? = null,
+    val destination: AssignedDestination? = null,
 ) {
     val paused: Boolean get() = relayPaused
 
@@ -55,6 +57,7 @@ data class StreamMatch(
                 overlay = resolveAbsoluteUrl(baseUrl, overlay)
             }
             val broadcastRaw = json["broadcast"] as? JsonObject
+            val destRaw = json["destination"] as? JsonObject
             return StreamMatch(
                 slug = json.string("slug").orEmpty(),
                 label = json.string("label") ?: json.string("slug").orEmpty(),
@@ -66,8 +69,51 @@ data class StreamMatch(
                 scoringStale = json.bool("scoring_stale") == true,
                 isLive = json.bool("is_live") == true || json.bool("live") == true,
                 broadcast = BroadcastStatus.fromJson(broadcastRaw),
+                streamDestinationId = json.string("stream_destination_id")?.takeIf { it.isNotBlank() },
+                destination = AssignedDestination.fromJson(destRaw),
             )
         }
+    }
+}
+
+@Serializable
+data class AssignedDestination(
+    val id: String = "",
+    val label: String = "",
+) {
+    companion object {
+        fun fromJson(json: JsonObject?): AssignedDestination? {
+            if (json == null) return null
+            val id = json.string("id").orEmpty()
+            if (id.isBlank()) return null
+            return AssignedDestination(id = id, label = json.string("label").orEmpty())
+        }
+    }
+}
+
+@Serializable
+data class SavedRtmpDestination(
+    val id: String = "",
+    val label: String = "",
+    val provider: String = "custom_rtmp",
+    @SerialName("rtmp_url") val rtmpUrl: String = "",
+    @SerialName("watch_url") val watchUrl: String = "",
+    @SerialName("stream_key_masked") val streamKeyMasked: String = "",
+    @SerialName("stream_key") val streamKey: String = "",
+) {
+    val isConfigured: Boolean
+        get() = rtmpUrl.isNotBlank() && (streamKey.isNotBlank() || id.isNotBlank())
+
+    companion object {
+        fun fromJson(json: JsonObject): SavedRtmpDestination = SavedRtmpDestination(
+            id = json.string("id").orEmpty(),
+            label = json.string("label").orEmpty(),
+            provider = json.string("provider") ?: "custom_rtmp",
+            rtmpUrl = json.string("rtmp_url").orEmpty(),
+            watchUrl = json.string("watch_url").orEmpty(),
+            streamKeyMasked = json.string("stream_key_masked").orEmpty(),
+            streamKey = json.string("stream_key").orEmpty(),
+        )
     }
 }
 

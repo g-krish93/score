@@ -15,6 +15,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -25,6 +27,7 @@ import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.shared.model.PairRemoteResult
 import uk.co.cricrelay.shared.model.RemoteCommand
 import uk.co.cricrelay.shared.model.RemoteCompanionContext
+import uk.co.cricrelay.shared.model.SavedRtmpDestination
 import uk.co.cricrelay.shared.model.Sponsor
 import uk.co.cricrelay.shared.model.ScorerLink
 import uk.co.cricrelay.shared.model.ScoringConfig
@@ -201,6 +204,76 @@ class CricRelayApiClient(
         val body = parseJsonObject(response)
         requireSuccess(response, body, "Go live failed")
         return GoLiveResult.fromJson(body)
+    }
+
+    suspend fun listDestinations(): List<SavedRtmpDestination> {
+        val response = httpClient.get("$baseUrl/api/stream/destinations") {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Failed to load destinations")
+        val arr = body["destinations"] as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { el ->
+            (el as? JsonObject)?.let { SavedRtmpDestination.fromJson(it) }
+        }
+    }
+
+    suspend fun getDestination(id: String): SavedRtmpDestination {
+        val response = httpClient.get("$baseUrl/api/stream/destinations/$id") {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Failed to load destination")
+        val dest = body["destination"] as? JsonObject
+            ?: throw ApiException("Failed to load destination")
+        return SavedRtmpDestination.fromJson(dest)
+    }
+
+    suspend fun createDestination(
+        label: String,
+        rtmpUrl: String,
+        streamKey: String,
+        watchUrl: String = "",
+    ): SavedRtmpDestination {
+        val response = httpClient.post("$baseUrl/api/stream/destinations") {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+            setBody(buildJsonObject {
+                put("label", label)
+                put("rtmp_url", rtmpUrl)
+                put("stream_key", streamKey)
+                if (watchUrl.isNotBlank()) put("watch_url", watchUrl)
+            })
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Could not save destination")
+        val dest = body["destination"] as? JsonObject
+            ?: throw ApiException("Could not save destination")
+        return SavedRtmpDestination.fromJson(dest)
+    }
+
+    suspend fun deleteDestination(id: String) {
+        val response = httpClient.delete("$baseUrl/api/stream/destinations/$id") {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+        }
+        if (!response.status.isSuccess()) {
+            val body = parseJsonObject(response)
+            throw ApiException(body["error"]?.toString()?.trim('"') ?: "Delete failed")
+        }
+    }
+
+    suspend fun assignStreamDestination(matchSlug: String, destinationId: String?) {
+        val response = httpClient.patch("$baseUrl/api/streams/$matchSlug") {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+            setBody(buildJsonObject {
+                if (destinationId.isNullOrBlank()) {
+                    put("stream_destination_id", JsonNull)
+                } else {
+                    put("stream_destination_id", destinationId)
+                }
+            })
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Could not assign destination")
     }
 
     suspend fun stopLive(platform: String? = null) {

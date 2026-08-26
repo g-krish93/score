@@ -118,6 +118,22 @@ class StreamRepository(
     suspend fun goLive(matchSlug: String, platform: String = "youtube") =
         apiClientProvider.get().goLive(matchSlug, platform)
 
+    suspend fun listDestinations() = apiClientProvider.get().listDestinations()
+
+    suspend fun getDestination(id: String) = apiClientProvider.get().getDestination(id)
+
+    suspend fun createDestination(
+        label: String,
+        rtmpUrl: String,
+        streamKey: String,
+        watchUrl: String = "",
+    ) = apiClientProvider.get().createDestination(label, rtmpUrl, streamKey, watchUrl)
+
+    suspend fun deleteDestination(id: String) = apiClientProvider.get().deleteDestination(id)
+
+    suspend fun assignStreamDestination(matchSlug: String, destinationId: String?) =
+        apiClientProvider.get().assignStreamDestination(matchSlug, destinationId)
+
     suspend fun stopLive(platform: String? = null) = apiClientProvider.get().stopLive(platform)
 
     suspend fun updateBroadcastStatus(

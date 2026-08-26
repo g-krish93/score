@@ -52,6 +52,9 @@ final class StudioViewModel: ObservableObject {
     }
     @Published var customWatchUrl = ""
     @Published private(set) var destinationReady = false
+    @Published var savedDestinations: [SavedRtmpDestination] = []
+    @Published var selectedSavedDestinationId: String?
+    @Published var saveAsLabel = ""
 
     // Cached live platform connection state, used to gate Go Live (parity with Android, which
     // checks youtube/twitch platform status rather than assuming a selected OAuth platform is ready).
@@ -65,7 +68,13 @@ final class StudioViewModel: ObservableObject {
         switch destination {
         case "youtube": return "YouTube"
         case "twitch": return "Twitch"
-        default: return "Custom RTMP"
+        default:
+            if let id = selectedSavedDestinationId,
+               let label = savedDestinations.first(where: { $0.id == id })?.label,
+               !label.isEmpty {
+                return label
+            }
+            return destinationReady ? "Custom RTMP" : "Set stream key"
         }
     }
 
@@ -210,9 +219,22 @@ final class StudioViewModel: ObservableObject {
         }
         youtubeStatus = (try? await api.youtubeStatus()) ?? PlatformStatus()
         twitchStatus = (try? await api.twitchStatus()) ?? PlatformStatus()
+        savedDestinations = (try? await api.listDestinations()) ?? []
 
-        // Prefer a connected OAuth platform; fall back to custom RTMP when creds are saved.
-        if youtubeStatus.ready || youtubeStatus.connected {
+        let assignedId = match?.streamDestinationId ?? match?.destination?.id
+        if let assignedId, !assignedId.isEmpty,
+           let full = try? await api.getDestination(id: assignedId),
+           !full.rtmpUrl.isEmpty, !full.streamKey.isEmpty {
+            selectedSavedDestinationId = full.id
+            customRtmpUrl = full.rtmpUrl
+            customStreamKey = full.streamKey
+            customWatchUrl = full.watchUrl
+            RtmpCredentialsStore.save(
+                slug: matchSlug,
+                RtmpCredentials(rtmpUrl: full.rtmpUrl, streamKey: full.streamKey, watchUrl: full.watchUrl)
+            )
+            destination = "custom"
+        } else if youtubeStatus.ready || youtubeStatus.connected {
             destination = "youtube"
         } else if twitchStatus.ready || twitchStatus.connected {
             destination = "twitch"
@@ -490,6 +512,7 @@ final class StudioViewModel: ObservableObject {
         customRtmpUrl = customRtmpUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         customStreamKey = customStreamKey.trimmingCharacters(in: .whitespacesAndNewlines)
         customWatchUrl = customWatchUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        selectedSavedDestinationId = nil
         RtmpCredentialsStore.save(
             slug: matchSlug,
             RtmpCredentials(
@@ -498,6 +521,54 @@ final class StudioViewModel: ObservableObject {
                 watchUrl: customWatchUrl
             )
         )
+        recomputeDestinationReady()
+    }
+
+    func refreshSavedDestinations() async {
+        savedDestinations = (try? await api.listDestinations()) ?? savedDestinations
+    }
+
+    func selectSavedDestination(id: String) async {
+        do {
+            let full = try await api.getDestination(id: id)
+            guard !full.rtmpUrl.isEmpty, !full.streamKey.isEmpty else {
+                error = "Destination is missing URL or key"
+                return
+            }
+            selectedSavedDestinationId = full.id
+            destination = "custom"
+            customRtmpUrl = full.rtmpUrl
+            customStreamKey = full.streamKey
+            customWatchUrl = full.watchUrl
+            RtmpCredentialsStore.save(
+                slug: matchSlug,
+                RtmpCredentials(rtmpUrl: full.rtmpUrl, streamKey: full.streamKey, watchUrl: full.watchUrl)
+            )
+            try? await api.assignStreamDestination(slug: matchSlug, destinationId: full.id)
+            recomputeDestinationReady()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func saveCustomAsDestination() async {
+        let label = saveAsLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        persistCustomRtmp()
+        guard !customRtmpUrl.isEmpty, !customStreamKey.isEmpty else { return }
+        do {
+            let created = try await api.createDestination(
+                label: label.isEmpty ? "Saved RTMP" : label,
+                rtmpUrl: customRtmpUrl,
+                streamKey: customStreamKey,
+                watchUrl: customWatchUrl
+            )
+            selectedSavedDestinationId = created.id
+            try? await api.assignStreamDestination(slug: matchSlug, destinationId: created.id)
+            savedDestinations = (try? await api.listDestinations()) ?? (savedDestinations + [created])
+            saveAsLabel = ""
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     // MARK: - Overlay

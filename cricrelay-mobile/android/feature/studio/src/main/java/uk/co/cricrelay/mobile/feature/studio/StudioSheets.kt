@@ -71,21 +71,47 @@ import uk.co.cricrelay.shared.model.StabilizationLevel
 fun DestinationSheet(
     state: StudioUiState,
     onSaveCustom: (String, String, String) -> Unit,
+    onSaveAsDestination: (String, String, String, String) -> Unit,
+    onSelectSaved: (String) -> Unit,
     onSelect: (StreamDestination) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var rtmpUrl by remember(state.customRtmpUrl) { mutableStateOf(state.customRtmpUrl) }
     var streamKey by remember(state.customStreamKey) { mutableStateOf(state.customStreamKey) }
     var watchUrl by remember(state.customWatchUrl) { mutableStateOf(state.customWatchUrl) }
+    var saveLabel by remember { mutableStateOf("") }
 
     SheetHeader(
         title = "Stream destination",
-        subtitle = "Volunteers paste a YouTube Studio or Twitch stream key. Clubs can use OAuth.",
+        subtitle = "Reuse saved keys for each XI, or paste once. Clubs can also use OAuth.",
     )
     Column(
         modifier = Modifier.padding(horizontal = AppSpacing.lg),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
     ) {
+        if (state.savedDestinations.isNotEmpty()) {
+            Text(
+                text = "Saved destinations",
+                style = AppTypography.bodySmall,
+                color = AppColors.OnBackgroundMuted,
+                modifier = Modifier.padding(bottom = AppSpacing.xs),
+            )
+            state.savedDestinations.forEach { dest ->
+                SelectableOptionCard(
+                    title = dest.label.ifBlank { "RTMP" },
+                    description = dest.streamKeyMasked.ifBlank { dest.rtmpUrl },
+                    icon = Icons.Outlined.VpnKey,
+                    iconTint = AppColors.Accent,
+                    selected = state.destination == StreamDestination.Custom &&
+                        state.selectedSavedDestinationId == dest.id,
+                    onClick = {
+                        onSelectSaved(dest.id)
+                        onDismiss()
+                    },
+                )
+            }
+            Spacer(Modifier.height(AppSpacing.sm))
+        }
         SelectableOptionCard(
             title = "YouTube",
             description = "Club account via OAuth",
@@ -103,16 +129,18 @@ fun DestinationSheet(
             onClick = { onSelect(StreamDestination.Twitch) },
         )
         SelectableOptionCard(
-            title = "Custom RTMP",
+            title = "One-off Custom RTMP",
             description = "Paste any server URL and stream key",
             icon = Icons.Outlined.VpnKey,
             iconTint = AppColors.Accent,
-            selected = state.destination == StreamDestination.Custom,
+            selected = state.destination == StreamDestination.Custom &&
+                state.selectedSavedDestinationId == null,
             onClick = { onSelect(StreamDestination.Custom) },
         )
     }
     AnimatedVisibility(
-        visible = state.destination == StreamDestination.Custom,
+        visible = state.destination == StreamDestination.Custom &&
+            state.selectedSavedDestinationId == null,
         enter = expandVertically(
             animationSpec = tween(AppMotion.SheetEnterMs, easing = AppMotion.EaseOut),
         ) + fadeIn(AppMotion.enterSpec(AppMotion.SheetEnterMs)),
@@ -143,11 +171,27 @@ fun DestinationSheet(
                 label = "Watch URL (optional)",
                 modifier = Modifier.padding(horizontal = AppSpacing.lg),
             )
+            Spacer(Modifier.height(AppSpacing.sm))
+            StudioTextField(
+                value = saveLabel,
+                onValueChange = { saveLabel = it },
+                label = "Save as (optional label)",
+                modifier = Modifier.padding(horizontal = AppSpacing.lg),
+            )
             Spacer(Modifier.height(AppSpacing.md))
             PrimaryButton(
-                text = "Save stream key",
+                text = "Use for this match",
                 onClick = {
                     onSaveCustom(rtmpUrl, streamKey, watchUrl)
+                    onDismiss()
+                },
+                modifier = Modifier.padding(horizontal = AppSpacing.lg),
+            )
+            Spacer(Modifier.height(AppSpacing.sm))
+            SecondaryButton(
+                text = "Save to club vault",
+                onClick = {
+                    onSaveAsDestination(saveLabel, rtmpUrl, streamKey, watchUrl)
                     onDismiss()
                 },
                 modifier = Modifier.padding(horizontal = AppSpacing.lg),
