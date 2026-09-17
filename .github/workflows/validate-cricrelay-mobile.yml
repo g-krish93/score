@@ -24,7 +24,8 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      # v3 fails after Google removed the legacy SDK "tools" package; v4.0.2+ installs cmdline-tools.
+      - uses: android-actions/setup-android@v4
 
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses || true
