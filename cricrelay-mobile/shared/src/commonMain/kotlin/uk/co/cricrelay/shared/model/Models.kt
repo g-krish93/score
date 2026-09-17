@@ -228,6 +228,7 @@ data class MatchDayStatus(
     val relayPaused: Boolean,
     val broadcast: BroadcastStatus,
     val manualScorerUrl: String = "",
+    val companionPaired: Boolean = false,
 ) {
     companion object {
         fun fromJson(json: JsonObject): MatchDayStatus {
@@ -241,6 +242,7 @@ data class MatchDayStatus(
                 relayPaused = json.bool("relay_paused") == true || json.bool("paused") == true,
                 broadcast = BroadcastStatus.fromJson(broadcastRaw),
                 manualScorerUrl = json.string("manual_scorer_url").orEmpty(),
+                companionPaired = json.bool("companion_paired") == true,
             )
         }
     }
@@ -288,6 +290,7 @@ data class RemoteCommand(
     val type: String = "",
     val command: String = "",
     val prefs: JsonObject? = null,
+    val payload: JsonObject? = null,
     val ts: Double = 0.0,
 ) {
     companion object {
@@ -295,6 +298,7 @@ data class RemoteCommand(
             type = json.string("type").orEmpty(),
             command = json.string("command").orEmpty(),
             prefs = json["prefs"] as? JsonObject,
+            payload = json["payload"] as? JsonObject,
             ts = (json["ts"] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: 0.0,
         )
     }
@@ -302,6 +306,67 @@ data class RemoteCommand(
     fun mergeSponsorInto(base: OverlayLayoutPrefs): OverlayLayoutPrefs? {
         val patch = prefs ?: return null
         return base.mergeSponsorPatch(patch)
+    }
+
+    fun payloadDouble(key: String): Double? =
+        (payload?.get(key) as? JsonPrimitive)?.content?.toDoubleOrNull()
+
+    fun payloadInt(key: String): Int? =
+        (payload?.get(key) as? JsonPrimitive)?.content?.toIntOrNull()
+}
+
+/** Tripod-reported camera state mirrored to the companion via Redis. */
+data class RemoteCameraState(
+    val zoomMin: Float = 1f,
+    val zoomMax: Float = 8f,
+    val zoom: Float = 1f,
+    val locked: Boolean = false,
+    val muted: Boolean = false,
+    val paused: Boolean = false,
+    val streaming: Boolean = false,
+    val stab: Int = 1,
+) {
+    companion object {
+        fun fromJson(json: JsonObject?): RemoteCameraState {
+            if (json == null) return RemoteCameraState()
+            return RemoteCameraState(
+                zoomMin = json.double("zoom_min")?.toFloat() ?: 1f,
+                zoomMax = json.double("zoom_max")?.toFloat() ?: 8f,
+                zoom = json.double("zoom")?.toFloat() ?: 1f,
+                locked = json.bool("locked") == true,
+                muted = json.bool("muted") == true,
+                paused = json.bool("paused") == true,
+                streaming = json.bool("streaming") == true,
+                stab = json.int("stab") ?: json.int("stabilization_level") ?: 1,
+            )
+        }
+    }
+
+    fun toJson(): JsonObject = buildJsonObject {
+        put("zoom_min", zoomMin.toDouble())
+        put("zoom_max", zoomMax.toDouble())
+        put("zoom", zoom.toDouble())
+        put("locked", locked)
+        put("muted", muted)
+        put("paused", paused)
+        put("streaming", streaming)
+        put("stab", stab)
+    }
+}
+
+data class RemotePreviewFrame(
+    val stale: Boolean,
+    val jpegB64: String? = null,
+    val state: RemoteCameraState? = null,
+    val ts: Double? = null,
+) {
+    companion object {
+        fun fromJson(json: JsonObject): RemotePreviewFrame = RemotePreviewFrame(
+            stale = json.bool("stale") != false || json.string("jpeg_b64").isNullOrBlank(),
+            jpegB64 = json.string("jpeg_b64")?.takeIf { it.isNotBlank() },
+            state = (json["state"] as? JsonObject)?.let { RemoteCameraState.fromJson(it) },
+            ts = (json["ts"] as? JsonPrimitive)?.content?.toDoubleOrNull(),
+        )
     }
 }
 

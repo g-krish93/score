@@ -25,8 +25,11 @@ import uk.co.cricrelay.shared.model.GoLiveResult
 import uk.co.cricrelay.shared.model.MatchDayStatus
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.shared.model.PairRemoteResult
+import io.ktor.client.request.put
+import uk.co.cricrelay.shared.model.RemoteCameraState
 import uk.co.cricrelay.shared.model.RemoteCommand
 import uk.co.cricrelay.shared.model.RemoteCompanionContext
+import uk.co.cricrelay.shared.model.RemotePreviewFrame
 import uk.co.cricrelay.shared.model.SavedRtmpDestination
 import uk.co.cricrelay.shared.model.Sponsor
 import uk.co.cricrelay.shared.model.ScorerLink
@@ -566,19 +569,56 @@ class CricRelayApiClient(
         return companionToken
     }
 
-    suspend fun sendRemoteCommand(matchSlug: String, companionToken: String, command: String) {
+    suspend fun sendRemoteCommand(
+        matchSlug: String,
+        companionToken: String,
+        command: String,
+        payload: Map<String, Double>? = null,
+    ) {
         val response = httpClient.post(matchUri(matchSlug, "remote/command")) {
             header(HttpHeaders.ContentType, ContentType.Application.Json.toString())
             header(HttpHeaders.Authorization, "Bearer $companionToken")
             setBody(buildJsonObject {
                 put("type", "control")
                 put("command", command)
+                if (payload != null) {
+                    put("payload", buildJsonObject {
+                        payload.forEach { (key, value) -> put(key, value) }
+                    })
+                }
             })
         }
         if (!response.status.isSuccess()) {
             val body = parseJsonObject(response)
             throw ApiException(body["error"]?.toString()?.trim('"') ?: "Remote command failed")
         }
+    }
+
+    suspend fun putRemotePreview(
+        matchSlug: String,
+        jpegB64: String,
+        state: RemoteCameraState,
+    ) {
+        val response = httpClient.put(matchUri(matchSlug, "remote/preview")) {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+            setBody(buildJsonObject {
+                put("jpeg_b64", jpegB64)
+                put("state", state.toJson())
+            })
+        }
+        if (!response.status.isSuccess()) {
+            val body = parseJsonObject(response)
+            throw ApiException(body["error"]?.toString()?.trim('"') ?: "Preview upload failed")
+        }
+    }
+
+    suspend fun getRemotePreview(matchSlug: String, companionToken: String): RemotePreviewFrame {
+        val response = httpClient.get(matchUri(matchSlug, "remote/preview")) {
+            header(HttpHeaders.Authorization, "Bearer $companionToken")
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Failed to load remote preview")
+        return RemotePreviewFrame.fromJson(body)
     }
 
     suspend fun sendRemoteOverlayPrefs(

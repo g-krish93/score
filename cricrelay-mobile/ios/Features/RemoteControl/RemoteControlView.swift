@@ -1,7 +1,8 @@
 import SwiftUI
 import AVFoundation
+import UIKit
 
-// MARK: - Companion remote control (scan QR → send commands + sponsor overlay)
+// MARK: - Companion remote control (scan QR → preview + camera commands + sponsors)
 
 struct RemoteControlView: View {
     @State private var phase: Phase = .scan
@@ -14,6 +15,12 @@ struct RemoteControlView: View {
     @State private var watchUrl = ""
     @State private var contextLoading = false
     @State private var sponsorSendTask: Task<Void, Never>?
+    @State private var previewPollTask: Task<Void, Never>?
+    @State private var zoomSendTask: Task<Void, Never>?
+    @State private var previewImage: UIImage?
+    @State private var previewStale = true
+    @State private var camera = RemoteCameraState()
+    @State private var zoomDraft: Float = 1
 
     private let api = CricRelayAPI.shared
 
@@ -34,6 +41,11 @@ struct RemoteControlView: View {
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(.dark)
         .onAppear { restoreSession() }
+        .onDisappear {
+            previewPollTask?.cancel()
+            zoomSendTask?.cancel()
+            sponsorSendTask?.cancel()
+        }
     }
 
     private var scanContent: some View {
@@ -75,17 +87,81 @@ struct RemoteControlView: View {
                         .font(.caption)
                         .foregroundStyle(CricTheme.accent)
                 }
+                if let error {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(CricTheme.danger)
+                }
 
-                controlButton("Start broadcast", icon: "play.fill", command: "start_broadcast")
-                controlButton("Stop broadcast", icon: "stop.fill", command: "stop_broadcast")
-                controlButton("Mute mic", icon: "mic.slash.fill", command: "mute_mic")
-                controlButton("Toggle focus lock", icon: "lock.fill", command: "toggle_focus_lock")
+                previewPane
+
+                let zoomMin = min(camera.zoomMin, camera.zoomMax)
+                let zoomMax = max(camera.zoomMax, zoomMin + 0.01)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Zoom")
+                            .font(.subheadline)
+                            .foregroundStyle(CricTheme.textMuted)
+                        Spacer()
+                        Text(String(format: "%.1f×", zoomDraft))
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(CricTheme.primary)
+                    }
+                    Slider(
+                        value: Binding(
+                            get: { Double(zoomDraft) },
+                            set: { newVal in
+                                zoomDraft = Float(newVal)
+                                scheduleZoomSend(Float(newVal))
+                            }
+                        ),
+                        in: Double(zoomMin)...Double(zoomMax)
+                    )
+                    .tint(CricTheme.primary)
+                }
+
+                HStack(spacing: 8) {
+                    stabChip("Off", level: 0)
+                    stabChip("Standard", level: 1)
+                    stabChip("Cinematic", level: 2)
+                }
+                if camera.streaming {
+                    Text("Stabilization is locked while live")
+                        .font(.caption)
+                        .foregroundStyle(CricTheme.textDim)
+                }
+
+                controlButton("Start broadcast", icon: "play.fill", command: "start_broadcast", enabled: !camera.streaming)
+                controlButton("Stop broadcast", icon: "stop.fill", command: "stop_broadcast", enabled: camera.streaming)
+                controlButton(
+                    camera.paused ? "Resume" : "Pause",
+                    icon: camera.paused ? "play.fill" : "pause.fill",
+                    command: camera.paused ? "resume_broadcast" : "pause_broadcast",
+                    enabled: camera.streaming
+                ) {
+                    camera.paused.toggle()
+                }
+                controlButton(
+                    camera.muted ? "Unmute mic" : "Mute mic",
+                    icon: camera.muted ? "mic.fill" : "mic.slash.fill",
+                    command: "mute_mic"
+                ) {
+                    camera.muted.toggle()
+                }
+                controlButton(
+                    camera.locked ? "Unlock focus" : "Lock focus",
+                    icon: camera.locked ? "lock.open.fill" : "lock.fill",
+                    command: "toggle_focus_lock"
+                ) {
+                    camera.locked.toggle()
+                }
 
                 Divider().overlay(Color.white.opacity(0.1))
 
                 sponsorSection
 
                 Button("Unpair") {
+                    previewPollTask?.cancel()
                     CompanionTokenStore.clear()
                     phase = .scan
                     matchSlug = ""
@@ -93,6 +169,9 @@ struct RemoteControlView: View {
                     statusMessage = ""
                     sponsors = []
                     sponsorPrefs = OverlayLayoutPrefs()
+                    previewImage = nil
+                    previewStale = true
+                    camera = RemoteCameraState()
                 }
                 .font(.subheadline)
                 .foregroundStyle(CricTheme.danger)
@@ -102,12 +181,71 @@ struct RemoteControlView: View {
         }
     }
 
+    private var previewPane: some View {
+        ZStack(alignment: .top) {
+            Group {
+                if let previewImage {
+                    Image(uiImage: previewImage)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Text("Waiting for camera preview…")
+                        .font(.subheadline)
+                        .foregroundStyle(CricTheme.textMuted)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 220)
+            .background(CricTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(
+                GeometryReader { geo in
+                    Color.clear.contentShape(Rectangle())
+                        .onTapGesture { location in
+                            let nx = Float(location.x / max(geo.size.width, 1))
+                            let ny = Float(location.y / max(geo.size.height, 1))
+                            Task { await sendTapFocus(nx: nx, ny: ny) }
+                        }
+                }
+            )
+
+            if previewStale {
+                Text("Camera offline")
+                    .font(.caption.bold())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(CricTheme.danger.opacity(0.85), in: Capsule())
+                    .padding(.top, 8)
+            }
+        }
+    }
+
+    private func stabChip(_ label: String, level: Int) -> some View {
+        let selected = camera.stab == level
+        return Button {
+            guard !camera.streaming else { return }
+            Task { await sendStabilization(level) }
+        } label: {
+            Text(label)
+                .font(.caption.weight(selected ? .bold : .regular))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    selected ? CricTheme.primary.opacity(0.35) : CricTheme.surface,
+                    in: RoundedRectangle(cornerRadius: 10)
+                )
+                .foregroundStyle(camera.streaming ? CricTheme.textDim : .white)
+        }
+        .disabled(camera.streaming)
+    }
+
     private var sponsorSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Sponsor overlay")
                 .font(.headline)
                 .foregroundStyle(.white)
-            Text("Changes apply on the broadcast phone — camera preview is not shown here.")
+            Text("Changes apply on the broadcast phone.")
                 .font(.caption)
                 .foregroundStyle(CricTheme.textDim)
             if !watchUrl.isEmpty {
@@ -289,8 +427,15 @@ struct RemoteControlView: View {
         }
     }
 
-    private func controlButton(_ label: String, icon: String, command: String) -> some View {
+    private func controlButton(
+        _ label: String,
+        icon: String,
+        command: String,
+        enabled: Bool = true,
+        onOptimistic: (() -> Void)? = nil
+    ) -> some View {
         Button {
+            onOptimistic?()
             Task { await sendCommand(command) }
         } label: {
             HStack(spacing: 12) {
@@ -306,8 +451,10 @@ struct RemoteControlView: View {
             }
             .padding(14)
             .background(CricTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+            .opacity(enabled ? 1 : 0.45)
         }
         .buttonStyle(PressableScaleStyle())
+        .disabled(!enabled)
     }
 
     private func restoreSession() {
@@ -315,7 +462,10 @@ struct RemoteControlView: View {
             companionToken = saved.token
             matchSlug = saved.slug
             phase = .controls
-            Task { await loadContext() }
+            Task {
+                await loadContext()
+                startPreviewPolling()
+            }
         }
     }
 
@@ -347,10 +497,96 @@ struct RemoteControlView: View {
             phase = .controls
             statusMessage = "Paired successfully"
             await loadContext()
+            startPreviewPolling()
             return true
         } catch {
             self.error = error.localizedDescription
             return false
+        }
+    }
+
+    private func startPreviewPolling() {
+        previewPollTask?.cancel()
+        previewPollTask = Task {
+            while !Task.isCancelled {
+                await pollPreviewOnce()
+                try? await Task.sleep(nanoseconds: 750_000_000)
+            }
+        }
+    }
+
+    private func pollPreviewOnce() async {
+        guard !matchSlug.isEmpty, !companionToken.isEmpty else { return }
+        do {
+            let frame = try await api.getRemotePreview(slug: matchSlug, companionToken: companionToken)
+            if let b64 = frame.jpegB64, let data = Data(base64Encoded: b64), let image = UIImage(data: data) {
+                previewImage = image
+            }
+            previewStale = frame.stale || previewImage == nil
+            if let state = frame.state {
+                camera = state
+                if zoomSendTask == nil {
+                    zoomDraft = state.zoom
+                }
+            }
+        } catch {
+            previewStale = true
+        }
+    }
+
+    private func scheduleZoomSend(_ level: Float) {
+        zoomSendTask?.cancel()
+        zoomSendTask = Task {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled else { return }
+            defer { zoomSendTask = nil }
+            await sendZoom(level)
+        }
+    }
+
+    private func sendZoom(_ level: Float) async {
+        guard !matchSlug.isEmpty, !companionToken.isEmpty else { return }
+        do {
+            try await api.sendRemoteCommand(
+                slug: matchSlug,
+                command: "set_zoom",
+                companionToken: companionToken,
+                payload: ["level": level]
+            )
+            statusMessage = "Sent set zoom"
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func sendTapFocus(nx: Float, ny: Float) async {
+        guard !matchSlug.isEmpty, !companionToken.isEmpty else { return }
+        do {
+            try await api.sendRemoteCommand(
+                slug: matchSlug,
+                command: "tap_focus",
+                companionToken: companionToken,
+                payload: ["nx": nx, "ny": ny]
+            )
+            statusMessage = "Sent tap focus"
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func sendStabilization(_ level: Int) async {
+        guard !matchSlug.isEmpty, !companionToken.isEmpty else { return }
+        do {
+            try await api.sendRemoteCommand(
+                slug: matchSlug,
+                command: "set_stabilization",
+                companionToken: companionToken,
+                payload: ["level": level]
+            )
+            camera.stab = StabilizationLevel.sanitize(level)
+            statusMessage = "Sent stabilization"
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 

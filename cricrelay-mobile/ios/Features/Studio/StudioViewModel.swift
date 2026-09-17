@@ -137,6 +137,8 @@ final class StudioViewModel: ObservableObject {
     private var pollingTask: Task<Void, Never>?
     private var liveTimerTask: Task<Void, Never>?
     private var remotePollTask: Task<Void, Never>?
+    private var previewPublishTask: Task<Void, Never>?
+    private var companionPaired = false
 
     init(matchSlug: String) {
         self.matchSlug = matchSlug
@@ -146,6 +148,7 @@ final class StudioViewModel: ObservableObject {
         pollingTask?.cancel()
         liveTimerTask?.cancel()
         remotePollTask?.cancel()
+        previewPublishTask?.cancel()
     }
 
     // MARK: - Load
@@ -195,6 +198,7 @@ final class StudioViewModel: ObservableObject {
             streaming = status.broadcast.isStreaming
             paused = status.broadcast.isPaused
             if let url = status.broadcast.watchUrl { watchUrl = url }
+            updateCompanionPaired(status.companionPaired)
         }
 
         // Bootstrap camera settings from prefs
@@ -288,10 +292,51 @@ final class StudioViewModel: ObservableObject {
                             paused = status.broadcast.isPaused
                         }
                         if let url = status.broadcast.watchUrl, !url.isEmpty { watchUrl = url }
+                        updateCompanionPaired(status.companionPaired)
                     }
                 }
             }
         }
+    }
+
+    private func updateCompanionPaired(_ paired: Bool) {
+        guard paired != companionPaired else { return }
+        companionPaired = paired
+        if paired {
+            startPreviewPublishing()
+        } else {
+            stopPreviewPublishing()
+        }
+    }
+
+    private func startPreviewPublishing() {
+        previewPublishTask?.cancel()
+        previewPublishTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.companionPaired else { return }
+                if let jpeg = await StreamCameraEngine.shared.capturePreviewJpeg() {
+                    let range = StreamCameraEngine.shared.zoomRange()
+                    let state = RemoteCameraState(
+                        zoomMin: Float(range.min),
+                        zoomMax: Float(range.max),
+                        zoom: Float(range.current),
+                        locked: self.focusLocked,
+                        muted: self.micMuted,
+                        paused: self.paused,
+                        streaming: self.streaming,
+                        stab: self.overlayPrefs.stabilizationLevel
+                    )
+                    let b64 = jpeg.base64EncodedString()
+                    _ = try? await self.api.putRemotePreview(slug: self.matchSlug, jpegB64: b64, state: state)
+                }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    private func stopPreviewPublishing() {
+        previewPublishTask?.cancel()
+        previewPublishTask = nil
     }
 
     func stopPolling() {
@@ -302,6 +347,7 @@ final class StudioViewModel: ObservableObject {
     func stopRemoteCommandPolling() {
         remotePollTask?.cancel()
         remotePollTask = nil
+        stopPreviewPublishing()
     }
 
     // MARK: - Live timer
@@ -797,11 +843,12 @@ final class StudioViewModel: ObservableObject {
         remotePollTask?.cancel()
         remotePollTask = Task {
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                let interval: UInt64 = companionPaired ? 400_000_000 : 1_500_000_000
+                try? await Task.sleep(nanoseconds: interval)
                 guard !Task.isCancelled else { return }
                 guard let commands = try? await api.pollRemoteCommands(slug: matchSlug) else { continue }
                 for cmd in commands where cmd.type == "control" {
-                    await dispatchRemoteCommand(cmd.command)
+                    await dispatchRemoteCommand(cmd)
                 }
                 for cmd in commands where cmd.type == "overlay" {
                     if let patch = cmd.prefs {
@@ -812,23 +859,61 @@ final class StudioViewModel: ObservableObject {
         }
     }
 
-    private func dispatchRemoteCommand(_ command: String) async {
-        switch command {
+    private func dispatchRemoteCommand(_ cmd: RemoteCommand) async {
+        switch cmd.command {
         case "start_broadcast":
             if !streaming { await remoteStartBroadcast() }
         case "stop_broadcast":
             if streaming { await stopLive() }
         case "mute_mic":
-            if !micMuted { await toggleMicMuted() }
+            await toggleMicMuted()
         case "toggle_focus_lock":
             await toggleFocusLock()
         case "toggle_sponsor":
             var prefs = overlayPrefs
             prefs.sponsorEnabled.toggle()
             await saveOverlay(prefs)
+        case "set_zoom":
+            if let level = cmd.payload?["level"] as? Double {
+                setZoom(Float(level))
+            } else if let level = cmd.payload?["level"] as? NSNumber {
+                setZoom(level.floatValue)
+            }
+        case "tap_focus":
+            let nx = floatPayload(cmd.payload, "nx")
+            let ny = floatPayload(cmd.payload, "ny")
+            if let nx, let ny {
+                StreamCameraEngine.shared.tapToFocusNormalized(nx: nx, ny: ny)
+            }
+        case "set_stabilization":
+            guard !streaming else { break }
+            if let level = intPayload(cmd.payload, "level") {
+                var prefs = overlayPrefs
+                prefs.stabilizationLevel = StabilizationLevel.sanitize(level)
+                await saveOverlay(prefs)
+            }
+        case "pause_broadcast":
+            if streaming && !paused { await togglePause() }
+        case "resume_broadcast":
+            if streaming && paused { await togglePause() }
         default:
             break
         }
+    }
+
+    private func floatPayload(_ payload: [String: Any]?, _ key: String) -> Float? {
+        guard let raw = payload?[key] else { return nil }
+        if let n = raw as? NSNumber { return n.floatValue }
+        if let d = raw as? Double { return Float(d) }
+        if let f = raw as? Float { return f }
+        return nil
+    }
+
+    private func intPayload(_ payload: [String: Any]?, _ key: String) -> Int? {
+        guard let raw = payload?[key] else { return nil }
+        if let n = raw as? NSNumber { return n.intValue }
+        if let i = raw as? Int { return i }
+        return nil
     }
 
     private func applyRemoteOverlayPatch(_ patch: [String: Any]) async {

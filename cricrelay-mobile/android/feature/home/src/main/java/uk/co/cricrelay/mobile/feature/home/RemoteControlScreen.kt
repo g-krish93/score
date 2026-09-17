@@ -39,9 +39,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import uk.co.cricrelay.mobile.ui.AppColors
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -49,15 +64,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Row
-import androidx.compose.ui.Alignment
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
+import android.graphics.Bitmap
+import uk.co.cricrelay.mobile.ui.AppColors
 import uk.co.cricrelay.mobile.ui.LabeledSlider
 import uk.co.cricrelay.shared.model.SponsorDisplayMode
 import uk.co.cricrelay.shared.model.SponsorLayoutMode
@@ -164,25 +172,84 @@ fun RemoteControlScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
                 ) {
+                    RemotePreviewPane(
+                        bitmap = state.previewBitmap,
+                        stale = state.previewStale,
+                        onTapNormalized = viewModel::onPreviewTap,
+                    )
+                    val zoomMin = state.camera.zoomMin.coerceAtMost(state.camera.zoomMax)
+                    val zoomMax = state.camera.zoomMax.coerceAtLeast(zoomMin + 0.01f)
+                    LabeledSlider(
+                        label = "Zoom",
+                        valueText = String.format("%.1f×", state.zoomDraft),
+                        value = state.zoomDraft.coerceIn(zoomMin, zoomMax),
+                        onValueChange = viewModel::onZoomDraft,
+                        valueRange = zoomMin..zoomMax,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                    ) {
+                        listOf(
+                            0 to "Off",
+                            1 to "Standard",
+                            2 to "Cinematic",
+                        ).forEach { (level, label) ->
+                            val selected = state.camera.stab == level
+                            Text(
+                                label,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                                    .clickable(enabled = !state.camera.streaming && !state.busy) {
+                                        viewModel.setStabilization(level)
+                                    }
+                                    .background(
+                                        if (selected) AppColors.Primary.copy(alpha = 0.35f)
+                                        else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                                    )
+                                    .padding(vertical = 10.dp),
+                                style = AppTypography.labelMedium,
+                                color = if (state.camera.streaming) {
+                                    AppColors.OnBackgroundDim
+                                } else {
+                                    AppColors.OnBackground
+                                },
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                    if (state.camera.streaming) {
+                        Text(
+                            "Stabilization is locked while live",
+                            style = AppTypography.bodySmall,
+                            color = AppColors.OnBackgroundDim,
+                        )
+                    }
                     PrimaryButton(
                         text = "Start broadcast",
-                        enabled = !state.busy,
+                        enabled = !state.busy && !state.camera.streaming,
                         onClick = { viewModel.sendCommand("start_broadcast") },
                     )
                     PrimaryButton(
                         text = "Stop broadcast",
-                        enabled = !state.busy,
+                        enabled = !state.busy && state.camera.streaming,
                         onClick = { viewModel.sendCommand("stop_broadcast") },
                     )
                     SecondaryButton(
-                        text = "Mute mic",
-                        enabled = !state.busy,
-                        onClick = { viewModel.sendCommand("mute_mic") },
+                        text = if (state.camera.paused) "Resume" else "Pause",
+                        enabled = !state.busy && state.camera.streaming,
+                        onClick = viewModel::togglePause,
                     )
                     SecondaryButton(
-                        text = "Toggle focus lock",
+                        text = if (state.camera.muted) "Unmute mic" else "Mute mic",
                         enabled = !state.busy,
-                        onClick = { viewModel.sendCommand("toggle_focus_lock") },
+                        onClick = viewModel::toggleMute,
+                    )
+                    SecondaryButton(
+                        text = if (state.camera.locked) "Unlock focus" else "Lock focus",
+                        enabled = !state.busy,
+                        onClick = viewModel::toggleFocusLock,
                     )
                     Spacer(Modifier.height(AppSpacing.sm))
                     RemoteSponsorSection(
@@ -199,6 +266,64 @@ fun RemoteControlScreen(
 }
 
 @Composable
+private fun RemotePreviewPane(
+    bitmap: Bitmap?,
+    stale: Boolean,
+    onTapNormalized: (Float, Float) -> Unit,
+) {
+    var size by remember { mutableStateOf(IntSize.Zero) }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(220.dp)
+            .clip(RoundedCornerShape(AppSpacing.radiusMd))
+            .background(AppColors.SurfaceElevated)
+            .onSizeChanged { size = it }
+            .pointerInput(size) {
+                detectTapGestures { offset ->
+                    if (size.width > 0 && size.height > 0) {
+                        onTapNormalized(
+                            (offset.x / size.width).coerceIn(0f, 1f),
+                            (offset.y / size.height).coerceIn(0f, 1f),
+                        )
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "Camera preview",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Text(
+                "Waiting for camera preview…",
+                style = AppTypography.bodyMedium,
+                color = AppColors.OnBackgroundMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(AppSpacing.md),
+            )
+        }
+        if (stale) {
+            Text(
+                "Camera offline",
+                style = AppTypography.labelMedium,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(AppSpacing.sm)
+                    .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                    .background(AppColors.Error.copy(alpha = 0.85f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
 private fun RemoteSponsorSection(
     state: RemoteControlUiState,
     onRefresh: () -> Unit,
@@ -210,7 +335,7 @@ private fun RemoteSponsorSection(
 
     Text("Sponsor overlay", style = AppTypography.titleSmall, color = AppColors.OnBackground)
     Text(
-        "Changes apply on the broadcast phone — camera preview is not shown here.",
+        "Changes apply on the broadcast phone.",
         style = AppTypography.bodySmall,
         color = AppColors.OnBackgroundDim,
     )

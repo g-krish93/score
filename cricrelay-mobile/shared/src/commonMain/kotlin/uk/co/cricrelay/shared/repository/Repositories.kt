@@ -200,8 +200,21 @@ class StreamRepository(
     suspend fun redeemPairToken(matchSlug: String, pairToken: String, apiBase: String): String =
         apiClientProvider.get().redeemPairToken(matchSlug, pairToken, apiBase)
 
-    suspend fun sendRemoteCommand(matchSlug: String, companionToken: String, command: String) =
-        apiClientProvider.get().sendRemoteCommand(matchSlug, companionToken, command)
+    suspend fun sendRemoteCommand(
+        matchSlug: String,
+        companionToken: String,
+        command: String,
+        payload: Map<String, Double>? = null,
+    ) = apiClientProvider.get().sendRemoteCommand(matchSlug, companionToken, command, payload)
+
+    suspend fun putRemotePreview(
+        matchSlug: String,
+        jpegB64: String,
+        state: uk.co.cricrelay.shared.model.RemoteCameraState,
+    ) = apiClientProvider.get().putRemotePreview(matchSlug, jpegB64, state)
+
+    suspend fun getRemotePreview(matchSlug: String, companionToken: String) =
+        apiClientProvider.get().getRemotePreview(matchSlug, companionToken)
 
     suspend fun sendRemoteOverlayPrefs(
         matchSlug: String,

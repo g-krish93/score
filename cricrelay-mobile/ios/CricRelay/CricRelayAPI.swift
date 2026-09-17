@@ -320,12 +320,31 @@ final class CricRelayAPI {
         )
     }
 
-    func sendRemoteCommand(slug: String, command: String, companionToken: String) async throws {
+    func sendRemoteCommand(
+        slug: String,
+        command: String,
+        companionToken: String,
+        payload: [String: Any]? = nil
+    ) async throws {
+        var body: [String: Any] = ["type": "control", "command": command]
+        if let payload { body["payload"] = payload }
         _ = try await postJsonWithToken(
             "/api/match/\(enc(slug))/remote/command",
-            body: ["type": "control", "command": command],
+            body: body,
             token: companionToken
         )
+    }
+
+    func putRemotePreview(slug: String, jpegB64: String, state: RemoteCameraState) async throws {
+        _ = try await putJson(
+            "/api/match/\(enc(slug))/remote/preview",
+            body: ["jpeg_b64": jpegB64, "state": state.dictionary()]
+        )
+    }
+
+    func getRemotePreview(slug: String, companionToken: String) async throws -> RemotePreviewFrame {
+        let json = try await getJsonWithToken("/api/match/\(enc(slug))/remote/preview", token: companionToken)
+        return RemotePreviewFrame.from(json)
     }
 
     func sendRemoteOverlayPrefs(slug: String, prefs: OverlayLayoutPrefs, companionToken: String) async throws {
@@ -461,6 +480,20 @@ final class CricRelayAPI {
         guard let url = URL(string: "\(baseUrl)\(path)") else { throw URLError(.badURL) }
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        try checkResponse(response, json: json)
+        return json
+    }
+
+    @discardableResult
+    private func putJson(_ path: String, body: [String: Any]) async throws -> [String: Any] {
+        guard let url = URL(string: "\(baseUrl)\(path)") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)

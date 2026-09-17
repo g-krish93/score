@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -4881,7 +4881,11 @@ def relay_match_for_org_id(org_id: str, match_slug: str) -> RelayMatch | None:
 @app.post("/api/match/<match_slug>/remote/command")
 @companion_token_required
 def api_remote_command(companion_slug: str, companion_org_id: str, match_slug: str):
-    from .stream_api import REMOTE_CONTROL_COMMANDS, redis_client
+    from .stream_api import (
+        REMOTE_CONTROL_COMMANDS,
+        redis_client,
+        sanitize_remote_control_payload,
+    )
 
     slug = sanitize_match_id(match_slug)
     if slug != companion_slug:
@@ -4894,7 +4898,13 @@ def api_remote_command(companion_slug: str, companion_org_id: str, match_slug: s
     if msg_type == "control":
         if command not in REMOTE_CONTROL_COMMANDS:
             return jsonify({"error": "invalid command"}), 400
-        envelope = json.dumps({"type": msg_type, "command": command, "ts": _t.time()})
+        payload, payload_err = sanitize_remote_control_payload(command, data.get("payload"))
+        if payload_err:
+            return jsonify({"error": payload_err}), 400
+        envelope_obj: dict = {"type": msg_type, "command": command, "ts": _t.time()}
+        if payload is not None:
+            envelope_obj["payload"] = payload
+        envelope = json.dumps(envelope_obj)
     elif msg_type == "overlay":
         patch = _remote_sponsor_overlay_patch(data.get("prefs") or {})
         if not patch:
@@ -4907,6 +4917,103 @@ def api_remote_command(companion_slug: str, companion_org_id: str, match_slug: s
     r.rpush(key, envelope)
     r.expire(key, 600)
     return jsonify({"ok": True})
+
+
+@app.put("/api/match/<match_slug>/remote/preview")
+@stream_api_auth_required
+def api_remote_preview_put(org: Organization, match_slug: str):
+    """Tripod phone uploads a JPEG preview frame + camera state sidecar."""
+    import base64
+    import time as _t
+
+    from .stream_api import (
+        REMOTE_PREVIEW_MAX_BYTES,
+        REMOTE_PREVIEW_TTL_SEC,
+        redis_client,
+        sanitize_remote_camera_state,
+    )
+
+    slug = sanitize_match_id(match_slug)
+    if not relay_match_for_org(org, slug):
+        return jsonify({"error": "unknown stream"}), 404
+
+    jpeg: bytes | None = None
+    state_raw: Any = {}
+
+    if request.content_type and "application/json" in request.content_type:
+        data = request.get_json(silent=True) or {}
+        b64 = str(data.get("jpeg_b64") or "").strip()
+        if not b64:
+            return jsonify({"error": "jpeg_b64 required"}), 400
+        try:
+            jpeg = base64.b64decode(b64, validate=False)
+        except Exception:
+            return jsonify({"error": "invalid jpeg_b64"}), 400
+        state_raw = data.get("state") or {}
+    else:
+        # Raw JPEG body with optional JSON state header.
+        jpeg = request.get_data(cache=False, as_text=False) or b""
+        header = (request.headers.get("X-Cricrelay-Camera-State") or "").strip()
+        if header:
+            try:
+                state_raw = json.loads(header)
+            except json.JSONDecodeError:
+                return jsonify({"error": "invalid X-Cricrelay-Camera-State"}), 400
+
+    if not jpeg:
+        return jsonify({"error": "empty preview"}), 400
+    if len(jpeg) > REMOTE_PREVIEW_MAX_BYTES:
+        return jsonify({"error": f"preview exceeds {REMOTE_PREVIEW_MAX_BYTES} bytes"}), 413
+    # Minimal JPEG SOI check
+    if len(jpeg) < 3 or jpeg[0] != 0xFF or jpeg[1] != 0xD8:
+        return jsonify({"error": "body must be JPEG"}), 400
+
+    state = sanitize_remote_camera_state(state_raw)
+    ts = _t.time()
+    r = redis_client()
+    r.setex(f"cricrelay:remote:preview:{slug}", REMOTE_PREVIEW_TTL_SEC, base64.b64encode(jpeg).decode("ascii"))
+    r.setex(
+        f"cricrelay:remote:camera:{slug}",
+        REMOTE_PREVIEW_TTL_SEC,
+        json.dumps({"state": state, "ts": ts}),
+    )
+    return jsonify({"ok": True, "ts": ts})
+
+
+@app.get("/api/match/<match_slug>/remote/preview")
+@companion_token_required
+def api_remote_preview_get(companion_slug: str, companion_org_id: str, match_slug: str):
+    """Companion polls the latest tripod preview JPEG + camera state."""
+    from .stream_api import redis_client
+
+    slug = sanitize_match_id(match_slug)
+    if slug != companion_slug:
+        return jsonify({"error": "slug mismatch"}), 400
+    if not relay_match_for_org_id(companion_org_id, slug):
+        return jsonify({"error": "unknown stream"}), 404
+
+    r = redis_client()
+    jpeg_b64 = r.get(f"cricrelay:remote:preview:{slug}")
+    camera_raw = r.get(f"cricrelay:remote:camera:{slug}")
+    if not jpeg_b64 or not camera_raw:
+        return jsonify({"ok": True, "stale": True, "jpeg_b64": None, "state": None, "ts": None})
+
+    jpeg_str = jpeg_b64.decode() if isinstance(jpeg_b64, (bytes, bytearray)) else str(jpeg_b64)
+    cam_str = camera_raw.decode() if isinstance(camera_raw, (bytes, bytearray)) else str(camera_raw)
+    try:
+        cam = json.loads(cam_str)
+    except json.JSONDecodeError:
+        return jsonify({"ok": True, "stale": True, "jpeg_b64": None, "state": None, "ts": None})
+
+    return jsonify(
+        {
+            "ok": True,
+            "stale": False,
+            "jpeg_b64": jpeg_str,
+            "state": cam.get("state"),
+            "ts": cam.get("ts"),
+        }
+    )
 
 
 @app.get("/api/match/<match_slug>/remote/commands")

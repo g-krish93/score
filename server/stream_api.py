@@ -110,7 +110,111 @@ REMOTE_CONTROL_COMMANDS = {
     "mute_mic",
     "toggle_focus_lock",
     "toggle_sponsor",
+    "set_zoom",
+    "tap_focus",
+    "set_stabilization",
+    "pause_broadcast",
+    "resume_broadcast",
 }
+
+# Commands that require a validated payload object (others ignore payload).
+REMOTE_CONTROL_PAYLOAD_COMMANDS = {
+    "set_zoom",
+    "tap_focus",
+    "set_stabilization",
+}
+
+REMOTE_PREVIEW_MAX_BYTES = 80 * 1024
+REMOTE_PREVIEW_TTL_SEC = 5
+
+
+def companion_is_paired(slug: str) -> bool:
+    """True when Redis still holds an active companion pairing for this match."""
+    s = (slug or "").strip()
+    if not s:
+        return False
+    return bool(redis_client().get(f"cricrelay:companion:{s}"))
+
+
+def sanitize_remote_control_payload(command: str, raw: Any) -> tuple[dict[str, Any] | None, str | None]:
+    """Validate optional control payload. Returns (payload_or_None, error_or_None).
+
+    Commands without a required payload may omit it (back-compat). Payload-bearing
+    commands must supply a dict with the fields documented below.
+    """
+    if command not in REMOTE_CONTROL_PAYLOAD_COMMANDS:
+        return None, None
+    if not isinstance(raw, dict):
+        return None, "payload required"
+    if command == "set_zoom":
+        try:
+            level = float(raw.get("level"))
+        except (TypeError, ValueError):
+            return None, "level must be a number"
+        if not (0.1 <= level <= 20.0):
+            return None, "level out of range"
+        return {"level": level}, None
+    if command == "tap_focus":
+        try:
+            nx = float(raw.get("nx"))
+            ny = float(raw.get("ny"))
+        except (TypeError, ValueError):
+            return None, "nx and ny must be numbers"
+        if not (0.0 <= nx <= 1.0 and 0.0 <= ny <= 1.0):
+            return None, "nx and ny must be in 0..1"
+        return {"nx": nx, "ny": ny}, None
+    if command == "set_stabilization":
+        try:
+            level = int(raw.get("level"))
+        except (TypeError, ValueError):
+            return None, "level must be an integer"
+        if level not in (0, 1, 2):
+            return None, "level must be 0, 1, or 2"
+        return {"level": level}, None
+    return None, "invalid command"
+
+
+def sanitize_remote_camera_state(raw: Any) -> dict[str, Any]:
+    """Clamp tripod-reported camera state for Redis sidecar / companion UI."""
+    if not isinstance(raw, dict):
+        raw = {}
+
+    def _f(key: str, default: float, lo: float, hi: float) -> float:
+        try:
+            return max(lo, min(hi, float(raw.get(key, default))))
+        except (TypeError, ValueError):
+            return default
+
+    def _b(key: str, default: bool = False) -> bool:
+        val = raw.get(key, default)
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, (int, float)):
+            return bool(val)
+        if isinstance(val, str):
+            return val.strip().lower() in {"1", "true", "yes"}
+        return default
+
+    stab = 1
+    try:
+        stab = int(raw.get("stab", raw.get("stabilization_level", 1)))
+    except (TypeError, ValueError):
+        stab = 1
+    stab = max(0, min(2, stab))
+
+    zoom_min = _f("zoom_min", 1.0, 0.1, 20.0)
+    zoom_max = _f("zoom_max", 8.0, zoom_min, 20.0)
+    zoom = _f("zoom", 1.0, zoom_min, zoom_max)
+    return {
+        "zoom_min": zoom_min,
+        "zoom_max": zoom_max,
+        "zoom": zoom,
+        "locked": _b("locked"),
+        "muted": _b("muted"),
+        "paused": _b("paused"),
+        "streaming": _b("streaming"),
+        "stab": stab,
+    }
 
 REMOTE_SPONSOR_OVERLAY_KEYS = {
     "sponsor_enabled",
@@ -403,6 +507,7 @@ def match_day_status(org: Organization, row: RelayMatch) -> dict[str, Any]:
         "paused": bool(row.paused),
         **scoring,
         "broadcast": broadcast,
+        "companion_paired": companion_is_paired(slug),
         "manual_scorer_url": f"{base}/m/{slug}/score" if base else f"/m/{slug}/score",
         "overlay_embed_url": f"{base}/m/{slug}/stream?embed=1" if base else f"/m/{slug}/stream?embed=1",
     }

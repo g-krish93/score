@@ -308,6 +308,161 @@ def test_remote_pair_redeem_command_poll(client):
     assert stale.status_code == 410
 
 
+def test_remote_payload_commands_and_preview(client):
+    """Payload-bearing camera commands + JPEG preview put/get auth boundaries."""
+    import base64
+
+    c, fake = client
+    _org_id, token, slug = _seed_org_and_match()
+    headers = _auth_headers(token)
+
+    pair = c.post(f"/api/match/{slug}/pair", headers=headers)
+    companion_token = c.post(
+        f"/stream/{slug}/pair/redeem",
+        data=json.dumps({"pair_token": pair.get_json()["pair_token"]}),
+        content_type="application/json",
+    ).get_json()["companion_token"]
+    cmd_headers = {
+        "Authorization": f"Bearer {companion_token}",
+        "Content-Type": "application/json",
+    }
+
+    # Unknown command still 400
+    bad_cmd = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps({"type": "control", "command": "explode"}),
+    )
+    assert bad_cmd.status_code == 400
+
+    # set_zoom requires payload
+    missing = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps({"type": "control", "command": "set_zoom"}),
+    )
+    assert missing.status_code == 400
+
+    # set_zoom with valid payload
+    zoom = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps(
+            {"type": "control", "command": "set_zoom", "payload": {"level": 2.5}}
+        ),
+    )
+    assert zoom.status_code == 200
+
+    # tap_focus out of range
+    bad_tap = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps(
+            {"type": "control", "command": "tap_focus", "payload": {"nx": 1.5, "ny": 0.2}}
+        ),
+    )
+    assert bad_tap.status_code == 400
+
+    tap = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps(
+            {"type": "control", "command": "tap_focus", "payload": {"nx": 0.4, "ny": 0.6}}
+        ),
+    )
+    assert tap.status_code == 200
+
+    stab = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps(
+            {"type": "control", "command": "set_stabilization", "payload": {"level": 2}}
+        ),
+    )
+    assert stab.status_code == 200
+
+    pause = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps({"type": "control", "command": "pause_broadcast"}),
+    )
+    assert pause.status_code == 200
+
+    polled = c.get(f"/api/match/{slug}/remote/commands", headers=headers)
+    commands = polled.get_json()["commands"]
+    by_cmd = {cmd["command"]: cmd for cmd in commands}
+    assert by_cmd["set_zoom"]["payload"]["level"] == 2.5
+    assert by_cmd["tap_focus"]["payload"] == {"nx": 0.4, "ny": 0.6}
+    assert by_cmd["set_stabilization"]["payload"]["level"] == 2
+    assert "payload" not in by_cmd["pause_broadcast"]
+
+    # Match-day reports companion_paired
+    day = c.get(f"/api/match/{slug}/match-day", headers=headers)
+    assert day.status_code == 200
+    assert day.get_json()["companion_paired"] is True
+
+    # Minimal JPEG (SOI + EOI)
+    jpeg = bytes([0xFF, 0xD8, 0xFF, 0xD9])
+    put = c.put(
+        f"/api/match/{slug}/remote/preview",
+        headers=headers,
+        data=json.dumps(
+            {
+                "jpeg_b64": base64.b64encode(jpeg).decode("ascii"),
+                "state": {
+                    "zoom_min": 0.5,
+                    "zoom_max": 8,
+                    "zoom": 2.0,
+                    "locked": True,
+                    "muted": False,
+                    "paused": False,
+                    "streaming": True,
+                    "stab": 1,
+                },
+            }
+        ),
+        content_type="application/json",
+    )
+    assert put.status_code == 200
+
+    # Companion can GET
+    got = c.get(f"/api/match/{slug}/remote/preview", headers=cmd_headers)
+    assert got.status_code == 200
+    body = got.get_json()
+    assert body["stale"] is False
+    assert body["jpeg_b64"] == base64.b64encode(jpeg).decode("ascii")
+    assert body["state"]["zoom"] == 2.0
+    assert body["state"]["locked"] is True
+    assert body["state"]["streaming"] is True
+
+    # Companion cannot PUT preview (stream-auth required)
+    forbidden = c.put(
+        f"/api/match/{slug}/remote/preview",
+        headers=cmd_headers,
+        data=json.dumps({"jpeg_b64": base64.b64encode(jpeg).decode("ascii"), "state": {}}),
+        content_type="application/json",
+    )
+    assert forbidden.status_code == 401
+
+    # Oversized preview rejected
+    big = bytes([0xFF, 0xD8]) + (b"\x00" * (80 * 1024)) + bytes([0xFF, 0xD9])
+    too_big = c.put(
+        f"/api/match/{slug}/remote/preview",
+        headers=headers,
+        data=json.dumps({"jpeg_b64": base64.b64encode(big).decode("ascii"), "state": {}}),
+        content_type="application/json",
+    )
+    assert too_big.status_code == 413
+
+    # Mute without payload still works (back-compat)
+    mute = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps({"type": "control", "command": "mute_mic"}),
+    )
+    assert mute.status_code == 200
+
+
 def test_remote_sponsor_context_and_overlay_command(client):
     c, _fake = client
     _org_id, token, slug = _seed_org_and_match()

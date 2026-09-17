@@ -19,7 +19,10 @@ import uk.co.cricrelay.mobile.database.toDomain
 import uk.co.cricrelay.shared.model.MatchDayStatus
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.shared.model.PlatformStatus
+import android.util.Base64
+import uk.co.cricrelay.shared.model.RemoteCameraState
 import uk.co.cricrelay.shared.model.RemoteCommand
+import uk.co.cricrelay.shared.model.StabilizationLevel
 import uk.co.cricrelay.shared.model.ScoringConfig
 import uk.co.cricrelay.shared.model.Sponsor
 import uk.co.cricrelay.shared.model.StreamMatch
@@ -151,9 +154,17 @@ class StudioViewModel @Inject constructor(
     private var countdownJob: Job? = null
     private var focusReticleJob: Job? = null
     private var remotePollJob: Job? = null
+    private var previewPublishJob: Job? = null
+    private var companionPaired: Boolean = false
     private var matchSlug: String = ""
     private var permissionsGranted = false
     private var previewSurfaceBound = false
+
+    companion object {
+        private const val REMOTE_POLL_MS_IDLE = 1_500L
+        private const val REMOTE_POLL_MS_PAIRED = 400L
+        private const val PREVIEW_PUBLISH_MS = 1_000L
+    }
 
     private fun cameraReadiness(): StudioCameraGate.Readiness = StudioCameraGate.Readiness(
         matchLoaded = _uiState.value.match != null,
@@ -363,7 +374,8 @@ class StudioViewModel @Inject constructor(
             while (isActive) {
                 runCatching { streamRepository.pollRemoteCommands(slug) }
                     .onSuccess { commands -> handleRemoteCommands(commands) }
-                delay(1_500)
+                val interval = if (companionPaired) REMOTE_POLL_MS_PAIRED else REMOTE_POLL_MS_IDLE
+                delay(interval)
             }
         }
     }
@@ -392,6 +404,38 @@ class StudioViewModel @Inject constructor(
                             sponsorEnabled = !_uiState.value.overlayPrefs.sponsorEnabled,
                         )
                         updateOverlayPrefs(prefs)
+                    }
+                    "set_zoom" -> {
+                        val level = cmd.payloadDouble("level")?.toFloat() ?: continue
+                        setZoom(level)
+                    }
+                    "tap_focus" -> {
+                        val nx = cmd.payloadDouble("nx")?.toFloat() ?: continue
+                        val ny = cmd.payloadDouble("ny")?.toFloat() ?: continue
+                        val result = streamController.tapToFocusNormalized(nx, ny)
+                        val locked = result["locked"] as? Boolean ?: false
+                        _uiState.update {
+                            it.copy(
+                                focusLocked = locked,
+                                // Normalized reticle — UI may ignore when not on tripod.
+                                focusX = nx,
+                                focusY = ny,
+                            )
+                        }
+                    }
+                    "set_stabilization" -> {
+                        if (_uiState.value.streaming) continue // pre-stream only on Android
+                        val level = cmd.payloadInt("level") ?: continue
+                        val clamped = StabilizationLevel.sanitize(level)
+                        val prefs = _uiState.value.overlayPrefs.withStabilizationLevel(clamped)
+                        updateOverlayPrefs(prefs)
+                        streamController.setStabilizationLevel(clamped)
+                    }
+                    "pause_broadcast" -> {
+                        if (_uiState.value.streaming && !_uiState.value.paused) togglePause()
+                    }
+                    "resume_broadcast" -> {
+                        if (_uiState.value.streaming && _uiState.value.paused) togglePause()
                     }
                 }
                 "overlay" -> {
@@ -511,10 +555,61 @@ class StudioViewModel @Inject constructor(
         matchDayJob = viewModelScope.launch {
             while (isActive) {
                 runCatching { streamRepository.getMatchDayStatus(slug) }
-                    .onSuccess { status -> _uiState.update { it.copy(matchDay = status) } }
+                    .onSuccess { status ->
+                        val paired = status.companionPaired
+                        _uiState.update { it.copy(matchDay = status) }
+                        if (paired != companionPaired) {
+                            companionPaired = paired
+                            if (paired) startPreviewPublishing(slug) else stopPreviewPublishing()
+                        }
+                    }
                 delay(8_000)
             }
         }
+        // Immediate first fetch so a just-paired companion starts preview without waiting 8s.
+        viewModelScope.launch {
+            runCatching { streamRepository.getMatchDayStatus(slug) }
+                .onSuccess { status ->
+                    val paired = status.companionPaired
+                    _uiState.update { it.copy(matchDay = status) }
+                    if (paired != companionPaired) {
+                        companionPaired = paired
+                        if (paired) startPreviewPublishing(slug) else stopPreviewPublishing()
+                    }
+                }
+        }
+    }
+
+    private fun startPreviewPublishing(slug: String) {
+        previewPublishJob?.cancel()
+        previewPublishJob = viewModelScope.launch {
+            while (isActive && companionPaired) {
+                runCatching {
+                    val jpeg = streamController.capturePreviewJpeg()
+                    if (jpeg != null) {
+                        val state = _uiState.value
+                        val cameraState = RemoteCameraState(
+                            zoomMin = streamController.minZoom(),
+                            zoomMax = streamController.maxZoom(),
+                            zoom = streamController.currentZoom(),
+                            locked = state.focusLocked,
+                            muted = state.micMuted,
+                            paused = state.paused,
+                            streaming = state.streaming,
+                            stab = state.overlayPrefs.stabilizationLevel,
+                        )
+                        val b64 = Base64.encodeToString(jpeg, Base64.NO_WRAP)
+                        streamRepository.putRemotePreview(slug, b64, cameraState)
+                    }
+                }
+                delay(PREVIEW_PUBLISH_MS)
+            }
+        }
+    }
+
+    private fun stopPreviewPublishing() {
+        previewPublishJob?.cancel()
+        previewPublishJob = null
     }
 
     private fun startLiveTimer() {
@@ -963,6 +1058,7 @@ class StudioViewModel @Inject constructor(
         liveTimerJob?.cancel()
         countdownJob?.cancel()
         remotePollJob?.cancel()
+        stopPreviewPublishing()
         streamController.destroyOverlayCapture()
         streamController.hideNativePreview()
         super.onCleared()

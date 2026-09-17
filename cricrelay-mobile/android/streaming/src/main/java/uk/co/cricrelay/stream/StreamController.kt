@@ -207,6 +207,13 @@ class StreamController @Inject constructor() {
     fun tapToFocusAt(viewWidth: Int, viewHeight: Int, x: Float, y: Float) =
         StreamCameraEngine.tapToFocusAt(viewWidth, viewHeight, x, y)
 
+    fun tapToFocusNormalized(nx: Float, ny: Float) =
+        StreamCameraEngine.tapToFocusNormalized(nx, ny)
+
+    /** Downscaled JPEG of the live preview for the remote companion; null if unavailable. */
+    fun capturePreviewJpeg(maxWidth: Int = 480, quality: Int = 55): ByteArray? =
+        StreamCameraEngine.capturePreviewJpeg(maxWidth, quality)
+
     fun lockFocus(): Boolean = StreamCameraEngine.lockFocus()
 
     fun unlockFocus(): Boolean = StreamCameraEngine.unlockFocus()

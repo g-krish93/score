@@ -229,13 +229,90 @@ struct RemoteCommand {
     var command: String
     var ts: Double?
     var prefs: [String: Any]?
+    var payload: [String: Any]?
 
     static func from(_ dict: [String: Any]) -> RemoteCommand {
         RemoteCommand(
             type: dict["type"] as? String ?? "",
             command: dict["command"] as? String ?? "",
             ts: dict["ts"] as? Double,
-            prefs: dict["prefs"] as? [String: Any]
+            prefs: dict["prefs"] as? [String: Any],
+            payload: dict["payload"] as? [String: Any]
+        )
+    }
+}
+
+struct RemoteCameraState {
+    var zoomMin: Float = 1
+    var zoomMax: Float = 8
+    var zoom: Float = 1
+    var locked: Bool = false
+    var muted: Bool = false
+    var paused: Bool = false
+    var streaming: Bool = false
+    var stab: Int = 1
+
+    static func from(_ dict: [String: Any]?) -> RemoteCameraState {
+        guard let dict else { return RemoteCameraState() }
+        return RemoteCameraState(
+            zoomMin: floatVal(dict["zoom_min"], 1),
+            zoomMax: floatVal(dict["zoom_max"], 8),
+            zoom: floatVal(dict["zoom"], 1),
+            locked: boolVal(dict["locked"]),
+            muted: boolVal(dict["muted"]),
+            paused: boolVal(dict["paused"]),
+            streaming: boolVal(dict["streaming"]),
+            stab: intVal(dict["stab"] ?? dict["stabilization_level"], 1)
+        )
+    }
+
+    func dictionary() -> [String: Any] {
+        [
+            "zoom_min": zoomMin,
+            "zoom_max": zoomMax,
+            "zoom": zoom,
+            "locked": locked,
+            "muted": muted,
+            "paused": paused,
+            "streaming": streaming,
+            "stab": stab,
+        ]
+    }
+
+    private static func floatVal(_ raw: Any?, _ fallback: Float) -> Float {
+        if let n = raw as? NSNumber { return n.floatValue }
+        if let d = raw as? Double { return Float(d) }
+        if let f = raw as? Float { return f }
+        return fallback
+    }
+
+    private static func intVal(_ raw: Any?, _ fallback: Int) -> Int {
+        if let n = raw as? NSNumber { return n.intValue }
+        if let i = raw as? Int { return i }
+        return fallback
+    }
+
+    private static func boolVal(_ raw: Any?) -> Bool {
+        if let b = raw as? Bool { return b }
+        if let n = raw as? NSNumber { return n.boolValue }
+        return false
+    }
+}
+
+struct RemotePreviewFrame {
+    var stale: Bool
+    var jpegB64: String?
+    var state: RemoteCameraState?
+    var ts: Double?
+
+    static func from(_ dict: [String: Any]) -> RemotePreviewFrame {
+        let b64 = dict["jpeg_b64"] as? String
+        let stale = (dict["stale"] as? Bool) ?? (b64?.isEmpty ?? true)
+        return RemotePreviewFrame(
+            stale: stale || (b64?.isEmpty ?? true),
+            jpegB64: b64?.isEmpty == false ? b64 : nil,
+            state: (dict["state"] as? [String: Any]).map { RemoteCameraState.from($0) },
+            ts: dict["ts"] as? Double
         )
     }
 }
@@ -774,6 +851,7 @@ struct MatchDayStatus: Codable {
     var relayPaused: Bool
     var broadcast: BroadcastStatus
     var manualScorerUrl: String
+    var companionPaired: Bool
 
     enum CodingKeys: String, CodingKey {
         case slug, label
@@ -783,6 +861,21 @@ struct MatchDayStatus: Codable {
         case relayPaused = "relay_paused"
         case broadcast
         case manualScorerUrl = "manual_scorer_url"
+        case companionPaired = "companion_paired"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        slug = try c.decodeIfPresent(String.self, forKey: .slug) ?? ""
+        label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        scoringMode = try c.decodeIfPresent(String.self, forKey: .scoringMode) ?? "manual"
+        scoringActive = try c.decodeIfPresent(Bool.self, forKey: .scoringActive) ?? false
+        scoringStale = try c.decodeIfPresent(Bool.self, forKey: .scoringStale) ?? false
+        relayPaused = try c.decodeIfPresent(Bool.self, forKey: .relayPaused) ?? false
+        broadcast = try c.decodeIfPresent(BroadcastStatus.self, forKey: .broadcast)
+            ?? BroadcastStatus(status: "idle", platform: nil, watchUrl: nil)
+        manualScorerUrl = try c.decodeIfPresent(String.self, forKey: .manualScorerUrl) ?? ""
+        companionPaired = try c.decodeIfPresent(Bool.self, forKey: .companionPaired) ?? false
     }
 }
 
