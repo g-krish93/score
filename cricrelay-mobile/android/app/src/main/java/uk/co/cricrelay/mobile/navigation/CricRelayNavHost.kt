@@ -8,13 +8,18 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import uk.co.cricrelay.mobile.feature.home.PairDeepLinkBus
 import uk.co.cricrelay.mobile.feature.auth.LoginScreen
 import uk.co.cricrelay.mobile.feature.auth.OnboardingScreen
 import uk.co.cricrelay.mobile.feature.auth.RegisterScreen
@@ -33,6 +38,29 @@ fun CricRelayNavHost(
     modifier: Modifier = Modifier,
 ) {
     val navController = rememberNavController()
+    val pendingPairUri by PairDeepLinkBus.pendingUri.collectAsStateWithLifecycle()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+
+    // After login/home is up, open Remote Control so the ViewModel can redeem the QR payload.
+    LaunchedEffect(pendingPairUri, backStackEntry, startDestination) {
+        if (pendingPairUri.isNullOrBlank()) return@LaunchedEffect
+        if (startDestination == "login" || startDestination == "onboarding") return@LaunchedEffect
+        val route = backStackEntry?.destination?.route.orEmpty()
+        // Typed routes serialize as the fully-qualified class name; match either Home or Remote.
+        val onAuthedSurface = route.contains("HomeRoute") ||
+            route.contains("RemoteControlRoute") ||
+            route.contains("StudioRoute") ||
+            route.contains("CreateStreamRoute") ||
+            route.contains("ScoringRoute") ||
+            // First frame after cold start may still be settling on HomeRoute.
+            (backStackEntry == null && startDestination == "home")
+        if (!onAuthedSurface && startDestination != "home") return@LaunchedEffect
+        if (route.contains("RemoteControlRoute")) return@LaunchedEffect
+        navController.navigate(RemoteControlRoute) {
+            launchSingleTop = true
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = when (startDestination) {

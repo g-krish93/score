@@ -84,6 +84,11 @@ targets:
         NSMicrophoneUsageDescription: "CricRelay needs the microphone to include live commentary audio in the stream."
         UIBackgroundModes:
           - audio
+        CFBundleURLTypes:
+          - CFBundleURLName: uk.co.cricrelay.stream.pair
+            CFBundleTypeRole: Editor
+            CFBundleURLSchemes:
+              - cricrelay
 
     settings:
       base:

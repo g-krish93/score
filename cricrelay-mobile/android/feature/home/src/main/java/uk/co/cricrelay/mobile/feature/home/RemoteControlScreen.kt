@@ -102,6 +102,13 @@ fun RemoteControlScreen(
         }
     }
 
+    // Redeem a system-camera / Lens deep link (`cricrelay://pair?…`) when present.
+    val pendingPairUri by PairDeepLinkBus.pendingUri.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingPairUri) {
+        val uri = PairDeepLinkBus.consume() ?: return@LaunchedEffect
+        viewModel.onQrScanned(uri)
+    }
+
     StudioBackdrop(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier

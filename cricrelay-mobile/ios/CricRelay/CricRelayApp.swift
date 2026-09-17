@@ -28,6 +28,8 @@ struct CricRelayApp: App {
 struct RootView: View {
     @StateObject private var session = SessionViewModel()
     @State private var splashDone = false
+    @State private var openRemoteControl = false
+    @State private var remotePairPayload: String?
 
     var body: some View {
         ZStack {
@@ -39,7 +41,11 @@ struct RootView: View {
                 } else if !session.onboardingComplete {
                     OnboardingView(session: session)
                 } else {
-                    HomeView(session: session)
+                    HomeView(
+                        session: session,
+                        openRemoteControl: $openRemoteControl,
+                        remotePairPayload: $remotePairPayload
+                    )
                 }
             }
             // Opening splash — plays once per cold start over the bootstrapping app,
@@ -53,5 +59,26 @@ struct RootView: View {
         }
         .animation(.easeOut(duration: 0.35), value: splashDone && !session.isLoading)
         .task { await session.bootstrap() }
+        .onOpenURL { url in
+            guard url.scheme == "cricrelay", url.host == "pair" else { return }
+            PairDeepLinkStore.pendingUri = url.absoluteString
+            remotePairPayload = url.absoluteString
+            // Navigate once the user is on the home surface (logged in).
+            if session.isLoggedIn && session.onboardingComplete {
+                openRemoteControl = true
+            }
+        }
+        .onChange(of: session.isLoggedIn) { loggedIn in
+            if loggedIn, session.onboardingComplete, PairDeepLinkStore.pendingUri != nil {
+                remotePairPayload = PairDeepLinkStore.pendingUri
+                openRemoteControl = true
+            }
+        }
+        .onChange(of: session.onboardingComplete) { done in
+            if done, session.isLoggedIn, PairDeepLinkStore.pendingUri != nil {
+                remotePairPayload = PairDeepLinkStore.pendingUri
+                openRemoteControl = true
+            }
+        }
     }
 }

@@ -5,6 +5,8 @@ import UIKit
 // MARK: - Companion remote control (scan QR → preview + camera commands + sponsors)
 
 struct RemoteControlView: View {
+    var initialPairPayload: String? = nil
+
     @State private var phase: Phase = .scan
     @State private var matchSlug = ""
     @State private var companionToken = ""
@@ -40,7 +42,10 @@ struct RemoteControlView: View {
         .navigationTitle("Remote Control")
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(.dark)
-        .onAppear { restoreSession() }
+        .onAppear {
+            restoreSession()
+            redeemPendingDeepLinkIfNeeded()
+        }
         .onDisappear {
             previewPollTask?.cancel()
             zoomSendTask?.cancel()
@@ -466,6 +471,16 @@ struct RemoteControlView: View {
                 await loadContext()
                 startPreviewPolling()
             }
+        }
+    }
+
+    /// Redeem a system-camera deep link (`cricrelay://pair?…`) if one is waiting.
+    private func redeemPendingDeepLinkIfNeeded() {
+        let payload = initialPairPayload ?? PairDeepLinkStore.consume()
+        guard let payload, !payload.isEmpty else { return }
+        PairDeepLinkStore.pendingUri = nil
+        Task {
+            _ = await handleScan(payload)
         }
     }
 

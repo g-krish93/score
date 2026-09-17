@@ -4,6 +4,9 @@ struct HomeView: View {
     @ObservedObject var session: SessionViewModel
     @StateObject private var viewModel = HomeViewModel()
 
+    @Binding var openRemoteControl: Bool
+    @Binding var remotePairPayload: String?
+
     @State private var managedStream: StreamMatch?
     @State private var renameLabel = ""
     @State private var showRenameAlert = false
@@ -500,14 +503,23 @@ struct HomeView: View {
                     }
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(CricTheme.textDim)
                 }
-                .padding(12)
+                .padding(14)
                 .background(CricTheme.surface, in: RoundedRectangle(cornerRadius: 14))
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 1))
             }
             .buttonStyle(PressableScaleStyle())
+
+            // Hidden link driven by system-camera deep links (`cricrelay://pair`).
+            NavigationLink(
+                destination: RemoteControlView(initialPairPayload: remotePairPayload),
+                isActive: $openRemoteControl
+            ) {
+                EmptyView()
+            }
+            .hidden()
         }
     }
 
