@@ -331,6 +331,9 @@ fun StudioScreen(
         onDismiss = viewModel::closeSheet,
     ) {
         StudioMenuSheet(
+            cameraId = state.cameraId,
+            streaming = state.streaming,
+            onCameraIdChange = viewModel::setCameraId,
             onRestartPreview = viewModel::prepareCamera,
             onPairRemote = onPairRemote,
             onDismiss = viewModel::closeSheet,

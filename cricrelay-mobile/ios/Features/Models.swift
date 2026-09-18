@@ -196,10 +196,14 @@ struct Sponsor: Identifiable, Codable {
 struct PairRemoteResult: Codable {
     var pairToken: String
     var expiresAt: String?
+    var pairUrl: String?
+    var deepLink: String?
 
     enum CodingKeys: String, CodingKey {
         case pairToken = "pair_token"
         case expiresAt = "expires_at"
+        case pairUrl = "pair_url"
+        case deepLink = "deep_link"
     }
 }
 
@@ -229,14 +233,173 @@ struct RemoteCommand {
     var command: String
     var ts: Double?
     var prefs: [String: Any]?
+    var payload: [String: Any]?
 
     static func from(_ dict: [String: Any]) -> RemoteCommand {
         RemoteCommand(
             type: dict["type"] as? String ?? "",
             command: dict["command"] as? String ?? "",
             ts: dict["ts"] as? Double,
-            prefs: dict["prefs"] as? [String: Any]
+            prefs: dict["prefs"] as? [String: Any],
+            payload: dict["payload"] as? [String: Any]
         )
+    }
+}
+
+struct RemoteCameraState {
+    var zoomMin: Float = 1
+    var zoomMax: Float = 8
+    var zoom: Float = 1
+    var locked: Bool = false
+    var muted: Bool = false
+    var paused: Bool = false
+    var streaming: Bool = false
+    var stab: Int = 1
+    var reconnecting: Bool = false
+    var thermal: Int = 0
+    var bitrateKbps: Int? = nil
+
+    static func from(_ dict: [String: Any]?) -> RemoteCameraState {
+        guard let dict else { return RemoteCameraState() }
+        return RemoteCameraState(
+            zoomMin: floatVal(dict["zoom_min"], 1),
+            zoomMax: floatVal(dict["zoom_max"], 8),
+            zoom: floatVal(dict["zoom"], 1),
+            locked: boolVal(dict["locked"]),
+            muted: boolVal(dict["muted"]),
+            paused: boolVal(dict["paused"]),
+            streaming: boolVal(dict["streaming"]),
+            stab: intVal(dict["stab"] ?? dict["stabilization_level"], 1),
+            reconnecting: boolVal(dict["reconnecting"]),
+            thermal: intVal(dict["thermal"], 0),
+            bitrateKbps: (dict["bitrate_kbps"] as? NSNumber)?.intValue
+        )
+    }
+
+    func dictionary() -> [String: Any] {
+        var out: [String: Any] = [
+            "zoom_min": zoomMin,
+            "zoom_max": zoomMax,
+            "zoom": zoom,
+            "locked": locked,
+            "muted": muted,
+            "paused": paused,
+            "streaming": streaming,
+            "stab": stab,
+            "reconnecting": reconnecting,
+            "thermal": thermal,
+        ]
+        if let bitrateKbps { out["bitrate_kbps"] = bitrateKbps }
+        return out
+    }
+
+    private static func floatVal(_ raw: Any?, _ fallback: Float) -> Float {
+        if let n = raw as? NSNumber { return n.floatValue }
+        if let d = raw as? Double { return Float(d) }
+        if let f = raw as? Float { return f }
+        return fallback
+    }
+
+    private static func intVal(_ raw: Any?, _ fallback: Int) -> Int {
+        if let n = raw as? NSNumber { return n.intValue }
+        if let i = raw as? Int { return i }
+        return fallback
+    }
+
+    private static func boolVal(_ raw: Any?) -> Bool {
+        if let b = raw as? Bool { return b }
+        if let n = raw as? NSNumber { return n.boolValue }
+        return false
+    }
+}
+
+struct RemotePreviewFrame {
+    var stale: Bool
+    var jpegB64: String?
+    var state: RemoteCameraState?
+    var ts: Double?
+    var cameraId: String?
+    var liveCameraId: String?
+
+    static func from(_ dict: [String: Any]) -> RemotePreviewFrame {
+        let b64 = dict["jpeg_b64"] as? String
+        let stale = (dict["stale"] as? Bool) ?? (b64?.isEmpty ?? true)
+        return RemotePreviewFrame(
+            stale: stale || (b64?.isEmpty ?? true),
+            jpegB64: b64?.isEmpty == false ? b64 : nil,
+            state: (dict["state"] as? [String: Any]).map { RemoteCameraState.from($0) },
+            ts: dict["ts"] as? Double,
+            cameraId: dict["camera_id"] as? String,
+            liveCameraId: dict["live_camera_id"] as? String
+        )
+    }
+}
+
+enum RemoteCameraIds {
+    static let endA = "end_a"
+    static let endB = "end_b"
+    static let all = [endA, endB]
+
+    static func sanitize(_ raw: String?) -> String? {
+        let id = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return all.contains(id) ? id : nil
+    }
+
+    static func label(_ id: String) -> String {
+        switch id {
+        case endA: return "End A"
+        case endB: return "End B"
+        default: return id
+        }
+    }
+}
+
+struct RemoteCameraInfo {
+    var cameraId: String
+    var label: String
+    var streaming: Bool
+    var stale: Bool
+    var isLive: Bool
+
+    static func from(_ dict: [String: Any]) -> RemoteCameraInfo {
+        RemoteCameraInfo(
+            cameraId: dict["camera_id"] as? String ?? "",
+            label: dict["label"] as? String ?? "",
+            streaming: dict["streaming"] as? Bool ?? false,
+            stale: dict["stale"] as? Bool ?? true,
+            isLive: dict["is_live"] as? Bool ?? false
+        )
+    }
+}
+
+struct LiveIngest {
+    var rtmpUrl: String
+    var streamKey: String
+    var watchUrl: String
+    var platform: String
+    var overlayEmbedUrl: String
+
+    static func from(_ dict: [String: Any]) -> LiveIngest {
+        LiveIngest(
+            rtmpUrl: dict["rtmp_url"] as? String ?? "",
+            streamKey: dict["stream_key"] as? String ?? "",
+            watchUrl: dict["watch_url"] as? String ?? "",
+            platform: {
+                let p = dict["platform"] as? String ?? ""
+                return p.isEmpty ? "custom" : p
+            }(),
+            overlayEmbedUrl: dict["overlay_embed_url"] as? String ?? ""
+        )
+    }
+
+    func dictionary() -> [String: Any] {
+        [
+            "rtmp_url": rtmpUrl,
+            "stream_key": streamKey,
+            "watch_url": watchUrl,
+            "platform": platform,
+            "overlay_embed_url": overlayEmbedUrl,
+        ]
     }
 }
 
@@ -774,6 +937,7 @@ struct MatchDayStatus: Codable {
     var relayPaused: Bool
     var broadcast: BroadcastStatus
     var manualScorerUrl: String
+    var companionPaired: Bool
 
     enum CodingKeys: String, CodingKey {
         case slug, label
@@ -783,6 +947,21 @@ struct MatchDayStatus: Codable {
         case relayPaused = "relay_paused"
         case broadcast
         case manualScorerUrl = "manual_scorer_url"
+        case companionPaired = "companion_paired"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        slug = try c.decodeIfPresent(String.self, forKey: .slug) ?? ""
+        label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        scoringMode = try c.decodeIfPresent(String.self, forKey: .scoringMode) ?? "manual"
+        scoringActive = try c.decodeIfPresent(Bool.self, forKey: .scoringActive) ?? false
+        scoringStale = try c.decodeIfPresent(Bool.self, forKey: .scoringStale) ?? false
+        relayPaused = try c.decodeIfPresent(Bool.self, forKey: .relayPaused) ?? false
+        broadcast = try c.decodeIfPresent(BroadcastStatus.self, forKey: .broadcast)
+            ?? BroadcastStatus(status: "idle", platform: nil, watchUrl: nil)
+        manualScorerUrl = try c.decodeIfPresent(String.self, forKey: .manualScorerUrl) ?? ""
+        companionPaired = try c.decodeIfPresent(Bool.self, forKey: .companionPaired) ?? false
     }
 }
 

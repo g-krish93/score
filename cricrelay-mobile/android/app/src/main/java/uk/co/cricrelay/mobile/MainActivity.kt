@@ -1,5 +1,6 @@
 package uk.co.cricrelay.mobile
 
+import android.content.Intent
 import android.app.PictureInPictureParams
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import uk.co.cricrelay.mobile.feature.home.PairDeepLinkBus
 import uk.co.cricrelay.mobile.navigation.CricRelayNavHost
 import uk.co.cricrelay.mobile.splash.CricketSplash
 import uk.co.cricrelay.mobile.ui.CricRelayTheme
@@ -45,6 +47,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         streamController.attachActivity(this)
+        capturePairDeepLink(intent)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && pipSupported()) {
             // Keep auto-enter PiP params current so the home gesture floats the live camera even
             // when onUserLeaveHint isn't delivered (gesture nav). autoEnter tracks streaming state.
@@ -70,6 +73,27 @@ class MainActivity : ComponentActivity() {
                     ColdStartSplash(appReady = startDestination != null)
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        capturePairDeepLink(intent)
+    }
+
+    /** System camera / Lens / App Link scanned a pair URI — stash for Remote Control. */
+    private fun capturePairDeepLink(intent: Intent?) {
+        val data = intent?.data ?: return
+        val scheme = data.scheme?.lowercase().orEmpty()
+        val host = data.host?.lowercase().orEmpty()
+        val path = data.path.orEmpty()
+        val isCustom = scheme == "cricrelay" && host == "pair"
+        val isHttps = scheme == "https" &&
+            (host == "cricrelay.co.uk" || host == "www.cricrelay.co.uk") &&
+            (path == "/pair" || path.startsWith("/pair/"))
+        if (isCustom || isHttps) {
+            PairDeepLinkBus.offer(data.toString())
         }
     }
 
@@ -175,6 +199,11 @@ private fun ColdStartSplash(appReady: Boolean) {
 @Composable
 private fun rememberStartDestination(authRepository: AuthRepository): String? =
     androidx.compose.runtime.produceState<String?>(initialValue = null) {
+        // Companion pairing must work without a club login — pending App Link / QR wins.
+        if (!PairDeepLinkBus.pendingUri.value.isNullOrBlank()) {
+            value = "remote_control"
+            return@produceState
+        }
         val session = authRepository.currentSession()
         value = when {
             session.token.isNullOrBlank() -> "login"

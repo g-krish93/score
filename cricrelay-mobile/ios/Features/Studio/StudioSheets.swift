@@ -958,6 +958,41 @@ struct StudioMenuSheet: View {
                         .background(CricTheme.surface, in: RoundedRectangle(cornerRadius: 14))
                     }
 
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Camera end")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.white)
+                        Text("Set End A / End B so the remote director can switch phones on one feed.")
+                            .font(.caption)
+                            .foregroundStyle(CricTheme.textDim)
+                        HStack(spacing: 8) {
+                            ForEach(RemoteCameraIds.all, id: \.self) { id in
+                                let selected = viewModel.cameraId == id
+                                Button {
+                                    viewModel.setCameraId(id)
+                                } label: {
+                                    Text(RemoteCameraIds.label(id))
+                                        .font(.subheadline)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .background(
+                                            selected ? CricTheme.primary.opacity(0.35) : CricTheme.surface
+                                        )
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                        .foregroundStyle(viewModel.streaming && !selected ? CricTheme.textDim : .white)
+                                }
+                                .disabled(viewModel.streaming)
+                            }
+                        }
+                        if viewModel.streaming {
+                            Text("End is locked while live")
+                                .font(.caption)
+                                .foregroundStyle(CricTheme.textDim)
+                        }
+                    }
+                    .padding(14)
+                    .background(CricTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+
                     if !viewModel.watchUrl.isEmpty {
                         ShareLink(item: viewModel.watchUrl) {
                             HStack(spacing: 12) {

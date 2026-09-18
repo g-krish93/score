@@ -1053,6 +1053,131 @@ object StreamCameraEngine : CameraSession.Listener {
         }
     }
 
+    /**
+     * Tap-to-focus using normalized preview coordinates (origin top-left, 0..1).
+     * Used by the remote companion so it doesn't need the tripod's view pixel size.
+     */
+    fun tapToFocusNormalized(nx: Float, ny: Float): Map<String, Any> {
+        var viewW = 0
+        var viewH = 0
+        runOnMainSync {
+            val view = openGlView
+            viewW = view?.width ?: 0
+            viewH = view?.height ?: 0
+        }
+        if (viewW <= 0 || viewH <= 0) return mapOf("focused" to false)
+        val x = nx.coerceIn(0f, 1f) * viewW
+        val y = ny.coerceIn(0f, 1f) * viewH
+        return tapToFocusAt(viewW, viewH, x, y)
+    }
+
+    /**
+     * Downscaled JPEG of the live OpenGL preview for the remote companion (~480px wide).
+     * Uses [android.view.PixelCopy] on API 24+ from a background caller; never touches the
+     * RTMP encoder path. Returns null when the surface isn't ready or the copy fails.
+     */
+    fun capturePreviewJpeg(maxWidth: Int = 480, quality: Int = 55): ByteArray? {
+        // PixelCopy's callback is delivered on [mainHandler]; waiting for it on the main
+        // thread would deadlock, so fall back to a soft draw when already on main.
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            return capturePreviewJpegViaDraw(maxWidth, quality)
+        }
+        val latch = CountDownLatch(1)
+        var out: ByteArray? = null
+        mainHandler.post {
+            try {
+                val view = openGlView
+                val w = view?.width ?: 0
+                val h = view?.height ?: 0
+                if (view == null || w <= 1 || h <= 1 || !isPreviewSurfaceValid(view)) {
+                    latch.countDown()
+                    return@post
+                }
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+                    out = capturePreviewJpegViaDrawOnView(view, maxWidth, quality)
+                    latch.countDown()
+                    return@post
+                }
+                val full = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                android.view.PixelCopy.request(
+                    view,
+                    full,
+                    { result ->
+                        try {
+                            if (result == android.view.PixelCopy.SUCCESS) {
+                                out = compressPreviewBitmap(full, maxWidth, quality)
+                            }
+                        } finally {
+                            try {
+                                full.recycle()
+                            } catch (_: Exception) {
+                            }
+                            latch.countDown()
+                        }
+                    },
+                    mainHandler,
+                )
+                return@post
+            } catch (_: Exception) {
+            }
+            latch.countDown()
+        }
+        return try {
+            if (!latch.await(800, TimeUnit.MILLISECONDS)) null else out
+        } catch (_: InterruptedException) {
+            null
+        }
+    }
+
+    private fun capturePreviewJpegViaDraw(maxWidth: Int, quality: Int): ByteArray? {
+        val view = openGlView ?: return null
+        return capturePreviewJpegViaDrawOnView(view, maxWidth, quality)
+    }
+
+    private fun capturePreviewJpegViaDrawOnView(view: OpenGlView, maxWidth: Int, quality: Int): ByteArray? {
+        val w = view.width
+        val h = view.height
+        if (w <= 1 || h <= 1) return null
+        val full = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        return try {
+            val canvas = Canvas(full)
+            view.draw(canvas)
+            compressPreviewBitmap(full, maxWidth, quality)
+        } catch (_: Exception) {
+            null
+        } finally {
+            try {
+                full.recycle()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun compressPreviewBitmap(full: Bitmap, maxWidth: Int, quality: Int): ByteArray? {
+        val w = full.width
+        val h = full.height
+        if (w <= 1 || h <= 1) return null
+        val targetW = maxWidth.coerceAtLeast(160).coerceAtMost(w)
+        val targetH = ((h.toFloat() / w.toFloat()) * targetW).toInt().coerceAtLeast(1)
+        val scaled = if (targetW < w) {
+            Bitmap.createScaledBitmap(full, targetW, targetH, true)
+        } else {
+            full
+        }
+        return try {
+            val baos = java.io.ByteArrayOutputStream()
+            val ok = scaled.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(30, 85), baos)
+            if (!ok) null else baos.toByteArray().takeIf { it.size in 3..(80 * 1024) }
+        } finally {
+            if (scaled !== full) {
+                try {
+                    scaled.recycle()
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
     fun updateNotificationElapsed(elapsedLabel: String) {
         StreamCaptureService.updateElapsed(appContext, elapsedLabel)
     }

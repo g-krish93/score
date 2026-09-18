@@ -18,6 +18,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import uk.co.cricrelay.shared.model.FixturesResponse
@@ -25,14 +27,22 @@ import uk.co.cricrelay.shared.model.GoLiveResult
 import uk.co.cricrelay.shared.model.MatchDayStatus
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
 import uk.co.cricrelay.shared.model.PairRemoteResult
+import io.ktor.client.request.put
+import uk.co.cricrelay.shared.model.LiveIngest
+import uk.co.cricrelay.shared.model.RemoteCameraState
+import uk.co.cricrelay.shared.model.RemoteCamerasSnapshot
+import uk.co.cricrelay.shared.model.RemoteCameraInfo
 import uk.co.cricrelay.shared.model.RemoteCommand
+import uk.co.cricrelay.shared.model.RemoteCommandsPoll
 import uk.co.cricrelay.shared.model.RemoteCompanionContext
+import uk.co.cricrelay.shared.model.RemotePreviewFrame
 import uk.co.cricrelay.shared.model.SavedRtmpDestination
 import uk.co.cricrelay.shared.model.Sponsor
 import uk.co.cricrelay.shared.model.ScorerLink
 import uk.co.cricrelay.shared.model.ScoringConfig
 import uk.co.cricrelay.shared.model.StreamMatch
 import uk.co.cricrelay.shared.model.array
+import uk.co.cricrelay.shared.model.bool
 import uk.co.cricrelay.shared.model.string
 import uk.co.cricrelay.shared.util.isAllowedApiBaseUrl
 import uk.co.cricrelay.shared.util.normalizeApiBaseUrl
@@ -538,18 +548,26 @@ class CricRelayApiClient(
         return PairRemoteResult(
             pairToken = token,
             expiresAt = body.string("expires_at").orEmpty(),
+            pairUrl = body.string("pair_url").orEmpty(),
+            deepLink = body.string("deep_link").orEmpty(),
         )
     }
 
-    suspend fun pollRemoteCommands(matchSlug: String): List<RemoteCommand> {
-        val response = httpClient.get(matchUri(matchSlug, "remote/commands")) {
+    suspend fun pollRemoteCommands(matchSlug: String, cameraId: String? = null): RemoteCommandsPoll {
+        val qs = if (!cameraId.isNullOrBlank()) "?camera_id=${encode(cameraId)}" else ""
+        val response = httpClient.get(matchUri(matchSlug, "remote/commands") + qs) {
             authHeaders().forEach { (k, v) -> header(k, v) }
         }
         val body = parseJsonObject(response)
         requireSuccess(response, body, "Failed to poll remote commands")
-        return body.array("commands").mapNotNull { el ->
+        val commands = body.array("commands").mapNotNull { el ->
             (el as? JsonObject)?.let { RemoteCommand.fromJson(it) }
         }
+        return RemoteCommandsPoll(
+            commands = commands,
+            companionPaired = body.bool("companion_paired") == true,
+            liveCameraId = body.string("live_camera_id"),
+        )
     }
 
     suspend fun redeemPairToken(matchSlug: String, pairToken: String, apiBase: String = baseUrl): String {
@@ -566,18 +584,165 @@ class CricRelayApiClient(
         return companionToken
     }
 
-    suspend fun sendRemoteCommand(matchSlug: String, companionToken: String, command: String) {
+    suspend fun sendRemoteCommand(
+        matchSlug: String,
+        companionToken: String,
+        command: String,
+        payload: Map<String, Any>? = null,
+    ) {
         val response = httpClient.post(matchUri(matchSlug, "remote/command")) {
             header(HttpHeaders.ContentType, ContentType.Application.Json.toString())
             header(HttpHeaders.Authorization, "Bearer $companionToken")
             setBody(buildJsonObject {
                 put("type", "control")
                 put("command", command)
+                if (payload != null) {
+                    put("payload", buildJsonObject {
+                        payload.forEach { (key, value) ->
+                            when (value) {
+                                is Boolean -> put(key, value)
+                                is Int -> put(key, value)
+                                is Long -> put(key, value)
+                                is Float -> put(key, value.toDouble())
+                                is Double -> put(key, value)
+                                is Number -> put(key, value.toDouble())
+                                else -> put(key, value.toString())
+                            }
+                        }
+                    })
+                }
             })
         }
         if (!response.status.isSuccess()) {
             val body = parseJsonObject(response)
             throw ApiException(body["error"]?.toString()?.trim('"') ?: "Remote command failed")
+        }
+    }
+
+    suspend fun putRemotePreview(
+        matchSlug: String,
+        jpegB64: String,
+        state: RemoteCameraState,
+        cameraId: String? = null,
+    ) {
+        val response = httpClient.put(matchUri(matchSlug, "remote/preview")) {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+            setBody(buildJsonObject {
+                put("jpeg_b64", jpegB64)
+                put("state", state.toJson())
+                if (!cameraId.isNullOrBlank()) put("camera_id", cameraId)
+            })
+        }
+        if (!response.status.isSuccess()) {
+            val body = parseJsonObject(response)
+            throw ApiException(body["error"]?.toString()?.trim('"') ?: "Preview upload failed")
+        }
+    }
+
+    suspend fun getRemotePreview(
+        matchSlug: String,
+        companionToken: String,
+        cameraId: String? = null,
+    ): RemotePreviewFrame {
+        val qs = if (!cameraId.isNullOrBlank()) "?camera_id=${encode(cameraId)}" else ""
+        val response = httpClient.get(matchUri(matchSlug, "remote/preview") + qs) {
+            header(HttpHeaders.Authorization, "Bearer $companionToken")
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Failed to load remote preview")
+        return RemotePreviewFrame.fromJson(body)
+    }
+
+    suspend fun listRemoteCameras(matchSlug: String, companionToken: String): RemoteCamerasSnapshot {
+        val response = httpClient.get(matchUri(matchSlug, "remote/cameras")) {
+            header(HttpHeaders.Authorization, "Bearer $companionToken")
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Failed to list cameras")
+        val cameras = body.array("cameras").mapNotNull { el ->
+            (el as? JsonObject)?.let { RemoteCameraInfo.fromJson(it) }
+        }
+        return RemoteCamerasSnapshot(
+            cameras = cameras,
+            liveCameraId = body.string("live_camera_id"),
+        )
+    }
+
+    suspend fun putLiveIngest(
+        matchSlug: String,
+        ingest: LiveIngest,
+        cameraId: String? = null,
+    ) {
+        val response = httpClient.put(matchUri(matchSlug, "remote/ingest")) {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+            setBody(buildJsonObject {
+                put("rtmp_url", ingest.rtmpUrl)
+                put("stream_key", ingest.streamKey)
+                put("watch_url", ingest.watchUrl)
+                put("platform", ingest.platform)
+                put("overlay_embed_url", ingest.overlayEmbedUrl)
+                if (!cameraId.isNullOrBlank()) put("camera_id", cameraId)
+            })
+        }
+        if (!response.status.isSuccess()) {
+            val body = parseJsonObject(response)
+            throw ApiException(body["error"]?.toString()?.trim('"') ?: "Failed to store ingest")
+        }
+    }
+
+    suspend fun getLiveIngest(matchSlug: String): LiveIngest {
+        val response = httpClient.get(matchUri(matchSlug, "remote/ingest")) {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+        }
+        val body = parseJsonObject(response)
+        requireSuccess(response, body, "Failed to load ingest")
+        val ingest = body["ingest"] as? JsonObject
+            ?: throw ApiException("Ingest missing from server response")
+        return LiveIngest.fromJson(ingest)
+    }
+
+    suspend fun clearLiveIngest(matchSlug: String) {
+        val response = httpClient.delete(matchUri(matchSlug, "remote/ingest")) {
+            authHeaders().forEach { (k, v) -> header(k, v) }
+        }
+        if (!response.status.isSuccess()) {
+            val body = parseJsonObject(response)
+            throw ApiException(body["error"]?.toString()?.trim('"') ?: "Failed to clear ingest")
+        }
+    }
+
+    /**
+     * Fire-and-forget privacy-safe companion metrics. Failures are ignored by callers —
+     * telemetry must never block control.
+     */
+    suspend fun postRemoteMetrics(
+        matchSlug: String,
+        companionToken: String,
+        events: List<uk.co.cricrelay.shared.remote.RemoteControlMetrics.Event>,
+    ) {
+        if (events.isEmpty()) return
+        val response = httpClient.post(matchUri(matchSlug, "remote/metrics")) {
+            header(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+            header(HttpHeaders.Authorization, "Bearer $companionToken")
+            setBody(buildJsonObject {
+                put(
+                    "events",
+                    buildJsonArray {
+                        events.forEach { ev ->
+                            add(
+                                buildJsonObject {
+                                    put("name", ev.name)
+                                    ev.value?.let { put("value", it) }
+                                },
+                            )
+                        }
+                    },
+                )
+            })
+        }
+        if (!response.status.isSuccess()) {
+            // Soft-fail: metrics are best-effort.
+            return
         }
     }
 

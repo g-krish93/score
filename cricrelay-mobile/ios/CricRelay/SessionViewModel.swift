@@ -40,6 +40,10 @@ final class SessionViewModel: ObservableObject {
             api.configure(baseUrl: baseUrl, token: savedToken)
             isLoggedIn = true
             onboardingComplete = UserDefaults.standard.bool(forKey: "stream_onboarding_complete_v1")
+        } else {
+            // Companion pairing works without club login — still need a base URL for redeem.
+            api.configure(baseUrl: baseUrl, token: "")
+            isLoggedIn = false
         }
     }
 

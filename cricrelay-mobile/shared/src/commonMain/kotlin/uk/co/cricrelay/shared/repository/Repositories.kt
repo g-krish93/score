@@ -74,6 +74,17 @@ class AuthRepository(
     suspend fun isOnboardingComplete(): Boolean = sessionStore.isOnboardingComplete()
 
     suspend fun markOnboardingComplete() = sessionStore.markOnboardingComplete()
+
+    /**
+     * Point the shared API client at [apiBase] without clearing a club login token.
+     * Used after companion QR redeem so preview/command calls hit the same host.
+     */
+    suspend fun preferApiBase(apiBase: String) {
+        val normalized = normalizeApiBaseUrl(apiBase)
+        if (!isAllowedApiBaseUrl(normalized)) return
+        val session = sessionStore.readSession()
+        sessionStore.writeSession(normalized, session.token.orEmpty())
+    }
 }
 
 // If 2 MB hasn't uploaded within this window the uplink is below ~2 Mbps — no need to wait longer.
@@ -194,14 +205,55 @@ class StreamRepository(
     suspend fun pairRemote(matchSlug: String): uk.co.cricrelay.shared.model.PairRemoteResult =
         apiClientProvider.get().pairRemote(matchSlug)
 
-    suspend fun pollRemoteCommands(matchSlug: String): List<uk.co.cricrelay.shared.model.RemoteCommand> =
-        apiClientProvider.get().pollRemoteCommands(matchSlug)
+    suspend fun pollRemoteCommands(
+        matchSlug: String,
+        cameraId: String? = null,
+    ): uk.co.cricrelay.shared.model.RemoteCommandsPoll =
+        apiClientProvider.get().pollRemoteCommands(matchSlug, cameraId)
 
     suspend fun redeemPairToken(matchSlug: String, pairToken: String, apiBase: String): String =
         apiClientProvider.get().redeemPairToken(matchSlug, pairToken, apiBase)
 
-    suspend fun sendRemoteCommand(matchSlug: String, companionToken: String, command: String) =
-        apiClientProvider.get().sendRemoteCommand(matchSlug, companionToken, command)
+    suspend fun sendRemoteCommand(
+        matchSlug: String,
+        companionToken: String,
+        command: String,
+        payload: Map<String, Any>? = null,
+    ) = apiClientProvider.get().sendRemoteCommand(matchSlug, companionToken, command, payload)
+
+    suspend fun putRemotePreview(
+        matchSlug: String,
+        jpegB64: String,
+        state: uk.co.cricrelay.shared.model.RemoteCameraState,
+        cameraId: String? = null,
+    ) = apiClientProvider.get().putRemotePreview(matchSlug, jpegB64, state, cameraId)
+
+    suspend fun getRemotePreview(
+        matchSlug: String,
+        companionToken: String,
+        cameraId: String? = null,
+    ) = apiClientProvider.get().getRemotePreview(matchSlug, companionToken, cameraId)
+
+    suspend fun listRemoteCameras(matchSlug: String, companionToken: String) =
+        apiClientProvider.get().listRemoteCameras(matchSlug, companionToken)
+
+    suspend fun putLiveIngest(
+        matchSlug: String,
+        ingest: uk.co.cricrelay.shared.model.LiveIngest,
+        cameraId: String? = null,
+    ) = apiClientProvider.get().putLiveIngest(matchSlug, ingest, cameraId)
+
+    suspend fun getLiveIngest(matchSlug: String) =
+        apiClientProvider.get().getLiveIngest(matchSlug)
+
+    suspend fun clearLiveIngest(matchSlug: String) =
+        apiClientProvider.get().clearLiveIngest(matchSlug)
+
+    suspend fun postRemoteMetrics(
+        matchSlug: String,
+        companionToken: String,
+        events: List<uk.co.cricrelay.shared.remote.RemoteControlMetrics.Event>,
+    ) = apiClientProvider.get().postRemoteMetrics(matchSlug, companionToken, events)
 
     suspend fun sendRemoteOverlayPrefs(
         matchSlug: String,

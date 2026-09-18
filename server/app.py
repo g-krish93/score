@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -1557,6 +1557,78 @@ def public_live_events(match_id):
         stream(),
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/pair")
+def public_pair_landing():
+    """HTTPS App Link landing for companion QR codes.
+
+    System cameras open https reliably; verified App / Universal Links hand off into the
+    app. Otherwise this page deep-links into ``cricrelay://pair`` with an explicit CTA.
+    """
+    from urllib.parse import urlencode
+
+    slug = str(request.args.get("slug") or "").strip()
+    token = str(request.args.get("token") or "").strip()
+    api_base = str(request.args.get("base") or _public_base_url() or "").strip().rstrip("/")
+    if not slug or not token:
+        return render_template(
+            "pair.html",
+            error="This pairing link is incomplete or expired.",
+            deep_link="",
+        ), 400
+    query = urlencode({"slug": slug, "token": token, "base": api_base or _public_base_url()})
+    deep_link = f"cricrelay://pair?{query}"
+    return render_template("pair.html", error="", deep_link=deep_link)
+
+
+@app.get("/.well-known/assetlinks.json")
+def android_asset_links():
+    """Digital Asset Links for Android App Links on /pair."""
+    package = (os.getenv("ANDROID_APP_LINK_PACKAGE") or "uk.co.cricrelay.stream").strip()
+    raw = (os.getenv("ANDROID_APP_LINK_SHA256") or "").strip()
+    fingerprints = [f.strip().upper() for f in raw.replace(";", ",").split(",") if f.strip()]
+    # Empty fingerprints → still publish the statement shape so ops can fill SHA256 via env
+    # without a code change; verification only succeeds once fingerprints are set.
+    body = [
+        {
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+                "namespace": "android_app",
+                "package_name": package,
+                "sha256_cert_fingerprints": fingerprints,
+            },
+        }
+    ]
+    return Response(
+        json.dumps(body),
+        mimetype="application/json",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@app.get("/.well-known/apple-app-site-association")
+def apple_app_site_association():
+    """Universal Links association for iOS companion pairing."""
+    team_id = (os.getenv("APPLE_TEAM_ID") or "").strip()
+    bundle_id = (os.getenv("IOS_BUNDLE_ID") or "uk.co.cricrelay.stream").strip()
+    app_id = f"{team_id}.{bundle_id}" if team_id else bundle_id
+    body = {
+        "applinks": {
+            "apps": [],
+            "details": [
+                {
+                    "appID": app_id,
+                    "paths": ["/pair", "/pair/*"],
+                }
+            ],
+        }
+    }
+    return Response(
+        json.dumps(body),
+        mimetype="application/json",
+        headers={"Cache-Control": "public, max-age=300"},
     )
 
 
@@ -4742,14 +4814,24 @@ def api_delete_sponsor(org: Organization, sponsor_id: str):
 @app.post("/api/match/<match_slug>/pair")
 @stream_api_auth_required
 def api_pair_remote(org: Organization, match_slug: str):
-    from .stream_api import REMOTE_PAIR_TOKEN_MAX_AGE, issue_remote_pair_token
+    from .stream_api import REMOTE_PAIR_TOKEN_MAX_AGE, build_remote_pair_urls, issue_remote_pair_token
 
     slug = sanitize_match_id(match_slug)
     if not relay_match_for_org(org, slug):
         return jsonify({"error": "unknown stream"}), 404
     token = issue_remote_pair_token(org, slug)
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=REMOTE_PAIR_TOKEN_MAX_AGE)).isoformat()
-    return jsonify({"ok": True, "pair_token": token, "expires_at": expires_at})
+    base = _public_base_url()
+    urls = build_remote_pair_urls(base, slug, token, api_base=base)
+    return jsonify(
+        {
+            "ok": True,
+            "pair_token": token,
+            "expires_at": expires_at,
+            "pair_url": urls["pair_url"],
+            "deep_link": urls["deep_link"],
+        }
+    )
 
 
 @app.post("/api/match/<match_slug>/scorer-link")
@@ -4881,7 +4963,13 @@ def relay_match_for_org_id(org_id: str, match_slug: str) -> RelayMatch | None:
 @app.post("/api/match/<match_slug>/remote/command")
 @companion_token_required
 def api_remote_command(companion_slug: str, companion_org_id: str, match_slug: str):
-    from .stream_api import REMOTE_CONTROL_COMMANDS, redis_client
+    from .stream_api import (
+        REMOTE_CONTROL_COMMANDS,
+        enqueue_remote_control,
+        enqueue_take_live,
+        sanitize_camera_id,
+        sanitize_remote_control_payload,
+    )
 
     slug = sanitize_match_id(match_slug)
     if slug != companion_slug:
@@ -4894,37 +4982,294 @@ def api_remote_command(companion_slug: str, companion_org_id: str, match_slug: s
     if msg_type == "control":
         if command not in REMOTE_CONTROL_COMMANDS:
             return jsonify({"error": "invalid command"}), 400
-        envelope = json.dumps({"type": msg_type, "command": command, "ts": _t.time()})
-    elif msg_type == "overlay":
+        payload, payload_err = sanitize_remote_control_payload(command, data.get("payload"))
+        if payload_err:
+            return jsonify({"error": payload_err}), 400
+        # Optional camera targeting for dual-end (zoom/mute/etc. on the selected end).
+        target_cam = sanitize_camera_id((data.get("payload") or {}).get("camera_id") if isinstance(data.get("payload"), dict) else None)
+        if target_cam:
+            payload = dict(payload or {})
+            payload["camera_id"] = target_cam
+        if command == "take_live":
+            cam = (payload or {}).get("camera_id")
+            ok, err = enqueue_take_live(slug, str(cam or ""))
+            if not ok:
+                return jsonify({"error": err or "handoff failed"}), 409
+            return jsonify({"ok": True, "live_camera_id": cam})
+        enqueue_remote_control(slug, command, payload)
+        return jsonify({"ok": True})
+    if msg_type == "overlay":
         patch = _remote_sponsor_overlay_patch(data.get("prefs") or {})
         if not patch:
             return jsonify({"error": "overlay prefs required"}), 400
+        from .stream_api import redis_client
+
         envelope = json.dumps({"type": msg_type, "prefs": patch, "ts": _t.time()})
+        # Overlay applies on every end (and legacy queue).
+        r = redis_client()
+        for key in (
+            f"cricrelay:remote:cmds:{slug}",
+            f"cricrelay:remote:cmds:{slug}:end_a",
+            f"cricrelay:remote:cmds:{slug}:end_b",
+        ):
+            r.rpush(key, envelope)
+            r.expire(key, 600)
+        return jsonify({"ok": True})
+    return jsonify({"error": "invalid command type"}), 400
+
+
+@app.put("/api/match/<match_slug>/remote/preview")
+@stream_api_auth_required
+def api_remote_preview_put(org: Organization, match_slug: str):
+    """Tripod phone uploads a JPEG preview frame + camera state sidecar."""
+    import base64
+    import time as _t
+
+    from .stream_api import (
+        REMOTE_PREVIEW_MAX_BYTES,
+        REMOTE_PREVIEW_TTL_SEC,
+        preview_redis_keys,
+        redis_client,
+        register_remote_camera,
+        sanitize_camera_id,
+        sanitize_remote_camera_state,
+    )
+
+    slug = sanitize_match_id(match_slug)
+    if not relay_match_for_org(org, slug):
+        return jsonify({"error": "unknown stream"}), 404
+
+    jpeg: bytes | None = None
+    state_raw: Any = {}
+    camera_id_raw = ""
+
+    if request.content_type and "application/json" in request.content_type:
+        data = request.get_json(silent=True) or {}
+        b64 = str(data.get("jpeg_b64") or "").strip()
+        if not b64:
+            return jsonify({"error": "jpeg_b64 required"}), 400
+        try:
+            jpeg = base64.b64decode(b64, validate=False)
+        except Exception:
+            return jsonify({"error": "invalid jpeg_b64"}), 400
+        state_raw = data.get("state") or {}
+        camera_id_raw = str(data.get("camera_id") or "").strip()
     else:
-        return jsonify({"error": "invalid command type"}), 400
-    key = f"cricrelay:remote:cmds:{slug}"
+        # Raw JPEG body with optional JSON state header.
+        jpeg = request.get_data(cache=False, as_text=False) or b""
+        header = (request.headers.get("X-Cricrelay-Camera-State") or "").strip()
+        if header:
+            try:
+                state_raw = json.loads(header)
+            except json.JSONDecodeError:
+                return jsonify({"error": "invalid X-Cricrelay-Camera-State"}), 400
+        camera_id_raw = (request.headers.get("X-Cricrelay-Camera-Id") or "").strip()
+
+    if not jpeg:
+        return jsonify({"error": "empty preview"}), 400
+    if len(jpeg) > REMOTE_PREVIEW_MAX_BYTES:
+        return jsonify({"error": f"preview exceeds {REMOTE_PREVIEW_MAX_BYTES} bytes"}), 413
+    # Minimal JPEG SOI check
+    if len(jpeg) < 3 or jpeg[0] != 0xFF or jpeg[1] != 0xD8:
+        return jsonify({"error": "body must be JPEG"}), 400
+
+    state = sanitize_remote_camera_state(state_raw)
+    cam = sanitize_camera_id(camera_id_raw) or "end_a"
+    ts = _t.time()
     r = redis_client()
-    r.rpush(key, envelope)
-    r.expire(key, 600)
+    jpeg_key, state_key = preview_redis_keys(slug, cam)
+    encoded = base64.b64encode(jpeg).decode("ascii")
+    r.setex(jpeg_key, REMOTE_PREVIEW_TTL_SEC, encoded)
+    r.setex(state_key, REMOTE_PREVIEW_TTL_SEC, json.dumps({"state": state, "ts": ts, "camera_id": cam}))
+    # Legacy single-phone keys mirror the live end (or End A by default).
+    from .stream_api import get_live_camera
+
+    live = get_live_camera(slug)
+    if cam == (live or "end_a"):
+        r.setex(f"cricrelay:remote:preview:{slug}", REMOTE_PREVIEW_TTL_SEC, encoded)
+        r.setex(
+            f"cricrelay:remote:camera:{slug}",
+            REMOTE_PREVIEW_TTL_SEC,
+            json.dumps({"state": state, "ts": ts}),
+        )
+    register_remote_camera(
+        slug,
+        cam,
+        {"streaming": state.get("streaming"), "label": "End A" if cam == "end_a" else "End B"},
+    )
+    return jsonify({"ok": True, "ts": ts, "camera_id": cam})
+
+
+@app.get("/api/match/<match_slug>/remote/preview")
+@companion_token_required
+def api_remote_preview_get(companion_slug: str, companion_org_id: str, match_slug: str):
+    """Companion polls the latest tripod preview JPEG + camera state."""
+    from .stream_api import get_live_camera, preview_redis_keys, redis_client, sanitize_camera_id
+
+    slug = sanitize_match_id(match_slug)
+    if slug != companion_slug:
+        return jsonify({"error": "slug mismatch"}), 400
+    if not relay_match_for_org_id(companion_org_id, slug):
+        return jsonify({"error": "unknown stream"}), 404
+
+    cam = sanitize_camera_id(request.args.get("camera_id"))
+    if not cam:
+        cam = get_live_camera(slug) or "end_a"
+
+    r = redis_client()
+    jpeg_key, state_key = preview_redis_keys(slug, cam)
+    jpeg_b64 = r.get(jpeg_key)
+    camera_raw = r.get(state_key)
+    # Fall back to legacy keys for older tripod builds.
+    if not jpeg_b64 or not camera_raw:
+        jpeg_b64 = r.get(f"cricrelay:remote:preview:{slug}")
+        camera_raw = r.get(f"cricrelay:remote:camera:{slug}")
+    if not jpeg_b64 or not camera_raw:
+        return jsonify(
+            {
+                "ok": True,
+                "stale": True,
+                "jpeg_b64": None,
+                "state": None,
+                "ts": None,
+                "camera_id": cam,
+                "live_camera_id": get_live_camera(slug),
+            }
+        )
+
+    jpeg_str = jpeg_b64.decode() if isinstance(jpeg_b64, (bytes, bytearray)) else str(jpeg_b64)
+    cam_str = camera_raw.decode() if isinstance(camera_raw, (bytes, bytearray)) else str(camera_raw)
+    try:
+        cam_payload = json.loads(cam_str)
+    except json.JSONDecodeError:
+        return jsonify(
+            {
+                "ok": True,
+                "stale": True,
+                "jpeg_b64": None,
+                "state": None,
+                "ts": None,
+                "camera_id": cam,
+                "live_camera_id": get_live_camera(slug),
+            }
+        )
+
+    return jsonify(
+        {
+            "ok": True,
+            "stale": False,
+            "jpeg_b64": jpeg_str,
+            "state": cam_payload.get("state"),
+            "ts": cam_payload.get("ts"),
+            "camera_id": cam_payload.get("camera_id") or cam,
+            "live_camera_id": get_live_camera(slug),
+        }
+    )
+
+
+@app.get("/api/match/<match_slug>/remote/cameras")
+@companion_token_required
+def api_remote_cameras(companion_slug: str, companion_org_id: str, match_slug: str):
+    from .stream_api import get_live_camera, list_remote_cameras
+
+    slug = sanitize_match_id(match_slug)
+    if slug != companion_slug:
+        return jsonify({"error": "slug mismatch"}), 400
+    if not relay_match_for_org_id(companion_org_id, slug):
+        return jsonify({"error": "unknown stream"}), 404
+    return jsonify(
+        {
+            "ok": True,
+            "cameras": list_remote_cameras(slug),
+            "live_camera_id": get_live_camera(slug),
+        }
+    )
+
+
+@app.post("/api/match/<match_slug>/remote/metrics")
+@companion_token_required
+def api_remote_metrics(companion_slug: str, companion_org_id: str, match_slug: str):
+    """Privacy-safe companion telemetry (timings / counters only). Best-effort."""
+    from .stream_api import store_remote_metrics
+
+    slug = sanitize_match_id(match_slug)
+    if slug != companion_slug:
+        return jsonify({"error": "slug mismatch"}), 400
+    if not relay_match_for_org_id(companion_org_id, slug):
+        return jsonify({"error": "unknown stream"}), 404
+    data = request.get_json(silent=True) or {}
+    events = data.get("events")
+    if not isinstance(events, list):
+        return jsonify({"error": "events must be a list"}), 400
+    accepted = store_remote_metrics(slug, events)
+    return jsonify({"ok": True, "accepted": accepted})
+
+
+@app.put("/api/match/<match_slug>/remote/ingest")
+@stream_api_auth_required
+def api_remote_ingest_put(org: Organization, match_slug: str):
+    """Tripod stores shared RTMP ingest after Go Live so the other end can take over."""
+    from .stream_api import sanitize_camera_id, set_live_camera, store_live_ingest
+
+    slug = sanitize_match_id(match_slug)
+    if not relay_match_for_org(org, slug):
+        return jsonify({"error": "unknown stream"}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        payload = store_live_ingest(slug, data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    cam = sanitize_camera_id(data.get("camera_id"))
+    if cam:
+        set_live_camera(slug, cam)
+    return jsonify({"ok": True, "ingest": {**payload, "stream_key": "***"}, "live_camera_id": cam})
+
+
+@app.get("/api/match/<match_slug>/remote/ingest")
+@stream_api_auth_required
+def api_remote_ingest_get(org: Organization, match_slug: str):
+    """Other end fetches shared ingest credentials for handoff_take."""
+    from .stream_api import get_live_camera, get_live_ingest
+
+    slug = sanitize_match_id(match_slug)
+    if not relay_match_for_org(org, slug):
+        return jsonify({"error": "unknown stream"}), 404
+    ingest = get_live_ingest(slug)
+    if not ingest:
+        return jsonify({"error": "no active ingest — go live from one end first"}), 404
+    return jsonify({"ok": True, "ingest": ingest, "live_camera_id": get_live_camera(slug)})
+
+
+@app.delete("/api/match/<match_slug>/remote/ingest")
+@stream_api_auth_required
+def api_remote_ingest_delete(org: Organization, match_slug: str):
+    from .stream_api import clear_live_ingest
+
+    slug = sanitize_match_id(match_slug)
+    if not relay_match_for_org(org, slug):
+        return jsonify({"error": "unknown stream"}), 404
+    clear_live_ingest(slug)
     return jsonify({"ok": True})
 
 
 @app.get("/api/match/<match_slug>/remote/commands")
 @stream_api_auth_required
 def api_remote_commands_poll(org: Organization, match_slug: str):
-    from .stream_api import redis_client
+    from .stream_api import companion_is_paired, drain_remote_commands, get_live_camera
 
     slug = sanitize_match_id(match_slug)
     if not relay_match_for_org(org, slug):
         return jsonify({"error": "unknown stream"}), 404
-    key = f"cricrelay:remote:cmds:{slug}"
-    r = redis_client()
-    pipe = r.pipeline()
-    pipe.lrange(key, 0, -1)
-    pipe.delete(key)
-    raw_list, _ = pipe.execute()
-    commands = [json.loads(item) for item in raw_list]
-    return jsonify({"ok": True, "commands": commands})
+    camera_id = (request.args.get("camera_id") or "").strip() or None
+    commands = drain_remote_commands(slug, camera_id)
+    return jsonify(
+        {
+            "ok": True,
+            "commands": commands,
+            "companion_paired": companion_is_paired(slug),
+            "live_camera_id": get_live_camera(slug),
+        }
+    )
 
 
 @app.post("/api/match/<match_slug>/scoring")
@@ -5352,6 +5697,7 @@ def api_stream_go_live(org: Organization):
 def api_stream_stop(org: Organization):
     data = request.get_json(silent=True) or {}
     platform = str(data.get("platform") or "").strip().lower()
+    match_slug = sanitize_match_id(data.get("match_slug") or org.youtube_active_match_slug or "")
 
     if platform in {"", "youtube"} and org.youtube_active_broadcast_id:
         access = _org_youtube_access_token(org)
@@ -5371,6 +5717,10 @@ def api_stream_stop(org: Organization):
         org.twitch_active_match_slug = None
 
     db.session.commit()
+    if match_slug:
+        from .stream_api import clear_live_ingest
+
+        clear_live_ingest(match_slug)
     return jsonify({"ok": True})
 
 

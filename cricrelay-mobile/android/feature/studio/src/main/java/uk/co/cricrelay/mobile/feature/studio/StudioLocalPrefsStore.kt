@@ -13,6 +13,8 @@ import javax.inject.Singleton
 data class DeviceStreamSettings(
     val stabilizationLevel: Int = StabilizationLevel.STANDARD,
     val keepScreenOn: Boolean = true,
+    /** Dual-end role for this tripod phone (`end_a` / `end_b`). */
+    val cameraId: String = uk.co.cricrelay.shared.model.RemoteCameraIds.END_A,
 ) {
     /** Overlay a copy of [prefs] with this device's camera settings. */
     fun appliedTo(prefs: OverlayLayoutPrefs): OverlayLayoutPrefs =
@@ -40,12 +42,20 @@ class StudioLocalPrefsStore @Inject constructor(
             store.getInt(KEY_STABILIZATION_LEVEL, StabilizationLevel.STANDARD),
         ),
         keepScreenOn = store.getBoolean(KEY_KEEP_SCREEN_ON, true),
+        cameraId = uk.co.cricrelay.shared.model.RemoteCameraIds.sanitize(
+            store.getString(KEY_CAMERA_ID, null),
+        ) ?: uk.co.cricrelay.shared.model.RemoteCameraIds.END_A,
     )
 
     fun saveDeviceSettings(settings: DeviceStreamSettings) {
         store.edit()
             .putInt(KEY_STABILIZATION_LEVEL, StabilizationLevel.sanitize(settings.stabilizationLevel))
             .putBoolean(KEY_KEEP_SCREEN_ON, settings.keepScreenOn)
+            .putString(
+                KEY_CAMERA_ID,
+                uk.co.cricrelay.shared.model.RemoteCameraIds.sanitize(settings.cameraId)
+                    ?: uk.co.cricrelay.shared.model.RemoteCameraIds.END_A,
+            )
             .apply()
     }
 
@@ -66,5 +76,6 @@ class StudioLocalPrefsStore @Inject constructor(
         const val PREFS = "cricrelay_studio_prefs"
         const val KEY_STABILIZATION_LEVEL = "device_stabilization_level"
         const val KEY_KEEP_SCREEN_ON = "device_keep_screen_on"
+        const val KEY_CAMERA_ID = "device_camera_id"
     }
 }

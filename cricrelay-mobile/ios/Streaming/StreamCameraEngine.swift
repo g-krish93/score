@@ -661,6 +661,45 @@ final class StreamCameraEngine: NSObject {
         return (minDisplay, maxDisplay, current)
     }
 
+    /// Tap-to-focus from normalized preview coordinates (0..1, origin top-left) for remote companion.
+    func tapToFocusNormalized(nx: Float, ny: Float) {
+        guard let view = hkView else { return }
+        let w = max(view.bounds.width, 1)
+        let h = max(view.bounds.height, 1)
+        tapToFocus(
+            viewWidth: Int(w),
+            viewHeight: Int(h),
+            x: max(0, min(1, nx)) * Float(w),
+            y: max(0, min(1, ny)) * Float(h)
+        )
+    }
+
+    /// Downscaled JPEG of the HaishinKit preview for the remote companion (~480px wide).
+    @MainActor
+    func capturePreviewJpeg(maxWidth: CGFloat = 480, quality: CGFloat = 0.55) -> Data? {
+        guard let view = hkView, view.bounds.width > 1, view.bounds.height > 1 else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let full = UIGraphicsImageRenderer(size: view.bounds.size, format: format).image { _ in
+            view.drawHierarchy(in: view.bounds, afterScreenUpdates: false)
+        }
+        let scale = min(1, maxWidth / full.size.width)
+        let target = CGSize(width: full.size.width * scale, height: full.size.height * scale)
+        let scaled: UIImage
+        if scale < 0.999 {
+            let scaledFormat = UIGraphicsImageRendererFormat()
+            scaledFormat.scale = 1
+            scaled = UIGraphicsImageRenderer(size: target, format: scaledFormat).image { _ in
+                full.draw(in: CGRect(origin: .zero, size: target))
+            }
+        } else {
+            scaled = full
+        }
+        guard let data = scaled.jpegData(compressionQuality: quality),
+              data.count >= 3, data.count <= 80 * 1024 else { return nil }
+        return data
+    }
+
     // MARK: - Focus
 
     // Device configuration runs off the main thread on a serial queue, so two lockForConfiguration

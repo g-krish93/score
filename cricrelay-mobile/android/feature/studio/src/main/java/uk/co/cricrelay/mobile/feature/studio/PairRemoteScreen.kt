@@ -29,7 +29,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import uk.co.cricrelay.mobile.ui.AppColors
 import uk.co.cricrelay.mobile.ui.AppSpacing
@@ -39,6 +42,8 @@ import uk.co.cricrelay.mobile.ui.ErrorBanner
 import uk.co.cricrelay.mobile.ui.LoadingState
 import uk.co.cricrelay.mobile.ui.StudioBackdrop
 import uk.co.cricrelay.mobile.ui.encodeQrBitmap
+import java.time.Duration
+import java.time.Instant
 
 @Composable
 fun PairRemoteScreen(
@@ -46,8 +51,10 @@ fun PairRemoteScreen(
     viewModel: StudioViewModel,
     modifier: Modifier = Modifier,
 ) {
+    val studioState by viewModel.uiState.collectAsStateWithLifecycle()
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var expiresAt by remember { mutableStateOf("") }
+    var expiresAtIso by remember { mutableStateOf("") }
+    var secondsLeft by remember { mutableStateOf<Long?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
 
@@ -56,12 +63,23 @@ fun PairRemoteScreen(
         error = null
         runCatching {
             val (payload, expiry) = viewModel.createPairingCode()
-            expiresAt = expiry
+            expiresAtIso = expiry
             qrBitmap = withContext(Dispatchers.Default) { encodeQrBitmap(payload, 512) }
         }.onFailure { e ->
             error = e.message ?: "Failed to create pairing code"
         }
         loading = false
+    }
+
+    LaunchedEffect(expiresAtIso) {
+        if (expiresAtIso.isBlank()) {
+            secondsLeft = null
+            return@LaunchedEffect
+        }
+        while (isActive) {
+            secondsLeft = secondsUntil(expiresAtIso)
+            delay(1_000)
+        }
     }
 
     StudioBackdrop(modifier = modifier.fillMaxSize()) {
@@ -94,14 +112,14 @@ fun PairRemoteScreen(
                         style = AppTypography.headlineMedium,
                         color = AppColors.OnBackground,
                     )
-                    Spacer(Modifier.height(AppSpacing.sm))
+                    Spacer(modifier = Modifier.height(AppSpacing.sm))
                     Text(
-                        "Scan this code on a second phone to control start/stop, mic mute, and focus lock.",
+                        "Scan with the phone camera (or in-app scanner) to open companion controls — no club login needed on that phone.",
                         style = AppTypography.bodyMedium,
                         color = AppColors.OnBackgroundMuted,
                         textAlign = TextAlign.Center,
                     )
-                    Spacer(Modifier.height(AppSpacing.lg))
+                    Spacer(modifier = Modifier.height(AppSpacing.lg))
                     when {
                         loading -> LoadingState("Generating code…")
                         error != null -> ErrorBanner(error!!)
@@ -114,14 +132,46 @@ fun PairRemoteScreen(
                                     .background(Color.White, RoundedCornerShape(12.dp))
                                     .padding(12.dp),
                             )
-                            if (expiresAt.isNotBlank()) {
-                                Spacer(Modifier.height(AppSpacing.md))
+                            Spacer(modifier = Modifier.height(AppSpacing.md))
+                            if (studioState.companionPaired) {
                                 Text(
-                                    "Code expires soon — keep this screen open while pairing.",
+                                    "Companion connected",
+                                    style = AppTypography.titleMedium,
+                                    color = AppColors.Accent,
+                                    textAlign = TextAlign.Center,
+                                )
+                                Spacer(modifier = Modifier.height(AppSpacing.xs))
+                                Text(
+                                    "You can close this screen — keep broadcasting on this phone.",
                                     style = AppTypography.bodySmall,
                                     color = AppColors.OnBackgroundDim,
                                     textAlign = TextAlign.Center,
                                 )
+                            } else {
+                                Text(
+                                    "Waiting for companion…",
+                                    style = AppTypography.titleMedium,
+                                    color = AppColors.OnBackground,
+                                    textAlign = TextAlign.Center,
+                                )
+                                val left = secondsLeft
+                                if (left != null) {
+                                    Spacer(modifier = Modifier.height(AppSpacing.xs))
+                                    Text(
+                                        if (left <= 0L) {
+                                            "Code expired — go back and generate a new one"
+                                        } else {
+                                            "Expires in ${formatCountdown(left)}"
+                                        },
+                                        style = AppTypography.bodySmall,
+                                        color = if (left <= 30L) {
+                                            AppColors.Warning
+                                        } else {
+                                            AppColors.OnBackgroundDim
+                                        },
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
                             }
                         }
                     }
@@ -129,4 +179,16 @@ fun PairRemoteScreen(
             }
         }
     }
+}
+
+private fun secondsUntil(iso: String): Long? =
+    runCatching {
+        val expiry = Instant.parse(iso)
+        Duration.between(Instant.now(), expiry).seconds.coerceAtLeast(0)
+    }.getOrNull()
+
+private fun formatCountdown(totalSeconds: Long): String {
+    val m = totalSeconds / 60
+    val s = totalSeconds % 60
+    return "%d:%02d".format(m, s)
 }
