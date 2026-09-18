@@ -42,8 +42,9 @@ import uk.co.cricrelay.mobile.ui.ErrorBanner
 import uk.co.cricrelay.mobile.ui.LoadingState
 import uk.co.cricrelay.mobile.ui.StudioBackdrop
 import uk.co.cricrelay.mobile.ui.encodeQrBitmap
-import java.time.Duration
-import java.time.Instant
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 
 @Composable
 fun PairRemoteScreen(
@@ -183,9 +184,28 @@ fun PairRemoteScreen(
 
 private fun secondsUntil(iso: String): Long? =
     runCatching {
-        val expiry = Instant.parse(iso)
-        Duration.between(Instant.now(), expiry).seconds.coerceAtLeast(0)
+        val expiryMs = parseIso8601ToEpochMillis(iso) ?: return@runCatching null
+        ((expiryMs - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
     }.getOrNull()
+
+/**
+ * Parse server ISO-8601 timestamps (e.g. `2026-09-18T12:00:00.123456+00:00`) without
+ * `java.time` — minSdk is 24 and core library desugaring is not enabled for this module.
+ */
+private fun parseIso8601ToEpochMillis(raw: String): Long? {
+    val noFrac = raw.trim().replace(Regex("\\.\\d+"), "")
+    val normalized = when {
+        noFrac.endsWith("Z", ignoreCase = true) -> noFrac.dropLast(1) + "+0000"
+        Regex("[+-]\\d{2}:\\d{2}$").containsMatchIn(noFrac) ->
+            noFrac.replace(Regex("([+-]\\d{2}):(\\d{2})$"), "$1$2")
+        else -> noFrac + "+0000"
+    }
+    val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+        isLenient = false
+    }
+    return sdf.parse(normalized)?.time
+}
 
 private fun formatCountdown(totalSeconds: Long): String {
     val m = totalSeconds / 60
