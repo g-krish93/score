@@ -86,7 +86,7 @@ class StudioViewModelTest {
             coEvery { youtubePlatformStatus() } returns PlatformStatus()
             coEvery { twitchPlatformStatus() } returns PlatformStatus()
             coEvery { measureUploadMbps() } returns null
-            coEvery { pollRemoteCommands(any()) } returns emptyList()
+            coEvery { pollRemoteCommands(any(), any()) } returns uk.co.cricrelay.shared.model.RemoteCommandsPoll()
             coEvery { getMatchDayStatus(any()) } returns MatchDayStatus(
                 slug = SLUG,
                 label = "Village vs Town",
@@ -491,14 +491,34 @@ class StudioViewModelTest {
 
     @Test
     fun `remote mute command toggles the mic`() = runStudioTest {
-        coEvery { streamRepository.pollRemoteCommands(SLUG) } returns listOf(
-            RemoteCommand(type = "control", command = "mute_mic"),
-        ) andThen emptyList()
+        coEvery { streamRepository.pollRemoteCommands(SLUG, any()) } returns
+            uk.co.cricrelay.shared.model.RemoteCommandsPoll(
+                commands = listOf(RemoteCommand(type = "control", command = "mute_mic")),
+            ) andThen uk.co.cricrelay.shared.model.RemoteCommandsPoll()
 
         val vm = loadedViewModel()
 
         assertTrue(vm.uiState.value.micMuted)
         verify { streamController.setMicMuted(true) }
+    }
+
+    @Test
+    fun `handoff_release soft-stops without calling platform stopLive`() = runStudioTest {
+        statusFlow.value = StreamStatus(previewReady = true, streaming = true)
+        coEvery { streamRepository.pollRemoteCommands(SLUG, any()) } returns
+            uk.co.cricrelay.shared.model.RemoteCommandsPoll(
+                commands = listOf(RemoteCommand(type = "control", command = "handoff_release")),
+            ) andThen uk.co.cricrelay.shared.model.RemoteCommandsPoll()
+
+        val vm = loadedViewModel()
+        vm.uiState.test {
+            awaitUntil { !it.streaming && it.statusMessage.contains("Standby", ignoreCase = true) }
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        verify(atLeast = 1) { streamController.stopStream() }
+        coVerify(exactly = 0) { streamRepository.stopLive(any()) }
+        coVerify(exactly = 0) { streamRepository.clearLiveIngest(any()) }
     }
 
     // ── focus lock ──────────────────────────────────────────────────────────

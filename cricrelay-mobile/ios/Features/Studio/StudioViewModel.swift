@@ -139,6 +139,10 @@ final class StudioViewModel: ObservableObject {
     private var remotePollTask: Task<Void, Never>?
     private var previewPublishTask: Task<Void, Never>?
     private var companionPaired = false
+    @Published private(set) var isCompanionPaired = false
+    /// Dual-end role for this phone (`end_a` / `end_b`).
+    @Published var cameraId: String = RemoteCameraIds.endA
+    @Published private(set) var liveCameraId: String?
 
     init(matchSlug: String) {
         self.matchSlug = matchSlug
@@ -160,6 +164,8 @@ final class StudioViewModel: ObservableObject {
         customRtmpUrl = saved.rtmpUrl
         customStreamKey = saved.streamKey
         customWatchUrl = saved.watchUrl
+        cameraId = RemoteCameraIds.sanitize(UserDefaults.standard.string(forKey: "studio_camera_id"))
+            ?? RemoteCameraIds.endA
 
         // Fetch in parallel but land each result independently — one endpoint failing on flaky
         // ground Wi-Fi must not abort the whole load, which would skip the local overlay cache,
@@ -302,6 +308,7 @@ final class StudioViewModel: ObservableObject {
     private func updateCompanionPaired(_ paired: Bool) {
         guard paired != companionPaired else { return }
         companionPaired = paired
+        isCompanionPaired = paired
         if paired {
             startPreviewPublishing()
         } else {
@@ -324,12 +331,22 @@ final class StudioViewModel: ObservableObject {
                         muted: self.micMuted,
                         paused: self.paused,
                         streaming: self.streaming,
-                        stab: self.overlayPrefs.stabilizationLevel
+                        stab: self.overlayPrefs.stabilizationLevel,
+                        reconnecting: false,
+                        thermal: self.thermalLevel,
+                        bitrateKbps: nil
                     )
                     let b64 = jpeg.base64EncodedString()
-                    _ = try? await self.api.putRemotePreview(slug: self.matchSlug, jpegB64: b64, state: state)
+                    _ = try? await self.api.putRemotePreview(
+                        slug: self.matchSlug,
+                        jpegB64: b64,
+                        state: state,
+                        cameraId: self.cameraId
+                    )
                 }
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                // ~3 fps; slightly slower when the device is thermally constrained.
+                let ns: UInt64 = self.thermalLevel >= 3 ? 500_000_000 : 333_000_000
+                try? await Task.sleep(nanoseconds: ns)
             }
         }
     }
@@ -426,6 +443,17 @@ final class StudioViewModel: ObservableObject {
                     overlayEmbedUrl: matchOverlay
                 )
                 await startStream(result: result)
+                try? await api.putLiveIngest(
+                    slug: matchSlug,
+                    ingest: LiveIngest(
+                        rtmpUrl: customRtmpUrl,
+                        streamKey: customStreamKey,
+                        watchUrl: customWatchUrl,
+                        platform: "custom",
+                        overlayEmbedUrl: matchOverlay
+                    ),
+                    cameraId: cameraId
+                )
             } else {
                 let result = try await api.goLive(matchSlug: matchSlug, platform: destination)
                 rtmpUrl = result.rtmpUrl
@@ -440,7 +468,19 @@ final class StudioViewModel: ObservableObject {
                     overlayEmbedUrl: embedUrl
                 )
                 await startStream(result: streamResult)
+                try? await api.putLiveIngest(
+                    slug: matchSlug,
+                    ingest: LiveIngest(
+                        rtmpUrl: result.rtmpUrl,
+                        streamKey: result.streamKey,
+                        watchUrl: result.watchUrl,
+                        platform: destination,
+                        overlayEmbedUrl: embedUrl
+                    ),
+                    cameraId: cameraId
+                )
             }
+            liveCameraId = cameraId
             statusMessage = ""
         } catch {
             statusMessage = ""
@@ -472,6 +512,58 @@ final class StudioViewModel: ObservableObject {
                 watchUrl: result.watchUrl.isEmpty ? nil : result.watchUrl
             )
         }
+    }
+
+    private func softStopForHandoff() async {
+        stopLiveTimer()
+        await StreamCameraEngine.shared.stopStream()
+        streaming = false
+        paused = false
+        statusMessage = "Standby — other end taking live"
+    }
+
+    private func takeSharedIngestLive() async {
+        guard !streaming else { return }
+        statusMessage = "Taking live…"
+        do {
+            let ingest = try await api.getLiveIngest(slug: matchSlug)
+            guard !ingest.rtmpUrl.isEmpty, !ingest.streamKey.isEmpty else {
+                statusMessage = ""
+                if destinationReady { await goLive() }
+                return
+            }
+            let matchOverlay = match?.overlayEmbedUrl ?? ""
+            let embed = matchOverlay.isEmpty ? ingest.overlayEmbedUrl : matchOverlay
+            let result = GoLiveResult(
+                rtmpUrl: ingest.rtmpUrl,
+                streamKey: ingest.streamKey,
+                watchUrl: ingest.watchUrl,
+                overlayEmbedUrl: embed
+            )
+            rtmpUrl = ingest.rtmpUrl
+            streamKey = ingest.streamKey
+            watchUrl = ingest.watchUrl
+            overlayEmbedUrl = embed
+            await startStream(result: result)
+            try? await api.putLiveIngest(slug: matchSlug, ingest: ingest, cameraId: cameraId)
+            liveCameraId = cameraId
+            statusMessage = ""
+        } catch {
+            statusMessage = ""
+            // Fall back to a fresh Go Live if shared ingest is unavailable.
+            if destinationReady {
+                await goLive()
+            } else {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    func setCameraId(_ id: String) {
+        guard !streaming else { return }
+        guard let sanitized = RemoteCameraIds.sanitize(id) else { return }
+        cameraId = sanitized
+        UserDefaults.standard.set(sanitized, forKey: "studio_camera_id")
     }
 
     func cancelCountdown() {
@@ -510,6 +602,8 @@ final class StudioViewModel: ObservableObject {
         stopLiveTimer()
         try? await api.stopLive(platform: destination == "custom" ? nil : destination)
         try? await api.updateBroadcastStatus(slug: matchSlug, status: "idle")
+        try? await api.clearLiveIngest(slug: matchSlug)
+        liveCameraId = nil
         recap = StreamRecap(
             title: match?.label ?? "Stream",
             destinationLabel: destinationLabel,
@@ -820,9 +914,26 @@ final class StudioViewModel: ObservableObject {
     // MARK: - Mic mute
 
     func toggleMicMuted() async {
-        let next = !micMuted
-        await StreamCameraEngine.shared.setMicMuted(next)
-        micMuted = next
+        await setMicMuted(!micMuted)
+    }
+
+    func setMicMuted(_ muted: Bool) async {
+        guard micMuted != muted else { return }
+        await StreamCameraEngine.shared.setMicMuted(muted)
+        micMuted = muted
+    }
+
+    func setFocusLocked(_ locked: Bool) async {
+        if locked {
+            guard !focusLocked else { return }
+            focusLocked = await StreamCameraEngine.shared.lockFocus()
+        } else {
+            guard focusLocked else { return }
+            _ = await StreamCameraEngine.shared.unlockFocus()
+            focusLocked = false
+            focusIndicatorTask?.cancel()
+            focusIndicator = nil
+        }
     }
 
     // MARK: - Remote control
@@ -830,8 +941,14 @@ final class StudioViewModel: ObservableObject {
     func openPairRemote() async {
         do {
             let result = try await api.pairRemote(slug: matchSlug)
-            let base = api.baseUrl.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? api.baseUrl
-            pairRemotePayload = "cricrelay://pair?slug=\(matchSlug)&token=\(result.pairToken)&base=\(base)"
+            if let url = result.pairUrl, !url.isEmpty {
+                pairRemotePayload = url
+            } else {
+                let base = api.baseUrl.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? api.baseUrl
+                let slugEnc = matchSlug.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? matchSlug
+                let tokenEnc = result.pairToken.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? result.pairToken
+                pairRemotePayload = "\(api.baseUrl)/pair?slug=\(slugEnc)&token=\(tokenEnc)&base=\(base)"
+            }
             pairRemoteExpiresAt = result.expiresAt
             activeSheet = .pairRemote
         } catch {
@@ -846,11 +963,15 @@ final class StudioViewModel: ObservableObject {
                 let interval: UInt64 = companionPaired ? 400_000_000 : 1_500_000_000
                 try? await Task.sleep(nanoseconds: interval)
                 guard !Task.isCancelled else { return }
-                guard let commands = try? await api.pollRemoteCommands(slug: matchSlug) else { continue }
-                for cmd in commands where cmd.type == "control" {
+                guard let poll = try? await api.pollRemoteCommands(slug: matchSlug, cameraId: cameraId) else { continue }
+                updateCompanionPaired(poll.companionPaired)
+                if poll.liveCameraId != liveCameraId {
+                    liveCameraId = poll.liveCameraId
+                }
+                for cmd in poll.commands where cmd.type == "control" {
                     await dispatchRemoteCommand(cmd)
                 }
-                for cmd in commands where cmd.type == "overlay" {
+                for cmd in poll.commands where cmd.type == "overlay" {
                     if let patch = cmd.prefs {
                         await applyRemoteOverlayPatch(patch)
                     }
@@ -865,10 +986,22 @@ final class StudioViewModel: ObservableObject {
             if !streaming { await remoteStartBroadcast() }
         case "stop_broadcast":
             if streaming { await stopLive() }
+        case "handoff_release":
+            if streaming { await softStopForHandoff() }
+        case "handoff_take":
+            if !streaming { await takeSharedIngestLive() }
         case "mute_mic":
             await toggleMicMuted()
         case "toggle_focus_lock":
             await toggleFocusLock()
+        case "set_mute":
+            if let muted = boolPayload(cmd.payload, "muted") {
+                await setMicMuted(muted)
+            }
+        case "set_focus_lock":
+            if let locked = boolPayload(cmd.payload, "locked") {
+                await setFocusLocked(locked)
+            }
         case "toggle_sponsor":
             var prefs = overlayPrefs
             prefs.sponsorEnabled.toggle()
@@ -916,6 +1049,20 @@ final class StudioViewModel: ObservableObject {
         return nil
     }
 
+    private func boolPayload(_ payload: [String: Any]?, _ key: String) -> Bool? {
+        guard let raw = payload?[key] else { return nil }
+        if let b = raw as? Bool { return b }
+        if let n = raw as? NSNumber { return n.boolValue }
+        if let s = raw as? String {
+            switch s.lowercased() {
+            case "1", "true", "yes", "on": return true
+            case "0", "false", "no", "off": return false
+            default: return nil
+            }
+        }
+        return nil
+    }
+
     private func applyRemoteOverlayPatch(_ patch: [String: Any]) async {
         let merged = overlayPrefs.mergeSponsorPatch(patch)
         await saveOverlay(merged)
@@ -960,14 +1107,7 @@ final class StudioViewModel: ObservableObject {
     /// Freeze focus + exposure on the pitch (or hand them back to continuous AF/AE). Reflects the
     /// real device result so the padlock only shows "locked" if the camera actually locked.
     func toggleFocusLock() async {
-        if focusLocked {
-            _ = await StreamCameraEngine.shared.unlockFocus()
-            focusLocked = false
-            focusIndicatorTask?.cancel()
-            focusIndicator = nil
-        } else {
-            focusLocked = await StreamCameraEngine.shared.lockFocus()
-        }
+        await setFocusLocked(!focusLocked)
     }
 
     private func showFocusIndicator(at point: CGPoint) {

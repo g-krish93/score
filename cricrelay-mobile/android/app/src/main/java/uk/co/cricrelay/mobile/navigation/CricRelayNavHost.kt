@@ -41,21 +41,23 @@ fun CricRelayNavHost(
     val pendingPairUri by PairDeepLinkBus.pendingUri.collectAsStateWithLifecycle()
     val backStackEntry by navController.currentBackStackEntryAsState()
 
-    // After login/home is up, open Remote Control so the ViewModel can redeem the QR payload.
+    // Open Remote Control whenever a pair deep link arrives — including before club login.
     LaunchedEffect(pendingPairUri, backStackEntry, startDestination) {
         if (pendingPairUri.isNullOrBlank()) return@LaunchedEffect
-        if (startDestination == "login" || startDestination == "onboarding") return@LaunchedEffect
         val route = backStackEntry?.destination?.route.orEmpty()
-        // Typed routes serialize as the fully-qualified class name; match either Home or Remote.
-        val onAuthedSurface = route.contains("HomeRoute") ||
-            route.contains("RemoteControlRoute") ||
+        if (route.contains("RemoteControlRoute")) return@LaunchedEffect
+        // Allow from login / cold companion start as well as authed surfaces.
+        val canOpen = startDestination == "remote_control" ||
+            startDestination == "home" ||
+            startDestination == "login" ||
+            startDestination == "onboarding" ||
+            route.contains("HomeRoute") ||
+            route.contains("LoginRoute") ||
             route.contains("StudioRoute") ||
             route.contains("CreateStreamRoute") ||
             route.contains("ScoringRoute") ||
-            // First frame after cold start may still be settling on HomeRoute.
             (backStackEntry == null && startDestination == "home")
-        if (!onAuthedSurface && startDestination != "home") return@LaunchedEffect
-        if (route.contains("RemoteControlRoute")) return@LaunchedEffect
+        if (!canOpen) return@LaunchedEffect
         navController.navigate(RemoteControlRoute) {
             launchSingleTop = true
         }
@@ -66,6 +68,7 @@ fun CricRelayNavHost(
         startDestination = when (startDestination) {
             "login" -> LoginRoute
             "onboarding" -> OnboardingRoute
+            "remote_control" -> RemoteControlRoute
             else -> HomeRoute
         },
         modifier = modifier,
@@ -195,7 +198,15 @@ fun CricRelayNavHost(
             )
         }
         composable<RemoteControlRoute> {
-            RemoteControlScreen(onBack = { navController.popBackStack() })
+            RemoteControlScreen(
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(LoginRoute) {
+                            popUpTo(RemoteControlRoute) { inclusive = true }
+                        }
+                    }
+                },
+            )
         }
         composable<ScoringRoute> { entry ->
             val route = entry.toRoute<ScoringRoute>()

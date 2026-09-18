@@ -109,12 +109,17 @@ REMOTE_CONTROL_COMMANDS = {
     "stop_broadcast",
     "mute_mic",
     "toggle_focus_lock",
+    "set_mute",
+    "set_focus_lock",
     "toggle_sponsor",
     "set_zoom",
     "tap_focus",
     "set_stabilization",
     "pause_broadcast",
     "resume_broadcast",
+    "take_live",
+    "handoff_release",
+    "handoff_take",
 }
 
 # Commands that require a validated payload object (others ignore payload).
@@ -122,10 +127,30 @@ REMOTE_CONTROL_PAYLOAD_COMMANDS = {
     "set_zoom",
     "tap_focus",
     "set_stabilization",
+    "set_mute",
+    "set_focus_lock",
+    "take_live",
 }
 
 REMOTE_PREVIEW_MAX_BYTES = 80 * 1024
 REMOTE_PREVIEW_TTL_SEC = 5
+REMOTE_CAMERA_IDS = ("end_a", "end_b")
+REMOTE_CAMERA_TTL_SEC = 45
+REMOTE_HANDOFF_LOCK_TTL_SEC = 20
+REMOTE_METRICS_TTL_SEC = 24 * 60 * 60
+REMOTE_METRICS_MAX_EVENTS = 200
+REMOTE_METRICS_ALLOWED = frozenset(
+    {
+        "pair_ok",
+        "pair_fail",
+        "preview_first_frame_ms",
+        "command_ack_ms",
+        "command_ack_timeout",
+        "take_live",
+        "share_watch",
+    }
+)
+REMOTE_INGEST_TTL_SEC = 6 * 60 * 60
 
 
 def companion_is_paired(slug: str) -> bool:
@@ -134,6 +159,20 @@ def companion_is_paired(slug: str) -> bool:
     if not s:
         return False
     return bool(redis_client().get(f"cricrelay:companion:{s}"))
+
+
+def _coerce_bool(raw: Any) -> bool | None:
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)) and raw in (0, 1):
+        return bool(raw)
+    if isinstance(raw, str):
+        v = raw.strip().lower()
+        if v in {"1", "true", "yes", "on"}:
+            return True
+        if v in {"0", "false", "no", "off"}:
+            return False
+    return None
 
 
 def sanitize_remote_control_payload(command: str, raw: Any) -> tuple[dict[str, Any] | None, str | None]:
@@ -171,7 +210,303 @@ def sanitize_remote_control_payload(command: str, raw: Any) -> tuple[dict[str, A
         if level not in (0, 1, 2):
             return None, "level must be 0, 1, or 2"
         return {"level": level}, None
+    if command == "set_mute":
+        muted = _coerce_bool(raw.get("muted"))
+        if muted is None:
+            return None, "muted must be a boolean"
+        return {"muted": muted}, None
+    if command == "set_focus_lock":
+        locked = _coerce_bool(raw.get("locked"))
+        if locked is None:
+            return None, "locked must be a boolean"
+        return {"locked": locked}, None
+    if command == "take_live":
+        cam = sanitize_camera_id(raw.get("camera_id"))
+        if not cam:
+            return None, "camera_id must be end_a or end_b"
+        return {"camera_id": cam}, None
     return None, "invalid command"
+
+
+def sanitize_camera_id(raw: Any) -> str | None:
+    cam = str(raw or "").strip().lower()
+    return cam if cam in REMOTE_CAMERA_IDS else None
+
+
+def register_remote_camera(slug: str, camera_id: str, meta: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Heartbeat a tripod phone into the dual-end camera registry."""
+    import time as _t
+
+    s = (slug or "").strip()
+    cam = sanitize_camera_id(camera_id)
+    if not s or not cam:
+        raise ValueError("slug and camera_id required")
+    meta = dict(meta or {})
+    row = {
+        "camera_id": cam,
+        "label": str(meta.get("label") or ("End A" if cam == "end_a" else "End B"))[:40],
+        "streaming": bool(meta.get("streaming")),
+        "last_seen": _t.time(),
+    }
+    r = redis_client()
+    key = f"cricrelay:remote:cameras:{s}"
+    r.hset(key, cam, json.dumps(row))
+    r.expire(key, REMOTE_CAMERA_TTL_SEC * 4)
+    return row
+
+
+def list_remote_cameras(slug: str) -> list[dict[str, Any]]:
+    import time as _t
+
+    s = (slug or "").strip()
+    if not s:
+        return []
+    r = redis_client()
+    raw = r.hgetall(f"cricrelay:remote:cameras:{s}") or {}
+    decoded: dict[str, Any] = {}
+    for k, v in raw.items():
+        key = k.decode() if isinstance(k, (bytes, bytearray)) else str(k)
+        decoded[key] = v
+    now = _t.time()
+    live = get_live_camera(s)
+    out: list[dict[str, Any]] = []
+    for cam_id in REMOTE_CAMERA_IDS:
+        blob = decoded.get(cam_id)
+        if blob is None:
+            continue
+        try:
+            row = json.loads(blob.decode() if isinstance(blob, (bytes, bytearray)) else blob)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        last_seen = float(row.get("last_seen") or 0)
+        stale = (now - last_seen) > REMOTE_CAMERA_TTL_SEC
+        out.append(
+            {
+                "camera_id": cam_id,
+                "label": row.get("label") or cam_id,
+                "streaming": bool(row.get("streaming")) and not stale,
+                "stale": stale,
+                "last_seen": last_seen,
+                "is_live": live == cam_id,
+            }
+        )
+    return out
+
+
+def get_live_camera(slug: str) -> str | None:
+    s = (slug or "").strip()
+    if not s:
+        return None
+    raw = redis_client().get(f"cricrelay:remote:live:{s}")
+    if not raw:
+        return None
+    cam = sanitize_camera_id(raw.decode() if isinstance(raw, (bytes, bytearray)) else raw)
+    return cam
+
+
+def set_live_camera(slug: str, camera_id: str | None) -> None:
+    s = (slug or "").strip()
+    if not s:
+        return
+    key = f"cricrelay:remote:live:{s}"
+    r = redis_client()
+    if not camera_id:
+        r.delete(key)
+        return
+    cam = sanitize_camera_id(camera_id)
+    if not cam:
+        return
+    r.setex(key, REMOTE_INGEST_TTL_SEC, cam)
+
+
+def store_live_ingest(slug: str, ingest: dict[str, Any]) -> dict[str, Any]:
+    """Persist shared RTMP ingest so a second end can take over the same destination."""
+    s = (slug or "").strip()
+    if not s:
+        raise ValueError("slug required")
+    rtmp_url = str(ingest.get("rtmp_url") or "").strip()
+    stream_key = str(ingest.get("stream_key") or "").strip()
+    if not rtmp_url or not stream_key:
+        raise ValueError("rtmp_url and stream_key required")
+    payload = {
+        "rtmp_url": rtmp_url[:500],
+        "stream_key": stream_key[:500],
+        "watch_url": str(ingest.get("watch_url") or "").strip()[:500],
+        "platform": str(ingest.get("platform") or "custom").strip().lower()[:32],
+        "overlay_embed_url": str(ingest.get("overlay_embed_url") or "").strip()[:500],
+    }
+    redis_client().setex(
+        f"cricrelay:remote:ingest:{s}",
+        REMOTE_INGEST_TTL_SEC,
+        json.dumps(payload),
+    )
+    return payload
+
+
+def get_live_ingest(slug: str) -> dict[str, Any] | None:
+    s = (slug or "").strip()
+    if not s:
+        return None
+    raw = redis_client().get(f"cricrelay:remote:ingest:{s}")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw.decode() if isinstance(raw, (bytes, bytearray)) else raw)
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+
+def clear_live_ingest(slug: str) -> None:
+    s = (slug or "").strip()
+    if not s:
+        return
+    r = redis_client()
+    r.delete(f"cricrelay:remote:ingest:{s}")
+    r.delete(f"cricrelay:remote:live:{s}")
+
+
+def store_remote_metrics(slug: str, events: list[dict[str, Any]]) -> int:
+    """Append privacy-safe companion metrics. Returns count accepted."""
+    import time as _t
+
+    s = (slug or "").strip()
+    if not s or not events:
+        return 0
+    accepted: list[str] = []
+    now = _t.time()
+    for raw in events[:40]:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip().lower()
+        if name not in REMOTE_METRICS_ALLOWED:
+            continue
+        value = raw.get("value")
+        row: dict[str, Any] = {"name": name, "ts": now}
+        if value is not None:
+            try:
+                row["value"] = max(0, min(600_000, int(value)))
+            except (TypeError, ValueError):
+                pass
+        accepted.append(json.dumps(row))
+    if not accepted:
+        return 0
+    key = f"cricrelay:remote:metrics:{s}"
+    r = redis_client()
+    pipe = r.pipeline()
+    pipe.rpush(key, *accepted)
+    pipe.ltrim(key, -REMOTE_METRICS_MAX_EVENTS, -1)
+    pipe.expire(key, REMOTE_METRICS_TTL_SEC)
+    pipe.execute()
+    return len(accepted)
+
+
+def enqueue_remote_control(slug: str, command: str, payload: dict[str, Any] | None = None) -> None:
+    import time as _t
+
+    s = (slug or "").strip()
+    if not s or not command:
+        return
+    envelope: dict[str, Any] = {"type": "control", "command": command, "ts": _t.time()}
+    if payload:
+        envelope["payload"] = payload
+        cam = sanitize_camera_id(payload.get("camera_id"))
+        if cam:
+            envelope["camera_id"] = cam
+    else:
+        cam = None
+    body = json.dumps(envelope)
+    r = redis_client()
+    if cam:
+        key = f"cricrelay:remote:cmds:{s}:{cam}"
+        r.rpush(key, body)
+        r.expire(key, 600)
+        return
+    # Untargeted: deliver to both ends + legacy single-phone queue.
+    for cid in REMOTE_CAMERA_IDS:
+        key = f"cricrelay:remote:cmds:{s}:{cid}"
+        r.rpush(key, body)
+        r.expire(key, 600)
+    legacy = f"cricrelay:remote:cmds:{s}"
+    r.rpush(legacy, body)
+    r.expire(legacy, 600)
+
+
+def drain_remote_commands(slug: str, camera_id: str | None = None) -> list[dict[str, Any]]:
+    """Pop pending remote commands for a tripod phone.
+
+    Dual-end phones pass camera_id and read their dedicated queue. Legacy single-phone
+    callers omit it and read the shared queue.
+    """
+    s = (slug or "").strip()
+    if not s:
+        return []
+    cam = sanitize_camera_id(camera_id) if camera_id else None
+    key = f"cricrelay:remote:cmds:{s}:{cam}" if cam else f"cricrelay:remote:cmds:{s}"
+    r = redis_client()
+    pipe = r.pipeline()
+    pipe.lrange(key, 0, -1)
+    pipe.delete(key)
+    raw_list, _ = pipe.execute()
+    out: list[dict[str, Any]] = []
+    for item in raw_list:
+        try:
+            raw = item.decode() if isinstance(item, (bytes, bytearray)) else item
+            out.append(json.loads(raw))
+        except (TypeError, json.JSONDecodeError):
+            continue
+    return out
+
+
+def enqueue_take_live(slug: str, target_camera_id: str) -> tuple[bool, str | None]:
+    """Orchestrate dual-end handoff: soft-stop current publisher, start target on same ingest.
+
+    Returns (ok, error_message).
+    """
+    s = (slug or "").strip()
+    target = sanitize_camera_id(target_camera_id)
+    if not s or not target:
+        return False, "invalid camera"
+    r = redis_client()
+    lock_key = f"cricrelay:remote:handoff:{s}"
+    # SET NX — reject overlapping Take Live taps.
+    got = r.set(lock_key, target, nx=True, ex=REMOTE_HANDOFF_LOCK_TTL_SEC)
+    if not got:
+        return False, "handoff already in progress"
+    try:
+        current = get_live_camera(s)
+        if current == target:
+            return True, None
+        if current and current != target:
+            enqueue_remote_control(
+                s,
+                "handoff_release",
+                {"camera_id": current},
+            )
+        enqueue_remote_control(
+            s,
+            "handoff_take",
+            {"camera_id": target},
+        )
+        set_live_camera(s, target)
+        return True, None
+    finally:
+        # Allow a follow-up take shortly; release early so a failed phone can retry.
+        r.delete(lock_key)
+
+
+def preview_redis_keys(slug: str, camera_id: str | None) -> tuple[str, str]:
+    """JPEG + state Redis keys. Legacy (no camera) keys kept for single-phone back-compat."""
+    s = (slug or "").strip()
+    cam = sanitize_camera_id(camera_id) if camera_id else None
+    if cam:
+        return (
+            f"cricrelay:remote:preview:{s}:{cam}",
+            f"cricrelay:remote:camera:{s}:{cam}",
+        )
+    return (
+        f"cricrelay:remote:preview:{s}",
+        f"cricrelay:remote:camera:{s}",
+    )
 
 
 def sanitize_remote_camera_state(raw: Any) -> dict[str, Any]:
@@ -187,13 +522,8 @@ def sanitize_remote_camera_state(raw: Any) -> dict[str, Any]:
 
     def _b(key: str, default: bool = False) -> bool:
         val = raw.get(key, default)
-        if isinstance(val, bool):
-            return val
-        if isinstance(val, (int, float)):
-            return bool(val)
-        if isinstance(val, str):
-            return val.strip().lower() in {"1", "true", "yes"}
-        return default
+        coerced = _coerce_bool(val)
+        return default if coerced is None else coerced
 
     stab = 1
     try:
@@ -201,6 +531,20 @@ def sanitize_remote_camera_state(raw: Any) -> dict[str, Any]:
     except (TypeError, ValueError):
         stab = 1
     stab = max(0, min(2, stab))
+
+    thermal = 0
+    try:
+        thermal = int(raw.get("thermal", 0))
+    except (TypeError, ValueError):
+        thermal = 0
+    thermal = max(0, min(6, thermal))
+
+    bitrate = None
+    try:
+        if raw.get("bitrate_kbps") is not None:
+            bitrate = max(0, min(50_000, int(raw.get("bitrate_kbps"))))
+    except (TypeError, ValueError):
+        bitrate = None
 
     zoom_min = _f("zoom_min", 1.0, 0.1, 20.0)
     zoom_max = _f("zoom_max", 8.0, zoom_min, 20.0)
@@ -214,6 +558,9 @@ def sanitize_remote_camera_state(raw: Any) -> dict[str, Any]:
         "paused": _b("paused"),
         "streaming": _b("streaming"),
         "stab": stab,
+        "reconnecting": _b("reconnecting"),
+        "thermal": thermal,
+        "bitrate_kbps": bitrate,
     }
 
 REMOTE_SPONSOR_OVERLAY_KEYS = {
@@ -233,6 +580,30 @@ REMOTE_SPONSOR_OVERLAY_KEYS = {
 
 def issue_remote_pair_token(org: Organization, match_slug: str) -> str:
     return _remote_pair_serializer().dumps({"oid": org.id, "slug": match_slug})
+
+
+def build_remote_pair_urls(
+    public_base: str,
+    match_slug: str,
+    pair_token: str,
+    api_base: str | None = None,
+) -> dict[str, str]:
+    """HTTPS App Link + custom-scheme deep link for companion QR payloads.
+
+    System cameras open https more reliably than custom schemes; the /pair landing
+    page then handsoff into ``cricrelay://pair`` when Universal/App Links are not yet verified.
+    """
+    from urllib.parse import urlencode
+
+    slug = (match_slug or "").strip()
+    token = (pair_token or "").strip()
+    site = (public_base or "").strip().rstrip("/")
+    api = (api_base or public_base or "").strip().rstrip("/")
+    query = urlencode({"slug": slug, "token": token, "base": api})
+    return {
+        "pair_url": f"{site}/pair?{query}" if site else f"/pair?{query}",
+        "deep_link": f"cricrelay://pair?{query}",
+    }
 
 
 def redeem_remote_pair_token(pair_token: str) -> dict | None:

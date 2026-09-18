@@ -282,7 +282,9 @@ final class CricRelayAPI {
         guard let token = json["pair_token"] as? String else { throw URLError(.badServerResponse) }
         return PairRemoteResult(
             pairToken: token,
-            expiresAt: json["expires_at"] as? String
+            expiresAt: json["expires_at"] as? String,
+            pairUrl: json["pair_url"] as? String,
+            deepLink: json["deep_link"] as? String
         )
     }
 
@@ -301,10 +303,15 @@ final class CricRelayAPI {
         }
     }
 
-    func pollRemoteCommands(slug: String) async throws -> [RemoteCommand] {
-        let json = try await getJson("/api/match/\(enc(slug))/remote/commands")
-        guard let rows = json["commands"] as? [[String: Any]] else { return [] }
-        return rows.map { RemoteCommand.from($0) }
+    func pollRemoteCommands(slug: String, cameraId: String? = nil) async throws -> (commands: [RemoteCommand], companionPaired: Bool, liveCameraId: String?) {
+        var path = "/api/match/\(enc(slug))/remote/commands"
+        if let cameraId, !cameraId.isEmpty {
+            path += "?camera_id=\(enc(cameraId))"
+        }
+        let json = try await getJson(path)
+        let rows = json["commands"] as? [[String: Any]] ?? []
+        let paired = (json["companion_paired"] as? Bool) ?? false
+        return (rows.map { RemoteCommand.from($0) }, paired, json["live_camera_id"] as? String)
     }
 
     func redeemPairToken(slug: String, pairToken: String) async throws -> CompanionSession {
@@ -335,16 +342,53 @@ final class CricRelayAPI {
         )
     }
 
-    func putRemotePreview(slug: String, jpegB64: String, state: RemoteCameraState) async throws {
+    func putRemotePreview(slug: String, jpegB64: String, state: RemoteCameraState, cameraId: String? = nil) async throws {
+        var body: [String: Any] = ["jpeg_b64": jpegB64, "state": state.dictionary()]
+        if let cameraId, !cameraId.isEmpty { body["camera_id"] = cameraId }
         _ = try await putJson(
             "/api/match/\(enc(slug))/remote/preview",
-            body: ["jpeg_b64": jpegB64, "state": state.dictionary()]
+            body: body
         )
     }
 
-    func getRemotePreview(slug: String, companionToken: String) async throws -> RemotePreviewFrame {
-        let json = try await getJsonWithToken("/api/match/\(enc(slug))/remote/preview", token: companionToken)
+    func getRemotePreview(slug: String, companionToken: String, cameraId: String? = nil) async throws -> RemotePreviewFrame {
+        var path = "/api/match/\(enc(slug))/remote/preview"
+        if let cameraId, !cameraId.isEmpty {
+            path += "?camera_id=\(enc(cameraId))"
+        }
+        let json = try await getJsonWithToken(path, token: companionToken)
         return RemotePreviewFrame.from(json)
+    }
+
+    func listRemoteCameras(slug: String, companionToken: String) async throws -> (cameras: [RemoteCameraInfo], liveCameraId: String?) {
+        let json = try await getJsonWithToken("/api/match/\(enc(slug))/remote/cameras", token: companionToken)
+        let rows = json["cameras"] as? [[String: Any]] ?? []
+        return (rows.map { RemoteCameraInfo.from($0) }, json["live_camera_id"] as? String)
+    }
+
+    func putLiveIngest(slug: String, ingest: LiveIngest, cameraId: String? = nil) async throws {
+        var body = ingest.dictionary()
+        if let cameraId, !cameraId.isEmpty { body["camera_id"] = cameraId }
+        _ = try await putJson("/api/match/\(enc(slug))/remote/ingest", body: body)
+    }
+
+    func getLiveIngest(slug: String) async throws -> LiveIngest {
+        let json = try await getJson("/api/match/\(enc(slug))/remote/ingest")
+        guard let ingest = json["ingest"] as? [String: Any] else { throw URLError(.badServerResponse) }
+        return LiveIngest.from(ingest)
+    }
+
+    func clearLiveIngest(slug: String) async throws {
+        try await sendDelete("/api/match/\(enc(slug))/remote/ingest")
+    }
+
+    func postRemoteMetrics(slug: String, companionToken: String, events: [[String: Any]]) async throws {
+        guard !events.isEmpty else { return }
+        _ = try await postJsonWithToken(
+            "/api/match/\(enc(slug))/remote/metrics",
+            body: ["events": events],
+            token: companionToken
+        )
     }
 
     func sendRemoteOverlayPrefs(slug: String, prefs: OverlayLayoutPrefs, companionToken: String) async throws {

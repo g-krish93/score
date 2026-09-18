@@ -82,10 +82,17 @@ class MainActivity : ComponentActivity() {
         capturePairDeepLink(intent)
     }
 
-    /** System camera / Lens scanned a `cricrelay://pair?…` QR — stash for Remote Control. */
+    /** System camera / Lens / App Link scanned a pair URI — stash for Remote Control. */
     private fun capturePairDeepLink(intent: Intent?) {
         val data = intent?.data ?: return
-        if (data.scheme == "cricrelay" && data.host == "pair") {
+        val scheme = data.scheme?.lowercase().orEmpty()
+        val host = data.host?.lowercase().orEmpty()
+        val path = data.path.orEmpty()
+        val isCustom = scheme == "cricrelay" && host == "pair"
+        val isHttps = scheme == "https" &&
+            (host == "cricrelay.co.uk" || host == "www.cricrelay.co.uk") &&
+            (path == "/pair" || path.startsWith("/pair/"))
+        if (isCustom || isHttps) {
             PairDeepLinkBus.offer(data.toString())
         }
     }
@@ -192,6 +199,11 @@ private fun ColdStartSplash(appReady: Boolean) {
 @Composable
 private fun rememberStartDestination(authRepository: AuthRepository): String? =
     androidx.compose.runtime.produceState<String?>(initialValue = null) {
+        // Companion pairing must work without a club login — pending App Link / QR wins.
+        if (!PairDeepLinkBus.pendingUri.value.isNullOrBlank()) {
+            value = "remote_control"
+            return@produceState
+        }
         val session = authRepository.currentSession()
         value = when {
             session.token.isNullOrBlank() -> "login"

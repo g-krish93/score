@@ -6,12 +6,13 @@ import CoreImage.CIFilterBuiltins
 struct PairRemoteSheet: View {
     @ObservedObject var viewModel: StudioViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var secondsLeft: Int? = nil
 
     var body: some View {
         NavigationStack {
             StudioBackdrop {
                 VStack(spacing: 24) {
-                    Text("Scan with a companion device to control this broadcast remotely.")
+                    Text("Scan with the phone camera to open companion controls — no club login needed on that phone.")
                         .font(.subheadline)
                         .foregroundStyle(CricTheme.textMuted)
                         .multilineTextAlignment(.center)
@@ -32,16 +33,24 @@ struct PairRemoteSheet: View {
                             .frame(width: 240, height: 240)
                     }
 
-                    if let expires = viewModel.pairRemoteExpiresAt, !expires.isEmpty {
-                        Text("Code expires soon")
+                    if viewModel.isCompanionPaired {
+                        Text("Companion connected")
+                            .font(.headline)
+                            .foregroundStyle(CricTheme.accent)
+                        Text("You can close this screen — keep broadcasting on this phone.")
                             .font(.caption)
                             .foregroundStyle(CricTheme.textDim)
+                            .multilineTextAlignment(.center)
+                    } else {
+                        Text("Waiting for companion…")
+                            .font(.headline)
+                            .foregroundStyle(Color.white)
+                        if let left = secondsLeft {
+                            Text(left <= 0 ? "Code expired — generate a new one" : "Expires in \(formatCountdown(left))")
+                                .font(.caption)
+                                .foregroundStyle(left <= 30 ? Color.orange : CricTheme.textDim)
+                        }
                     }
-
-                    Text("Start/stop, mute mic, and toggle focus lock are available to the paired device.")
-                        .font(.caption)
-                        .foregroundStyle(CricTheme.textDim)
-                        .multilineTextAlignment(.center)
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -54,9 +63,39 @@ struct PairRemoteSheet: View {
                         .foregroundStyle(CricTheme.textMuted)
                 }
             }
+            .task(id: viewModel.pairRemoteExpiresAt) {
+                await tickExpiry()
+            }
         }
         .preferredColorScheme(.dark)
         .presentationDetents([.medium, .large])
+    }
+
+    private func tickExpiry() async {
+        guard let iso = viewModel.pairRemoteExpiresAt, !iso.isEmpty else {
+            secondsLeft = nil
+            return
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var expiry = formatter.date(from: iso)
+        if expiry == nil {
+            formatter.formatOptions = [.withInternetDateTime]
+            expiry = formatter.date(from: iso)
+        }
+        guard let expiry else {
+            secondsLeft = nil
+            return
+        }
+        while !Task.isCancelled {
+            let left = max(0, Int(expiry.timeIntervalSinceNow))
+            secondsLeft = left
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+    }
+
+    private func formatCountdown(_ total: Int) -> String {
+        String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 

@@ -22,19 +22,76 @@ class _FakeRedis:
     def __init__(self) -> None:
         self._kv: dict[str, str] = {}
         self._lists: dict[str, list[str]] = {}
+        self._hashes: dict[str, dict[str, str]] = {}
 
     def setex(self, key: str, _ttl: int, value: str) -> None:
         self._kv[key] = value
+
+    def set(self, key: str, value: str, nx: bool = False, ex: int | None = None) -> bool:
+        if nx and key in self._kv:
+            return False
+        self._kv[key] = value
+        return True
 
     def get(self, key: str) -> bytes | None:
         val = self._kv.get(key)
         return val.encode() if val is not None else None
 
-    def rpush(self, key: str, value: str) -> None:
-        self._lists.setdefault(key, []).append(value)
+    def delete(self, *keys: str) -> int:
+        n = 0
+        for key in keys:
+            if key in self._kv:
+                del self._kv[key]
+                n += 1
+            if key in self._lists:
+                del self._lists[key]
+                n += 1
+            if key in self._hashes:
+                del self._hashes[key]
+                n += 1
+        return n
+
+    def rpush(self, key: str, *values: str) -> None:
+        self._lists.setdefault(key, []).extend(values)
+
+    def ltrim(self, key: str, start: int, end: int) -> None:
+        lst = self._lists.get(key, [])
+        if not lst:
+            return
+        # Redis LTRIM is inclusive; negative indexes count from the end.
+        n = len(lst)
+        if start < 0:
+            start = max(0, n + start)
+        if end < 0:
+            end = n + end
+        end = min(end, n - 1)
+        if start > end or start >= n:
+            self._lists[key] = []
+        else:
+            self._lists[key] = lst[start : end + 1]
+
+    def lrange(self, key: str, start: int, end: int) -> list[str]:
+        lst = self._lists.get(key, [])
+        if not lst:
+            return []
+        n = len(lst)
+        if start < 0:
+            start = max(0, n + start)
+        if end < 0:
+            end = n + end
+        end = min(end, n - 1)
+        if start > end or start >= n:
+            return []
+        return lst[start : end + 1]
 
     def expire(self, _key: str, _ttl: int) -> None:
         return None
+
+    def hset(self, key: str, field: str, value: str) -> None:
+        self._hashes.setdefault(key, {})[field] = value
+
+    def hgetall(self, key: str) -> dict[str, str]:
+        return dict(self._hashes.get(key) or {})
 
     def pipeline(self) -> "_FakePipeline":
         return _FakePipeline(self)
@@ -43,7 +100,7 @@ class _FakeRedis:
 class _FakePipeline:
     def __init__(self, redis: _FakeRedis) -> None:
         self._redis = redis
-        self._ops: list[tuple[str, str]] = []
+        self._ops: list[tuple] = []
 
     def lrange(self, key: str, _start: int, _end: int) -> "_FakePipeline":
         self._ops.append(("lrange", key))
@@ -53,16 +110,39 @@ class _FakePipeline:
         self._ops.append(("delete", key))
         return self
 
+    def rpush(self, key: str, *values: str) -> "_FakePipeline":
+        self._ops.append(("rpush", key, values))
+        return self
+
+    def ltrim(self, key: str, start: int, end: int) -> "_FakePipeline":
+        self._ops.append(("ltrim", key, start, end))
+        return self
+
+    def expire(self, key: str, _ttl: int) -> "_FakePipeline":
+        self._ops.append(("expire", key))
+        return self
+
     def execute(self) -> list:
         results = []
-        for op, key in self._ops:
-            if op == "lrange":
-                results.append(self._redis._lists.get(key, []))
-            elif op == "delete":
-                self._redis._lists.pop(key, None)
+        for op in self._ops:
+            kind = op[0]
+            if kind == "lrange":
+                results.append(self._redis._lists.get(op[1], []))
+            elif kind == "delete":
+                self._redis._lists.pop(op[1], None)
+                self._redis._kv.pop(op[1], None)
                 results.append(1)
+            elif kind == "rpush":
+                _, key, values = op
+                self._redis.rpush(key, *values)
+                results.append(len(self._redis._lists.get(key, [])))
+            elif kind == "ltrim":
+                _, key, start, end = op
+                self._redis.ltrim(key, start, end)
+                results.append(True)
+            elif kind == "expire":
+                results.append(True)
         return results
-
 
 @pytest.fixture()
 def client(monkeypatch):
@@ -388,9 +468,39 @@ def test_remote_payload_commands_and_preview(client):
     )
     assert pause.status_code == 200
 
+    mute = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps(
+            {"type": "control", "command": "set_mute", "payload": {"muted": True}}
+        ),
+    )
+    assert mute.status_code == 200
+
+    bad_mute = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps({"type": "control", "command": "set_mute", "payload": {}}),
+    )
+    assert bad_mute.status_code == 400
+
+    lock = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps(
+            {"type": "control", "command": "set_focus_lock", "payload": {"locked": False}}
+        ),
+    )
+    assert lock.status_code == 200
+
     polled = c.get(f"/api/match/{slug}/remote/commands", headers=headers)
-    commands = polled.get_json()["commands"]
+    assert polled.status_code == 200
+    body = polled.get_json()
+    assert body["companion_paired"] is True
+    commands = body["commands"]
     by_cmd = {cmd["command"]: cmd for cmd in commands}
+    assert by_cmd["set_mute"]["payload"]["muted"] is True
+    assert by_cmd["set_focus_lock"]["payload"]["locked"] is False
     assert by_cmd["set_zoom"]["payload"]["level"] == 2.5
     assert by_cmd["tap_focus"]["payload"] == {"nx": 0.4, "ny": 0.6}
     assert by_cmd["set_stabilization"]["payload"]["level"] == 2
@@ -401,9 +511,122 @@ def test_remote_payload_commands_and_preview(client):
     assert day.status_code == 200
     assert day.get_json()["companion_paired"] is True
 
-    # Minimal JPEG (SOI + EOI)
+
+def test_dual_end_take_live_handoff(client):
+    """take_live soft-stops the live end and starts the other on dedicated queues."""
+    c, fake = client
+    _org_id, token, slug = _seed_org_and_match()
+    headers = _auth_headers(token)
+
+    pair = c.post(f"/api/match/{slug}/pair", headers=headers)
+    companion_token = c.post(
+        f"/stream/{slug}/pair/redeem",
+        data=json.dumps({"pair_token": pair.get_json()["pair_token"]}),
+        content_type="application/json",
+    ).get_json()["companion_token"]
+    cmd_headers = {
+        "Authorization": f"Bearer {companion_token}",
+        "Content-Type": "application/json",
+    }
+
+    # Seed ingest + live end A
+    ingest = c.put(
+        f"/api/match/{slug}/remote/ingest",
+        headers=headers,
+        data=json.dumps(
+            {
+                "rtmp_url": "rtmp://a.rtmp.youtube.com/live2",
+                "stream_key": "secret-key",
+                "watch_url": "https://youtube.com/watch?v=abc",
+                "platform": "youtube",
+                "camera_id": "end_a",
+            }
+        ),
+        content_type="application/json",
+    )
+    assert ingest.status_code == 200
+
+    take = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps(
+            {
+                "type": "control",
+                "command": "take_live",
+                "payload": {"camera_id": "end_b"},
+            }
+        ),
+    )
+    assert take.status_code == 200
+    assert take.get_json()["live_camera_id"] == "end_b"
+
+    # End A receives handoff_release; End B receives handoff_take
+    a_poll = c.get(f"/api/match/{slug}/remote/commands?camera_id=end_a", headers=headers)
+    assert a_poll.status_code == 200
+    a_cmds = [x["command"] for x in a_poll.get_json()["commands"]]
+    assert "handoff_release" in a_cmds
+
+    b_poll = c.get(f"/api/match/{slug}/remote/commands?camera_id=end_b", headers=headers)
+    assert b_poll.status_code == 200
+    b_cmds = [x["command"] for x in b_poll.get_json()["commands"]]
+    assert "handoff_take" in b_cmds
+
+    got = c.get(f"/api/match/{slug}/remote/ingest", headers=headers)
+    assert got.status_code == 200
+    assert got.get_json()["ingest"]["stream_key"] == "secret-key"
+    assert got.get_json()["live_camera_id"] == "end_b"
+
+    cams = c.get(f"/api/match/{slug}/remote/cameras", headers=cmd_headers)
+    assert cams.status_code == 200
+    assert cams.get_json()["live_camera_id"] == "end_b"
+
+
+def test_remote_preview_per_camera(client):
+    import base64
+
+    c, _fake = client
+    _org_id, token, slug = _seed_org_and_match()
+    headers = _auth_headers(token)
+    pair = c.post(f"/api/match/{slug}/pair", headers=headers)
+    companion_token = c.post(
+        f"/stream/{slug}/pair/redeem",
+        data=json.dumps({"pair_token": pair.get_json()["pair_token"]}),
+        content_type="application/json",
+    ).get_json()["companion_token"]
+    cmd_headers = {
+        "Authorization": f"Bearer {companion_token}",
+        "Content-Type": "application/json",
+    }
+
     jpeg = bytes([0xFF, 0xD8, 0xFF, 0xD9])
     put = c.put(
+        f"/api/match/{slug}/remote/preview",
+        headers=headers,
+        data=json.dumps(
+            {
+                "jpeg_b64": base64.b64encode(jpeg).decode("ascii"),
+                "camera_id": "end_b",
+                "state": {"streaming": False, "zoom": 1.5},
+            }
+        ),
+        content_type="application/json",
+    )
+    assert put.status_code == 200
+    assert put.get_json()["camera_id"] == "end_b"
+
+    got = c.get(f"/api/match/{slug}/remote/preview?camera_id=end_b", headers=cmd_headers)
+    assert got.status_code == 200
+    assert got.get_json()["stale"] is False
+    assert got.get_json()["state"]["zoom"] == 1.5
+    assert got.get_json()["camera_id"] == "end_b"
+
+    cams = c.get(f"/api/match/{slug}/remote/cameras", headers=cmd_headers)
+    assert cams.status_code == 200
+    ids = {row["camera_id"] for row in cams.get_json()["cameras"]}
+    assert "end_b" in ids
+
+    # Legacy / default put still works (defaults to end_a)
+    put_a = c.put(
         f"/api/match/{slug}/remote/preview",
         headers=headers,
         data=json.dumps(
@@ -423,17 +646,15 @@ def test_remote_payload_commands_and_preview(client):
         ),
         content_type="application/json",
     )
-    assert put.status_code == 200
+    assert put_a.status_code == 200
 
-    # Companion can GET
-    got = c.get(f"/api/match/{slug}/remote/preview", headers=cmd_headers)
-    assert got.status_code == 200
-    body = got.get_json()
+    # Companion can GET default (live/end_a)
+    got_default = c.get(f"/api/match/{slug}/remote/preview", headers=cmd_headers)
+    assert got_default.status_code == 200
+    body = got_default.get_json()
     assert body["stale"] is False
-    assert body["jpeg_b64"] == base64.b64encode(jpeg).decode("ascii")
     assert body["state"]["zoom"] == 2.0
     assert body["state"]["locked"] is True
-    assert body["state"]["streaming"] is True
 
     # Companion cannot PUT preview (stream-auth required)
     forbidden = c.put(
@@ -517,3 +738,132 @@ def test_remote_sponsor_context_and_overlay_command(client):
     assert cmd["type"] == "overlay"
     assert cmd["prefs"]["sponsor_display_mode"] == "scroll_top"
     assert cmd["prefs"]["sponsor_size_scale"] == 1.8
+
+
+def test_pair_landing_and_well_known(client):
+    c, _fake = client
+    missing = c.get("/pair")
+    assert missing.status_code == 400
+
+    landing = c.get("/pair?slug=demo-match&token=tok123&base=https://cricrelay.co.uk")
+    assert landing.status_code == 200
+    body = landing.get_data(as_text=True)
+    assert "cricrelay://pair?" in body
+    assert "slug=demo-match" in body
+    assert "Open in CricRelay" in body
+
+    assets = c.get("/.well-known/assetlinks.json")
+    assert assets.status_code == 200
+    assert assets.is_json
+    rows = assets.get_json()
+    assert rows[0]["target"]["package_name"] == "uk.co.cricrelay.stream"
+
+    aasa = c.get("/.well-known/apple-app-site-association")
+    assert aasa.status_code == 200
+    assert aasa.is_json
+    details = aasa.get_json()["applinks"]["details"]
+    assert "/pair" in details[0]["paths"]
+
+
+def test_pair_api_returns_https_url(client):
+    c, _fake = client
+    _org_id, token, slug = _seed_org_and_match()
+    headers = _auth_headers(token)
+    pair = c.post(f"/api/match/{slug}/pair", headers=headers)
+    assert pair.status_code == 200
+    data = pair.get_json()
+    assert data["pair_token"]
+    assert data["pair_url"].startswith("http")
+    assert "/pair?" in data["pair_url"]
+    assert data["deep_link"].startswith("cricrelay://pair?")
+
+
+def test_take_live_handoff_race_returns_conflict(client):
+    """Overlapping Take Live taps must not double-publish — second call gets 409."""
+    c, fake = client
+    _org_id, token, slug = _seed_org_and_match()
+    headers = _auth_headers(token)
+    pair = c.post(f"/api/match/{slug}/pair", headers=headers)
+    companion_token = c.post(
+        f"/stream/{slug}/pair/redeem",
+        data=json.dumps({"pair_token": pair.get_json()["pair_token"]}),
+        content_type="application/json",
+    ).get_json()["companion_token"]
+    cmd_headers = {
+        "Authorization": f"Bearer {companion_token}",
+        "Content-Type": "application/json",
+    }
+
+    # Seed ingest + live end_a
+    put = c.put(
+        f"/api/match/{slug}/remote/ingest",
+        headers=headers,
+        data=json.dumps(
+            {
+                "rtmp_url": "rtmps://a.rtmp.youtube.com/live2",
+                "stream_key": "secret-key",
+                "watch_url": "https://youtu.be/demo",
+                "platform": "youtube",
+                "camera_id": "end_a",
+            }
+        ),
+        content_type="application/json",
+    )
+    assert put.status_code == 200
+
+    # Hold the handoff lock so a concurrent take_live fails closed.
+    fake.set(f"cricrelay:remote:handoff:{slug}", "end_b", nx=True, ex=20)
+
+    conflict = c.post(
+        f"/api/match/{slug}/remote/command",
+        headers=cmd_headers,
+        data=json.dumps(
+            {"type": "control", "command": "take_live", "payload": {"camera_id": "end_b"}}
+        ),
+    )
+    assert conflict.status_code == 409
+    assert "handoff" in conflict.get_json()["error"].lower()
+
+
+def test_remote_metrics_accepts_privacy_safe_events(client):
+    c, fake = client
+    _org_id, token, slug = _seed_org_and_match()
+    headers = _auth_headers(token)
+    pair = c.post(f"/api/match/{slug}/pair", headers=headers)
+    companion_token = c.post(
+        f"/stream/{slug}/pair/redeem",
+        data=json.dumps({"pair_token": pair.get_json()["pair_token"]}),
+        content_type="application/json",
+    ).get_json()["companion_token"]
+    cmd_headers = {
+        "Authorization": f"Bearer {companion_token}",
+        "Content-Type": "application/json",
+    }
+
+    ok = c.post(
+        f"/api/match/{slug}/remote/metrics",
+        headers=cmd_headers,
+        data=json.dumps(
+            {
+                "events": [
+                    {"name": "pair_ok"},
+                    {"name": "preview_first_frame_ms", "value": 842},
+                    {"name": "user_email", "value": "nope"},  # rejected
+                ]
+            }
+        ),
+    )
+    assert ok.status_code == 200
+    assert ok.get_json()["accepted"] == 2
+
+    raw = fake.lrange(f"cricrelay:remote:metrics:{slug}", 0, -1)
+    assert len(raw) == 2
+    names = {json.loads(row)["name"] for row in raw}
+    assert names == {"pair_ok", "preview_first_frame_ms"}
+
+    bad = c.post(
+        f"/api/match/{slug}/remote/metrics",
+        headers=cmd_headers,
+        data=json.dumps({"events": "nope"}),
+    )
+    assert bad.status_code == 400

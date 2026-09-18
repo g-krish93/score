@@ -48,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.co.cricrelay.mobile.ui.AppColors
@@ -1038,12 +1039,64 @@ fun CameraSettingsSheet(
 
 @Composable
 fun StudioMenuSheet(
+    cameraId: String,
+    streaming: Boolean,
+    onCameraIdChange: (String) -> Unit,
     onRestartPreview: () -> Unit,
     onPairRemote: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     SheetHeader(title = "Broadcast menu")
     Spacer(Modifier.height(AppSpacing.sm))
+    Text(
+        "Camera end",
+        style = AppTypography.labelLarge,
+        color = AppColors.OnBackground,
+        modifier = Modifier.padding(horizontal = AppSpacing.lg),
+    )
+    Text(
+        "Set End A / End B so the remote director can switch between two phones on one feed.",
+        style = AppTypography.bodySmall,
+        color = AppColors.OnBackgroundDim,
+        modifier = Modifier.padding(horizontal = AppSpacing.lg, vertical = AppSpacing.xs),
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = AppSpacing.lg),
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+    ) {
+        listOf(
+            uk.co.cricrelay.shared.model.RemoteCameraIds.END_A to "End A",
+            uk.co.cricrelay.shared.model.RemoteCameraIds.END_B to "End B",
+        ).forEach { (id, label) ->
+            val selected = cameraId == id
+            Text(
+                label,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(AppSpacing.radiusSm))
+                    .clickable(enabled = !streaming) { onCameraIdChange(id) }
+                    .background(
+                        if (selected) AppColors.Primary.copy(alpha = 0.35f)
+                        else AppColors.SurfaceElevated.copy(alpha = 0.7f),
+                    )
+                    .padding(vertical = 12.dp),
+                style = AppTypography.labelMedium,
+                color = if (streaming && !selected) AppColors.OnBackgroundDim else AppColors.OnBackground,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+    if (streaming) {
+        Text(
+            "End is locked while live",
+            style = AppTypography.bodySmall,
+            color = AppColors.OnBackgroundDim,
+            modifier = Modifier.padding(horizontal = AppSpacing.lg, vertical = AppSpacing.xs),
+        )
+    }
+    Spacer(Modifier.height(AppSpacing.md))
     SecondaryButton(
         text = "Restart camera preview",
         onClick = {

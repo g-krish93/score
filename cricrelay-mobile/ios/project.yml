@@ -90,6 +90,13 @@ targets:
             CFBundleURLSchemes:
               - cricrelay
 
+    entitlements:
+      path: CricRelay/CricRelayLive.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - applinks:cricrelay.co.uk
+          - applinks:www.cricrelay.co.uk
+
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: uk.co.cricrelay.stream

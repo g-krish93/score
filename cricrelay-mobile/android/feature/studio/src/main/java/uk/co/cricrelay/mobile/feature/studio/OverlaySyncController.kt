@@ -62,6 +62,7 @@ class OverlaySyncController(
             DeviceStreamSettings(
                 stabilizationLevel = prefs.stabilizationLevel,
                 keepScreenOn = prefs.keepScreenOn,
+                cameraId = localPrefs.loadDeviceSettings().cameraId,
             ),
         )
         streamController.setStabilizationLevel(prefs.stabilizationLevel)

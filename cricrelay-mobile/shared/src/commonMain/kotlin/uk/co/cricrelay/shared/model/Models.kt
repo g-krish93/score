@@ -313,6 +313,84 @@ data class RemoteCommand(
 
     fun payloadInt(key: String): Int? =
         (payload?.get(key) as? JsonPrimitive)?.content?.toIntOrNull()
+
+    fun payloadBool(key: String): Boolean? {
+        val prim = payload?.get(key) as? JsonPrimitive ?: return null
+        prim.booleanOrNull?.let { return it }
+        return when (prim.content.trim().lowercase()) {
+            "1", "true", "yes", "on" -> true
+            "0", "false", "no", "off" -> false
+            else -> null
+        }
+    }
+
+    fun payloadString(key: String): String? =
+        payload?.string(key)?.takeIf { it.isNotBlank() }
+}
+
+/** Result of tripod remote-command poll (commands + live companion pairing flag). */
+data class RemoteCommandsPoll(
+    val commands: List<RemoteCommand> = emptyList(),
+    val companionPaired: Boolean = false,
+    val liveCameraId: String? = null,
+)
+
+data class RemoteCameraInfo(
+    val cameraId: String = "",
+    val label: String = "",
+    val streaming: Boolean = false,
+    val stale: Boolean = true,
+    val isLive: Boolean = false,
+) {
+    companion object {
+        fun fromJson(json: JsonObject): RemoteCameraInfo = RemoteCameraInfo(
+            cameraId = json.string("camera_id").orEmpty(),
+            label = json.string("label").orEmpty(),
+            streaming = json.bool("streaming") == true,
+            stale = json.bool("stale") != false,
+            isLive = json.bool("is_live") == true,
+        )
+    }
+}
+
+data class RemoteCamerasSnapshot(
+    val cameras: List<RemoteCameraInfo> = emptyList(),
+    val liveCameraId: String? = null,
+)
+
+data class LiveIngest(
+    val rtmpUrl: String = "",
+    val streamKey: String = "",
+    val watchUrl: String = "",
+    val platform: String = "custom",
+    val overlayEmbedUrl: String = "",
+) {
+    companion object {
+        fun fromJson(json: JsonObject): LiveIngest = LiveIngest(
+            rtmpUrl = json.string("rtmp_url").orEmpty(),
+            streamKey = json.string("stream_key").orEmpty(),
+            watchUrl = json.string("watch_url").orEmpty(),
+            platform = json.string("platform").orEmpty().ifBlank { "custom" },
+            overlayEmbedUrl = json.string("overlay_embed_url").orEmpty(),
+        )
+    }
+}
+
+object RemoteCameraIds {
+    const val END_A = "end_a"
+    const val END_B = "end_b"
+    val ALL = listOf(END_A, END_B)
+
+    fun sanitize(raw: String?): String? {
+        val id = raw?.trim()?.lowercase().orEmpty()
+        return id.takeIf { it in ALL }
+    }
+
+    fun label(id: String): String = when (id) {
+        END_A -> "End A"
+        END_B -> "End B"
+        else -> id
+    }
 }
 
 /** Tripod-reported camera state mirrored to the companion via Redis. */
@@ -325,6 +403,9 @@ data class RemoteCameraState(
     val paused: Boolean = false,
     val streaming: Boolean = false,
     val stab: Int = 1,
+    val reconnecting: Boolean = false,
+    val thermal: Int = 0,
+    val bitrateKbps: Int? = null,
 ) {
     companion object {
         fun fromJson(json: JsonObject?): RemoteCameraState {
@@ -338,6 +419,9 @@ data class RemoteCameraState(
                 paused = json.bool("paused") == true,
                 streaming = json.bool("streaming") == true,
                 stab = json.int("stab") ?: json.int("stabilization_level") ?: 1,
+                reconnecting = json.bool("reconnecting") == true,
+                thermal = json.int("thermal") ?: 0,
+                bitrateKbps = json.int("bitrate_kbps"),
             )
         }
     }
@@ -351,6 +435,9 @@ data class RemoteCameraState(
         put("paused", paused)
         put("streaming", streaming)
         put("stab", stab)
+        put("reconnecting", reconnecting)
+        put("thermal", thermal)
+        bitrateKbps?.let { put("bitrate_kbps", it) }
     }
 }
 
@@ -359,6 +446,8 @@ data class RemotePreviewFrame(
     val jpegB64: String? = null,
     val state: RemoteCameraState? = null,
     val ts: Double? = null,
+    val cameraId: String? = null,
+    val liveCameraId: String? = null,
 ) {
     companion object {
         fun fromJson(json: JsonObject): RemotePreviewFrame = RemotePreviewFrame(
@@ -366,6 +455,8 @@ data class RemotePreviewFrame(
             jpegB64 = json.string("jpeg_b64")?.takeIf { it.isNotBlank() },
             state = (json["state"] as? JsonObject)?.let { RemoteCameraState.fromJson(it) },
             ts = (json["ts"] as? JsonPrimitive)?.content?.toDoubleOrNull(),
+            cameraId = json.string("camera_id"),
+            liveCameraId = json.string("live_camera_id"),
         )
     }
 }
@@ -393,6 +484,10 @@ data class RemoteCompanionContext(
 data class PairRemoteResult(
     val pairToken: String,
     val expiresAt: String,
+    /** HTTPS App Link preferred for QR (`https://…/pair?…`). */
+    val pairUrl: String = "",
+    /** Custom-scheme fallback (`cricrelay://pair?…`). */
+    val deepLink: String = "",
 )
 
 /** Tokenized QR link for the manual scorer webpage. Blank expiresAt = static legacy URL. */

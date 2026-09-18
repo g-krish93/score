@@ -5,8 +5,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Holds a pending `cricrelay://pair?…` URI from the system camera / QR scanner
- * until [RemoteControlViewModel] can redeem it.
+ * Holds a pending pair URI (`https://…/pair` or `cricrelay://pair`) from the system
+ * camera / App Link until [RemoteControlViewModel] can redeem it.
  */
 object PairDeepLinkBus {
     private val _pendingUri = MutableStateFlow<String?>(null)

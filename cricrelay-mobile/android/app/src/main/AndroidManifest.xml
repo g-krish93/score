@@ -41,6 +41,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="cricrelay" android:host="pair" />
             </intent-filter>
+            <!-- HTTPS App Links — verified via /.well-known/assetlinks.json -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="cricrelay.co.uk" android:path="/pair" />
+                <data android:scheme="https" android:host="www.cricrelay.co.uk" android:path="/pair" />
+            </intent-filter>
         </activity>
 
         <service
