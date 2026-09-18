@@ -662,6 +662,7 @@ final class StreamCameraEngine: NSObject {
     }
 
     /// Tap-to-focus from normalized preview coordinates (0..1, origin top-left) for remote companion.
+    @MainActor
     func tapToFocusNormalized(nx: Float, ny: Float) {
         guard let view = hkView else { return }
         let w = max(view.bounds.width, 1)
