@@ -2,6 +2,7 @@ package uk.co.cricrelay.mobile.feature.studio
 
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -12,6 +13,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import uk.co.cricrelay.shared.model.OverlayLayoutPrefs
+import uk.co.cricrelay.shared.model.RemoteCameraIds
 import uk.co.cricrelay.shared.model.Sponsor
 import uk.co.cricrelay.shared.model.StreamMatch
 import uk.co.cricrelay.shared.repository.StreamRepository
@@ -28,7 +30,9 @@ class OverlaySyncControllerTest {
 
     private val streamController = mockk<StreamController>(relaxed = true)
     private val streamRepository = mockk<StreamRepository>(relaxed = true)
-    private val localPrefs = mockk<StudioLocalPrefsStore>(relaxed = true)
+    private val localPrefs = mockk<StudioLocalPrefsStore>(relaxed = true) {
+        every { loadDeviceSettings() } returns DeviceStreamSettings(cameraId = RemoteCameraIds.END_B)
+    }
 
     private fun controller(
         state: MutableStateFlow<StudioUiState>,
@@ -47,7 +51,11 @@ class OverlaySyncControllerTest {
         verify { localPrefs.saveOverlayPrefs(match.slug, prefs) }
         verify {
             localPrefs.saveDeviceSettings(
-                DeviceStreamSettings(stabilizationLevel = 2, keepScreenOn = false),
+                DeviceStreamSettings(
+                    stabilizationLevel = 2,
+                    keepScreenOn = false,
+                    cameraId = RemoteCameraIds.END_B,
+                ),
             )
         }
         verify { streamController.setStabilizationLevel(2) }
